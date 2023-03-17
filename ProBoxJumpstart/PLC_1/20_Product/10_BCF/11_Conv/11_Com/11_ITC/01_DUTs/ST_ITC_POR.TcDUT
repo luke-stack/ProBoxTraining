@@ -1,0 +1,52 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.12">
+  <DUT Name="ST_ITC_POR" Id="{2c4e627c-f7d2-4cd0-acf2-6261bd723d4e}">
+    <Declaration><![CDATA[TYPE ST_ITC_POR :
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 404529 $
+ *	Revision date	:	$Date: 2018-04-23 08:21:38 +0200 (Mo., 23 Apr 2018) $
+ *	Last changed by	:	$Author: b7bolm $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/trunk/01_Software/BCF/BCF/JumpStart/20_Product/10_App/11_Com/10_Lib/10_Conv/11_ITC/01_DUTs/ST_ITC_POR.TcDUT $
+ *
+ *	Purpose			:	POR Structure
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+STRUCT
+	Position 		: STRING(Conveyor.POSITION_STRINGLENGTH); // 12 Digit SIS Location MM-GGG-EEEE-LLL 
+	TU_ID			: STRING(Conveyor.TU_ID_STRINGLENGTH); // 18 Digit SSID 
+	TU_Type			: INT; // 2 Digit TU Type 
+	AssignmentID	: UDINT; // 8 Digit assignment
+	LoadInformation	: BOOL; // 1 Digit Load Information 
+END_STRUCT
+END_TYPE
+]]></Declaration>
+    <ObjectProperties>
+      <XmlArchive>
+        <Data>
+          <o xml:space="preserve" t="UMLStereoTypeContainerObject">
+            <v n="IsType" t="UMLType">BaseArea</v>
+            <v n="Stereotype">""</v>
+            <d n="Stereotypes" t="Hashtable" />
+          </o>
+        </Data>
+        <TypeList>
+          <Type n="Hashtable">System.Collections.Hashtable</Type>
+          <Type n="String">System.String</Type>
+          <Type n="UMLStereoTypeContainerObject">{30250973-b110-4e31-b562-c102e042dca4}</Type>
+          <Type n="UMLType">{0197b136-405a-42ee-bb27-fd08b621d0cf}</Type>
+        </TypeList>
+      </XmlArchive>
+    </ObjectProperties>
+  </DUT>
+</TcPlcObject>

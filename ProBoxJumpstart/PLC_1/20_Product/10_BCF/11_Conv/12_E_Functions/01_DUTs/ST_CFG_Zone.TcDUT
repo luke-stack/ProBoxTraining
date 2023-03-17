@@ -1,0 +1,94 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.4">
+  <DUT Name="ST_CFG_Zone" Id="{992117b0-a97c-4b50-8339-05c148a276e0}">
+    <Declaration><![CDATA[// Zone configuration structure
+TYPE ST_CFG_Zone:
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 474969 $
+ *	Revision date	:	$Date: 2021-04-08 19:53:18 +0200 (tor, 08 apr 2021) $
+ *	Last changed by	:	$Author: d7mangc $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/tags/R1.12.0/01_Software/BCF/BCF/JumpStart/20_Product/10_BCF/11_Conv/12_E_Functions/01_DUTs/ST_CFG_Zone.TcDUT $
+ *
+ *	Purpose			:	Zone configuration - contains the configuration for a zone.
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * VERSION DATE         INITIALS     DESCRIPTION
+ * 0.0     DD.MM.YYYY   (name)       (explain customized modifications)
+ *
+ **************************************************************************************)
+STRUCT
+	ZoneName						: STRING[NAME_LENGTH]	:= 'MM-GGG-EEEE-FF-Z';			// Name of the zone
+	Length							: ARRAY[1..3] OF UINT	:= [1000, 0, 0];				// Length of the zone based on the transport direction [mm]
+	//-----------------------------------------------------------------------------------------------
+	Speed							: REAL					:= 1.0;							// Maximal speed of the zone [m/s]
+	SpeedSlow						: INT					:=  50;							// Speed slow [%]
+	SpeedFast						: INT					:= 100;							// Speed fast [%]
+	SpeedRatio						: REAL					:= 1/1;							// Transmission ratio between speed command and movement speed of the TU
+	//-----------------------------------------------------------------------------------------------
+	EnablePrestart					: BOOL					:= TRUE;						// Enable prestart drive two zones ahead
+	EnableFreeRun					: BOOL					:= TRUE;						// Enable free run
+	EnableMultipleTU_Transition		: BOOL					:= FALSE;						// Enable multiple TU transition
+	EnableJamAutoReset				: BOOL					:= TRUE;						// Enable jam auto reset if signal is free
+	EnableMFC						: BOOL					:= FALSE;						// Enable material flow control
+	EnableIgnoreNextZoneState		: BOOL					:= FALSE;						// Enable ignore the state of the next zone at handover
+	EnableSimultaneousTransport		: BOOL					:= FALSE;						// Enable simultaneous transport
+	EnableLowPressureAccumulation	: BOOL					:= FALSE;						// Enable low pressure accumulation - NOT IMPLEMENTED -
+	EnableSlugRelease				: BOOL					:= FALSE;						// Enable slug release -NOT IMPLEMENTED -
+	EnableFastSpeed					: BOOL					:= TRUE;						// Enable fast speed 
+	EnableMultizone					: BOOL					:= TRUE;						// Enable multizone
+	EnableCreateGapOnlyAtRestart	: BOOL					:= FALSE;						// Enable create gap only when drive restarts
+	EnableLatchOccupiedState		: BOOL					:= FALSE;						// Enable latch occupied state
+	EnableRoutingUpdate             : BOOL                  := FALSE;						// Enable routing update
+	EnableAddOnSensor               : BOOL    				:= FALSE;						// Will use the sensor from the addon interface
+    EnableMotorControl              : BOOL                  := FALSE;                       // Needs to be enabled for the zones using common motor with slugging
+	//-----------------------------------------------------------------------------------------------
+	SendTransportTaskCompleted		: BOOL					:= FALSE;						// Send a transport complete report if destination is reached
+	SendTransportTaskCompletedOcc	: BOOL					:= FALSE;						// Send a transport complete report if destination is reached and zone occupied
+	SendPositionClear				: BOOL					:= FALSE;						// Send a position clear report if zone is physically free
+	SendPositionOccupied			: BOOL					:= FALSE;						// Send a position pccupied report if zone is physically occupied
+	SendIdentificationReport		: BOOL					:= FALSE;						// Send an identification point report if zone is physically occupied
+	eTUR_SendMode					: E_TUR_SendModes		:= E_TUR_SendModes.ALWAYS;		// Additional controls over when TUR is sent on TU index deletion for the zone 
+	//-----------------------------------------------------------------------------------------------
+	AddTU_Data						: BOOL					:= FALSE;						// Add TU data 
+	DeleteTU_DataTakeOver			: BOOL					:= FALSE;						// Delete TU data at takeover
+	DeleteTU_DataZoneFree			: BOOL					:= FALSE;						// Delete TU data if the zone is free
+	//-----------------------------------------------------------------------------------------------
+	tZoneFree						: TIME					:= T#0S;						// Delay time for zone free, if 0 then standard value will be used (2s)
+	tZoneOccupied					: TIME					:= T#0S;						// Delay time for zone occupied, if 0 then standard value will be used (2s)
+	ClearingDistance				: UINT					:= 2_000;						// Clearing distance [mm]
+	JamTriggerDistance				: UINT					:= 2_000;						// Driving distance after jam error is triggered [mm]
+	TimeoutTakeDistance				: UINT					:= 0;							// Driving distance after timeout take is triggered, if 0 then calculated value will be used [mm]
+	MinimumTU_Distance				: UINT					:= 0;							// Delays the takeover to ensure this minimum gap between the TU’s [mm]
+	TakeoverPlausibilityDistance	: UINT					:= 0;							// Distance for takeover plausibility check, if 0 then calculated value will be used [mm] 
+	StopDelayDistanceFromSide		: ARRAY[1..4] OF UINT	:= [  0,   0,   0,   0];		// Stop distance after occupied signal [mm]
+    tTakeoverMotorStartDelay        : TIME                  := T#0S;						// Delay before starting the motor on takeover (slugging)
+	ZoneEndLengthToSide				: ARRAY[1..4] OF UINT	:= [100, 100, 100, 100];		// Length between occupied signal and zone end [mm]
+END_STRUCT
+END_TYPE
+]]></Declaration>
+    <ObjectProperties>
+      <XmlArchive>
+        <Data>
+          <o xml:space="preserve" t="UMLStereoTypeContainerObject">
+            <v n="IsType" t="UMLType">BaseArea</v>
+            <v n="Stereotype">""</v>
+            <d n="Stereotypes" t="Hashtable" />
+          </o>
+        </Data>
+        <TypeList>
+          <Type n="Hashtable">System.Collections.Hashtable</Type>
+          <Type n="String">System.String</Type>
+          <Type n="UMLStereoTypeContainerObject">{30250973-b110-4e31-b562-c102e042dca4}</Type>
+          <Type n="UMLType">{0197b136-405a-42ee-bb27-fd08b621d0cf}</Type>
+        </TypeList>
+      </XmlArchive>
+    </ObjectProperties>
+  </DUT>
+</TcPlcObject>

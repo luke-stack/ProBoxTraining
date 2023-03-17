@@ -1,0 +1,101 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.4">
+  <POU Name="FB_DeleteOldTU_Data" Id="{ff70b21a-5021-414a-ba61-25633880a00c}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK FB_DeleteOldTU_Data EXTENDS FB_BaseObject
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 404529 $
+ *	Revision date	:	$Date: 2018-04-23 08:21:38 +0200 (Mo., 23 Apr 2018) $
+ *	Last changed by	:	$Author: b7bolm $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/trunk/01_Software/BCF/BCF/JumpStart/20_Product/10_App/10_Base/10_Lib/10_Conv/FB_DeleteOldTU_Data.TcPOU $
+ *
+ *	Purpose			:	Checks if TU data are expired.
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * VERSION DATE         INITIALS     DESCRIPTION
+ * 0.0     DD.MM.YYYY   (name)       (explain customized modifications)
+ *
+ **************************************************************************************)
+VAR
+	CurrentDT			: TIMESTRUCT;
+	Timespan			: TIME					:= T#0S;
+	TU_DataIndex		: DINT					:= 0;		// TU data index
+	eFunctionNumber		: E_FunctionNumber		:= 0;		// Function iterator
+	Executed			: BOOL					:= FALSE;	// Flag for execution only once
+	Position			: ST_PositionIdent;
+END_VAR]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[
+// Validate every minute all existing TU data
+IF fbSystemTime.TIMESTR.wSecond = 0 AND NOT Executed THEN
+	// Set execution flag to process only once
+	Executed := TRUE;
+
+	// Check 1/60 of the TU data table for old data sets at each execution
+	FOR TU_DataIndex := WORD_TO_INT(fbSystemTime.TIMESTR.wMinute) TO NUMBER_OF_TU_DATA BY 60 DO	
+		// Check if the TU data set is used 
+		IF TU_DataTable[TU_DataIndex].DataSet.DataPresent THEN
+			// Delete the TU data set if it is expired 
+			CurrentDT:= TU_DataTable[TU_DataIndex].TimeStamp.InsertDateTime;
+			Timespan := SYSTEMTIME_TO_DT(System.fbSystemTime.TIMESTR) - SYSTEMTIME_TO_DT(CurrentDT);
+
+			IF (Timespan >= Conveyor.TU_DATA_LIFETIME) THEN
+				(*
+				Check if this Transport unit is still in use.
+				Its possible after holidays that a TU is standing longer than the ExpiryData
+				on the system. The time stamp of such units will be updated.
+				*)
+				Position := F_SearchPositionOfTU_Index(
+										TU_DataIndex 		 := TU_DataIndex, 
+										eStartFunctionNumber := E_FunctionNumber.F_BEGIN_FUNCTION + 1);
+			
+				IF Position.eFunctionNumber > E_FunctionNumber.F_BEGIN_FUNCTION THEN
+					// Still in use, update time stamp
+					TU_DataTable[TU_DataIndex].TimeStamp.InsertDateTime:= System.fbSystemTime.TIMESTR;//TimeStampDT;
+				// Otherwise delete data
+				ELSE
+					// debug message: '11-000-0000-00-0,  expired TU_DataIndex deleted,  TU_DataIndex = 5,  TuID = 000012345,  AssignmentID = 999999999'
+					DebugMsg := '';
+					DebugMsg := CONCAT(DebugMsg, F_AddDividerToSisString(SubsystemRegistry.SubsystemName));
+					DebugMsg := CONCAT(DebugMsg, ',  expired TU_DataIndex deleted');
+					DebugMsg := CONCAT(DebugMsg, F_CreateTU_DataString(TU_DataIndex:= TU_DataIndex));
+					fbDebugMsg.M_SendErrorMsg(DebugMsg);
+					// Loop through all functions 
+					F_DeleteTU_Data(
+						TU_DataIndex 	:= TU_DataIndex,
+						NoTTC 			:= FALSE);
+				END_IF
+			END_IF
+		END_IF
+	END_FOR
+	
+ELSIF fbSystemTime.TIMESTR.wSecond <> 0 THEN
+	// Reset execution flag
+	Executed := FALSE;
+END_IF]]></ST>
+    </Implementation>
+    <ObjectProperties>
+      <XmlArchive>
+        <Data>
+          <o xml:space="preserve" t="UMLStereoTypeContainerObject">
+            <v n="IsType" t="UMLType">BaseArea</v>
+            <v n="Stereotype">""</v>
+            <d n="Stereotypes" t="Hashtable" />
+          </o>
+        </Data>
+        <TypeList>
+          <Type n="Hashtable">System.Collections.Hashtable</Type>
+          <Type n="String">System.String</Type>
+          <Type n="UMLStereoTypeContainerObject">{30250973-b110-4e31-b562-c102e042dca4}</Type>
+          <Type n="UMLType">{0197b136-405a-42ee-bb27-fd08b621d0cf}</Type>
+        </TypeList>
+      </XmlArchive>
+    </ObjectProperties>
+  </POU>
+</TcPlcObject>

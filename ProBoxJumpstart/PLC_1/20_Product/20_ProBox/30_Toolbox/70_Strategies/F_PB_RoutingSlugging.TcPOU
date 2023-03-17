@@ -1,0 +1,130 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <POU Name="F_PB_RoutingSlugging" Id="{d24cc72d-8e9f-433b-982b-e23016b2e023}" SpecialFunc="None">
+    <Declaration><![CDATA[(*
+Standard routing on slugging functions.
+Returns true if pallet(s) behind are headed towards this function and front is clear.
+Returns false if pallet(s) behind are headed towards this function or front is not clear.
+*)
+FUNCTION F_PB_RoutingSlugging : BOOL
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: $
+ *	Revision date	:	$Date: $
+ *	Last changed by	:	$Author: $
+ *	URL				:	$$
+ *
+ *	Purpose			:	Standard routing on slugging functions
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				2018-11-15		PkF				First Version 
+ *
+ **************************************************************************************)
+VAR_INPUT
+		eFunctionNumber				: E_FunctionNumber; 				// Functions own function number
+		RoutingSluggingData			: ST_RoutingSluggingData;
+		OverrideTransport			: BOOL; 							// Override standard functionallity
+		HoldTransport				: BOOL; 							// Hold transport
+END_VAR
+
+VAR
+	LastZoneData					: ST_ZoneData;
+	FirstZoneData					: ST_ZoneData;	
+	OkTransport						: BOOL;
+	NoPalletsBehind					: BOOL;
+	NoPalletsInfront				: BOOL;
+	Idx								: INT; // Loop var
+	Idx2							: INT; // Loop var for Zones
+	Idx3							: INT; // Loop var for invalid destinations check
+	TransportControlData			: ST_TransportControlData;
+	NumberOfZones					: INT;
+	Destination						: E_FunctionNumber;
+	TransportOK						: BOOL; // OK to run transport
+END_VAR
+
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[// Get My Zone Data
+LastZoneData 		:= F_GetZoneData(eFunctionNumber,F_GetNumberOfZones(eFunctionNumber));
+FirstZoneData 		:= F_GetZoneData(eFunctionNumber,1);
+// Init vars
+OkTransport 		:= FALSE;
+NoPalletsBehind 	:= TRUE;
+NoPalletsInfront 	:= TRUE;
+
+IF(HoldTransport) THEN
+	RETURN;	// Return False
+END_IF
+
+IF ((LastZoneData.TransportControlData.Occupied) OR  OverrideTransport) THEN
+	OKTransport	 := TRUE;	
+	
+ELSIF( FirstZoneData.TransportControlData.Occupied )THEN
+	// Check behind
+	FOR Idx := 1 TO 20 DO
+		NumberOfZones := F_GetNumberOfZones(RoutingSluggingData.FunctionsBehind[Idx]);		
+		// Note: NumberOfZones = 0 if FunctionsBehind[Idx] = E_FunctionNumber.F_BEGIN_FUNCTION		
+		FOR Idx2 := 1 TO NumberOfZones DO
+			TransportControlData := F_GetTransportControlData(RoutingSluggingData.FunctionsBehind[Idx],Idx2);
+
+			IF 	TransportControlData.eTransportState = E_TransportState.TAKEOVER OR 
+				TransportControlData.eTransportState = E_TransportState.FREE OR 
+				TransportControlData.eTransportState = E_TransportState.IDLE OR 
+				F_IsFunctionErrorPending(RoutingSluggingData.FunctionsBehind[Idx]) THEN
+				;	// Function is considered empty	
+			ELSE
+				NoPalletsBehind := FALSE;	// Function is considered not empty (ie occupied) => wait for more pallets...
+				// Check if destination of pallet is in the invalid list
+				FOR Idx3 := 1 TO 20 DO
+					Destination := F_PB_GetTuDestination(RoutingSluggingData.FunctionsBehind[Idx], Idx2, 1);
+					
+					IF 	Destination = RoutingSluggingData.InvalidDestinations[Idx3] AND
+						Destination <> F_BEGIN_FUNCTION THEN
+						NoPalletsBehind := TRUE;	// Function is considered empty
+						EXIT;
+					END_IF
+				END_FOR
+			END_IF
+		END_FOR		
+		
+		//Exit for loop if desition already taken
+		IF(NoPalletsBehind=FALSE) THEN
+			EXIT; //exit for loop
+		END_IF
+	END_FOR
+	
+	// Check Forward
+	FOR Idx := 1 TO 20 DO
+		NumberOfZones := F_GetNumberOfZones(RoutingSluggingData.FunctionsInfront[Idx]);		
+		// Note: NumberOfZones = 0 if FunctionsInfront[Idx] = E_FunctionNumber.F_BEGIN_FUNCTION
+		FOR Idx2 := 1 TO NumberOfZones DO
+			TransportControlData := F_GetTransportControlData(RoutingSluggingData.FunctionsInfront[Idx],Idx2);			
+			IF TransportControlData.eTransportState = E_TransportState.TAKEOVER OR 
+				TransportControlData.eTransportState = E_TransportState.FREE OR 
+				TransportControlData.eTransportState = E_TransportState.IDLE THEN
+				;	// Function is considered empty	
+			ELSE
+				NoPalletsInFront := FALSE;	// Function is considered not empty
+			END_IF			
+		END_FOR		
+	END_FOR
+	// OK to go, no pallets either behind or infront
+	OkTransport := NoPalletsBehind AND NoPalletsInfront;
+END_IF
+
+F_PB_RoutingSlugging := OkTransport;]]></ST>
+    </Implementation>
+    <LineIds Name="F_PB_RoutingSlugging">
+      <LineId Id="450" Count="41" />
+      <LineId Id="560" Count="4" />
+      <LineId Id="492" Count="20" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

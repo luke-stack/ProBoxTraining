@@ -1,0 +1,42 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.4">
+  <DUT Name="ST_HW_InputsTransferUnit" Id="{cfe2779a-a934-4a2a-add2-fc85150aa6be}">
+    <Declaration><![CDATA[TYPE ST_HW_InputsTransferUnit :
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 417092 $
+ *	Revision date	:	$Date: 2018-11-14 12:58:58 +0100 (Mi., 14 Nov 2018) $
+ *	Last changed by	:	$Author: q8aberh $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/ProMove/02_Controls/ProBox/03_Implementation/01_DevelopmentProject/01_Software/ProBox_COE/ProBox_DevProj_v1.0/PLC_1/20_Product/10_App/12_E_Functions/11_ProBox/20_TransferUnit/10_App/01_DUTs/ST_HW_I $
+ *
+ *	Purpose			:	HW inputs of the dummy function
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)	
+STRUCT
+	Sensor_Stop_12			: BOOL; // Sensor stop axis 1-2 forward
+	Sensor_Creep_12			: BOOL; // Sensor creep speed axis 1-2 forward	
+	Sensor_Stop_21			: BOOL; // Sensor stop axis 1-2 reverse	
+	Sensor_Creep_21			: BOOL; // Sensor creep speed axis 1-2 reverse
+	Sensor_Stop_34			: BOOL; // Sensor stop axis 3-4 forward 
+	Sensor_Creep_34			: BOOL; // Sensor creep speed axis 3-4 forward 
+	Sensor_Stop_43			: BOOL; // Sensor stop axis 3-4 reverse
+	Sensor_Creep_43			: BOOL; // Sensor creep speed axis 3-4 reverse
+	Sensor_Pos_Down			: BOOL; // Sensor position lift down
+	Sensor_Pos_Up			: BOOL; // Sensor position lift up
+	Sensor_StopExtRun		: BOOL; // Sensor stop exteneded run
+	//Signal_MotorUnitOK		: BOOL; // Signal motor unit OK (lift & roller)	removed since we have different elements for chain and roller
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

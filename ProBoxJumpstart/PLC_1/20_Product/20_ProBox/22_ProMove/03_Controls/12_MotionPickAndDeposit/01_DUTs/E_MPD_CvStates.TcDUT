@@ -1,0 +1,20 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.12">
+  <DUT Name="E_MPD_CvStates" Id="{85ef5bf8-62c5-4ffc-b18f-cf112bbb357e}">
+    <Declaration><![CDATA[{attribute 'qualified_only'}
+{attribute 'strict'}
+//Motion Pickup n Deposit Conveyor states
+TYPE E_MPD_CvStates :
+(	
+	E_CV_INIT,
+	E_CV_IDLE,
+	E_CV_JOBASSIGNED,
+	E_CV_PICKUP,
+	E_CV_OCCUPIED,
+	E_CV_DEPOSIT,
+	E_CV_DONE
+);
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

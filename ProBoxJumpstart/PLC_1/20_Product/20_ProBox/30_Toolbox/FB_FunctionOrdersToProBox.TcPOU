@@ -1,0 +1,64 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.4">
+  <POU Name="FB_FunctionOrdersToProBox" Id="{2deba3c1-8722-4b62-b421-62e0ff5e6b45}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK FB_FunctionOrdersToProBox
+VAR_INPUT
+	FunctionOrders : ST_FunctionOrders;
+END_VAR
+
+VAR_OUTPUT
+	Speed_12 		: E_ProBoxMotorSpeed;
+	Direction_12	: E_ProBoxMotorDirection;
+	Run_12			: BOOL;
+	Enable_12		: BOOL;
+	Speed_34 		: E_ProBoxMotorSpeed;
+	Direction_34	: E_ProBoxMotorDirection;
+	Run_34			: BOOL;
+	Enable_34		: BOOL;	
+END_VAR
+
+VAR
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[IF FunctionOrders.ReqSpeed > 50 THEN
+	Speed_12 := E_ProBoxMotorSpeed.NORMAL;
+ELSIF FunctionOrders.ReqSpeed > 20 AND FunctionOrders.ReqSpeed <= 50 THEN
+	Speed_12 := E_ProBoxMotorSpeed.LOW_SPEED;
+ELSE
+	Speed_12 := E_ProBoxMotorSpeed.CREEP_SPEED;
+END_IF
+
+IF FunctionOrders.ReqSpeed_34 > 50 THEN
+	Speed_34 := E_ProBoxMotorSpeed.NORMAL;
+ELSIF FunctionOrders.ReqSpeed_34 > 20 AND FunctionOrders.ReqSpeed_34 <= 50 THEN
+	Speed_34 := E_ProBoxMotorSpeed.LOW_SPEED;
+ELSE
+	Speed_34 := E_ProBoxMotorSpeed.CREEP_SPEED;
+END_IF
+
+IF FunctionOrders.ReqDriveDirection THEN
+	Direction_12 := E_ProBoxMotorDirection.MOTOR_FORWARD;
+ELSE
+	Direction_12 := E_ProBoxMotorDirection.MOTOR_REVERSE;
+END_IF
+
+IF FunctionOrders.ReqDriveDirection_34 THEN
+	Direction_34 := E_ProBoxMotorDirection.MOTOR_FORWARD;
+ELSE
+	Direction_34 := E_ProBoxMotorDirection.MOTOR_REVERSE;
+END_IF
+
+Run_12 := FunctionOrders.ReqDriveRun;
+Run_34 := FunctionOrders.ReqDriveRun_34;
+
+Enable_12 := FunctionOrders.Enable;
+Enable_34 := FunctionOrders.Enable_34;
+]]></ST>
+    </Implementation>
+    <LineIds Name="FB_FunctionOrdersToProBox">
+      <LineId Id="3" Count="32" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

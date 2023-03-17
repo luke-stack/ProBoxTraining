@@ -1,0 +1,15 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.12">
+  <DUT Name="E_PickupDepositSide" Id="{63df413d-0697-48f4-bb59-8aadf39ee193}">
+    <Declaration><![CDATA[{attribute 'qualified_only'}
+{attribute 'strict'}
+TYPE E_PickupDepositSide :
+(
+	Unknown,
+	RightSide,
+	LeftSide
+);
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

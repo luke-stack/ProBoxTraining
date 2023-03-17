@@ -1,0 +1,39 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <DUT Name="ST_CFG_ProBoxElementVcBase" Id="{1c7f70eb-7869-4cde-baec-008ea1b0d18f}">
+    <Declaration><![CDATA[TYPE ST_CFG_ProBoxElementVcBase EXTENDS ST_CFG_ProBoxElementBase :
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision:  $
+ *	Revision date	:	$Date: $
+ *	Last changed by	:	$Author: $
+ *	URL				:	$URL: $
+ *
+ *	Purpose			:	Vertical Conveyor element configuration.
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *
+ **************************************************************************************)	
+STRUCT	
+	TimeOutMove				: TIME := T#30S;		// Vertical Conveyor timeout value
+	CvCC					: DINT := 0;	  		// Center to Center distance [mm] not used for VC
+	EncoderHysterisis		: DINT := 5;			// Encoder fluktuation allowed. default is +- 5mm
+	DriveCFG				: ST_CFG_MPD_Drive;		// Vertical Conveyor drive configuration parameters
+	EnableIdlePosition		: BOOL;					// Enable Idle position for the Vertical Conveyor
+	ApEntryPositions		: ARRAY[1..GVL_PB_SG.NUMBER_OF_AP_PANELS] OF DINT; // Entry position [mm] for each AP cabinet
+	AkEntryPosition			: DINT; // Entry position [mm] for the AK cabinet
+	IdlePosition			: DINT := 500;			// Idle position [mm]
+	EncoderHoming		    : ST_EncoderHoming;		// Preset VC encoder properties	
+	SgGroupRef				: REFERENCE TO FB_ProBOXSG;
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

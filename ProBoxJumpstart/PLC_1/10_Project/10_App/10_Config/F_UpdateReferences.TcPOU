@@ -1,0 +1,86 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <POU Name="F_UpdateReferences" Id="{da4dae5f-eedd-4dd2-b59d-4ca59bc61310}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION F_UpdateReferences
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[
+
+SubsystemRegistry.rSubsystem                                      REF= fbSubsystem10;
+GroupRegistry[E_GroupNumber.G_SG_001].rGroup                      REF= fbSG_001;
+ElementRegistry[E_ElementNumber.E_10_001_0200_00_0].rElement      REF= fbEL_10_001_0200_00_0;
+FunctionRegistry[E_FunctionNumber.F_10_001_0200_01_0].rFunction   REF= fbF_10_001_0200_01_0;
+FunctionRegistry[E_FunctionNumber.F_10_001_0200_02_0].rFunction   REF= fbF_10_001_0200_02_0;
+ElementRegistry[E_ElementNumber.E_10_001_0201_00_0].rElement      REF= fbEL_10_001_0201_00_0;
+FunctionRegistry[E_FunctionNumber.F_10_001_0201_01_0].rFunction   REF= fbF_10_001_0201_01_0;
+ElementRegistry[E_ElementNumber.E_10_001_0202_00_0].rElement      REF= fbEL_10_001_0202_00_0;
+FunctionRegistry[E_FunctionNumber.F_10_001_0202_01_0].rFunction   REF= fbF_10_001_0202_01_0;
+ElementRegistry[E_ElementNumber.E_10_001_0203_00_0].rElement      REF= fbEL_10_001_0203_00_0;
+FunctionRegistry[E_FunctionNumber.F_10_001_0203_01_0].rFunction   REF= fbF_10_001_0203_01_0;
+FunctionRegistry[E_FunctionNumber.F_10_001_0203_02_0].rFunction   REF= fbF_10_001_0203_02_0;
+FunctionRegistry[E_FunctionNumber.F_10_001_0203_03_0].rFunction   REF= fbF_10_001_0203_03_0;
+FunctionRegistry[E_FunctionNumber.F_10_001_0203_04_0].rFunction   REF= fbF_10_001_0203_04_0;
+FunctionRegistry[E_FunctionNumber.F_10_001_0203_05_0].rFunction   REF= fbF_10_001_0203_05_0;
+ElementRegistry[E_ElementNumber.E_10_001_0204_00_0].rElement      REF= fbEL_10_001_0204_00_0;
+FunctionRegistry[E_FunctionNumber.F_10_001_0204_01_0].rFunction   REF= fbF_10_001_0204_01_0;
+ElementRegistry[E_ElementNumber.E_10_001_0205_00_0].rElement      REF= fbEL_10_001_0205_00_0;
+ElementRegistry[E_ElementNumber.E_10_001_0207_00_0].rElement      REF= fbEL_10_001_0207_00_0;
+FunctionRegistry[E_FunctionNumber.F_10_001_0207_01_0].rFunction   REF= fbF_10_001_0207_01_0;
+FunctionRegistry[E_FunctionNumber.F_10_001_0207_02_0].rFunction   REF= fbF_10_001_0207_02_0;
+ElementRegistry[E_ElementNumber.E_10_001_0208_00_0].rElement      REF= fbEL_10_001_0208_00_0;
+FunctionRegistry[E_FunctionNumber.F_10_001_0208_01_0].rFunction   REF= fbF_10_001_0208_01_0;
+ElementRegistry[E_ElementNumber.E_10_001_0209_00_0].rElement      REF= fbEL_10_001_0209_00_0;
+FunctionRegistry[E_FunctionNumber.F_10_001_0209_01_0].rFunction   REF= fbF_10_001_0209_01_0;
+ElementRegistry[E_ElementNumber.E_10_001_0211_00_0].rElement      REF= fbEL_10_001_0211_00_0;
+FunctionRegistry[E_FunctionNumber.F_10_001_0211_01_0].rFunction   REF= fbF_10_001_0211_01_0;
+ElementRegistry[E_ElementNumber.E_10_001_0212_00_0].rElement      REF= fbEL_10_001_0212_00_0;
+FunctionRegistry[E_FunctionNumber.F_10_001_0212_01_0].rFunction   REF= fbF_10_001_0212_01_0;
+ElementRegistry[E_ElementNumber.E_10_001_0213_00_0].rElement      REF= fbEL_10_001_0213_00_0;
+FunctionRegistry[E_FunctionNumber.F_10_001_0213_01_0].rFunction   REF= fbF_10_001_0213_01_0;
+FunctionRegistry[E_FunctionNumber.F_10_001_0213_02_0].rFunction   REF= fbF_10_001_0213_02_0;
+ElementRegistry[E_ElementNumber.E_10_001_0214_00_0].rElement      REF= fbEL_10_001_0214_00_0;
+FunctionRegistry[E_FunctionNumber.F_10_001_0214_01_0].rFunction   REF= fbF_10_001_0214_01_0;
+ElementRegistry[E_ElementNumber.E_10_001_0215_00_0].rElement      REF= fbEL_10_001_0215_00_0;
+FunctionRegistry[E_FunctionNumber.F_10_001_0215_01_0].rFunction   REF= fbF_10_001_0215_01_0;
+FunctionRegistry[E_FunctionNumber.F_10_001_0215_02_0].rFunction   REF= fbF_10_001_0215_02_0;
+FunctionRegistry[E_FunctionNumber.F_10_001_0215_03_0].rFunction   REF= fbF_10_001_0215_03_0;
+ElementRegistry[E_ElementNumber.E_10_001_0216_00_0].rElement      REF= fbEL_10_001_0216_00_0;
+FunctionRegistry[E_FunctionNumber.F_10_001_0216_01_0].rFunction   REF= fbF_10_001_0216_01_0;
+FunctionRegistry[E_FunctionNumber.F_10_001_0216_02_0].rFunction   REF= fbF_10_001_0216_02_0;
+ElementRegistry[E_ElementNumber.E_10_001_0217_00_0].rElement      REF= fbEL_10_001_0217_00_0;
+FunctionRegistry[E_FunctionNumber.F_10_001_0217_01_0].rFunction   REF= fbF_10_001_0217_01_0;
+ElementRegistry[E_ElementNumber.E_10_001_0218_00_0].rElement      REF= fbEL_10_001_0218_00_0;
+FunctionRegistry[E_FunctionNumber.F_10_001_0218_01_0].rFunction   REF= fbF_10_001_0218_01_0;
+ElementRegistry[E_ElementNumber.E_10_001_0219_00_0].rElement      REF= fbEL_10_001_0219_00_0;
+FunctionRegistry[E_FunctionNumber.F_10_001_0219_01_0].rFunction   REF= fbF_10_001_0219_01_0;
+ElementRegistry[E_ElementNumber.E_10_001_0220_00_0].rElement      REF= fbEL_10_001_0220_00_0;
+FunctionRegistry[E_FunctionNumber.F_10_001_0220_01_0].rFunction   REF= fbF_10_001_0220_01_0;
+ElementRegistry[E_ElementNumber.E_10_001_0221_00_0].rElement      REF= fbEL_10_001_0221_00_0;
+FunctionRegistry[E_FunctionNumber.F_10_001_0221_01_0].rFunction   REF= fbF_10_001_0221_01_0;
+ElementRegistry[E_ElementNumber.E_10_001_0222_00_0].rElement      REF= fbEL_10_001_0222_00_0;
+FunctionRegistry[E_FunctionNumber.F_10_001_0222_01_0].rFunction   REF= fbF_10_001_0222_01_0;
+ElementRegistry[E_ElementNumber.E_10_001_0223_00_0].rElement      REF= fbEL_10_001_0223_00_0;
+ElementRegistry[E_ElementNumber.E_10_001_0225_00_0].rElement      REF= fbEL_10_001_0225_00_0;
+FunctionRegistry[E_FunctionNumber.F_10_001_0225_01_0].rFunction   REF= fbF_10_001_0225_01_0;
+ElementRegistry[E_ElementNumber.E_10_001_0226_00_0].rElement      REF= fbEL_10_001_0226_00_0;
+FunctionRegistry[E_FunctionNumber.F_10_001_0226_01_0].rFunction   REF= fbF_10_001_0226_01_0;
+ElementRegistry[E_ElementNumber.E_10_001_0227_00_0].rElement      REF= fbEL_10_001_0227_00_0;
+FunctionRegistry[E_FunctionNumber.F_10_001_0227_01_0].rFunction   REF= fbF_10_001_0227_01_0;
+ElementRegistry[E_ElementNumber.E_10_001_0230_00_0].rElement      REF= fbEL_10_001_0230_00_0;
+FunctionRegistry[E_FunctionNumber.F_10_001_0230_01_0].rFunction   REF= fbF_10_001_0230_01_0;
+ElementRegistry[E_ElementNumber.E_10_001_0232_00_0].rElement      REF= fbEL_10_001_0232_00_0;
+FunctionRegistry[E_FunctionNumber.F_10_001_0232_01_0].rFunction   REF= fbF_10_001_0232_01_0;
+FunctionRegistry[E_FunctionNumber.F_10_001_0232_02_0].rFunction   REF= fbF_10_001_0232_02_0;
+ElementRegistry[E_ElementNumber.E_10_001_0233_00_0].rElement      REF= fbEL_10_001_0233_00_0;
+FunctionRegistry[E_FunctionNumber.F_10_001_0233_01_0].rFunction   REF= fbF_10_001_0233_01_0;
+GroupRegistry[E_GroupNumber.G_SG_002].rGroup                      REF= fbSG_002;
+ElementRegistry[E_ElementNumber.E_10_002_0206_00_0].rElement      REF= fbEL_10_002_0206_00_0;
+FunctionRegistry[E_FunctionNumber.F_10_002_0206_01_0].rFunction   REF= fbF_10_002_0206_01_0;
+]]></ST>
+    </Implementation>
+    <LineIds Name="F_UpdateReferences">
+      <LineId Id="3" Count="71" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

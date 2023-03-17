@@ -1,0 +1,17 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.4">
+  <DUT Name="ST_LSPM_LiftEncPos" Id="{c3027b91-9436-46d4-b967-37eda882ea20}">
+    <Declaration><![CDATA[TYPE ST_LSPM_LiftEncPos :
+STRUCT
+	UpperEndLimit			: UDINT; // Max machine capacity, position just below the upper mechanical end limit switch
+	LowerEndLimit			: UDINT; // Min machine capacity, position just above the lower mechanical end limit switch
+	Upper					: UDINT; // Position where to hold the second pallet in order to make free space to allow a new empty support pallet to be feed into the LS machine
+	Middle					: UDINT; // Position where to engage forks in order to lift second pallet
+	Lower					: UDINT; // Position where to engage forks in order to lift bottom pallet (also the homing position)
+	Tolerance  				: UDINT; // Hysteris positioning tolerance +-
+	CsWindow				: UDINT; // Creep speed window -+
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

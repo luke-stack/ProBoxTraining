@@ -1,0 +1,15 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <DUT Name="ST_HW_InputsInOutFeed" Id="{db8a8ee7-6715-4cd3-950c-b4c5a2d7ad47}">
+    <Declaration><![CDATA[TYPE ST_HW_InputsInOutFeed :
+STRUCT
+	TUSensor			: BOOL; //Sensor to detect TU
+	FLTSensor			: BOOL; //Sensor to detect Forklift
+	Sensor_Pos_Down		: BOOL; //Sensor position lift down
+	Sensor_Pos_Up		: BOOL; //Sensor position lift up
+	Signal_MotorUnitOK	: BOOL; //Signal motor unit OK
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

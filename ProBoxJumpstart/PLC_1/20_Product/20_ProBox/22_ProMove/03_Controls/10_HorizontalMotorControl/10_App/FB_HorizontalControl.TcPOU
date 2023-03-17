@@ -1,0 +1,296 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <POU Name="FB_HorizontalControl" Id="{8e5e7e34-5571-44e6-8032-e7cfe049d24c}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK FB_HorizontalControl
+VAR_INPUT
+	FunctionData			: ST_FunctionData; // Function data
+	ZoneData				: ST_ZoneData;
+	Sensor_Pos_Left			: BOOL; // Sensor position
+	Sensor_Creep_Left		: BOOL; // Sensor creep speed
+	Sensor_EndLimit_Left	: BOOL; // Sensor end limit
+	Sensor_Pos_Right		: BOOL; // Sensor position
+	Sensor_Creep_Right		: BOOL; // Sensor creep speed	
+	Sensor_EndLimit_Right	: BOOL; // Sensor end limit
+	Sensor_Overhang_12		: BOOL; // Sensor overhang axis 1-2 forward, Set to TRUE if not used.
+	Sensor_Overhang_21		: BOOL; // Sensor overhang axis 1-2 reverse	, Set to TRUE if not used.
+	TimeoutValueTransfer	: TIME; // Timeout value for motor
+	OrderPos				: E_Positions_HorizontalControl; // Order position
+	HomePos					: E_Positions_HorizontalControl; // Home position
+END_VAR
+
+VAR_OUTPUT
+	Drive_Run_Right			: BOOL; // Drive run command
+	Drive_Run_Left			: BOOL; // Drive run command
+	Drive_LS				: BOOL; // Drive low speed command
+	Drive_CS				: BOOL; // Drive creep speed command
+	EnableTransport			: BOOL;	// Enable transport	
+	ActualPosition			: E_Positions_HorizontalControl;
+END_VAR
+
+VAR_IN_OUT
+	ErrorData 				: ST_ErrorDataSet; // Error data
+END_VAR
+
+VAR
+	eState					: E_States_HorizontalControl;
+	eLastState				: E_States_HorizontalControl;	
+	fbTimerMovement			: FB_Timer;	
+END_VAR	]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[F_ResetError(
+	Reset 	  := FALSE,
+	ErrorData := ErrorData);
+
+// Initialise variables
+Drive_Run_Right := FALSE;		
+Drive_Run_Left := FALSE;		
+Drive_LS := FALSE;	
+Drive_CS := FALSE;			
+EnableTransport := FALSE;	
+fbTimerMovement.IN := FALSE;
+fbTimerMovement.PT := TimeoutValueTransfer;			
+
+// Sensor error check
+IF (Sensor_Pos_Left OR Sensor_Creep_Left) AND (Sensor_Pos_Right OR Sensor_Creep_Right) THEN
+		EnableTransport := FALSE;	
+		F_SetError(
+			ErrorType := E_ErrorType.ERROR, 
+			ErrorParam := 'Two Transfer positions active', 
+			ErrorMsg := E_ErrorConv.INCORRECT_SENSOR_SIGNAL, 
+			ErrorData := ErrorData);
+END_IF	
+
+IF NOT Sensor_EndLimit_Right THEN
+			F_SetError(
+						ErrorType := E_ErrorType.ERROR, 
+						ErrorParam := 'Right End limit reached', 
+						ErrorMsg := E_ErrorConv.LIMIT_SWITCH_ACTIVE, 
+						ErrorData := ErrorData);
+			eLastState := eState;
+			eState := E_States_HorizontalControl.ERROR;
+			
+ELSIF NOT Sensor_EndLimit_Left THEN
+			F_SetError(
+						ErrorType := E_ErrorType.ERROR, 
+						ErrorParam := 'Left End limit reached', 
+						ErrorMsg := E_ErrorConv.LIMIT_SWITCH_ACTIVE, 
+						ErrorData := ErrorData);
+			eLastState := eState;
+			eState := E_States_HorizontalControl.ERROR;
+END_IF
+
+CASE eState OF
+(*************************************************************************
+	INIT
+*************************************************************************)	
+	E_States_HorizontalControl.INIT:
+		Drive_Run_Right := FALSE;		
+		Drive_Run_Left := FALSE;		
+		Drive_LS := FALSE;	
+		Drive_CS := FALSE;			
+		EnableTransport := FALSE;	
+		
+		eLastState := eState;
+		eState := E_States_HorizontalControl.IDLE;
+		
+(*************************************************************************
+	ERROR
+*************************************************************************)	
+	E_States_HorizontalControl.ERROR:
+		Drive_Run_Right := FALSE;		
+		Drive_Run_Left := FALSE;		
+		Drive_LS := FALSE;	
+		Drive_CS := FALSE;			
+		EnableTransport := FALSE;	
+		fbTimerMovement.IN := FALSE;
+		
+		// Acknowledge request error
+		IF ErrorData.ErrorType <> E_ErrorType.ERROR THEN	
+			eLastState := eState;
+			eState := E_States_HorizontalControl.Init;			
+		END_IF		
+		
+(*************************************************************************
+	IDLE
+*************************************************************************)		
+	E_States_HorizontalControl.IDLE:
+			//If the overhang sensors are activated when turning set an error
+		IF (NOT Sensor_Overhang_12 OR NOT Sensor_Overhang_21) AND
+			ZoneData.TransportControlData.eHandOverState <> E_HandOverState.ACTIVE AND
+			ZoneData.TransportControlData.eTakeOverState <> E_TakeOverState.ACTIVE THEN
+			F_SetError(
+						ErrorType := E_ErrorType.ERROR, 
+						ErrorParam := 'Check Overhang sensors', 
+						ErrorMsg := E_ErrorConv.JAM_ERROR, 
+						ErrorData := ErrorData);
+			eLastState := eState;
+			eState := E_States_HorizontalControl.ERROR;
+		END_IF	
+		
+		IF FunctionData.OperationState.eState = E_PositionState.STARTED AND
+		   FunctionData.ErrorData.Error.ErrorType <> E_ErrorType.ERROR AND NOT FunctionData.ErrorData.ZoneErrorPending THEN
+			
+			IF OrderPos = E_Positions_HorizontalControl.LEFT OR
+				(HomePos = E_Positions_HorizontalControl.LEFT AND OrderPos = E_Positions_HorizontalControl.UNDEFINED) THEN
+				// When sideshift is on left position 
+				IF Sensor_Pos_Left AND Sensor_Creep_Left THEN
+					EnableTransport := TRUE;
+					ActualPosition	:= E_Positions_HorizontalControl.LEFT;
+				ELSE
+					EnableTransport := FALSE;
+					ActualPosition	:= E_Positions_HorizontalControl.UNDEFINED;
+					eLastState := eState;
+					eState := E_States_HorizontalControl.LEFT;
+				END_IF
+			
+			ELSIF OrderPos = E_Positions_HorizontalControl.RIGHT OR
+					(HomePos = E_Positions_HorizontalControl.RIGHT AND OrderPos = E_Positions_HorizontalControl.UNDEFINED) THEN
+				// When sideshift is on right position 
+				IF Sensor_Pos_Right AND Sensor_Creep_Right THEN
+					EnableTransport := TRUE;
+					ActualPosition	:= E_Positions_HorizontalControl.RIGHT;
+				ELSE
+					EnableTransport := FALSE;
+					ActualPosition	:= E_Positions_HorizontalControl.UNDEFINED;
+					eLastState := eState;
+					eState := E_States_HorizontalControl.RIGHT;
+				END_IF
+			ELSE
+				EnableTransport := FALSE;													
+			END_IF 
+		END_IF
+	
+(*************************************************************************
+	RUN MOTOR LEFT
+*************************************************************************)		
+	E_States_HorizontalControl.LEFT:
+	
+		IF NOT Sensor_Overhang_12 OR NOT Sensor_Overhang_21 THEN
+			F_SetError(
+						ErrorType := E_ErrorType.ERROR, 
+						ErrorParam := 'Check Overhang sensors', 
+						ErrorMsg := E_ErrorConv.JAM_ERROR, 
+						ErrorData := ErrorData);
+			eLastState := eState;
+			eState := E_States_HorizontalControl.ERROR;
+			
+		// If function is started or stopping and no error
+		ELSIF (FunctionData.OperationState.eState = E_PositionState.STARTED OR FunctionData.OperationState.eState = E_PositionState.STOPPING) AND
+		  	FunctionData.ErrorData.Error.ErrorType <> E_ErrorType.ERROR AND NOT FunctionData.ErrorData.ZoneErrorPending THEN
+			// When sideshift is on left position 
+			IF Sensor_Pos_Left AND Sensor_Creep_Left THEN
+				Drive_Run_Left := FALSE;
+				Drive_CS := FALSE;
+				
+				eLastState := eState;
+				eState := E_States_HorizontalControl.IDLE;
+			ELSE
+				fbTimerMovement.IN := TRUE;
+								// If time is up
+				IF fbTimerMovement.Q THEN
+					Drive_Run_Left := FALSE;
+					F_SetError(
+						ErrorType := E_ErrorType.ERROR, 
+						ErrorParam := 'Timeout Transfer Movement', 
+						ErrorMsg := E_ErrorConv.TIMEOUT_MOVEMENT, 
+						ErrorData := ErrorData);
+						
+					eLastState := eState;
+					eState := E_States_HorizontalControl.Error;
+				ELSE
+				
+					Drive_Run_Left := TRUE;
+					
+					// When sensor creep speed is occupied
+					IF Sensor_Creep_Left THEN
+						Drive_CS := TRUE;
+					ELSE
+						Drive_CS := FALSE;
+					END_IF
+				END_IF
+			END_IF
+		END_IF
+		
+(*************************************************************************
+	RUN MOTOR RIGHT
+*************************************************************************)		
+	E_States_HorizontalControl.RIGHT:
+		IF NOT Sensor_Overhang_12 OR NOT Sensor_Overhang_21 THEN
+			F_SetError(
+						ErrorType := E_ErrorType.ERROR, 
+						ErrorParam := 'Check Overhang sensors', 
+						ErrorMsg := E_ErrorConv.JAM_ERROR, 
+						ErrorData := ErrorData);
+			eLastState := eState;
+			eState := E_States_HorizontalControl.ERROR;
+			
+		// If function is started or stopping and no error
+		ELSIF (FunctionData.OperationState.eState = E_PositionState.STARTED OR FunctionData.OperationState.eState = E_PositionState.STOPPING) AND
+		    FunctionData.ErrorData.Error.ErrorType <> E_ErrorType.ERROR AND NOT FunctionData.ErrorData.ZoneErrorPending THEN
+			// When sideshift is on right position 
+			IF Sensor_Pos_Right AND Sensor_Creep_Right THEN
+				Drive_Run_Right := FALSE;
+				Drive_CS := FALSE;
+				
+				eLastState := eState;
+				eState := E_States_HorizontalControl.IDLE;
+			ELSE
+				fbTimerMovement.IN := TRUE;
+				
+				IF fbTimerMovement.Q THEN
+					Drive_Run_Left := FALSE;
+					F_SetError(
+						ErrorType := E_ErrorType.ERROR, 
+						ErrorParam := 'Timeout Transfer Movement', 
+						ErrorMsg := E_ErrorConv.TIMEOUT_MOVEMENT, 
+						ErrorData := ErrorData);
+						
+					eLastState := eState;
+					eState := E_States_HorizontalControl.Error;
+				ELSE
+
+					Drive_Run_Right := TRUE;
+					
+					// When sensor creep speed is occupied
+					IF Sensor_Creep_Right THEN
+						Drive_CS := TRUE;
+					ELSE
+						Drive_CS := FALSE;
+					END_IF
+				END_IF
+			END_IF
+		END_IF
+		
+(*************************************************************************)		
+END_CASE
+
+// Call timer
+fbTimerMovement();
+]]></ST>
+    </Implementation>
+    <LineIds Name="FB_HorizontalControl">
+      <LineId Id="954" Count="9" />
+      <LineId Id="1185" Count="0" />
+      <LineId Id="1184" Count="0" />
+      <LineId Id="964" Count="52" />
+      <LineId Id="1183" Count="0" />
+      <LineId Id="1017" Count="81" />
+      <LineId Id="1151" Count="0" />
+      <LineId Id="1153" Count="9" />
+      <LineId Id="1152" Count="0" />
+      <LineId Id="1163" Count="1" />
+      <LineId Id="1099" Count="6" />
+      <LineId Id="1166" Count="0" />
+      <LineId Id="1165" Count="0" />
+      <LineId Id="1107" Count="27" />
+      <LineId Id="1181" Count="0" />
+      <LineId Id="1172" Count="8" />
+      <LineId Id="1169" Count="2" />
+      <LineId Id="1167" Count="0" />
+      <LineId Id="1136" Count="6" />
+      <LineId Id="1182" Count="0" />
+      <LineId Id="1143" Count="7" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

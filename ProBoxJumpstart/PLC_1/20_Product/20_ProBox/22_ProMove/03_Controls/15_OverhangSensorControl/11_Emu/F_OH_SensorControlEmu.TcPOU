@@ -1,0 +1,47 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <POU Name="F_OH_SensorControlEmu" Id="{13a7d432-5153-48ee-8ef6-32bbf3758908}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION F_OH_SensorControlEmu : BOOL
+VAR_INPUT
+	FunctionNumber	: E_FunctionNumber;
+	TakeoverActive	: BOOL;
+	HandoverActive	: BOOL; 
+	OH_PositionSide	: INT; 
+END_VAR
+VAR
+	fwd : BOOL; 
+END_VAR
+VAR_OUTPUT
+	OH_sensor		: BOOL;
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[OH_sensor := TRUE; 
+
+Fwd := F_IsFwdDriveDirection(FunctionNumber, TakeoverActive, HandoverActive);
+
+IF TakeoverActive THEN 
+	IF( Fwd AND (OH_PositionSide = 1 OR OH_PositionSide = 3)) OR 
+		(NOT Fwd AND (OH_PositionSide = 2 OR OH_PositionSide = 4)) THEN
+		//Emulate toggle
+		OH_sensor := FALSE;
+	END_IF
+END_IF
+
+IF HandoverActive THEN
+	IF( Fwd AND (OH_PositionSide = 2 OR OH_PositionSide = 4)) OR 
+		(NOT Fwd AND (OH_PositionSide = 1 OR OH_PositionSide = 3)) THEN
+		//Emulate toggle
+		OH_sensor := FALSE;
+	END_IF
+END_IF]]></ST>
+    </Implementation>
+    <LineIds Name="F_OH_SensorControlEmu">
+      <LineId Id="28" Count="0" />
+      <LineId Id="33" Count="1" />
+      <LineId Id="27" Count="0" />
+      <LineId Id="12" Count="13" />
+      <LineId Id="7" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

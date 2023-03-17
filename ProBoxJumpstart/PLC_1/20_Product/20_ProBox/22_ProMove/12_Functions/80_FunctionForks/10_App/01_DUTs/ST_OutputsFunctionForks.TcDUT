@@ -1,0 +1,11 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <DUT Name="ST_OutputsFunctionForks" Id="{27b7b2f1-15ea-4132-8462-2dd084805aa9}">
+    <Declaration><![CDATA[TYPE ST_OutputsFunctionForks :
+STRUCT
+	ForkStatus					: ST_ForkState;//out to element
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

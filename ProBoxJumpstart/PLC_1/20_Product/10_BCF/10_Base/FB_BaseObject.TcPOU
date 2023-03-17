@@ -1,0 +1,816 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.4">
+  <POU Name="FB_BaseObject" Id="{f1fc8cf3-7c5f-427f-9bdc-a0b6b3edde40}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK FB_BaseObject
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 404529 $
+ *	Revision date	:	$Date: 2018-04-23 08:21:38 +0200 (Mo., 23 Apr 2018) $
+ *	Last changed by	:	$Author: b7bolm $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/trunk/01_Software/BCF/BCF/JumpStart/20_Product/10_App/10_Base/10_Lib/FB_BaseObject.TcPOU $
+ *
+ *	Purpose			:	Base object
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+VAR
+	fbDebugMsg		: FB_DebugMsg; // Debug instance
+	DebugMsg		: T_MAXSTRING; // Debug msg
+	Base			: ST_Base; // Base structure 
+END_VAR
+
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[(**************************************************************************************************************
+   Body never called!
+***************************************************************************************************************)
+;
+]]></ST>
+    </Implementation>
+    <Method Name="M_ITC_DAQ" Id="{c06f6318-922d-48a5-8008-b394b4d2105b}">
+      <Declaration><![CDATA[METHOD M_ITC_DAQ : BOOL
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 404529 $
+ *	Revision date	:	$Date: 2018-04-23 08:21:38 +0200 (Mo., 23 Apr 2018) $
+ *	Last changed by	:	$Author: b7bolm $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/trunk/01_Software/BCF/BCF/JumpStart/20_Product/10_App/10_Base/10_Lib/FB_BaseObject.TcPOU $
+ *
+ *	Purpose			:	Process incoming DAQ Data Aquisition Request 					
+ *
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)	
+VAR_INPUT
+	meChannelSrc		: E_MFCS_CHANNEL; // Number of the source 
+	mpData				: PVOID; // Data  pointer 
+	mLen				: UDINT; // Data length
+END_VAR
+
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[(*********************************************************************************
+Map Data 	
+**********************************************************************************)	
+F_BlockCopy(
+	pSrc:= mpData, 
+	LenSrc:= mLen, 
+	pDest:= ADR(Base.CM.DAQ), 
+	LenDest:= SIZEOF(Base.CM.DAQ));
+// Call Process Method 		
+	M_ProcessDAQ(pCM_Data:=ADR(Base.CM),meChannelSrc:= meChannelSrc);]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_ITC_DataAquisition" Id="{bf4a41e6-ec14-479d-8d3b-705786bddf79}">
+      <Declaration><![CDATA[METHOD M_ITC_DataAquisition : BOOL
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 404529 $
+ *	Revision date	:	$Date: 2018-04-23 08:21:38 +0200 (Mo., 23 Apr 2018) $
+ *	Last changed by	:	$Author: b7bolm $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/trunk/01_Software/BCF/BCF/JumpStart/20_Product/10_App/10_Base/10_Lib/FB_BaseObject.TcPOU $
+ *
+ *	Purpose			:	Method Stores CM Data in Buffer and Sends Report to MFCS when required  					
+ *
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)	
+VAR_INPUT
+	mVariableName		: STRING(System.CM_VARIABLENAME_STRINGLENGTH);	///Varaible Name AlphaNumeric string less than 20 Char
+	meCM_Index			: E_CM_Index;									/// Index Varaible Storage Array
+	mPosition			: STRING(NAME_LENGTH);		///Position Where method is called from
+	mCurrentValue		: STRING(Conveyor.GATHERED_DATA_VALUE);			/// Raw data Value to be logged 
+	meMode				: E_CM_Mode;									// mode of operation. 
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[// Call Process Method 	
+M_ITC_DataAquisitionProcess(
+			mVariableName:= mVariableName, 
+			meCM_Index		:= meCM_Index, 
+			mPosition		:= mPosition, 
+			mCurrentValue	:= mCurrentValue, 
+			meMode			:= meMode, 
+			pCM_Data		:= ADR(Base.CM));
+
+	M_ITC_DataAquisition:= TRUE;
+			]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_ITC_DataAquisitionProcess" Id="{8381aa2e-6f4c-41bd-8443-2a22fcab9993}">
+      <Declaration><![CDATA[METHOD M_ITC_DataAquisitionProcess : BOOL;
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 404529 $
+ *	Revision date	:	$Date: 2018-04-23 08:21:38 +0200 (Mo., 23 Apr 2018) $
+ *	Last changed by	:	$Author: b7bolm $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/trunk/01_Software/BCF/BCF/JumpStart/20_Product/10_App/10_Base/10_Lib/FB_BaseObject.TcPOU $
+ *
+ *	Purpose			:	Method Stores CM Data in Buffer and Sends Report to MFCS when required  					
+ *
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)	
+VAR_INPUT
+	mVariableName		: STRING(System.CM_VARIABLENAME_STRINGLENGTH);	///Varaible Name AlphaNumeric string less than 20 Char
+	meCM_Index			: E_CM_Index;									/// Index Varaible Storage Array
+	mPosition			: STRING(NAME_LENGTH);		///Position Where method is called from
+	mCurrentValue		: STRING(Conveyor.GATHERED_DATA_VALUE);			/// Raw data Value to be logged 
+	meMode				: E_CM_Mode;									// mode of operation. 
+ 	pCM_Data			: POINTER TO ST_CM_Base;
+END_VAR
+VAR
+	mCurrentNumValue	: UDINT; // Conversion from String of Sample Value
+	mWriteIdx			: INT;	//Temp Write Indes for Buffer 
+	mReportSent			: BOOL; //Flag to Check Telegram Sucess
+	mEnable				: BOOL; // Enable Logging 
+	CycleTime			: TIME;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[// Check Input Index is Valid
+IF meCM_Index > E_BEGIN_VARIABLE AND 
+   meCM_Index < E_END_VARIABLE AND
+   pCM_Data <>0 THEN
+	
+	// Store Variable name
+	IF 	pCM_Data^.Settings[meCM_Index].mVariableName <> mVariableName THEN 
+		pCM_Data^.Settings[meCM_Index].mVariableName   := mVariableName;
+		pCM_Data^.Data[meCM_Index].Position 		   := F_ReduceToAlphaNumeric(mPosition); // Store Position 				
+		// Check Mode is Valid 
+		IF meMode > E_BEGIN_MODE AND meMode < E_END_MODE THEN
+			pCM_Data^.Data[meCM_Index].eMode := meMode;
+		ELSE
+			pCM_Data^.Data[meCM_Index].eMode := E_CM_Mode.DEFAULT;
+		END_IF
+ 	END_IF;
+	
+	// Get System Time
+	pCM_Data^.nCurrentTime := F_GetCurDcTaskTime64(); // Get current DC-Time (Task-Related)
+
+	//Initialise Max Report Timer
+	IF pCM_Data^.Settings[meCM_Index].Enable AND pCM_Data^.Data[meCM_Index].MaxReportTimer = 0 THEN 
+		pCM_Data^.Data[meCM_Index].MaxReportTimer		:= pCM_Data^.nCurrentTime + 1000000* TIME_TO_ULINT(pCM_Data^.Settings[meCM_Index].MaxReportTime);
+	END_IF;
+
+	
+	IF pCM_Data^.Settings[meCM_Index].Enable AND NOT pCM_Data^.Data[meCM_Index].LoggingActive THEN 
+		//Logging Started
+		pCM_Data^.Data[meCM_Index].LoggingActive := TRUE;
+	END_IF;
+	
+	
+	
+IF 	pCM_Data^.Data[meCM_Index].LoggingActive THEN 
+		// Set Sample time as Cycle time if too low. 
+		CycleTime:= DINT_TO_TIME(ActCycleTime/1_000);
+		IF pCM_Data^.Settings[meCM_Index].SampleTime < CycleTime THEN
+			 pCM_Data^.Settings[meCM_Index].SampleTime := CycleTime;
+		END_IF
+	
+		//Get write Index
+		mWriteIdx := pCM_Data^.Data[meCM_Index].WriteIdx;//Temp Write index 
+		(*****************************************************************************************************************
+		Capture Data 
+		******************************************************************************************************************)
+			
+		
+		CASE pCM_Data^.Data[meCM_Index].eMode OF
+			(*****************************************************************************************************************
+				Value is Alphanumeric 
+			******************************************************************************************************************)
+			E_CM_Mode.ALPHANUMERIC:  
+				 // If Value is a String Value the Threshold value is not used 
+				IF  pCM_Data^.nCurrentTime  >= pCM_Data^.Data[meCM_Index].SampleTimer  AND
+					pCM_Data^.Data[meCM_Index].WriteIdx <= System.CM_MAX_NUMBER_Of_ENTRIES THEN  
+					// Store Sample in Buffer 		
+					pCM_Data^.Data[meCM_Index].BUFFER[mWriteIdx].Value  			:= mCurrentValue ;
+					pCM_Data^.Data[meCM_Index].BUFFER[mWriteIdx].TimeStamp 		:= LEFT(DCTIME64_TO_STRING(pCM_Data^.nCurrentTime),System.CM_TIMESTAMP_MS_STRINGLENGTH);
+					pCM_Data^.Data[meCM_Index].BUFFER[mWriteIdx].Sequence		    := pCM_Data^.Data[meCM_Index].Sequence;			
+					pCM_Data^.Data[meCM_Index].WriteIdx							:= pCM_Data^.Data[meCM_Index].WriteIdx + 1;			
+				
+					// Update Sequence
+					IF 	pCM_Data^.Data[meCM_Index].Sequence < 9999 THEN
+						pCM_Data^.Data[meCM_Index].Sequence := pCM_Data^.Data[meCM_Index].Sequence+1;
+					ELSE
+						pCM_Data^.Data[meCM_Index].Sequence := 0;	
+					END_IF
+					// Reset Sample Time 
+					pCM_Data^.Data[meCM_Index].SampleTimer:= pCM_Data^.nCurrentTime +  1000000* TIME_TO_ULINT(pCM_Data^.Settings[meCM_Index].SampleTime);
+					
+				END_IF;		
+		  
+			(*****************************************************************************************************************
+						Default: Value is a Number
+			******************************************************************************************************************)	
+	  		E_CM_Mode.DEFAULT:
+				mCurrentNumValue := STRING_TO_UDINT(mCurrentValue);//Convert Value to UDINT and copare to +/- Threshold 
+				
+				IF pCM_Data^.nCurrentTime >= pCM_Data^.Data[meCM_Index].SampleTimer THEN // Check Sampletime 
+					// Check Threshold is met
+					IF  (	mCurrentNumValue 	>= pCM_Data^.Data[meCM_Index].PreviousValue + INT_TO_UINT(pCM_Data^.Settings[meCM_Index].Threshold) OR 
+							mCurrentNumValue	<= pCM_Data^.Data[meCM_Index].PreviousValue - INT_TO_UINT(pCM_Data^.Settings[meCM_Index].Threshold))AND
+							pCM_Data^.Data[meCM_Index].WriteIdx <= System.CM_MAX_NUMBER_Of_ENTRIES THEN  
+							// Store Sample in Buffer 
+							pCM_Data^.Data[meCM_Index].BUFFER[mWriteIdx].Value  			:= UDINT_TO_STRING(mCurrentNumValue) ;
+							pCM_Data^.Data[meCM_Index].BUFFER[mWriteIdx].TimeStamp 		:= LEFT(DCTIME64_TO_STRING(pCM_Data^.nCurrentTime),System.CM_TIMESTAMP_MS_STRINGLENGTH);
+							pCM_Data^.Data[meCM_Index].BUFFER[mWriteIdx].Sequence		    := pCM_Data^.Data[meCM_Index].Sequence;
+							pCM_Data^.Data[meCM_Index].PreviousValue						:= mCurrentNumValue;				
+							pCM_Data^.Data[meCM_Index].WriteIdx							:= pCM_Data^.Data[meCM_Index].WriteIdx + 1;
+							
+							// Update Sequence 
+							IF 	pCM_Data^.Data[meCM_Index].Sequence < 9999 THEN
+								pCM_Data^.Data[meCM_Index].Sequence	:= pCM_Data^.Data[meCM_Index].Sequence+1;
+							ELSE
+								pCM_Data^.Data[meCM_Index].Sequence 	:= 0;	
+							END_IF
+					END_IF;
+					// Reset Sample Time 
+					pCM_Data^.Data[meCM_Index].SampleTimer:= pCM_Data^.nCurrentTime +  1000000* TIME_TO_ULINT(pCM_Data^.Settings[meCM_Index].SampleTime);
+				END_IF;
+		END_CASE
+
+		(**********************************************************************************************************************
+		Send Report If Requested 
+		************************************************************************************************************************)
+		mReportSent := FALSE;
+	
+		IF   (pCM_Data^.nCurrentTime >= pCM_Data^.Data[meCM_Index].MaxReportTimer) AND //Max Report Time is Reached
+			 (pCM_Data^.Data[meCM_Index].MaxReportTimer >0) AND
+			 (pCM_Data^.Settings[meCM_Index].MaxReportTime>T#0MS)OR
+			  pCM_Data^.Data[meCM_Index].WriteIdx >= System.CM_MAX_NUMBER_Of_ENTRIES AND // Buffer is full 
+			  pCM_Data^.Data[meCM_Index].WriteIdx >0  THEN 
+			//Send Report.
+			mReportSent:=  F_ITC_SendGDR(
+								eChannelSrc			:= E_MFCS_Channel.CM, 
+								Position			:= pCM_Data^.Data[meCM_Index].Position,
+								Variable			:= pCM_Data^.Settings[meCM_Index].mVariableName,
+								NumberOfSets		:= pCM_Data^.Data[meCM_Index].WriteIdx, 
+								DataSet				:= pCM_Data^.Data[meCM_Index].BUFFER, 
+								eReturnCode			:= 0);
+				 
+				//Check if Report Failed to Send
+				IF NOT mReportSent AND NOT pCM_Data^.Settings[meCM_Index].Option THEN
+						pCM_Data^.Settings[meCM_Index].Enable := FALSE;
+						pCM_Data^.Settings[meCM_Index].ErrorCode := 1000;
+						F_ITC_SendDAR(
+							eChannelSrc		:= E_MFCS_Channel.CM , 
+							Position		:= pCM_Data^.Data[meCM_Index].Position, 
+							Code			:= 0, 
+							NumberOfSets	:= 1, 
+							SET				:= pCM_Data^.Settings, 
+							SetOffset		:= meCM_Index,
+							eErrorCode		:= 0 );	
+				END_IF
+			// Reset Max Report Time 	
+			 pCM_Data^.Data[meCM_Index].WriteIdx  			:= 0;// Reset Write Index after Report Sent.
+			 pCM_Data^.Data[meCM_Index].MaxReportTimer		:= pCM_Data^.nCurrentTime + 1000000* TIME_TO_ULINT(pCM_Data^.Settings[meCM_Index].MaxReportTime);
+
+		ELSIF NOT pCM_Data^.Settings[meCM_Index].Enable THEN // Stop logging Request from user. 
+			//Send Report.
+			mReportSent:=  F_ITC_SendGDR(
+								eChannelSrc				:= E_MFCS_Channel.CM, 
+								Position				:= pCM_Data^.Data[meCM_Index].Position,
+								Variable				:= pCM_Data^.Settings[meCM_Index].mVariableName,
+								NumberOfSets			:= pCM_Data^.Data[meCM_Index].WriteIdx, 
+								DataSet					:= pCM_Data^.Data[meCM_Index].BUFFER, 
+								eReturnCode				:= 0);			
+			// Reset
+			 pCM_Data^.Data[meCM_Index].WriteIdx  			:= 0;// Reset Write Index after Report Sent.
+			 pCM_Data^.Data[meCM_Index].MaxReportTimer		:= 0; // Reset Max Report Timer 
+			 pCM_Data^.Data[meCM_Index].Sequence 			:= 0; // Reset Sequence 
+			 pCM_Data^.Data[meCM_Index].SampleTimer 		:= 0; // Reset Sample timer 
+			 pCM_Data^.Data[meCM_Index].PreviousValue		:= 0; // Reset Last Value Logged
+			 pCM_Data^.Data[meCM_Index].LoggingActive 		:= FALSE;	 // Turn off Logging.
+		END_IF
+	END_IF;	
+END_IF
+
+M_ITC_DataAquisitionProcess := TRUE;
+		
+
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_ITC_GDQ" Id="{cb22a3fd-8137-4ad6-89dd-508fdc066314}">
+      <Declaration><![CDATA[METHOD M_ITC_GDQ : BOOL
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 404529 $
+ *	Revision date	:	$Date: 2018-04-23 08:21:38 +0200 (Mo., 23 Apr 2018) $
+ *	Last changed by	:	$Author: b7bolm $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/trunk/01_Software/BCF/BCF/JumpStart/20_Product/10_App/10_Base/10_Lib/FB_BaseObject.TcPOU $
+ *
+ *	Purpose			:	Process incoming GDQ Gathered Data Request 					
+ *
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)	
+VAR_INPUT
+	meChannelSrc		: E_MFCS_CHANNEL; // Number of the source 
+	mpData				: PVOID; // Data  pointer 
+	mLen				: UDINT; // Data length
+END_VAR
+
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[// Map data
+F_BlockCopy(
+	pSrc:= mpData, 
+	LenSrc:= mLen, 
+	pDest:= ADR(Base.CM.GDQ), 
+	LenDest:= SIZEOF(Base.CM.GDQ));
+// Call Process Method 	
+	M_ProcessGDQ(pCM_Data:=ADR(Base.CM),meChannelSrc := meChannelSrc);]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_ITC_ProcessMsg" Id="{de0f5401-78f3-4489-b671-b283113d5ed5}">
+      <Declaration><![CDATA[METHOD M_ITC_ProcessMsg : BOOL
+VAR_INPUT
+	meChannelSrc		: E_MFCS_CHANNEL; // Number of the source 
+	mMsgType			: INT; // Message type
+	mpData				: PVOID; // Data  pointer 
+	mLen				: UDINT; // Data length
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[(*
+This method serves as dummy to fullfil interface requirements.
+
+This is needed to keep independency between library product types.
+
+This method should be overwriten in each Rootclass underneath.
+
+*)]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_ITC_VIQ" Id="{5e4f7052-8722-4ba9-9017-253ab3773f79}">
+      <Declaration><![CDATA[METHOD PROTECTED M_ITC_VIQ : BOOL
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 404529 $
+ *	Revision date	:	$Date: 2018-04-23 08:21:38 +0200 (Mo., 23 Apr 2018) $
+ *	Last changed by	:	$Author: b7bolm $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/trunk/01_Software/BCF/BCF/JumpStart/20_Product/10_App/10_Base/10_Lib/FB_BaseObject.TcPOU $
+ *
+ *	Purpose			:	Process incoming VIQ - Visualization Info Request
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+VAR_INPUT
+	meChannelSrc		: E_MFCS_CHANNEL; // Number of the source 
+	mpData				: PVOID; // Data  pointer 
+	mLen				: UDINT; // Data length
+END_VAR
+
+VAR
+	mIdx,mIdx2			: INT; // Iterator
+	mCompString1		: STRING(System.KEY_LENGTH);
+	mCompString2		: STRING(System.KEY_LENGTH);
+	mNumberOfUsedKeys	: INT; 
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[// Initialize 
+M_ITC_VIQ := TRUE;
+
+// Map data
+F_BlockCopy(
+	pSrc:= mpData, 
+	LenSrc:= mLen, 
+	pDest:= ADR(Base.VIQ), 
+	LenDest:= SIZEOF(Base.VIQ));
+
+// Clear preparation data struct
+MEMSET(destAddr := ADR(Base.VIR_Data.PrepData), fillByte := 0, n := SIZEOF(Base.VIR_Data.PrepData));
+
+(*
+If all used variables were requested
+NumberOfKeys = 0
+*)
+IF Base.VIQ.NumberOfKeys = 0 THEN
+	// Send all used (Notified by M_VIR_Update)
+	mNumberOfUsedKeys := Base.VIR_Data.NumberOfUsedKeys;
+	Base.VIR_Data.PrepData := Base.VIR_Data.Data;
+	
+(*
+Otherwise only specific keys were requested.
+Search and report them.
+*)
+ELSE
+	mNumberOfUsedKeys := Base.VIQ.NumberOfKeys;
+	FOR mIdx := 1 TO mNumberOfUsedKeys BY 1 DO
+		// Store search key and search
+		Base.VIR_Data.PrepData[mIdx].Key := Base.VIQ.Keys[mIdx];	
+	
+		FOR mIdx2 := 1 TO System.NUMBER_OF_KEYVALUE_PAIRS_VIR DO
+			(* 
+			Prepare string to compare - Remove blanks, all to upper case
+			*)
+			mCompString1 := F_ToUCase(F_ReduceToAlphaNumeric(InputString:= Base.VIQ.Keys[mIdx]));
+			mCompString2 := F_ToUCase(Base.VIR_Data.Data[mIdx2].Key);
+			// If a key matches store current value otherwise -1 to inform key not found
+			IF mCompString1 = mCompString2 THEN
+				Base.VIR_Data.PrepData[mIdx].Value := Base.VIR_Data.Data[mIdx2].Value;
+				EXIT;
+			ELSIF mIdx2 >= System.NUMBER_OF_KEYVALUE_PAIRS_VIR THEN
+				Base.VIR_Data.PrepData[mIdx].Value := '-1';
+			END_IF
+		END_FOR
+	END_FOR
+END_IF
+
+// Send report
+F_ITC_SendVIR(
+	eChannelSrc	:= E_MFCS_Channel.SPOC,
+	Position := F_ReduceToAlphaNumeric(Base.VIQ.Position),
+	NumOfKeyValuePairs := mNumberOfUsedKeys,
+	KeyValuePairs := Base.VIR_Data.PrepData);]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_ProcessDAQ" Id="{39004f9a-d781-4953-ae26-2c80d4bf5bd2}">
+      <Declaration><![CDATA[METHOD M_ProcessDAQ : BOOL
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 404529 $
+ *	Revision date	:	$Date: 2018-04-23 08:21:38 +0200 (Mo., 23 Apr 2018) $
+ *	Last changed by	:	$Author: b7bolm $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/trunk/01_Software/BCF/BCF/JumpStart/20_Product/10_App/10_Base/10_Lib/FB_BaseObject.TcPOU $
+ *
+ *	Purpose			:	Process incoming DAQ Data Aquisition Request 					
+ *
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)	
+VAR_INPUT
+	meChannelSrc		: E_MFCS_CHANNEL; // Number of the source 
+ 	pCM_Data			: POINTER TO ST_CM_Base;
+END_VAR
+VAR
+	mCompString1		: STRING(System.CM_VARIABLENAME_STRINGLENGTH);
+	mCompString2		: STRING(System.CM_VARIABLENAME_STRINGLENGTH);
+	meCM_Index			: E_CM_Index;	/// Index Data Storage Array
+	mIdx2				: INT; //Iterator 
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+(*********************************************************************************
+Switch OF ALL Logging if Requested. 	
+**********************************************************************************)	
+IF pCM_Data^.DAQ.Code = 1 THEN
+	FOR meCM_Index:= E_BEGIN_VARIABLE+1 TO E_END_VARIABLE -1 DO 
+		IF pCM_Data^.Settings[meCM_Index].Enable THEN
+			pCM_Data^.Settings[meCM_Index].Enable := FALSE; // Turn Off Logging 
+		END_IF;
+	END_FOR
+END_IF
+
+
+(*********************************************************************************	
+Process Sets Data 
+**********************************************************************************)	
+IF  pCM_Data^.DAQ.NumberOfSets >0 AND pCM_Data^.DAQ.Code = 0 THEN	//Telegram contains "Set" Parameters 	 
+	FOR	mIdx2:= 1 TO pCM_Data^.DAQ.NumberOfSets 	DO				//Itereate though Recieved Telgram Sets
+		FOR meCM_Index:= E_BEGIN_VARIABLE+1 TO E_END_VARIABLE -1 DO // Iterate through Stored PLC data 
+			mCompString1:= F_ToUCase(F_ReduceToAlphaNumeric(pCM_Data^.Settings[meCM_Index].mVariableName));
+			mCompString2:= F_ToUCase(F_ReduceToAlphaNumeric(pCM_Data^.DAQ.Set[mIdx2].mVariableName));
+			IF mCompString1 = mCompString2 THEN 
+				 pCM_Data^.Settings[meCM_Index]		:= pCM_Data^.DAQ.Set[mIdx2]; // Write Data to Storage location 
+			END_IF			
+		END_FOR;	
+	END_FOR;
+END_IF;
+
+(*********************************************************************************
+Send Data Aquisitiion Report
+**********************************************************************************)	
+FOR meCM_Index:= E_BEGIN_VARIABLE+1 TO E_END_VARIABLE -1 DO 
+	IF	pCM_Data^.Settings[meCM_Index].mVariableName =''  THEN 
+		EXIT;
+	END_IF	
+END_FOR;
+
+F_ITC_SendDAR(
+			eChannelSrc		:= meChannelSrc, 
+			Position		:= pCM_Data^.DAQ.Position, 
+			Code			:= pCM_Data^.DAQ.Code, 
+			NumberOfSets	:= meCM_Index-1, 
+			SET				:= pCM_Data^.Settings, 
+			SetOffset		:= E_CM_Index.E_BEGIN_VARIABLE,
+			eErrorCode		:= E_ErrorConv.NO_ERROR_CODE );	
+
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_ProcessGDQ" Id="{66d08a05-43df-4ca7-b4ef-32fb3f2693a1}">
+      <Declaration><![CDATA[METHOD M_ProcessGDQ : BOOL
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 404529 $
+ *	Revision date	:	$Date: 2018-04-23 08:21:38 +0200 (Mo., 23 Apr 2018) $
+ *	Last changed by	:	$Author: b7bolm $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/trunk/01_Software/BCF/BCF/JumpStart/20_Product/10_App/10_Base/10_Lib/FB_BaseObject.TcPOU $
+ *
+ *	Purpose			:	Process incoming GDQ Gathered Data Request 					
+ *
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)	
+VAR_INPUT
+	meChannelSrc		: E_MFCS_CHANNEL; // Number of the source 
+ 	pCM_Data			: POINTER TO ST_CM_Base;
+END_VAR
+VAR
+	mCompString1		: STRING(System.CM_VARIABLENAME_STRINGLENGTH);
+	mCompString2		: STRING(System.CM_VARIABLENAME_STRINGLENGTH);
+	meCM_Index			: E_CM_Index;/// Index Data Storage Array
+	mReportSent			: BOOL;	//Flag to Check Telegram Sucess
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[	
+mReportSent  := FALSE;
+(*********************************************************************************	
+Process Telegram
+**********************************************************************************)	
+FOR meCM_Index:= E_BEGIN_VARIABLE+1 TO E_END_VARIABLE -1 DO  //Iterate through PLC Storage location
+	mCompString1:= F_ToUCase(F_ReduceToAlphaNumeric(pCM_Data^.Settings[meCM_Index].mVariableName));
+	mCompString2:= F_ToUCase(F_ReduceToAlphaNumeric(pCM_Data^.GDQ.Variable));
+	IF mCompString1 = mCompString2 AND // Compare Names 
+		pCM_Data^.Data[meCM_Index].LoggingActive THEN 
+		// Send Gathered Data Report 
+		mReportSent:=  F_ITC_SendGDR(
+									eChannelSrc				:= meChannelSrc, 
+									Position				:= pCM_Data^.Data[meCM_Index].Position,
+									Variable				:= pCM_Data^.Settings[meCM_Index].mVariableName,
+									NumberOfSets			:= pCM_Data^.Data[meCM_Index].WriteIdx, 
+									DataSet					:= pCM_Data^.Data[meCM_Index].BUFFER, 
+									eReturnCode				:= 0);				
+							
+		//Check if Report Failed to Send
+		IF NOT mReportSent AND NOT Base.CM.Settings[meCM_Index].Option THEN
+			pCM_Data^.Settings[meCM_Index].Enable := FALSE; //  Reset Enable 
+			pCM_Data^.Settings[meCM_Index].ErrorCode := 1000;
+			//Send Report with Error Code.
+			F_ITC_SendDAR(
+								eChannelSrc		:= meChannelSrc , 
+								Position		:= pCM_Data^.Data[meCM_Index].Position, 
+								Code			:= 0, 
+								NumberOfSets	:= 1, 
+								SET				:= pCM_Data^.Settings, 
+								SetOffset		:= meCM_Index,
+								eErrorCode		:= 0 );																									
+		END_IF
+		
+		// Update Index and Timer
+		pCM_Data^.Data[meCM_Index].WriteIdx  			:= 0;// Reset Write Index after Report Sent.
+		pCM_Data^.Data[meCM_Index].MaxReportTimer		:= pCM_Data^.nCurrentTime + 1000000* TIME_TO_ULINT(pCM_Data^.Settings[meCM_Index].MaxReportTime);
+		EXIT;											
+	END_IF;
+END_FOR
+
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_VIR_Update" Id="{8d43a02c-9261-4c10-9e4f-4bcc4778fe55}">
+      <Declaration><![CDATA[METHOD M_VIR_Update : BOOL
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 404529 $
+ *	Revision date	:	$Date: 2018-04-23 08:21:38 +0200 (Mo., 23 Apr 2018) $
+ *	Last changed by	:	$Author: b7bolm $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/trunk/01_Software/BCF/BCF/JumpStart/20_Product/10_App/10_Base/10_Lib/FB_BaseObject.TcPOU $
+ *
+ *	Purpose			:	Update Visualization report.
+ *						This method controls sending of viszualization reports.
+ *						A report will be sent if a data change happened and its 
+ *						allowed to send a new report. 
+ *						As a reason that this is a visualization report - the allowed
+ *						sending intervall is limited hard coded.
+ *						This Method needs to be called if VIR/VIQ are requested.
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+VAR_INPUT
+	mPosition			: STRING(System.NAME_LENGTH); // Position name
+	mNumberOfValues		: INT; // Number of used values 
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[// Init
+M_VIR_Update := FALSE;
+
+Base.VIR_Data.NumberOfUsedKeys := mNumberOfValues;
+
+// Validate inputs
+IF mNumberOfValues > 0 AND
+   mNumberOfValues <= System.NUMBER_OF_KEYVALUE_PAIRS_VIR THEN
+
+	// Update current system time
+	Base.fbGetSystemTime();
+	
+	IF NOT Base.VIR_Data.SendingAllowed THEN
+		IF Base.VIR_Data.Overflow THEN
+			// Wait until its allowed to send a new request
+			IF Base.fbGetSystemTime.timeLoDW - 4294967296 > Base.VIR_Data.NextSendTimeStamp THEN
+				Base.VIR_Data.SendingAllowed := TRUE;
+				Base.VIR_Data.Overflow := FALSE;
+			END_IF
+		// Wait until its allowed to send a new request
+		ELSIF Base.fbGetSystemTime.timeLoDW > Base.VIR_Data.NextSendTimeStamp THEN
+			Base.VIR_Data.SendingAllowed := TRUE;
+		END_IF
+	ELSE
+		// Only send if change was detected
+		IF Base.VIR_Data.ChangeDetected THEN
+			// Send report
+			F_ITC_SendVIR(
+				eChannelSrc	:= 0, 
+				Position:= F_ReduceToAlphaNumeric(mPosition), 
+				NumOfKeyValuePairs:= mNumberOfValues, 
+				KeyValuePairs:= Base.VIR_Data.Data);
+				
+			// Reset values
+			Base.VIR_Data.ChangeDetected := FALSE;
+			Base.VIR_Data.SendingAllowed := FALSE;
+			
+			// Calculate next time stamp
+			Base.VIR_Data.TimeStep := Base.VIR_SEND_CLOCK * 10000000;
+			Base.VIR_Data.NextSendTimeStamp := Base.fbGetSystemTime.timeLoDW + Base.VIR_Data.TimeStep;
+		
+			IF Base.VIR_Data.NextSendTimeStamp < Base.fbGetSystemTime.timeLoDW THEN
+				Base.VIR_Data.Overflow := TRUE;
+			END_IF
+		END_IF
+	END_IF
+	
+	// Process successful
+	M_VIR_Update := TRUE;
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_VIR_Value" Id="{70a97641-3207-437d-a5f5-111b5c4028b9}">
+      <Declaration><![CDATA[METHOD M_VIR_Value : BOOL
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 404529 $
+ *	Revision date	:	$Date: 2018-04-23 08:21:38 +0200 (Mo., 23 Apr 2018) $
+ *	Last changed by	:	$Author: b7bolm $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/trunk/01_Software/BCF/BCF/JumpStart/20_Product/10_App/10_Base/10_Lib/FB_BaseObject.TcPOU $
+ *
+ *	Purpose			:	Update Visualization report.
+ *						This method is used to handle a variable which needs to be reported
+ *						by visualization report.
+ *						This method handles only recording - method M_VIR_Update needs
+ *						to be called to handle the communication.					
+ *
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+VAR_INPUT
+	mIndex			: INT; // Used Index
+	mKey			: STRING(System.KEY_LENGTH); // Key for value
+	mValue			: STRING(System.VALUE_LENGTH); // Current Value as String
+	mEventTrigger	: BOOL; // Request on value change (Otherwise polling over VIQ)
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[// Init
+M_VIR_Value := FALSE;
+
+// Validate inputs
+IF mIndex > 0 AND
+   mIndex <= System.NUMBER_OF_KEYVALUE_PAIRS_VIR AND
+   LEN(mKey) > 0 AND
+   LEN(mValue) > 0 THEN
+   // Store key
+   	Base.VIR_Data.Data[mIndex].Key := mKey;
+
+	// Compare value
+	IF MEMCMP(ADR(mValue), ADR(Base.VIR_Data.Data[mIndex].Value),INT_TO_UDINT(LEN(Base.VIR_Data.Data[mIndex].Value))) <> 0 OR 
+       LEN(Base.VIR_Data.Data[mIndex].Value) <> LEN(mValue) THEN
+		// Update value, set flag for report
+		Base.VIR_Data.Data[mIndex].Value := mValue;
+		
+		// Mark change
+		IF NOT Base.VIR_Data.ChangeDetected THEN
+			Base.VIR_Data.ChangeDetected := mEventTrigger;
+		END_IF
+	END_IF
+
+	// Process successful
+	M_VIR_Value := TRUE;
+END_IF
+
+]]></ST>
+      </Implementation>
+    </Method>
+    <ObjectProperties>
+      <XmlArchive>
+        <Data>
+          <o xml:space="preserve" t="UMLStereoTypeContainerObject">
+            <v n="IsType" t="UMLType">BaseArea</v>
+            <v n="Stereotype">""</v>
+            <d n="Stereotypes" t="Hashtable" />
+          </o>
+        </Data>
+        <TypeList>
+          <Type n="Hashtable">System.Collections.Hashtable</Type>
+          <Type n="String">System.String</Type>
+          <Type n="UMLStereoTypeContainerObject">{30250973-b110-4e31-b562-c102e042dca4}</Type>
+          <Type n="UMLType">{0197b136-405a-42ee-bb27-fd08b621d0cf}</Type>
+        </TypeList>
+      </XmlArchive>
+    </ObjectProperties>
+  </POU>
+</TcPlcObject>

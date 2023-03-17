@@ -1,0 +1,61 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <POU Name="FB_GroupCompositionCustomized" Id="{e2662109-5228-4f1c-957a-9af8b05ec162}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK FB_GroupCompositionCustomized
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[
+	  //Example of implementation
+(*
+IF(NOT ProBoxSystem.EMULATION_ENABLED) THEN
+	
+{region "MONITOR_FUSE_AC"}
+	//Group 001
+	IF NOT HardwareMapping.I_AK11_FuseAC (* OR NOT HardwareMapping.I_AK11_FuseDC*) THEN 
+		// Set error
+		F_SetError(	
+			ErrorType	:= E_ErrorType.ERROR,
+			ErrorParam	:= 'Circuit Break AC AK11 error',
+			ErrorMsg	:= E_ErrorConv.CONTROL_VOLTAGE,
+			ErrorData	:= Groups.fbSG_001.GroupData.ErrorData.ErrorDataSet[5]);		
+	END_IF
+		
+{endregion}
+
+{region "MONITOR_ASI_BUS"}
+
+	fbSG_001.HW_Inputs.Diag.ASI_BusConfigError						:=AK11_ASI.I.A_1_15.CONF_ERR OR AK11_ASI.I.A_1_15.CONF_ERR;
+	fbSG_002.HW_Inputs.Diag.ASI_BusConfigError						:=AK12_ASI.I.A_1_15.CONF_ERR OR AK12_ASI.I.A_1_15.CONF_ERR;
+{endregion}
+
+{region "MONITOR_ETHERCAT_DEVICES"}
+
+//	Check IF the Hardware is in the correct state IF NOT the set an error on a group level. Device state 8 = OP, Operational
+
+	//Group 001
+	FOR idx := 10 TO 15 DO			 
+		 Groups.fbSG_001.M_SetEtherCatError(idx,Subsystem.fbSubsystem.HW_Inputs);		
+	END_FOR
+	
+	//Group 002
+	FOR idx := 20 TO 25 DO			 
+		 Groups.fbSG_002.M_SetEtherCatError(idx,Subsystem.fbSubsystem.HW_Inputs);		
+	END_FOR
+	
+	//Group 003
+	FOR idx := 30 TO 35 DO			 
+		 Groups.fbSG_003.M_SetEtherCatError(idx,Subsystem.fbSubsystem.HW_Inputs);		
+	END_FOR
+		 
+{endregion}
+
+END_IF
+*)
+]]></ST>
+    </Implementation>
+    <LineIds Name="FB_GroupCompositionCustomized">
+      <LineId Id="3" Count="46" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

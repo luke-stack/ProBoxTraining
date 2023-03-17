@@ -1,0 +1,111 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4020.6">
+  <POU Name="FB_Timer" Id="{334968b1-8e57-49db-8e2e-1242d402f154}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK FB_Timer
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 404529 $
+ *	Revision date	:	$Date: 2018-04-23 08:21:38 +0200 (Mo., 23 Apr 2018) $
+ *	Last changed by	:	$Author: b7bolm $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/trunk/01_Software/BCF/BCF/JumpStart/30_Toolbox/13_TimerCounter/FB_Timer.TcPOU $
+ *
+ *	Purpose			:	This function allows to 
+ *						A rising edge at the "Start" input causes a rising edge at output "TimeOut" 
+ *						after the time PresetTime has expired. 
+ *						A rising edge at the "Hold" input stops the timer. The timer continues after 
+ *      				a falling edge at the "Hold" input.
+ *      				The actual elapsed time is provided by the output "ElapsedTime"
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+VAR_INPUT
+	IN			:BOOL; (* Start Timer with rising edge*)
+	Hold			:BOOL; (* Hold Timer with rising edge, continue timing with falling edge *)
+	PT			:TIME; (* Time to pass, before Output "TimeOut" is set *)
+
+END_VAR
+
+VAR_OUTPUT
+	Q			:BOOL; (* Time expired *)
+    	ET 			:TIME; (* Time elapsed *)
+END_VAR
+
+VAR
+	LastIN			:BOOL; (* Trigger detection for start signal *)
+	LastHold		:BOOL; (* Trigger detection for hold signal *)
+	StartTime		:TIME; (* Time stamp which is used to calculate the elapsed time *)
+	HoldTime		:TIME; (* Time elapsed during the hold state *)
+	StartHoldTime		:TIME; (* Time stamp which is used to calculate the hold time *)
+END_VAR]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[IF IN THEN
+	(* Detect start trigger an preset timer values at timer start *)
+	IF NOT LastIN AND IN THEN
+		startTime := TIME();
+	END_IF
+
+	(* Detect hold trigger and save actual time  *)
+	IF NOT lastHold AND Hold  THEN
+		StartHoldTime := TIME();
+	END_IF
+
+	(* Detect hold end trigger and move startTime by elapsed holdtime *)
+	IF lastHold AND NOT hold THEN
+		HoldTime := TIME() - StartHoldtime;
+		startTime := startTime + HoldTime;
+	END_IF
+
+	IF NOT Hold AND NOT Q THEN
+		(* Update elapsed time *)
+		ET := TIME() - startTime;
+
+		IF ET >= PT THEN
+			Q := TRUE;
+		ELSE
+			Q := FALSE;
+		END_IF
+	END_IF
+
+	LastHold  := Hold;
+
+ELSE
+	(* Initialize values *)
+	ET 		:= T#0s;
+	Q 		:= FALSE;
+	StartTime	:= T#0s;
+	HoldTime 	:= T#0s;
+	StartHoldtime 	:= T#0s;
+	LastIN		:= FALSE;
+	LastHold	:= FALSE;
+END_IF
+
+LastIN := IN;]]></ST>
+    </Implementation>
+    <ObjectProperties>
+      <XmlArchive>
+        <Data>
+          <o xml:space="preserve" t="UMLStereoTypeContainerObject">
+            <v n="IsType" t="UMLType">BaseArea</v>
+            <v n="Stereotype">""</v>
+            <d n="Stereotypes" t="Hashtable" />
+          </o>
+        </Data>
+        <TypeList>
+          <Type n="Hashtable">System.Collections.Hashtable</Type>
+          <Type n="String">System.String</Type>
+          <Type n="UMLStereoTypeContainerObject">{30250973-b110-4e31-b562-c102e042dca4}</Type>
+          <Type n="UMLType">{0197b136-405a-42ee-bb27-fd08b621d0cf}</Type>
+        </TypeList>
+      </XmlArchive>
+    </ObjectProperties>
+  </POU>
+</TcPlcObject>

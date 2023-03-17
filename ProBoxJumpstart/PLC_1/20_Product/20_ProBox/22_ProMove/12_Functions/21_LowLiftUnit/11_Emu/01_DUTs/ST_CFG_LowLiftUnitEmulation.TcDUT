@@ -1,0 +1,34 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.12">
+  <DUT Name="ST_CFG_LowLiftUnitEmulation" Id="{15554f88-0dda-403c-aff3-7c4f15b765b2}">
+    <Declaration><![CDATA[TYPE ST_CFG_LowLiftUnitEmulation :
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision:  $
+ *	Revision date	:	$Date:  $
+ *	Last changed by	:	$Author: q8hedls $
+ *	URL				:	$URL:  $
+ *
+ *	Purpose			:	Scanner emulation configuration
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+STRUCT
+	Position_Max_Down				: INT := 0;
+	Position_Max_Up	  				: INT := 1000;	
+	Position_Down					: INT := 100;
+	Position_Up	  					: INT := 900;
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

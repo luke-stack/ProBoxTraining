@@ -1,0 +1,34 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.4">
+  <DUT Name="ST_CFG_ProBoxStraightTransport" Id="{3924c671-97c2-4442-85f3-f9fd230abe4e}">
+    <Declaration><![CDATA[TYPE ST_CFG_ProBoxStraightTransport :
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 417197 $
+ *	Revision date	:	$Date: 2018-11-15 16:09:16 +0100 (tor, 15 nov 2018) $
+ *	Last changed by	:	$Author: q8aberh $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/ProMove/02_Controls/ProBox/03_Implementation/01_DevelopmentProject/01_Software/ProBox_COE/ProBox_DevProj_v1.0/PLC_1/20_Product/10_App/12_E_Functions/11_ProBox/11_StraightTransport/10_App/01_DUTs/ST $
+ *
+ *	Purpose			:	Specific configuration for DummyFunction
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				18.04.2018		PkF					First version of the configuration for ProBox
+ *
+ **************************************************************************************)
+STRUCT
+	HW_InputInverted 			: ST_HW_InputsProBoxStraightTransport;
+	Orientation_Axis_12			: E_Axis_Orientation := E_Axis_Orientation.Element_12; // Orientation of function axis on element	
+	TwoSensorFunction			: BOOL; // Set to true of two sensors are used on the function (Slug/Deslug)	
+	ExtendedRun					: ST_CFG_ExtendedRun;
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

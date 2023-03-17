@@ -1,0 +1,63 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4020.6">
+  <POU Name="FB_MotorControlEmulation" Id="{03e0141c-e6da-4617-9574-1c7a50db4600}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK FB_MotorControlEmulation
+VAR_INPUT
+	Run_fw 			: BOOL; // Drive run command forward
+	Run_bw 			: BOOL; // Drive run command backward
+	CommandSpeed	: WORD; // Command speed
+	SpeedRatio		: REAL; // Speed ratio
+END_VAR
+
+VAR_OUTPUT
+	DriveRun_fw		: BOOL; // Drive run forward
+	DriveRun_bw		: BOOL; // Drive run backward
+	MotorUnitOK 	: BOOL; // Motor starter is ok	
+	EncoderValue_fw	: WORD; // Encoder value forward
+	EncoderValue_bw	: WORD; // Encoder value backward	
+	Speed			: INT; // Speed [mm/s]
+END_VAR
+VAR
+	fbEncoder_fw	: FB_Encoder; // Encoder forward
+	fbEncoder_bw	: FB_Encoder; // Encoder backward	
+	fbDelayRun_fw	: TON; // Delay motor on forward
+	fbDelayRun_bw	: TON; // Delay motor on backward
+	DriveRunning_fw	: BOOL;
+	DriveRunning_bw	: BOOL;	
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[
+// Call delay timer
+fbDelayRun_fw(IN := Run_fw, PT := T#50MS);
+fbDelayRun_bw(IN := Run_bw, PT := T#50MS);
+
+// Call encoder service
+fbEncoder_fw(
+	Run			:= DriveRunning_fw, 
+	Speed		:= Speed, 
+	Resolution	:= 1);
+	
+fbEncoder_bw(
+	Run			:= DriveRunning_bw, 
+	Speed		:= Speed, 
+	Resolution	:= 1);	
+
+// Return values
+EncoderValue_fw := fbEncoder_fw.EncoderValue;
+DriveRunning_fw := fbDelayRun_fw.Q;
+
+EncoderValue_bw := fbEncoder_bw.EncoderValue;
+DriveRunning_bw := fbDelayRun_bw.Q;
+
+MotorUnitOK := TRUE;
+
+// Check value
+IF SpeedRatio <> 0 THEN
+	Speed := REAL_TO_INT(CommandSpeed / SpeedRatio);
+ELSE
+	Speed := 0;
+END_IF]]></ST>
+    </Implementation>
+  </POU>
+</TcPlcObject>

@@ -1,0 +1,14 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.4">
+  <DUT Name="ST_ScannerLabelData" Id="{dd346870-efdc-4c69-8040-207176023126}">
+    <Declaration><![CDATA[TYPE ST_ScannerLabelData :
+STRUCT
+	DataReceived		: BOOL; //Flag set when new data received
+	Label				: STRING(GVL_SickScanner.MAX_DATA_LENGTH);	//the string received from scanner
+	LabelLength			: UINT;	//The length of the string received.
+	DebugPrint			: BOOL; //Set to true to print the data received from scanner
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

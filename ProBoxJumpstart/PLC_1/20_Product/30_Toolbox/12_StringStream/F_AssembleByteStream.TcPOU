@@ -1,0 +1,87 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4020.6">
+  <POU Name="F_AssembleByteStream" Id="{dbb89632-b2e7-4601-a7d6-9d0c488a629d}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION F_AssembleByteStream  : BOOL
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 404529 $
+ *	Revision date	:	$Date: 2018-04-23 08:21:38 +0200 (Mo., 23 Apr 2018) $
+ *	Last changed by	:	$Author: b7bolm $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/trunk/01_Software/BCF/BCF/JumpStart/30_Toolbox/12_StringStream/F_AssembleByteStream.TcPOU $
+ *
+ *	Purpose			:	Adds a String to an Address at position WritePointer.
+ *						WritePointer starts at 0. After execution WritePointer returns
+ *						WritePointer + Length of added data. This could be used to 
+ *						call this function again to add a new data string directly
+ *						after the last one.
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+VAR_INPUT
+	pSrc				: PVOID; // Address of source structure
+	SrcLen				: UDINT; // Maximum size of source structure
+	pDest				: PVOID; // Address of destination structure
+	DestLen				: UDINT; // Maximum size of destination structure
+END_VAR
+VAR_IN_OUT
+	WritePointer		: UDINT; // Address where the string should be added starting by 0, Returns Address + Length of added data 
+END_VAR]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[
+// Validate inputs
+IF WritePointer >= 0 AND
+   WritePointer < DestLen AND
+   DestLen > 0 AND
+   pDest > 0 AND
+   SrcLen > 0 THEN
+   
+   // Check if there is enough space to copy
+   IF SrcLen <= DestLen - WritePointer THEN
+		// Copy input stream to position (WriterPointer) of an address
+		F_BlockCopy(
+			pSrc := pSrc,
+			LenSrc := SrcLen,
+			pDest := pDest + WritePointer,
+			LenDest := DestLen - WritePointer);
+	
+		// Update WritePointer 
+		WritePointer := WritePointer + SrcLen;
+		// Operation successful
+		F_AssembleByteStream := TRUE;
+	ELSE
+		// Operation failed
+		F_AssembleByteStream := FALSE;
+	END_IF
+ELSE
+	// Operation failed
+	F_AssembleByteStream := FALSE;
+END_IF]]></ST>
+    </Implementation>
+    <ObjectProperties>
+      <XmlArchive>
+        <Data>
+          <o xml:space="preserve" t="UMLStereoTypeContainerObject">
+            <v n="IsType" t="UMLType">BaseArea</v>
+            <v n="Stereotype">""</v>
+            <d n="Stereotypes" t="Hashtable" />
+          </o>
+        </Data>
+        <TypeList>
+          <Type n="Hashtable">System.Collections.Hashtable</Type>
+          <Type n="String">System.String</Type>
+          <Type n="UMLStereoTypeContainerObject">{30250973-b110-4e31-b562-c102e042dca4}</Type>
+          <Type n="UMLType">{0197b136-405a-42ee-bb27-fd08b621d0cf}</Type>
+        </TypeList>
+      </XmlArchive>
+    </ObjectProperties>
+  </POU>
+</TcPlcObject>

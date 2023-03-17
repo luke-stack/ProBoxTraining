@@ -1,0 +1,3018 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.4">
+  <POU Name="FB_TraceHandler" Id="{3890a7ed-527c-4f6c-96a1-16982dfd8078}" SpecialFunc="None">
+    <Declaration><![CDATA[// writes traces into files, deletes too old files and monitors hdd usage
+{attribute 'reflection'}
+FUNCTION_BLOCK PUBLIC FB_TraceHandler IMPLEMENTS I_TraceHandler
+(**************************************************************************************
+ *  Application     : BoxControl Framework
+ *  Revision        : $Revision: 404529 $
+ *  Revision date   : $Date: 2020-10-20 08:21:38 +0200 (Mo., 20 Oct 2020) $
+ *  Last changed by : $Author: b7lipim $
+ *  URL             : $URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/trunk/01_Software/BCF/BCF/JumpStart/20_Product/10_App/11_Com/10_Lib/FB_DebugMsg.TcPOU $
+ *
+ *  Purpose :	writes (debug) messages into files in subfolders
+ *            deletes all subfolders including files older than 7d (according to name, not date)
+ *            monitors hdd usage, reports it via debug message and surpress further writing if 80% is exceeded
+ *
+ * ------------------------------------------------------------------------------------
+ *  Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ *  VERSION DATE         INITIALS     DESCRIPTION
+ *  0.0     DD.MM.YYYY   (name)       (explain customized modifications)
+ *
+ **************************************************************************************)
+
+(********************************************************************************************************************************)
+VAR_STAT CONSTANT
+  SHELF_LIFE            : TIME                             := T#7D;      // duration until old folders will be deleted
+  (*----------------------------------------------------------------------------------------------------------------------------*)
+  MAX_FILEOPEN_TIME     : TIME                             := T#100MS;   // maximum file open time until reopen/flush
+  LOCKTIME              : TIME                             := T#100MS;   // inhibit time between write attemts
+  (*----------------------------------------------------------------------------------------------------------------------------*)
+  BUFFER_SIZE           : WORD                             := 8192;      // size of internal file write buffer
+  FIFO_SIZE             : WORD                             := 1024;      // size of internal dynamic fifo to temporary store trace entries
+  (*----------------------------------------------------------------------------------------------------------------------------*)
+  HDD_WARNING_LEVEL     : BYTE                             := 60;        // warning if hdd usage exceeds this percentage
+  HDD_ERROR_LEVEL       : BYTE                             := 80;        // error and stop writing if hdd usage exceeds this percentage
+END_VAR
+
+(********************************************************************************************************************************)
+VAR
+  {attribute 'instance-path'}
+  {attribute 'no_init'}
+  _Instance             : STRING[255]                      := '';         // instance path
+  (*----------------------------------------------------------------------------------------------------------------------------*)
+  _Enable               : BOOL                             := FALSE;      // HI = writing/deleting enabled
+  _MaxFileSizeKB        : WORD                             := 10_240;     // maximum file size in kilobytes
+  _Folder               : A_TracePath                      := '';         // working folder without ending '/'
+  (*-- duration ----------------------------------------------------------------------------------------------------------------*)
+  _StartSystemTick      : ULINT                            := 0;          // system tick at execution start
+  _GetSystemTicks       : GETCPUCOUNTER;                                  // Gets the system time in 100ns ticks  
+  (*-- general -----------------------------------------------------------------------------------------------------------------*)
+  _GetHostName          : FB_GetHostName()                 := (sNetID:= '', tTimeout:= DEFAULT_ADS_TIMEOUT);
+  _GetAdaptersInfo      : FB_GetAdaptersInfo()             := (sNetID:= '', tTimeout:= DEFAULT_ADS_TIMEOUT);
+  _GetDeviceIdentificationEx : FB_GetDeviceIdentificationEx:= (sNetID:= '', tTimeout:= DEFAULT_ADS_TIMEOUT);
+  _MainFolder           : A_TracePath                      := '';         // working folder ending without '/'
+  _Active               : BOOL                             := FALSE;      // HI = enable and working folder exists
+  _Opened               : BOOL                             := FALSE;      // HI = file is currently open
+  _PlcRestarted         : BOOL                             := TRUE;       // HI = add separation lines to file
+  _MillisecondsLast		: WORD                             := 16#FFFF;    // system clock monitoring
+  _Text                 : STRING[255]                      := '';         // own debug message
+  (*-- checking work folder - states -------------------------------------------------------------------------------------------*)
+  _CheckState           : E_TraceCheckStates               := E_TraceCheckStates.Initialization;
+  _CheckStateLast       : E_TraceCheckStates               := E_TraceCheckStates.Initialization;
+  _CheckTime            : TIME                             := T#0S;
+  (*-- writing files - states --------------------------------------------------------------------------------------------------*)
+  _WriteState           : E_TraceWriteStates               := E_TraceWriteStates.Initialization;
+  _WriteStateLast       : E_TraceWriteStates               := E_TraceWriteStates.Initialization;
+  _WriteTime            : TIME                             := T#0S;
+  (*-- deleting files - states -------------------------------------------------------------------------------------------------*)
+  _DeleteState          : E_TraceDeleteStates              := E_TraceDeleteStates.Initialization;
+  _DeleteStateLast      : E_TraceDeleteStates              := E_TraceDeleteStates.Initialization;
+  _DeleteTime           : TIME                             := T#0S;
+  (*-- hdd monitoring ----------------------------------------------------------------------------------------------------------*)
+  _HddUsage             : FB_HddUsage;
+  _HddUsageTime         : TIME                             := T#0S;
+  _HddUsageCount        : DWORD                            := 0;               // counter
+  _HddState             : E_TraceHddUsageStates            := E_TraceHddUsageStates.Initialization;
+  _HddStateLast         : E_TraceHddUsageStates            := E_TraceHddUsageStates.Initialization;
+  _HddTooFull           : BOOL                             := FALSE;           // hdd is too full to write
+  _HddFullMissed        : ULINT                            := 0;               // rejected messages due to hdd too full  ( maybe persistent? )
+  (*-- writing files - data ----------------------------------------------------------------------------------------------------*)
+  _WritePath            : A_TracePath                      := '';              // current working folder with date and trailing '/'
+  _WriteFileName        : A_TracePath                      := '';              // current file name
+  _WriteDate            : TIMESTRUCT;                                          // current working date
+  (*-- file handling -----------------------------------------------------------------------------------------------------------*)
+  _FileSize             : ULINT                            := 0;               // current file size in bytes
+  _FileIndex            : WORD                             := 0;               // current file number
+  _FileTimeOpened       : TIME                             := T#0S;            // timestamp file was opened
+  _CreateDir            : Tc2_System.FB_CreateDir;                             // create new folder
+  _FileCheck            : Tc2_Utilities.FB_EnumFindFileEntry;                  // checks current working folder for already existing files
+  _FileOpen             : Tc2_System.FB_FileOpen;                              // open/create file
+  _FileWrite            : Tc2_System.FB_FileWrite;                             // write into file
+  _FileClose            : Tc2_System.FB_FileClose;                             // close file
+  (*-- folder handling ---------------------------------------------------------------------------------------------------------*)
+  _CheckWorkFolder      : Tc2_Utilities.FB_EnumFindFileEntry;                  // checks working folder being existent
+  _ScanSubFolder        : Tc2_Utilities.FB_EnumFindFileEntry;                  // checks current working folder for subfolders
+  _FileFind             : Tc2_Utilities.FB_EnumFindFileEntry;                  // checks (old) subfolders for files to delete
+  _FileDelete           : Tc2_System.FB_FileDelete;                            // delete file
+  _FolderRemove         : Tc2_System.FB_RemoveDir;                             // delete folder
+  (*-- write fifo --------------------------------------------------------------------------------------------------------------*)
+  _TaskCounter          : WORD                             := 0;               // counter for put calls within one plc cycle
+  _FifoFillLevel        : WORD                             := 0;               // fill level
+  _FifoInput            : WORD                             := 0;               // (next) input position
+  _FifoOutput           : WORD                             := 0;               // (next) output position
+  _Fifo                 : ARRAY[0..FIFO_SIZE-1] OF POINTER TO FB_TraceEntry;          // fifo itself
+  (*-- write data --------------------------------------------------------------------------------------------------------------*)
+  _DataDateChanged      : BOOL                             := FALSE;           // date of write data has changed
+  _DataLength           : DWORD                            := 0;               // valid length of _DataBuffer
+  _DataBuffer           : ARRAY[0..BUFFER_SIZE-1] OF BYTE;                     // data buffer to write into file
+  (*-- diagnostics & statisticals ------------------------------------------------------------------------------------------------*)
+  _Statistics           : FB_TraceHandlerStatistics();
+  _ExecutionDuration    : ULINT                            := 0;               // duration of execution in microseconds
+  _ExecutionNow         : ULINT                            := 0;
+  (*-- testing -------------------------------------------------------------------------------------------------------------------*)
+  _Diag_SystemTime      : ULINT                            := 0;
+  _Diag_NoMemory        : ULINT                            := 0;
+  _Diag_NoEntry         : ULINT                            := 0;
+  _Diag_FifoFull        : ULINT                            := 0;
+  _Diag_InvalidDate     : ULINT                            := 0;
+END_VAR
+
+(*****************************************************1*********2*********3*********4*********5*********6*********7*********8****)
+VAR_STAT CONSTANT                          // 123456789012345678901234567890123456789012345678901234567890123456789012345678900123456789001234567890
+{attribute 'hide'}  EOF      : STRING[ 95]:= ';-- end of file ----------------------------------------------------------------';
+{attribute 'hide'}  NEWLINE  : STRING[  3]:= '$0D$0A';
+{attribute 'hide'}  DIVIDER  : STRING[ 95]:= ';-------------------------------------------------------------------------------';
+{attribute 'hide'}  CREATED  : STRING[ 15]:= '; CREATED  : ';
+{attribute 'hide'}  TD       : STRING[ 15]:= '; DATE     : ';
+{attribute 'hide'}  ENCODING : STRING[ 19]:= '; ENCODING : UTF08';
+{attribute 'hide'}  EMPTYLINE: STRING[  3]:= '; ';
+{attribute 'hide'}  APPL     : STRING[ 15]:= '; APPL     : ';
+{attribute 'hide'}  BUILD    : STRING[ 15]:= '; BUILD    : ';
+{attribute 'hide'}  HOST     : STRING[ 15]:= '; HOST     : ';
+{attribute 'hide'}  ADDR     : STRING[ 15]:= '; ADDR     : ';
+{attribute 'hide'}  OPSYSTEM : STRING[ 15]:= '; SYSTEM   : ';
+{attribute 'hide'}  RUNTIME  : STRING[ 19]:= '; RUNTIME  : TC';
+{attribute 'hide'}  INFO     : STRING[ 15]:= '; INFO     : ';
+{attribute 'hide'}  SIZE     : STRING[ 15]:= '; SIZE     : ';
+{attribute 'hide'}  HEADER   : STRING[195]:= '; -- DATE & TIME ------- count -- level -- instance -------------------------- position ------- message ------- additional information ------';
+END_VAR]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[
+(********************************************************************************************************************************)
+(** calculate execution time ****************************************************************************************************)
+_GetSystemTicks();
+_StartSystemTick:= (         DWORD_TO_ULINT(_GetSystemTicks.cpuCntLoDW)
+                     OR SHL( DWORD_TO_ULINT(_GetSystemTicks.cpuCntHiDW),  32 )  );
+
+
+
+
+(********************************************************************************************************************************)
+(** run all services ************************************************************************************************************)
+_HddUsage();  // call here to use everywhere
+
+M_RunHddUsage();
+M_RunCheck();
+M_RunWrite();
+M_RunDelete();
+
+IF (_MillisecondsLast = System.fbSystemTime.TIMESTR.wMilliseconds)
+THEN
+  _Diag_SystemTime:= _Diag_SystemTime + 1;
+
+  (*-- trace it ---------------------------------------------------*)
+  IF(_TaskCounter <> 0)
+  THEN
+// example: '11-000-0000-00-0,  system time not updated'
+   ;(* _Text:= '';
+    _Text:= CONCAT(_Text, F_AddDividerToSisString(SubsystemRegistry.SubsystemName) );
+    _Text:= CONCAT(_Text, ',  system time not updated');
+    Put( MsgType := E_DebugMsgType.WARNING,
+         Instance:= ADR(_Instance),
+         Text    := ADR(_Text)  );*)
+  END_IF
+END_IF
+
+_MillisecondsLast:= System.fbSystemTime.TIMESTR.wMilliseconds;
+_TaskCounter:= 0;
+
+
+
+
+(********************************************************************************************************************************)
+(** calculate execution time ****************************************************************************************************)
+_GetSystemTicks();
+
+_ExecutionNow:= (         DWORD_TO_ULINT(_GetSystemTicks.cpuCntLoDW)
+                  OR SHL( DWORD_TO_ULINT(_GetSystemTicks.cpuCntHiDW),  32 )  );
+
+_ExecutionDuration:= (_ExecutionNow - _StartSystemTick + 5) / 10;
+
+_Statistics.MaxExecutionDuration:= MAX(_Statistics.MaxExecutionDuration, _ExecutionDuration);
+
+
+
+
+(********************************************************************************************************************************)
+(** done ************************************************************************************************************************)
+]]></ST>
+    </Implementation>
+    <Folder Name="_internal" Id="{c5145b27-8783-45c2-aed9-32baf585f4e3}" />
+    <Folder Name="Methods" Id="{1b117e47-6bfc-478a-8c70-073dd0ec4d53}" />
+    <Folder Name="Properties" Id="{fa1dee63-984d-462e-9bc3-d37e0874f870}" />
+    <Method Name="Clear" Id="{48b7b36e-ba2d-431c-a64a-01282951e7eb}" FolderPath="Methods\">
+      <Declaration><![CDATA[// clears the internal fifo (all unwritten traces will be lost)
+METHOD PUBLIC Clear
+
+(********************************************************************************************************************************)
+VAR_INPUT
+END_VAR
+
+(********************************************************************************************************************************)
+VAR
+  Index                 : WORD                             := 0;
+  Entry                 : POINTER TO FB_TraceEntry         := 0;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+(********************************************************************************************************************************)
+(********************************************************************************************************************************)
+_FifoFillLevel:= 0;
+_FifoInput    := 0;
+_FifoOutput   := 0;
+
+
+
+
+(********************************************************************************************************************************)
+(********************************************************************************************************************************)
+Index:= 0;
+WHILE (Index < FIFO_SIZE)
+DO
+  Entry:= _Fifo[Index];
+
+  (*-- release memory -----------------------------------------------*)
+  IF (Entry <> 0)
+  THEN
+    __DELETE(Entry);
+  END_IF
+
+  (*-- next ---------------------------------------------------------*)
+  _Fifo[Index]:= 0;
+  Index:= Index + 1;
+END_WHILE
+
+
+
+
+(********************************************************************************************************************************)
+(** done ************************************************************************************************************************)
+]]></ST>
+      </Implementation>
+    </Method>
+    <Property Name="Enable" Id="{e0744883-537a-445c-872c-edfa035389a1}" FolderPath="Properties\">
+      <Declaration><![CDATA[// HI = writing/deleting enabled
+{attribute 'monitoring' := 'call'}
+PROPERTY PUBLIC Enable : BOOL]]></Declaration>
+      <Get Name="Get" Id="{54a5c298-ac89-42c6-9756-b9496a8e1c39}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[Enable:= _Enable;]]></ST>
+        </Implementation>
+      </Get>
+      <Set Name="Set" Id="{6d238f31-1482-427b-99a7-cc9ae9dbc7f3}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[(********************************************************************************************************************************)
+(** change? *********************************************************************************************************************)
+IF (_Enable = Enable)
+THEN
+  RETURN;
+END_IF
+
+_Enable:= Enable;
+
+
+
+
+(********************************************************************************************************************************)
+(** done ************************************************************************************************************************)
+]]></ST>
+        </Implementation>
+      </Set>
+    </Property>
+    <Method Name="FB_exit" Id="{8f532351-763f-4b76-8185-30859ec27a99}" FolderPath="_internal\">
+      <Declaration><![CDATA[{attribute 'hide'}
+METHOD FB_exit : BOOL
+
+(********************************************************************************************************************************)
+VAR_INPUT
+	bInCopyCode           : BOOL;  // if TRUE, the instance afterwards gets moved into the copy code (online change)
+  (*----------------------------------------------------------------------------------------------------------------------------*)
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+(********************************************************************************************************************************)
+(** release dynamically assigned memory *****************************************************************************************)
+Clear();
+
+
+
+
+(********************************************************************************************************************************)
+(** done ************************************************************************************************************************)
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="FB_init" Id="{3508e532-e4bc-4cb5-9ee0-2517077e334a}" FolderPath="_internal\">
+      <Declaration><![CDATA[{attribute 'hide'}
+METHOD FB_init : BOOL
+
+(********************************************************************************************************************************)
+VAR_INPUT
+	bInitRetains          : BOOL; // if TRUE, the retain variables are initialized (warm start / cold start)
+	bInCopyCode           : BOOL;  // if TRUE, the instance afterwards gets moved into the copy code (online change)
+  (*----------------------------------------------------------------------------------------------------------------------------*)
+END_VAR
+
+(********************************************************************************************************************************)
+VAR
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+(********************************************************************************************************************************)
+(** remove 'QB2Jumpstart.JumpStart.' from instance path *************************************************************************)
+F_InstancePathRemovals( DestStart     := ADR(_Instance),
+                        DestEnd       := ADR(_Instance) + SIZEOF(_Instance),
+                        RemoveLastPart:= FALSE );
+
+
+
+
+(********************************************************************************************************************************)
+(** done ************************************************************************************************************************)
+]]></ST>
+      </Implementation>
+    </Method>
+    <Property Name="Folder" Id="{66c8f564-b69a-4e81-bc93-da25321a68d9}" FolderPath="Properties\">
+      <Declaration><![CDATA[// folder to work within, folder must exist! (will only take effect when enabled is low)
+{attribute 'monitoring' := 'call'}
+PROPERTY PUBLIC Folder : A_TracePath]]></Declaration>
+      <Get Name="Get" Id="{72d936d2-6b94-478b-bef6-c0924e425507}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[Folder:= _Folder;]]></ST>
+        </Implementation>
+      </Get>
+      <Set Name="Set" Id="{3a26c8c8-e784-42e4-ba35-0e2a41a0144a}">
+        <Declaration><![CDATA[VAR
+  Idx                   : WORD                             := 0;
+  SepFound              : BOOL                             := FALSE;
+  Finished              : BOOL                             := FALSE;
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[(********************************************************************************************************************************)
+(** change? *********************************************************************************************************************)
+IF (_Folder = Folder)
+THEN
+  RETURN;
+END_IF
+
+_Folder:= Folder;
+
+
+
+
+(********************************************************************************************************************************)
+(** change '\' to '/' and remove a trailing '/' if neccessary *******************************************************************)
+Idx:= 0;
+WHILE (Idx < SIZEOF(_Folder)  )
+DO
+  (*-- replace '\' with '/' -------------------------------------------------------------*)
+  IF (_Folder[Idx] = 16#5C)  (* '\' *)
+  THEN
+    _Folder[Idx]:= 16#2F;   (* '/' *)
+    SepFound:= TRUE;
+
+  (*-- separation found '/' -------------------------------------------------------------*)
+  ELSIF(_Folder[Idx] = 16#2F)   (* '/' *)
+  THEN
+    SepFound:= TRUE;
+
+  (*-- fill rest of string with terminations --------------------------------------------*)
+  ELSIF(Finished = TRUE)
+  THEN
+    (*-------------------------------------------*)
+    _Folder[Idx]:= 16#00;
+
+  (*-- string termination found ---------------------------------------------------------*)
+  ELSIF(_Folder[Idx] = 16#00)
+  THEN
+    (*-- remove trailing '/' --------------------*)
+    IF (SepFound = TRUE)
+    THEN
+      _Folder[Idx-1] := 16#00;
+    END_IF
+    (*-------------------------------------------*)
+    Finished:= TRUE;
+    SepFound:= FALSE;
+
+  (*-- normal character -----------------------------------------------------------------*)
+  ELSE
+    SepFound:= FALSE;
+  END_IF
+
+  (*-- next -----------------------------------------------------------------------------*)
+  Idx:= Idx + 1;
+END_WHILE
+
+
+
+
+(********************************************************************************************************************************)
+(** done ************************************************************************************************************************)
+]]></ST>
+        </Implementation>
+      </Set>
+    </Property>
+    <Property Name="HddUsage" Id="{4c18a9fc-e734-43d0-8a56-52ba2f642d30}" FolderPath="Properties\">
+      <Declaration><![CDATA[// usage/free and total space of hdd
+{attribute 'monitoring' := 'call'}
+PROPERTY PUBLIC HddUsage : I_HddUsage]]></Declaration>
+      <Get Name="Get" Id="{02a75c85-74cc-455b-b53c-fc1b172e070c}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[HddUsage:= _HddUsage;]]></ST>
+        </Implementation>
+      </Get>
+    </Property>
+    <Method Name="M_BuildFileName" Id="{1ecd50bb-b1f1-4708-8c7e-314d58ff6779}" FolderPath="_internal\">
+      <Declaration><![CDATA[// builds the file name with index
+METHOD PROTECTED M_BuildFileName
+
+(********************************************************************************************************************************)
+VAR
+  DestStart             : POINTER TO BYTE                  := 0;     // start position to concat
+  DestEnd               : POINTER TO BYTE                  := 0;     // buffer/string end
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+(********************************************************************************************************************************)
+(********************************************************************************************************************************)
+DestStart:= ADR(_WriteFileName);
+DestEnd  := ADR(_WriteFileName) + SIZEOF(_WriteFileName);
+
+(*-- application ---------------------------------------------------------------------------------------------------------------*)
+DestStart:= F_StringCopy          ( DestStart:= DestStart,  DestEnd:= DestEnd,  Source    := ADR(_GetHostName.sHostName)  );
+
+(*-- date ----------------------------------------------------------------------------------------------------------------------*)
+DestStart:= F_StringCopy          ( DestStart:= DestStart,  DestEnd:= DestEnd,  Source    := ADR('_')  );
+DestStart:= F_StringFromDatestruct( DestStart:= DestStart,  DestEnd:= DestEnd,  DateStruct:= _WriteDate );
+
+(*-- index ---------------------------------------------------------------------------------------------------------------------*)
+DestStart:= F_StringCopy          ( DestStart:= DestStart,  DestEnd:= DestEnd,  Source    := ADR('_')  );
+DestStart:= F_StringFromWord      ( DestStart:= DestStart,  DestEnd:= DestEnd,  Value     := _FileIndex,  Length:= 4 );
+
+
+(*-- file type -----------------------------------------------------------------------------------------------------------------*)
+DestStart:= F_StringCopy          ( DestStart:= DestStart,  DestEnd:= DestEnd,  Source    := ADR('_Trace.txt')  );
+
+
+
+
+(********************************************************************************************************************************)
+(** done ************************************************************************************************************************)
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_CreateData" Id="{18a650e2-4f51-4483-ae60-e6f91bb07b68}" FolderPath="_internal\">
+      <Declaration><![CDATA[// created data to write, returns TRUE if trace date has changed
+METHOD PROTECTED M_CreateData : BOOL
+
+(********************************************************************************************************************************)
+VAR
+  MsgText               : STRING[31]                       := ''; 
+  (*----------------------------------------------------------------------------------------------------------------------------*)
+  DestStart             : POINTER TO BYTE                  := 0;
+  DestWork              : POINTER TO BYTE                  := 0;
+  DestEnd               : POINTER TO BYTE                  := 0;
+  (*----------------------------------------------------------------------------------------------------------------------------*)
+  EntryStart            : POINTER TO BYTE                  := 0;
+  Entry                 : POINTER TO FB_TraceEntry         := 0;
+  DateChanged           : BOOL                             := FALSE;
+  Count                 : WORD                             := 0;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+(********************************************************************************************************************************)
+(********************************************************************************************************************************)
+_DataLength:= 0;
+
+DestStart:= ADR(_DataBuffer);
+DestWork := ADR(_DataBuffer);
+DestEnd  := ADR(_DataBuffer) + SIZEOF(_DataBuffer);
+
+DateChanged:= FALSE;
+
+
+
+
+(********************************************************************************************************************************)
+(********************************************************************************************************************************)
+Count:= 0;
+WHILE(_FifoFillLevel <> 0)
+DO
+  (*-- get new entry --------------------------------------------------------------------*)
+  Entry:= _Fifo[_FifoOutput];
+  IF (Entry = 0)
+  THEN
+    EXIT;
+  END_IF
+
+  (*-- entry has already new date? ------------------------------------------------------*)
+  IF (Entry^.IsEqualDate(_WriteDate) = FALSE)
+  THEN
+    DateChanged:= TRUE;
+    EXIT;
+  END_IF
+
+  (*-- prepare line ---------------------------------------------------------------------*)
+  MsgText:= TO_STRING(Entry^.MsgType);
+
+  (*-- build line -----------------------------------------------------------------------*)
+  EntryStart:= DestWork;
+  DestWork:= F_StringFromDatestruct( DestStart:= DestWork,  DestEnd:= DestEnd,  DateStruct:= Entry^.DateTime  );
+  DestWork:= F_StringCopy          ( DestStart:= DestWork,  DestEnd:= DestEnd,  Source    := ADR('  ')  );
+  DestWork:= F_StringFromTimestruct( DestStart:= DestWork,  DestEnd:= DestEnd,  TimeStruct:= Entry^.DateTime,     ShowMs:= TRUE  );
+  DestWork:= F_StringCopy          ( DestStart:= DestWork,  DestEnd:= DestEnd,  Source    := ADR(':  ')  );
+  DestWork:= F_StringFromWord      ( DestStart:= DestWork,  DestEnd:= DestEnd,  Value     := Entry^.TaskCounter,  Length:= 0  );
+  DestWork:= F_StringCopy          ( DestStart:= DestWork,  DestEnd:= DestEnd,  Source    := ADR(' = ')  );
+  DestWork:= F_StringCopy          ( DestStart:= DestWork,  DestEnd:= DestEnd,  Source    := ADR(MsgText)  );
+  DestWork:= F_StringCopy          ( DestStart:= DestWork,  DestEnd:= DestEnd,  Source    := ADR(',  ')  );
+  DestWork:= F_StringCopy          ( DestStart:= DestWork,  DestEnd:= DestEnd,  Source    := Entry^.InstancePtr); 
+  DestWork:= F_StringCopy          ( DestStart:= DestWork,  DestEnd:= DestEnd,  Source    := ADR(',  ')  );
+  DestWork:= F_StringCopy          ( DestStart:= DestWork,  DestEnd:= DestEnd,  Source    := Entry^.TextPtr ); 
+  DestWork:= F_StringCopy          ( DestStart:= DestWork,  DestEnd:= DestEnd,  Source    := ADR(NEWLINE)  );
+
+  (*-- did not fit into write buffer (anymore) ------------------------------------------*)
+  IF (DestWork >= DestEnd - 1)
+  THEN
+    DestWork:= EntryStart;
+    EXIT;
+  END_IF
+
+  (*-- remove from fifo -----------------------------------------------------------------*)
+  __DELETE(Entry);
+  _Fifo[_FifoOutput]:= 0;
+
+  (*-- next entry -> actualize fifo -----------------------------------------------------*)
+  _FifoOutput:= _FifoOutput + 1;
+  IF (_FifoOutput    >= FIFO_SIZE)  THEN  _FifoOutput:= 0;  END_IF
+  IF (_FifoFillLevel > 0)           THEN  _FifoFillLevel:= _FifoFillLevel - 1;  END_IF
+
+  (*-------------------------------------------------------------------------------------*)
+  Count:= Count + 1;
+END_WHILE
+
+_Statistics.MaxDataItemsPerRow:= MAX(_Statistics.MaxDataItemsPerRow, Count);
+
+
+
+
+(********************************************************************************************************************************)
+(** calculate data length *******************************************************************************************************)
+_DataLength:= (DestWork - DestStart);
+
+_Statistics.MaxDataLength:= MAX(_Statistics.MaxDataLength, _DataLength);
+
+
+
+
+(********************************************************************************************************************************)
+(** done ************************************************************************************************************************)
+M_CreateData:= DateChanged;
+
+
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_CreateEof" Id="{637a1451-9874-4b27-86f1-1ed3c754f694}" FolderPath="_internal\">
+      <Declaration><![CDATA[// creates the eof file end
+METHOD PROTECTED M_CreateEof
+
+(********************************************************************************************************************************)
+VAR
+  DestStart             : POINTER TO BYTE                  := 0;
+  DestWork              : POINTER TO BYTE                  := 0;
+  DestEnd               : POINTER TO BYTE                  := 0;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+(********************************************************************************************************************************)
+(********************************************************************************************************************************)
+_DataLength:= 0;
+
+DestStart:= ADR(_DataBuffer);
+DestWork := ADR(_DataBuffer);
+DestEnd  := ADR(_DataBuffer) + SIZEOF(_DataBuffer);
+
+
+
+
+(********************************************************************************************************************************)
+(********************************************************************************************************************************)
+DestWork:= F_StringCopy(DestStart:= DestWork, DestEnd:= DestEnd, Source:= ADR(NEWLINE)  );
+DestWork:= F_StringCopy(DestStart:= DestWork, DestEnd:= DestEnd, Source:= ADR(EOF)      );
+DestWork:= F_StringCopy(DestStart:= DestWork, DestEnd:= DestEnd, Source:= ADR(NEWLINE)  );
+DestWork:= F_StringCopy(DestStart:= DestWork, DestEnd:= DestEnd, Source:= ADR(NEWLINE)  );
+
+
+
+
+(********************************************************************************************************************************)
+(** calculate data length *******************************************************************************************************)
+_DataLength:= (DestWork - DestStart);
+
+_Statistics.MaxDataLength:= MAX(_Statistics.MaxDataLength, _DataLength);
+
+
+
+
+(********************************************************************************************************************************)
+(** done ************************************************************************************************************************)
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_CreateHeader" Id="{d1cc4121-f79a-45b7-895f-48f85bf783fe}" FolderPath="_internal\">
+      <Declaration><![CDATA[// creates the file header for a new file
+METHOD PROTECTED M_CreateHeader
+
+(********************************************************************************************************************************)
+VAR
+  DestStart             : POINTER TO BYTE                  := 0;
+  DestWork              : POINTER TO BYTE                  := 0;
+  DestEnd               : POINTER TO BYTE                  := 0;
+  (*----------------------------------------------------------------------------------------------------------------------------*)
+  AdapterInfo           : ST_IpAdapterInfo;
+  Idx                   : BYTE                             := 0;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+(********************************************************************************************************************************)
+(********************************************************************************************************************************)
+_DataLength:= 0;
+
+DestStart:= ADR(_DataBuffer);
+DestWork := ADR(_DataBuffer);
+DestEnd  := ADR(_DataBuffer) + SIZEOF(_DataBuffer);
+
+
+
+
+(********************************************************************************************************************************)
+(********************************************************************************************************************************)
+(*-- ;-line --------------------------------------------------------------------------------------------------------------------*)
+DestWork:= F_StringCopy( DestStart:= DestWork,  DestEnd:= DestEnd,  Source:= ADR(DIVIDER)  );
+DestWork:= F_StringCopy( DestStart:= DestWork,  DestEnd:= DestEnd,  Source:= ADR(NEWLINE)  );
+
+
+(*-- info line -----------------------------------------------------------------------------------------------------------------*)
+DestWork:= F_StringCopy( DestStart:= DestWork,  DestEnd:= DestEnd,  Source:= ADR(CREATED)            );
+DestWork:= F_StringCopy( DestStart:= DestWork,  DestEnd:= DestEnd,  Source:= ADR('FB_TraceHandler')  );
+DestWork:= F_StringCopy( DestStart:= DestWork,  DestEnd:= DestEnd,  Source:= ADR('  ')               );
+DestWork:= F_StringCopy( DestStart:= DestWork,  DestEnd:= DestEnd,  Source:= ADR('[b7lipim]')        );
+DestWork:= F_StringCopy( DestStart:= DestWork,  DestEnd:= DestEnd,  Source:= ADR(NEWLINE)            );
+
+
+(*-- Datum&Uhrzeit-Zeile bauen -------------------------------------------------------------------------------------------------*)
+DestWork:= F_StringCopy          ( DestStart:= DestWork,  DestEnd:= DestEnd,  Source    := ADR(TD)          );
+DestWork:= F_StringFromDatestruct( DestStart:= DestWork,  DestEnd:= DestEnd,  DateStruct:= System.fbSystemTime.TIMESTR  );
+DestWork:= F_StringCopy          ( DestStart:= DestWork,  DestEnd:= DestEnd,  Source    := ADR('  ')        );
+DestWork:= F_StringFromTimestruct( DestStart:= DestWork,  DestEnd:= DestEnd,  TimeStruct:= System.fbSystemTime.TIMESTR, ShowMs:= TRUE  );
+DestWork:= F_StringCopy          ( DestStart:= DestWork,  DestEnd:= DestEnd,  Source    := ADR(NEWLINE)     );
+
+
+(*-- Encoding Info -------------------------------------------------------------------------------------------------------------*)
+DestWork:= F_StringCopy( DestStart:= DestWork,  DestEnd:= DestEnd,  Source:= ADR(ENCODING)  );
+DestWork:= F_StringCopy( DestStart:= DestWork,  DestEnd:= DestEnd,  Source:= ADR(NEWLINE)   );
+
+
+(*-- Applikation ---------------------------------------------------------------------------------------------------------------*)
+DestWork:= F_StringCopy( DestStart:= DestWork,  DestEnd:= DestEnd,  Source:= ADR(EMPTYLINE) );
+DestWork:= F_StringCopy( DestStart:= DestWork,  DestEnd:= DestEnd,  Source:= ADR(NEWLINE)   );
+DestWork:= F_StringCopy( DestStart:= DestWork,  DestEnd:= DestEnd,  Source:= ADR(APPL)      );
+DestWork:= F_StringCopy( DestStart:= DestWork,  DestEnd:= DestEnd,  Source:= ADR('??')      );
+DestWork:= F_StringCopy( DestStart:= DestWork,  DestEnd:= DestEnd,  Source:= ADR('  ')      );
+DestWork:= F_StringCopy( DestStart:= DestWork,  DestEnd:= DestEnd,  Source:= ADR('??')      );
+DestWork:= F_StringCopy( DestStart:= DestWork,  DestEnd:= DestEnd,  Source:= ADR('  (')     );
+DestWork:= F_StringCopy( DestStart:= DestWork,  DestEnd:= DestEnd,  Source:= ADR('??')      );
+DestWork:= F_StringCopy( DestStart:= DestWork,  DestEnd:= DestEnd,  Source:= ADR(')' )      );
+DestWork:= F_StringCopy( DestStart:= DestWork,  DestEnd:= DestEnd,  Source:= ADR(NEWLINE)   );
+
+
+(*-- Build ---------------------------------------------------------------------------------------------------------------------*)
+
+
+(*-- Host/Addr -----------------------------------------------------------------------------------------------------------------*)
+DestWork:= F_StringCopy( DestStart:= DestWork,  DestEnd:= DestEnd,  Source:= ADR(EMPTYLINE) );
+DestWork:= F_StringCopy( DestStart:= DestWork,  DestEnd:= DestEnd,  Source:= ADR(NEWLINE)   );
+DestWork:= F_StringCopy( DestStart:= DestWork,  DestEnd:= DestEnd,  Source:= ADR(HOST)      );
+DestWork:= F_StringCopy( DestStart:= DestWork,  DestEnd:= DestEnd,  Source:= ADR(_GetHostName.sHostName)  );
+DestWork:= F_StringCopy( DestStart:= DestWork,  DestEnd:= DestEnd,  Source:= ADR(' @')      );
+DestWork:= F_StringCopy( DestStart:= DestWork,  DestEnd:= DestEnd,  Source:= ADR(_GetDeviceIdentificationEx.stDevIdent.strAmsNetId) );
+DestWork:= F_StringCopy( DestStart:= DestWork,  DestEnd:= DestEnd,  Source:= ADR(NEWLINE)   );
+
+Idx:= 0;
+WHILE(Idx <= Tc2_Utilities.MAX_LOCAL_ADAPTERS)
+DO
+  AdapterInfo:= _GetAdaptersInfo.arrAdapters[Idx];
+  Idx:= Idx + 1;
+  (*-- valid? ---------------------------------------------------------------------------*)
+  IF(AdapterInfo.sIpAddr = '')         THEN  CONTINUE;  END_IF
+  IF(AdapterInfo.sIpAddr = '0.0.0.0')  THEN  CONTINUE;  END_IF
+  (*-------------------------------------------------------------------------------------*)
+  DestWork:= F_StringCopy( DestStart:= DestWork,  DestEnd:= DestEnd,  Source:= ADR(ADDR)      );
+  DestWork:= F_StringCopy( DestStart:= DestWork,  DestEnd:= DestEnd,  Source:= ADR(AdapterInfo.sIpAddr) );
+  DestWork:= F_StringCopy( DestStart:= DestWork,  DestEnd:= DestEnd,  Source:= ADR('/') );
+  DestWork:= F_StringCopy( DestStart:= DestWork,  DestEnd:= DestEnd,  Source:= ADR(AdapterInfo.sSubNet) );
+  DestWork:= F_StringCopy( DestStart:= DestWork,  DestEnd:= DestEnd,  Source:= ADR('  {') );
+  DestWork:= F_StringCopy( DestStart:= DestWork,  DestEnd:= DestEnd,  Source:= ADR(AdapterInfo.sDescription) );
+  DestWork:= F_StringCopy( DestStart:= DestWork,  DestEnd:= DestEnd,  Source:= ADR('}') );
+  (*-------------------------------------------------------------------------------------*)
+  DestWork:= F_StringCopy( DestStart:= DestWork,  DestEnd:= DestEnd,  Source:= ADR(NEWLINE)   );
+END_WHILE
+
+
+(*-- System --------------------------------------------------------------------------------------------------------------------*)
+DestWork:= F_StringCopy( DestStart:= DestWork,  DestEnd:= DestEnd,  Source:= ADR(EMPTYLINE) );
+DestWork:= F_StringCopy( DestStart:= DestWork,  DestEnd:= DestEnd,  Source:= ADR(NEWLINE)   );
+DestWork:= F_StringCopy( DestStart:= DestWork,  DestEnd:= DestEnd,  Source:= ADR(OPSYSTEM)  );
+DestWork:= F_StringCopy( DestStart:= DestWork,  DestEnd:= DestEnd,  Source:= ADR(_GetDeviceIdentificationEx.stDevIdent.strImageOsName)    );
+DestWork:= F_StringCopy( DestStart:= DestWork,  DestEnd:= DestEnd,  Source:= ADR('  {')    );
+DestWork:= F_StringCopy( DestStart:= DestWork,  DestEnd:= DestEnd,  Source:= ADR(_GetDeviceIdentificationEx.stDevIdent.strImageOsVersion)    );
+DestWork:= F_StringCopy( DestStart:= DestWork,  DestEnd:= DestEnd,  Source:= ADR('}')    );
+DestWork:= F_StringCopy( DestStart:= DestWork,  DestEnd:= DestEnd,  Source:= ADR(NEWLINE)   );
+DestWork:= F_StringCopy( DestStart:= DestWork,  DestEnd:= DestEnd,  Source:= ADR(RUNTIME)   );
+DestWork:= F_StringCopy( DestStart:= DestWork,  DestEnd:= DestEnd,  Source:= ADR(_GetDeviceIdentificationEx.stDevIdent.strTwinCATVersion)    );
+DestWork:= F_StringCopy( DestStart:= DestWork,  DestEnd:= DestEnd,  Source:= ADR('.')    );
+DestWork:= F_StringCopy( DestStart:= DestWork,  DestEnd:= DestEnd,  Source:= ADR(_GetDeviceIdentificationEx.stDevIdent.strTwinCATRevision)   );
+DestWork:= F_StringCopy( DestStart:= DestWork,  DestEnd:= DestEnd,  Source:= ADR('.')    );
+DestWork:= F_StringCopy( DestStart:= DestWork,  DestEnd:= DestEnd,  Source:= ADR(_GetDeviceIdentificationEx.stDevIdent.strTwinCATBuild)      );
+DestWork:= F_StringCopy( DestStart:= DestWork,  DestEnd:= DestEnd,  Source:= ADR(NEWLINE)         );
+
+
+
+(*-- Info ----------------------------------------------------------------------------------------------------------------------*)
+DestWork:= F_StringCopy    ( DestStart:= DestWork,  DestEnd:= DestEnd,  Source:= ADR(EMPTYLINE)       );
+DestWork:= F_StringCopy    ( DestStart:= DestWork,  DestEnd:= DestEnd,  Source:= ADR(NEWLINE)         );
+DestWork:= F_StringCopy    ( DestStart:= DestWork,  DestEnd:= DestEnd,  Source:= ADR(INFO)            );
+DestWork:= F_StringCopy    ( DestStart:= DestWork,  DestEnd:= DestEnd,  Source:= ADR(_WriteFileName)  );
+DestWork:= F_StringCopy    ( DestStart:= DestWork,  DestEnd:= DestEnd,  Source:= ADR(NEWLINE)         );
+DestWork:= F_StringCopy    ( DestStart:= DestWork,  DestEnd:= DestEnd,  Source:= ADR(SIZE)            );
+DestWork:= F_StringCopy    ( DestStart:= DestWork,  DestEnd:= DestEnd,  Source:= ADR('<= ')           );
+DestWork:= F_StringFromWord( DestStart:= DestWork,  DestEnd:= DestEnd,  Value := _MaxFileSizeKB,  Length:= 0  );
+DestWork:= F_StringCopy    ( DestStart:= DestWork,  DestEnd:= DestEnd,  Source:= ADR('kB')            );
+DestWork:= F_StringCopy    ( DestStart:= DestWork,  DestEnd:= DestEnd,  Source:= ADR(NEWLINE)         );
+
+
+(*-- ;-line --------------------------------------------------------------------------------------------------------------------*)
+DestWork:= F_StringCopy( DestStart:= DestWork,  DestEnd:= DestEnd,  Source:= ADR(DIVIDER)  );
+DestWork:= F_StringCopy( DestStart:= DestWork,  DestEnd:= DestEnd,  Source:= ADR(NEWLINE)  );
+
+
+
+
+(********************************************************************************************************************************)
+(** table header ****************************************************************************************************************)
+DestWork:= F_StringCopy( DestStart:= DestWork,  DestEnd:= DestEnd,  Source:= ADR(NEWLINE)  );
+DestWork:= F_StringCopy( DestStart:= DestWork,  DestEnd:= DestEnd,  Source:= ADR(NEWLINE)  );
+DestWork:= F_StringCopy( DestStart:= DestWork,  DestEnd:= DestEnd,  Source:= ADR(HEADER)   );
+DestWork:= F_StringCopy( DestStart:= DestWork,  DestEnd:= DestEnd,  Source:= ADR(NEWLINE)  );
+DestWork:= F_StringCopy( DestStart:= DestWork,  DestEnd:= DestEnd,  Source:= ADR(NEWLINE)  );
+
+
+
+
+(********************************************************************************************************************************)
+(** calculate data length *******************************************************************************************************)
+_DataLength:= (DestWork - DestStart);
+
+_Statistics.MaxDataLength:= MAX(_Statistics.MaxDataLength, _DataLength);
+
+
+
+
+(********************************************************************************************************************************)
+(** done ************************************************************************************************************************)
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_CreatePlcDivider" Id="{6d1fdd25-f6ab-43e8-a86d-f3432d14430a}" FolderPath="_internal\">
+      <Declaration><![CDATA[METHOD PROTECTED M_CreatePlcDivider
+
+(********************************************************************************************************************************)
+VAR
+  DestStart             : POINTER TO BYTE                  := 0;
+  DestWork              : POINTER TO BYTE                  := 0;
+  DestEnd               : POINTER TO BYTE                  := 0;
+  (*----------------------------------------------------------------------------------------------------------------------------*)
+  DateString            : STRING[15]                       := '';
+  TimeString            : STRING[15]                       := '';
+  FileSize              : STRING[15]                       := '';
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+(********************************************************************************************************************************)
+(********************************************************************************************************************************)
+_DataLength:= 0;
+
+DestStart:= ADR(_DataBuffer);
+DestWork := ADR(_DataBuffer);
+DestEnd  := ADR(_DataBuffer) + SIZEOF(_DataBuffer);
+
+
+
+
+(********************************************************************************************************************************)
+(********************************************************************************************************************************)
+DestWork:= F_StringCopy(DestStart:= DestWork, DestEnd:= DestEnd, Source:= ADR(NEWLINE)  );
+DestWork:= F_StringCopy(DestStart:= DestWork, DestEnd:= DestEnd, Source:= ADR(NEWLINE)  );
+
+
+
+
+(********************************************************************************************************************************)
+(** calculate data length *******************************************************************************************************)
+_DataLength:= (DestWork - DestStart);
+
+_Statistics.MaxDataLength:= MAX(_Statistics.MaxDataLength, _DataLength);
+
+
+
+
+(********************************************************************************************************************************)
+(** done ************************************************************************************************************************)
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_RunCheck" Id="{b8196444-94e0-454c-8862-e3abc8510994}" FolderPath="_internal\">
+      <Declaration><![CDATA[// checks existence of working folder
+METHOD PROTECTED M_RunCheck
+
+(********************************************************************************************************************************)
+VAR
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+(********************************************************************************************************************************)
+(** initialization **************************************************************************************************************)
+CASE(_CheckState) OF
+E_TraceCheckStates.Initialization:
+  (*-- ENTRY -------------------------------------------------------------------------------------------------------------------*)
+    _CheckStateLast:= _CheckState;
+
+  (*-- ACTION ------------------------------------------------------------------------------------------------------------------*)
+
+  (*-- TRANSITION --------------------------------------------------------------------------------------------------------------*)
+  _CheckState:= E_TraceCheckStates.Delay;
+
+
+
+
+(********************************************************************************************************************************)
+(** short delay *****************************************************************************************************************)
+E_TraceCheckStates.Delay:
+  (*-- ENTRY -------------------------------------------------------------------------------------------------------------------*)
+  IF (_CheckStateLast <> _CheckState)
+  THEN
+    _CheckStateLast:= _CheckState;
+    _CheckTime     := F_GetTimeMsTick();
+    (*-----------------------------------------------------------------------------------*)
+  END_IF
+
+  (*-- ACTION ------------------------------------------------------------------------------------------------------------------*)
+
+  (*-- TRANSITION --------------------------------------------------------------------------------------------------------------*)
+  (*-- delay time over ------------------------------------------------------------------*)
+  IF(F_GetTimeMsDiff(_CheckTime) >= T#1S)
+  THEN
+    _CheckState:= E_TraceCheckStates.Hostname;
+  END_IF
+
+
+
+
+(********************************************************************************************************************************)
+(** retrieve hostname ***********************************************************************************************************)
+E_TraceCheckStates.Hostname:
+  (*-- ENTRY -------------------------------------------------------------------------------------------------------------------*)
+  IF (_CheckStateLast <> _CheckState)
+  THEN
+    _CheckStateLast:= _CheckState;
+    _CheckTime     := F_GetTimeMsTick();
+    (*-----------------------------------------------------------------------------------*)
+    _GetHostName(bExecute:= FALSE);
+    _GetHostName.bExecute:= TRUE;
+  END_IF
+
+  (*-- ACTION ------------------------------------------------------------------------------------------------------------------*)
+  _GetHostName();
+
+  (*-- TRANSITION --------------------------------------------------------------------------------------------------------------*)
+  IF (_GetHostName.bBusy = FALSE)
+  THEN
+    _CheckState:= E_TraceCheckStates.Adapters;
+  END_IF
+
+
+
+
+(********************************************************************************************************************************)
+(** retrieve network adapters infos *********************************************************************************************)
+E_TraceCheckStates.Adapters:
+  (*-- ENTRY -------------------------------------------------------------------------------------------------------------------*)
+  IF (_CheckStateLast <> _CheckState)
+  THEN
+    _CheckStateLast:= _CheckState;
+    _CheckTime     := F_GetTimeMsTick();
+    (*-----------------------------------------------------------------------------------*)
+    _GetAdaptersInfo(bExecute:= FALSE);
+    _GetAdaptersInfo.bExecute:= TRUE;
+  END_IF
+
+  (*-- ACTION ------------------------------------------------------------------------------------------------------------------*)
+  _GetAdaptersInfo();
+
+  (*-- TRANSITION --------------------------------------------------------------------------------------------------------------*)
+  IF (_GetAdaptersInfo.bBusy = FALSE)
+  THEN
+    _CheckState:= E_TraceCheckStates.DeviceIdentification;
+  END_IF
+
+
+
+
+(********************************************************************************************************************************)
+(** retrieve device identification **********************************************************************************************)
+E_TraceCheckStates.DeviceIdentification:
+  (*-- ENTRY -------------------------------------------------------------------------------------------------------------------*)
+  IF (_CheckStateLast <> _CheckState)
+  THEN
+    _CheckStateLast:= _CheckState;
+    _CheckTime     := F_GetTimeMsTick();
+    (*-----------------------------------------------------------------------------------*)
+    _GetDeviceIdentificationEx(bExecute:= FALSE);
+    _GetDeviceIdentificationEx.bExecute:= TRUE;
+  END_IF
+
+  (*-- ACTION ------------------------------------------------------------------------------------------------------------------*)
+  _GetDeviceIdentificationEx();
+
+  (*-- TRANSITION --------------------------------------------------------------------------------------------------------------*)
+  IF (_GetDeviceIdentificationEx.bBusy = FALSE)
+  THEN
+    _CheckState:= E_TraceCheckStates.Disabled;
+  END_IF
+
+
+
+
+(********************************************************************************************************************************)
+(** fb disabled *****************************************************************************************************************)
+E_TraceCheckStates.Disabled:
+  (*-- ENTRY -------------------------------------------------------------------------------------------------------------------*)
+  IF (_CheckStateLast <> _CheckState)
+  THEN
+    _CheckStateLast:= _CheckState;
+    _CheckTime     := F_GetTimeMsTick();
+    (*-----------------------------------------------------------------------------------*)
+    _Active    := FALSE;
+    _MainFolder:= '';
+  END_IF
+
+  (*-- ACTION ------------------------------------------------------------------------------------------------------------------*)
+
+  (*-- TRANSITION --------------------------------------------------------------------------------------------------------------*)
+  (*-- enabled --------------------------------------------------------------------------*)
+  IF (_Enable = TRUE)
+  THEN
+    _MainFolder:= _Folder;
+    (*-------------------------------------------*)
+    _CheckState:= E_TraceCheckStates.HddCheck;
+  END_IF
+
+
+
+
+(********************************************************************************************************************************)
+(** hdd usage read ******************************************************************************************************************************)
+E_TraceCheckStates.HddCheck:
+  (*-- ENTRY -------------------------------------------------------------------------------------------------------------------*)
+  IF (_CheckStateLast <> _CheckState)
+  THEN
+    _CheckStateLast:= _CheckState;
+    _CheckTime     := F_GetTimeMsTick();
+    (*-----------------------------------------------------------------------------------*)
+  END_IF
+
+  (*-- ACTION ------------------------------------------------------------------------------------------------------------------*)
+
+  (*-- TRANSITION --------------------------------------------------------------------------------------------------------------*)
+  IF (F_GetTimeMsDiff(_HddUsageTime) >= T#5M)  THEN  _CheckState:= E_TraceCheckStates.HddUsage;
+  ELSE                                               _CheckState:= E_TraceCheckStates.Start;
+  END_IF
+
+
+
+
+(********************************************************************************************************************************)
+(** read hdd usage **************************************************************************************************************)
+E_TraceCheckStates.HddUsage:
+  (*-- ENTRY -------------------------------------------------------------------------------------------------------------------*)
+  IF (_CheckStateLast <> _CheckState)
+  THEN
+    _CheckStateLast:= _CheckState;
+    _CheckTime     := F_GetTimeMsTick();
+    (*-----------------------------------------------------------------------------------*)
+    _HddUsage.Start( Drive:= _MainFolder );  // use drive letter from main folder
+    _HddUsageTime:= F_GetTimeMsTick();
+  END_IF
+
+  (*-- ACTION ------------------------------------------------------------------------------------------------------------------*)
+    // _HddUsage() is called in main body to be used in other state machines as well
+
+  (*-- TRANSITION --------------------------------------------------------------------------------------------------------------*)
+  IF (_HddUsage.Busy = FALSE)
+  THEN
+    _HddUsageCount:= _HddUsageCount + 1;
+    (*-------------------------------------------*)
+    IF    (_HddUsage.Error           = TRUE)               THEN  _HddState:= E_TraceHddUsageStates.Unknown;
+    ELSIF (_HddUsage.PercentageUsed >= HDD_ERROR_LEVEL)    THEN  _HddState:= E_TraceHddUsageStates.ErrorLevel;
+    ELSIF (_HddUsage.PercentageUsed >= HDD_WARNING_LEVEL)  THEN  _HddState:= E_TraceHddUsageStates.WarningLevel;
+    ELSE                                                         _HddState:= E_TraceHddUsageStates.EnoughFree;
+    END_IF
+    (*-------------------------------------------*)
+    _CheckState:= E_TraceCheckStates.Start;
+  END_IF
+
+
+
+
+(********************************************************************************************************************************)
+(** prepare work folder check ***************************************************************************************************)
+E_TraceCheckStates.Start:
+  (*-- ENTRY -------------------------------------------------------------------------------------------------------------------*)
+  IF (_CheckStateLast <> _CheckState)
+  THEN
+    _CheckStateLast:= _CheckState;
+    _CheckTime     := F_GetTimeMsTick();
+    (*-----------------------------------------------------------------------------------*)
+    _CheckWorkFolder.sNetID   := '';   // local
+    _CheckWorkFolder.sPathName:= _MainFolder;   // without trailing '/'
+    _CheckWorkFolder.eCmd     := Tc2_Utilities.E_EnumCmdType.eEnumCmd_First;
+    _CheckWorkFolder.tTimeout := Tc2_System.DEFAULT_ADS_TIMEOUT;
+  END_IF
+
+  (*-- ACTION ------------------------------------------------------------------------------------------------------------------*)
+
+  (*-- TRANSITION --------------------------------------------------------------------------------------------------------------*)
+  _CheckState:= E_TraceCheckStates.Scan;
+
+
+
+
+(********************************************************************************************************************************)
+(** check folder exists *********************************************************************************************************)
+E_TraceCheckStates.Scan:
+  (*-- ENTRY -------------------------------------------------------------------------------------------------------------------*)
+  IF (_CheckStateLast <> _CheckState)
+  THEN
+    _CheckStateLast:= _CheckState;
+    _CheckTime     := F_GetTimeMsTick();
+    (*-----------------------------------------------------------------------------------*)
+{warning disable C0139}
+    _CheckWorkFolder( bExecute:= FALSE );
+    _CheckWorkFolder.sNetID   ;   // hier nicht beschreiben
+    _CheckWorkFolder.sPathName;   // hier nicht beschreiben
+    _CheckWorkFolder.eCmd     ;   // hier nicht beschreiben
+    _CheckWorkFolder.bExecute := TRUE;
+    _CheckWorkFolder.tTimeout ;   // hier nicht beschreiben
+{warning restore C0139}
+  END_IF
+
+  (*-- ACTION ------------------------------------------------------------------------------------------------------------------*)
+  _CheckWorkFolder();
+
+  (*-- TRANSITION --------------------------------------------------------------------------------------------------------------*)
+  IF (_CheckWorkFolder.bBusy = FALSE)
+  THEN
+    _CheckWorkFolder.eCmd:= Tc2_Utilities.E_EnumCmdType.eEnumCmd_Next;
+    (*-- Fehler -------------------------------------------------------------------------*)
+    IF (_CheckWorkFolder.bError = TRUE)
+    THEN
+      //ErrorText:= 'target unreachable: ' + _WorkNetId.Value
+      _Active    := FALSE;
+      _CheckState:= E_TraceCheckStates.Wait;
+    (*-- end of directory reached -------------------------------------------------------*)
+    ELSIF (_CheckWorkFolder.bEOE = TRUE)
+    THEN
+      //ErrorText:= 'path not found: ' + _FilePath
+      _Active    := FALSE;
+      _CheckState:= E_TraceCheckStates.Wait;
+    (*-- found as directory -------------------------------------------------------------*)
+    ELSIF (_CheckWorkFolder.stFindFile.fileAttributes.bDirectory = TRUE)
+    THEN
+      //ErrorText:= '';
+      _Active    := TRUE;
+      _CheckState:= E_TraceCheckStates.Cancel;
+    (*-- keep searching -----------------------------------------------------------------*)
+    ELSE
+      _CheckStateLast:= E_TraceCheckStates.Initialization;  // Re-entry
+    END_IF
+
+  END_IF
+
+
+
+
+(********************************************************************************************************************************)
+(********************************************************************************************************************************)
+E_TraceCheckStates.Cancel:
+  (*-- ENTRY -------------------------------------------------------------------------------------------------------------------*)
+  IF (_CheckStateLast <> _CheckState)
+  THEN
+    _CheckStateLast:= _CheckState;
+    _CheckTime     := F_GetTimeMsTick();
+    (*-----------------------------------------------------------------------------------*)
+{warning disable C0139}
+    _CheckWorkFolder( bExecute:= FALSE );
+    _CheckWorkFolder.sNetID;      // hier nicht beschreiben
+    _CheckWorkFolder.sPathName;   // hier nicht beschreiben
+    _CheckWorkFolder.eCmd     := Tc2_Utilities.E_EnumCmdType.eEnumCmd_Abort;
+    _CheckWorkFolder.bExecute := TRUE;
+    _CheckWorkFolder.tTimeout ;   // hier nicht beschreiben
+{warning restore C0139}
+  END_IF
+
+  (*-- ACTION ------------------------------------------------------------------------------------------------------------------*)
+  _CheckWorkFolder();
+
+  (*-- TRANSITION --------------------------------------------------------------------------------------------------------------*)
+  IF (_CheckWorkFolder.bBusy = FALSE)
+  THEN
+    (*-- error --------------------------------------------------------------------------*)
+    IF (_CheckWorkFolder.bError = TRUE)
+    THEN
+      //ErrorText:= 'target unreachable'
+      _Active    := FALSE;
+      _CheckState:= E_TraceCheckStates.Wait;
+    (*-- end of directory reached -------------------------------------------------------*)
+    ELSIF (_CheckWorkFolder.bEOE = TRUE)
+    THEN
+      _CheckState:= E_TraceCheckStates.Wait;
+    (*-- keep cancelling ----------------------------------------------------------------*)
+    ELSE
+      _CheckStateLast:= E_TraceCheckStates.Initialization;  // Re-entry
+    END_IF
+  END_IF
+
+
+
+
+(********************************************************************************************************************************)
+(********************************************************************************************************************************)
+E_TraceCheckStates.Wait:
+  (*-- ENTRY -------------------------------------------------------------------------------------------------------------------*)
+  IF (_CheckStateLast <> _CheckState)
+  THEN
+    _CheckStateLast:= _CheckState;
+    _CheckTime     := F_GetTimeMsTick();
+    (*-----------------------------------------------------------------------------------*)
+  END_IF
+
+  (*-- ACTION ------------------------------------------------------------------------------------------------------------------*)
+
+  (*-- TRANSITION --------------------------------------------------------------------------------------------------------------*)
+  (*-- disabled -------------------------------------------------------------------------*)
+  IF (_Enable = FALSE)
+  THEN
+    _CheckState:= E_TraceCheckStates.Disabled;
+  (*-- wait time over -------------------------------------------------------------------*)
+  ELSIF(F_GetTimeMsDiff(_CheckTime) >= T#1S)
+  THEN
+    _CheckState:= E_TraceCheckStates.HddCheck;
+  END_IF
+
+
+
+
+(********************************************************************************************************************************)
+(** unknown *********************************************************************************************************************)
+ELSE
+  _CheckState:= E_TraceCheckStates.Initialization;
+END_CASE
+
+
+
+
+(********************************************************************************************************************************)
+(** done ************************************************************************************************************************)
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_RunDelete" Id="{0e496b6a-69e1-4e77-8a08-52e23a8bcf7c}" FolderPath="_internal\">
+      <Declaration><![CDATA[// deletes all files and folders older than specified
+METHOD PROTECTED M_RunDelete
+
+(********************************************************************************************************************************)
+VAR
+  FolderDate            : TIMESTRUCT;
+  (*----------------------------------------------------------------------------------------------------------------------------*)
+  SystemTimeTD          : DATE_AND_TIME                    := DT#1979-01-09-23:59:59;
+  FolderTimeTD          : DATE_AND_TIME                    := DT#1979-01-09-23:59:59;
+  Diff_Seconds          : LINT                             := 0;
+  (*----------------------------------------------------------------------------------------------------------------------------*)
+  DestStart             : POINTER TO BYTE                  := 0;     // start position to concat
+  DestEnd               : POINTER TO BYTE                  := 0;     // buffer/string end
+  Result                : BOOL                             := FALSE;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+(********************************************************************************************************************************)
+(** initialization **************************************************************************************************************)
+CASE(_DeleteState) OF
+E_TraceDeleteStates.Initialization:
+  (*-- ENTRY -------------------------------------------------------------------------------------------------------------------*)
+    _DeleteStateLast:= _DeleteState;
+
+  (*-- ACTION ------------------------------------------------------------------------------------------------------------------*)
+
+  (*-- TRANSITION --------------------------------------------------------------------------------------------------------------*)
+  _DeleteState:= E_TraceDeleteStates.WaitFolder;
+
+
+
+
+(********************************************************************************************************************************)
+(** wait working folder *********************************************************************************************************)
+E_TraceDeleteStates.WaitFolder:
+  (*-- ENTRY -------------------------------------------------------------------------------------------------------------------*)
+  IF (_DeleteStateLast <> _DeleteState)
+  THEN
+    _DeleteStateLast:= _DeleteState;
+    _DeleteTime     := F_GetTimeMsTick();
+    (*-----------------------------------------------------------------------------------*)
+  END_IF
+
+  (*-- ACTION ------------------------------------------------------------------------------------------------------------------*)
+
+  (*-- TRANSITION --------------------------------------------------------------------------------------------------------------*)
+  (*-- working folder exists ------------------------------------------------------------*)
+  IF (_Active = TRUE)
+  THEN
+    _DeleteState:= E_TraceDeleteStates.WaitDelay;
+  END_IF
+
+
+
+
+(********************************************************************************************************************************)
+(** wait awhile *****************************************************************************************************************)
+E_TraceDeleteStates.WaitDelay:
+  (*-- ENTRY -------------------------------------------------------------------------------------------------------------------*)
+  IF (_DeleteStateLast <> _DeleteState)
+  THEN
+    _DeleteStateLast:= _DeleteState;
+    _DeleteTime     := F_GetTimeMsTick();
+    (*-----------------------------------------------------------------------------------*)
+  END_IF
+
+  (*-- ACTION ------------------------------------------------------------------------------------------------------------------*)
+
+  (*-- TRANSITION --------------------------------------------------------------------------------------------------------------*)
+  (*-- working folder not existing ------------------------------------------------------*)
+  IF (_Active = FALSE)
+  THEN
+    _DeleteState:= E_TraceDeleteStates.WaitFolder;
+  (*-- delay time over ------------------------------------------------------------------*)
+  ELSIF(F_GetTimeMsDiff(_DeleteTime) >= T#10S)
+  THEN
+    _DeleteState:= E_TraceDeleteStates.FolderStart;
+  END_IF
+
+
+
+
+(********************************************************************************************************************************)
+(** prepare folder scan *********************************************************************************************************)
+E_TraceDeleteStates.FolderStart:
+  (*-- ENTRY -------------------------------------------------------------------------------------------------------------------*)
+  IF (_DeleteStateLast <> _DeleteState)
+  THEN
+    _DeleteStateLast:= _DeleteState;
+    _DeleteTime     := F_GetTimeMsTick();
+    (*-- prepare folder scan ------------------------------------------------------------*)
+    _ScanSubFolder.eCmd:= E_EnumCmdType.eEnumCmd_First;
+  END_IF
+
+  (*-- ACTION ------------------------------------------------------------------------------------------------------------------*)
+
+  (*-- TRANSITION --------------------------------------------------------------------------------------------------------------*)
+    _DeleteState:= E_TraceDeleteStates.FolderSeek;
+
+
+
+
+(********************************************************************************************************************************)
+(** find next (sub) folder ******************************************************************************************************)
+E_TraceDeleteStates.FolderSeek:
+  (*-- ENTRY -------------------------------------------------------------------------------------------------------------------*)
+  IF (_DeleteStateLast <> _DeleteState)
+  THEN
+    _DeleteStateLast:= _DeleteState;
+    _DeleteTime     := F_GetTimeMsTick();
+    (*-----------------------------------------------------------------------------------*)
+    _ScanSubFolder( bExecute:= FALSE );
+    _ScanSubFolder.sNetID   := '';   // local
+//  _ScanSubFolder.eCmd;   (* hier nicht beschreiben *)
+    _ScanSubFolder.bExecute := TRUE;
+    _ScanSubFolder.tTimeout := Tc2_System.DEFAULT_ADS_TIMEOUT;
+    (*-----------------------------------------------------------------------------------*)
+    DestStart:= ADR(_ScanSubFolder.sPathName);
+    DestEnd  := ADR(_ScanSubFolder.sPathName) + SIZEOF(_ScanSubFolder.sPathName);
+    DestStart:= F_StringCopy( DestStart:= DestStart,  DestEnd:= DestEnd,  Source:= ADR(_MainFolder)  );
+    DestStart:= F_StringCopy( DestStart:= DestStart,  DestEnd:= DestEnd,  Source:= ADR('/*.*')  );
+  END_IF
+
+  (*-- ACTION ------------------------------------------------------------------------------------------------------------------*)
+  _ScanSubFolder();
+
+  (*-- TRANSITION --------------------------------------------------------------------------------------------------------------*)
+  IF (_ScanSubFolder.bBusy = FALSE)
+  THEN
+    _ScanSubFolder.eCmd:= E_EnumCmdType.eEnumCmd_Next;
+    (*-- error --------------------------------------------------------------------------*)
+    IF    (_ScanSubFolder.bError = TRUE)
+    THEN  (* unfortunately no difference between path noch found or destination not reachable *)
+      _DeleteState:= E_TraceDeleteStates.WaitDelay;
+    (*-- folder completely scanned ------------------------------------------------------*)
+    ELSIF (_ScanSubFolder.bEOE = TRUE)
+    THEN
+      _DeleteState:= E_TraceDeleteStates.WaitDelay;
+    (*-- found entry is no folder => continue -------------------------------------------*)
+    ELSIF (_ScanSubFolder.stFindFile.fileAttributes.bDirectory = FALSE)
+    THEN
+      _DeleteStateLast:= E_TraceDeleteStates.Initialization;   // Re-entry
+    (*-- folder name invalid => continue ------------------------------------------------*)
+    ELSIF (    (_ScanSubFolder.stFindFile.sFileName = '.' )
+            OR (_ScanSubFolder.stFindFile.sFileName = '..')  )
+    THEN
+      _DeleteStateLast:= E_TraceDeleteStates.Initialization;   // Re-entry
+    (*-- folder valid => old enough to delete? ------------------------------------------*)
+    ELSE
+      (*-- parse folder name according to 'YYYY-MM-DD' --------------*)
+      Result:= F_StringToTimeDate( AllowInvalidChars:= FALSE,  // invalid charachters will lead to parsing error
+                                   DestStart        := ADR(_ScanSubFolder.stFindFile.sFileName),
+                                   DestEnd          := ADR(_ScanSubFolder.stFindFile.sFileName) + SIZEOF(_ScanSubFolder.stFindFile.sFileName),
+                                   Result     => FolderDate  );
+      (*-- calc difference (in ms due to TIME limitation of 42d) ----*)
+      SystemTimeTD:= SYSTEMTIME_TO_DT(System.fbSystemTime.TIMESTR);
+      FolderTimeTD:= SYSTEMTIME_TO_DT(FolderDate);
+      Diff_Seconds:= DT_TO_LINT(SystemTimeTD) - DT_TO_LINT(FolderTimeTD);
+     (*-- folder name doesnt fit naming scheme YYYY-MM-DD -----------*)
+      IF (Result = FALSE)
+      THEN  // ignore ==> continue
+        _DeleteStateLast:= E_TraceDeleteStates.Initialization;   // Re-entry
+      (*-- folder from future ;-) -----------------------------------*)
+      ELSIF (Diff_Seconds < 0)
+      THEN  // ignore ==> continue
+        _DeleteStateLast:= E_TraceDeleteStates.Initialization;   // Re-entry
+      (*-- folder according parsed name too old ---------------------*)
+      ELSIF (Diff_Seconds * 1_000 >= TIME_TO_LINT(SHELF_LIFE)  )  // TIME is internally already ms
+      THEN  // => empty and delete
+        _DeleteState:= E_TraceDeleteStates.FileStart;
+      (*-- keep searching -------------------------------------------*)
+      ELSE
+        _DeleteStateLast:= E_TraceDeleteStates.Initialization;   // Re-entry
+      END_IF
+    END_IF
+  END_IF
+
+
+
+
+(********************************************************************************************************************************)
+(** prepare file scan ***********************************************************************************************************)
+E_TraceDeleteStates.FileStart:
+  (*-- ENTRY -------------------------------------------------------------------------------------------------------------------*)
+  IF (_DeleteStateLast <> _DeleteState)
+  THEN
+    _DeleteStateLast:= _DeleteState;
+    _DeleteTime     := F_GetTimeMsTick();
+    (*-----------------------------------------------------------------------------------*)
+    _FileFind.eCmd:= E_EnumCmdType.eEnumCmd_First;
+  END_IF
+
+  (*-- ACTION ------------------------------------------------------------------------------------------------------------------*)
+
+  (*-- TRANSITION --------------------------------------------------------------------------------------------------------------*)
+  _DeleteState:= E_TraceDeleteStates.FileSeek;
+
+
+
+
+(********************************************************************************************************************************)
+(** find a file *****************************************************************************************************************)
+E_TraceDeleteStates.FileSeek:
+  (*-- ENTRY -------------------------------------------------------------------------------------------------------------------*)
+  IF (_DeleteStateLast <> _DeleteState)
+  THEN
+    _DeleteStateLast:= _DeleteState;
+    _DeleteTime     := F_GetTimeMsTick();
+    (*-----------------------------------------------------------------------------------*)
+    _FileFind( bExecute:= FALSE );
+    _FileFind.sNetID   := '';   // local
+//  _FileFind.eCmd;      (* hier nicht beschreiben *)
+    _FileFind.bExecute := TRUE;
+    _FileFind.tTimeout := Tc2_System.DEFAULT_ADS_TIMEOUT;
+    (*-----------------------------------------------------------------------------------*)
+    DestStart:= ADR(_FileFind.sPathName);
+    DestEnd  := ADR(_FileFind.sPathName) + SIZEOF(_FileFind.sPathName);
+    DestStart:= F_StringCopy( DestStart:= DestStart,  DestEnd:= DestEnd,  Source:= ADR(_MainFolder)  );
+    DestStart:= F_StringCopy( DestStart:= DestStart,  DestEnd:= DestEnd,  Source:= ADR('/')  );
+    DestStart:= F_StringCopy( DestStart:= DestStart,  DestEnd:= DestEnd,  Source:= ADR(_ScanSubFolder.stFindFile.sFileName)  );
+    DestStart:= F_StringCopy( DestStart:= DestStart,  DestEnd:= DestEnd,  Source:= ADR('/*.*')  );
+  END_IF
+
+  (*-- ACTION ------------------------------------------------------------------------------------------------------------------*)
+  _FileFind();
+
+  (*-- TRANSITION --------------------------------------------------------------------------------------------------------------*)
+  IF ( _FileFind.bBusy = FALSE )
+  THEN
+    _FileFind.eCmd:= E_EnumCmdType.eEnumCmd_Next;
+    (*-- error --------------------------------------------------------------------------*)
+    IF    (_FileFind.bError = TRUE)
+    THEN
+      _DeleteState:= E_TraceDeleteStates.WaitDelay;
+    (*-- folder completely scanned ------------------------------------------------------*)
+    ELSIF (_FileFind.bEOE = TRUE)
+    THEN
+      _DeleteState:= E_TraceDeleteStates.FolderDelete;
+    (*-- file name invalid => continue --------------------------------------------------*)
+    ELSIF (    (_FileFind.stFindFile.sFileName = '.' )
+            OR (_FileFind.stFindFile.sFileName = '..')  )
+    THEN
+      _DeleteStateLast:= E_TraceDeleteStates.Initialization;   // Re-entry
+    (*-- file found ==> delete ----------------------------------------------------------*)
+    ELSE
+      _DeleteState:= E_TraceDeleteStates.FileDelete;
+    END_IF
+  END_IF
+
+
+
+
+(********************************************************************************************************************************)
+(** delete this one file ********************************************************************************************************)
+E_TraceDeleteStates.FileDelete:
+  (*-- ENTRY -------------------------------------------------------------------------------------------------------------------*)
+  IF (_DeleteStateLast <> _DeleteState)
+  THEN
+    _DeleteStateLast:= _DeleteState;
+    _DeleteTime     := F_GetTimeMsTick();
+    (*-----------------------------------------------------------------------------------*)
+    _FileDelete( bExecute:= FALSE );
+    _FileDelete.sNetId   := '';   // local
+    _FileDelete.ePath    := E_OpenPath.PATH_GENERIC;  
+    _FileDelete.bExecute := TRUE;
+    _FileDelete.tTimeout := Tc2_System.DEFAULT_ADS_TIMEOUT;               
+    (*-----------------------------------------------------------------------------------*)
+    DestStart:= ADR(_FileDelete.sPathName);
+    DestEnd  := ADR(_FileDelete.sPathName) + SIZEOF(_FileDelete.sPathName);
+    DestStart:= F_StringCopy( DestStart:= DestStart,  DestEnd:= DestEnd,  Source:= ADR(_MainFolder)  );
+    DestStart:= F_StringCopy( DestStart:= DestStart,  DestEnd:= DestEnd,  Source:= ADR('/')  );
+    DestStart:= F_StringCopy( DestStart:= DestStart,  DestEnd:= DestEnd,  Source:= ADR(_ScanSubFolder.stFindFile.sFileName)  );
+    DestStart:= F_StringCopy( DestStart:= DestStart,  DestEnd:= DestEnd,  Source:= ADR('/')  );
+    DestStart:= F_StringCopy( DestStart:= DestStart,  DestEnd:= DestEnd,  Source:= ADR(_FileFind.stFindFile.sFileName)  );
+  END_IF
+
+  (*-- ACTION ------------------------------------------------------------------------------------------------------------------*)
+  _FileDelete();
+
+  (*-- TRANSITION --------------------------------------------------------------------------------------------------------------*)
+  IF ( _FileDelete.bBusy = FALSE )
+  THEN
+    _DeleteState:= E_TraceDeleteStates.FileSeek;
+  END_IF
+
+
+
+
+(********************************************************************************************************************************)
+(** delete that (now empty) folder **********************************************************************************************)
+E_TraceDeleteStates.FolderDelete:
+  (*-- ENTRY -------------------------------------------------------------------------------------------------------------------*)
+  IF (_DeleteStateLast <> _DeleteState)
+  THEN
+    _DeleteStateLast:= _DeleteState;
+    _DeleteTime     := F_GetTimeMsTick();
+    (*-----------------------------------------------------------------------------------*)
+    _FolderRemove( bExecute:= FALSE );
+    _FolderRemove.sNetId   := '';   // local
+    _FolderRemove.ePath    := E_OpenPath.PATH_GENERIC;
+    _FolderRemove.bExecute := TRUE;
+    _FolderRemove.tTimeout := Tc2_System.DEFAULT_ADS_TIMEOUT;
+    (*-----------------------------------------------------------------------------------*)
+    DestStart:= ADR(_FolderRemove.sPathName);
+    DestEnd  := ADR(_FolderRemove.sPathName) + SIZEOF(_FolderRemove.sPathName);
+    DestStart:= F_StringCopy( DestStart:= DestStart,  DestEnd:= DestEnd,  Source:= ADR(_MainFolder)  );
+    DestStart:= F_StringCopy( DestStart:= DestStart,  DestEnd:= DestEnd,  Source:= ADR('/')  );
+    DestStart:= F_StringCopy( DestStart:= DestStart,  DestEnd:= DestEnd,  Source:= ADR(_ScanSubFolder.stFindFile.sFileName)  );
+    DestStart:= F_StringCopy( DestStart:= DestStart,  DestEnd:= DestEnd,  Source:= ADR('/')  );
+  END_IF
+
+  (*-- ACTION ------------------------------------------------------------------------------------------------------------------*)
+  _FolderRemove();
+
+  (*-- TRANSITION --------------------------------------------------------------------------------------------------------------*)
+  IF ( _FolderRemove.bBusy = FALSE )
+  THEN
+    _DeleteState:= E_TraceDeleteStates.HddUsage;
+    (*-- trace it ---------------------------------------------------*)
+// example: '11-000-0000-00-0, old folder deleted,  folder = D:/Traces/1979-01-09/'
+    _Text:= '';
+    _Text:= CONCAT(_Text, F_AddDividerToSisString(SubsystemRegistry.SubsystemName) );
+    _Text:= CONCAT(_Text, ',  old folder deleted');
+    _Text:= CONCAT(_Text, DebugTextBlocks.FOLDER);
+    _Text:= CONCAT(_Text, _FolderRemove.sPathName);
+    Put( MsgType := E_DebugMsgType.INFO,
+         Instance:= ADR(_Instance),
+         Text    := ADR(_Text)  );
+  END_IF
+
+
+
+
+(********************************************************************************************************************************)
+(** read current hdd usage ******************************************************************************************************)
+E_TraceDeleteStates.HddUsage:
+  (*-- ENTRY -------------------------------------------------------------------------------------------------------------------*)
+  IF (_DeleteStateLast <> _DeleteState)
+  THEN
+    _DeleteStateLast:= _DeleteState;
+    _DeleteTime     := F_GetTimeMsTick();
+    (*-----------------------------------------------------------------------------------*)
+    _HddUsage.Start( Drive:= _MainFolder );  // use drive letter from main folder
+  END_IF
+
+  (*-- ACTION ------------------------------------------------------------------------------------------------------------------*)
+
+  (*-- TRANSITION --------------------------------------------------------------------------------------------------------------*)
+  IF (_HddUsage.Busy = FALSE)
+  THEN
+    _HddUsageCount:= _HddUsageCount + 1;
+    _HddStateLast := E_TraceHddUsageStates.Initialization;  // force re-entry and write message
+    (*-------------------------------------------*)
+    _DeleteState:= E_TraceDeleteStates.FolderSeek;
+  END_IF
+
+
+
+
+(********************************************************************************************************************************)
+(** unknown *********************************************************************************************************************)
+ELSE
+  _DeleteState:= E_TraceDeleteStates.Initialization;
+END_CASE
+
+
+
+
+(********************************************************************************************************************************)
+(** done ************************************************************************************************************************)
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_RunHddUsage" Id="{b3fef0c1-5681-43b3-a8ff-57e405e5781c}" FolderPath="_internal\">
+      <Declaration><![CDATA[// creates hdd usage debug messages
+METHOD PROTECTED M_RunHddUsage
+
+(********************************************************************************************************************************)
+VAR
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+(********************************************************************************************************************************)
+(** diagnosis *******************************************************************************************************************)
+{warning disable C0139}
+_HddUsage.BytesTotal;
+_HddUsage.BytesUsed;    _HddUsage.PercentageUsed;
+_HddUsage.BytesFree;    _HddUsage.PercentageFree;
+{warning restore C0139}
+
+
+
+
+(********************************************************************************************************************************)
+(** initialisation **************************************************************************************************************)
+CASE (_HddState) OF
+E_TraceHddUsageStates.Initialization:
+  (*-- ENTRY -------------------------------------------------------------------------------------------------------------------*)
+    _HddStateLast:= _HddState;
+    _HddTooFull  := FALSE;
+
+  (*-- ACTION ------------------------------------------------------------------------------------------------------------------*)
+
+  (*-- TRANSITION --------------------------------------------------------------------------------------------------------------*)
+    // takes place in state E_TraceCheckStates.HddUsage of M_RunCheck()
+
+
+
+
+(********************************************************************************************************************************)
+(** unknown *********************************************************************************************************************)
+E_TraceHddUsageStates.Unknown:
+  (*-- ENTRY -------------------------------------------------------------------------------------------------------------------*)
+  IF (_HddStateLast <> _HddState)
+  THEN
+    _HddStateLast:= _HddState;
+    _HddTooFull  := FALSE;
+    (*-----------------------------------------------------------------------------------*)
+    // example: '11-000-0000-00-0, unable to retrieve hdd usage,  drive = D:/'
+    _Text:= '';
+    _Text:= CONCAT(_Text, F_AddDividerToSisString(SubsystemRegistry.SubsystemName) );
+    _Text:= CONCAT(_Text, ',  unable to retrieve hdd usage');
+    _Text:= CONCAT(_Text, DebugTextBlocks.DRIVE);
+    _Text:= CONCAT(_Text, _HddUsage.Drive);
+    IF (_HddFullMissed <> 0)
+    THEN
+      _Text:= CONCAT(_Text, DebugTextBlocks.MISSED);  _Text:= CONCAT(_Text, ULINT_TO_STRING(_HddFullMissed)   );
+    END_IF
+    Put( MsgType := E_DebugMsgType.ERROR,
+         Instance:= ADR(_Instance),
+         Text    := ADR(_Text)  );
+    (*-----------------------------------------------------------------------------------*)
+    _HddFullMissed:= 0;
+  END_IF
+
+  (*-- ACTION ------------------------------------------------------------------------------------------------------------------*)
+
+  (*-- TRANSITION --------------------------------------------------------------------------------------------------------------*)
+    // takes place in state E_TraceCheckStates.HddUsage of M_RunCheck()
+
+
+
+
+(********************************************************************************************************************************)
+(** enough space free ***********************************************************************************************************)
+E_TraceHddUsageStates.EnoughFree:
+  (*-- ENTRY -------------------------------------------------------------------------------------------------------------------*)
+  IF (_HddStateLast <> _HddState)
+  THEN
+    _HddStateLast:= _HddState;
+    _HddTooFull  := FALSE;
+    (*-----------------------------------------------------------------------------------*)
+    // example: '11-000-0000-00-0, hdd usage information,  drive = D:/:,  total = 320GB,  free = 98GB,  usage = 65%'
+    _Text:= '';
+    _Text:= CONCAT(_Text, F_AddDividerToSisString(SubsystemRegistry.SubsystemName) );
+    _Text:= CONCAT(_Text, ',  hdd usage information');
+    _Text:= CONCAT(_Text, DebugTextBlocks.DRIVE);  _Text:= CONCAT(_Text, _HddUsage.Drive);
+    _Text:= CONCAT(_Text, DebugTextBlocks.TOTAL);  _Text:= CONCAT(_Text, F_DiskSpaceToString(_HddUsage.BytesTotal)  );
+    _Text:= CONCAT(_Text, DebugTextBlocks.FREE);   _Text:= CONCAT(_Text, F_DiskSpaceToString(_HddUsage.BytesFree)   );
+    _Text:= CONCAT(_Text, DebugTextBlocks.USED);   _Text:= CONCAT(_Text, F_DiskSpaceToString(_HddUsage.BytesUsed)   );
+    _Text:= CONCAT(_Text, DebugTextBlocks.USAGE);  _Text:= CONCAT(_Text, BYTE_TO_STRING(_HddUsage.PercentageUsed)   );  _Text:= CONCAT(_Text, '%');
+    IF (_HddFullMissed <> 0)
+    THEN
+      _Text:= CONCAT(_Text, DebugTextBlocks.MISSED);  _Text:= CONCAT(_Text, ULINT_TO_STRING(_HddFullMissed)   );
+    END_IF
+    Put( MsgType := E_DebugMsgType.INFO,
+         Instance:= ADR(_Instance),
+         Text    := ADR(_Text)  );
+    (*-----------------------------------------------------------------------------------*)
+    _HddFullMissed:= 0;
+  END_IF
+
+  (*-- ACTION ------------------------------------------------------------------------------------------------------------------*)
+
+  (*-- TRANSITION --------------------------------------------------------------------------------------------------------------*)
+    // takes place in state E_TraceCheckStates.HddUsage of M_RunCheck()
+
+
+
+
+(********************************************************************************************************************************)
+(** warning level ***************************************************************************************************************)
+E_TraceHddUsageStates.WarningLevel:
+  (*-- ENTRY -------------------------------------------------------------------------------------------------------------------*)
+  IF (_HddStateLast <> _HddState)
+  THEN
+    _HddStateLast:= _HddState;
+    _HddTooFull  := FALSE;
+    (*-----------------------------------------------------------------------------------*)
+    // example: '11-000-0000-00-0, hdd usage information,  drive = D:/:,  total = 320GB,  free = 98GB,  usage = 65%,  missed messages = 1234'
+    _Text:= '';
+    _Text:= CONCAT(_Text, F_AddDividerToSisString(SubsystemRegistry.SubsystemName) );
+    _Text:= CONCAT(_Text, ',  hdd usage information');
+    _Text:= CONCAT(_Text, DebugTextBlocks.DRIVE);  _Text:= CONCAT(_Text, _HddUsage.Drive);
+    _Text:= CONCAT(_Text, DebugTextBlocks.TOTAL);  _Text:= CONCAT(_Text, F_DiskSpaceToString(_HddUsage.BytesTotal)  );
+    _Text:= CONCAT(_Text, DebugTextBlocks.FREE);   _Text:= CONCAT(_Text, F_DiskSpaceToString(_HddUsage.BytesFree)   );
+    _Text:= CONCAT(_Text, DebugTextBlocks.USED);   _Text:= CONCAT(_Text, F_DiskSpaceToString(_HddUsage.BytesUsed)   );
+    _Text:= CONCAT(_Text, DebugTextBlocks.USAGE);  _Text:= CONCAT(_Text, BYTE_TO_STRING(_HddUsage.PercentageUsed)   );  _Text:= CONCAT(_Text, '%');
+    IF (_HddFullMissed <> 0)
+    THEN
+      _Text:= CONCAT(_Text, DebugTextBlocks.MISSED);  _Text:= CONCAT(_Text, ULINT_TO_STRING(_HddFullMissed)   );
+    END_IF
+    Put( MsgType := E_DebugMsgType.WARNING,
+         Instance:= ADR(_Instance),
+         Text    := ADR(_Text)  );
+    (*-----------------------------------------------------------------------------------*)
+    _HddFullMissed:= 0;
+  END_IF
+
+  (*-- ACTION ------------------------------------------------------------------------------------------------------------------*)
+
+  (*-- TRANSITION --------------------------------------------------------------------------------------------------------------*)
+    // takes place in state E_TraceCheckStates.HddUsage of M_RunCheck()
+
+
+
+
+(********************************************************************************************************************************)
+(** error level *****************************************************************************************************************)
+E_TraceHddUsageStates.ErrorLevel:
+  (*-- ENTRY -------------------------------------------------------------------------------------------------------------------*)
+  IF (_HddStateLast <> _HddState)
+  THEN
+    _HddStateLast:= _HddState;
+    (*-----------------------------------------------------------------------------------*)
+    // example: '11-000-0000-00-0, hdd usage information,  drive = D:/:,  total = 320GB,  free = 98GB,  usage = 65%'
+    _Text:= '';
+    _Text:= CONCAT(_Text, F_AddDividerToSisString(SubsystemRegistry.SubsystemName) );
+    _Text:= CONCAT(_Text, ',  hdd usage information');
+    _Text:= CONCAT(_Text, DebugTextBlocks.DRIVE);  _Text:= CONCAT(_Text, _HddUsage.Drive);
+    _Text:= CONCAT(_Text, DebugTextBlocks.TOTAL);  _Text:= CONCAT(_Text, F_DiskSpaceToString(_HddUsage.BytesTotal)  );
+    _Text:= CONCAT(_Text, DebugTextBlocks.FREE);   _Text:= CONCAT(_Text, F_DiskSpaceToString(_HddUsage.BytesFree)   );
+    _Text:= CONCAT(_Text, DebugTextBlocks.USED);   _Text:= CONCAT(_Text, F_DiskSpaceToString(_HddUsage.BytesUsed)   );
+    _Text:= CONCAT(_Text, DebugTextBlocks.USAGE);  _Text:= CONCAT(_Text, BYTE_TO_STRING(_HddUsage.PercentageUsed)   );  _Text:= CONCAT(_Text, '%');
+    Put( MsgType := E_DebugMsgType.ERROR,
+         Instance:= ADR(_Instance),
+         Text    := ADR(_Text)  );
+    (*-----------------------------------------------------------------------------------*)
+    _HddTooFull   := TRUE; // after this Put() just above
+    _HddFullMissed:= 0;
+  END_IF
+
+  (*-- ACTION ------------------------------------------------------------------------------------------------------------------*)
+
+  (*-- TRANSITION --------------------------------------------------------------------------------------------------------------*)
+    // takes place in state E_TraceCheckStates.HddUsage of M_RunCheck()
+
+
+
+
+(********************************************************************************************************************************)
+(** unknown *********************************************************************************************************************)
+ELSE
+  _HddState:= E_TraceHddUsageStates.Initialization;
+END_CASE
+
+
+
+
+(********************************************************************************************************************************)
+(** done ************************************************************************************************************************)
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_RunWrite" Id="{a392f093-5d18-490d-bbb7-0e5bd0e5e96c}" FolderPath="_internal\">
+      <Declaration><![CDATA[// writes traces into file
+METHOD PROTECTED M_RunWrite
+
+(********************************************************************************************************************************)
+VAR
+  DestStart             : POINTER TO BYTE                  := 0;     // start position to concat
+  DestEnd               : POINTER TO BYTE                  := 0;     // buffer/string end
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+(********************************************************************************************************************************)
+(** initialization **************************************************************************************************************)
+CASE(_WriteState) OF
+E_TraceWriteStates.Initialization:
+  (*-- ENTRY -------------------------------------------------------------------------------------------------------------------*)
+    _WriteStateLast:= _WriteState;
+
+  (*-- ACTION ------------------------------------------------------------------------------------------------------------------*)
+
+  (*-- TRANSITION --------------------------------------------------------------------------------------------------------------*)
+  _WriteState:= E_TraceWriteStates.WaitFolder;
+
+
+
+
+(********************************************************************************************************************************)
+(** error - wait to disable *****************************************************************************************************)
+E_TraceWriteStates.Error:
+  (*-- ENTRY -------------------------------------------------------------------------------------------------------------------*)
+  IF (_WriteStateLast <> _WriteState)
+  THEN
+    _WriteStateLast:= _WriteState;
+    _WriteTime     := F_GetTimeMsTick();
+    (*-----------------------------------------------------------------------------------*)
+  END_IF
+
+  (*-- ACTION ------------------------------------------------------------------------------------------------------------------*)
+
+  (*-- TRANSITION --------------------------------------------------------------------------------------------------------------*)
+  (*-- working folder dissapeared -------------------------------------------------------*)
+  IF (_Active = FALSE)
+  THEN
+    _WriteState:= E_TraceWriteStates.WaitFolder;
+  END_IF
+
+
+
+
+(********************************************************************************************************************************)
+(** wait working folder *********************************************************************************************************)
+E_TraceWriteStates.WaitFolder:
+  (*-- ENTRY -------------------------------------------------------------------------------------------------------------------*)
+  IF (_WriteStateLast <> _WriteState)
+  THEN
+    _WriteStateLast:= _WriteState;
+    _WriteTime     := F_GetTimeMsTick();
+    (*-----------------------------------------------------------------------------------*)
+  END_IF
+
+  (*-- ACTION ------------------------------------------------------------------------------------------------------------------*)
+
+  (*-- TRANSITION --------------------------------------------------------------------------------------------------------------*)
+  (*-- working folder exists ------------------------------------------------------------*)
+  IF (_Active = TRUE)
+  THEN
+    _WriteState:= E_TraceWriteStates.StartWork;
+  END_IF
+
+
+
+
+(********************************************************************************************************************************)
+(** build working folder name with date *****************************************************************************************)
+E_TraceWriteStates.StartWork:
+  (*-- ENTRY -------------------------------------------------------------------------------------------------------------------*)
+  IF (_WriteStateLast <> _WriteState)
+  THEN
+    _WriteStateLast:= _WriteState;
+    _WriteTime     := F_GetTimeMsTick();
+    (*-- save current working date ------------------------------------------------------*)
+    _WriteDate:= System.fbSystemTime.TIMESTR;
+    (*-- build folder name --------------------------------------------------------------*)
+    DestStart:= ADR(_WritePath);
+    DestEnd  := ADR(_WritePath) + SIZEOF(_WritePath);
+    DestStart:= F_StringCopy          ( DestStart:= DestStart,  DestEnd:= DestEnd,  Source    := ADR(_MainFolder)  );
+    DestStart:= F_StringCopy          ( DestStart:= DestStart,  DestEnd:= DestEnd,  Source    := ADR('/')  );
+    DestStart:= F_StringFromDatestruct( DestStart:= DestStart,  DestEnd:= DestEnd,  DateStruct:= _WriteDate );
+    DestStart:= F_StringCopy          ( DestStart:= DestStart,  DestEnd:= DestEnd,  Source    := ADR('/')  );
+  END_IF
+
+  (*-- ACTION ------------------------------------------------------------------------------------------------------------------*)
+
+  (*-- TRANSITION --------------------------------------------------------------------------------------------------------------*)
+  _WriteState:= E_TraceWriteStates.CreateDir;
+
+
+
+
+(********************************************************************************************************************************)
+(** create daily working folder *************************************************************************************************)
+E_TraceWriteStates.CreateDir:
+  (*-- ENTRY -------------------------------------------------------------------------------------------------------------------*)
+  IF (_WriteStateLast <> _WriteState)
+  THEN
+    _WriteStateLast:= _WriteState;
+    _WriteTime     := F_GetTimeMsTick();
+    (*-----------------------------------------------------------------------------------*)
+    _CreateDir( bExecute:= FALSE );         
+    _CreateDir.sNetId   := '';  // local
+    _CreateDir.sPathName:= _WritePath;
+    _CreateDir.ePath    := E_OpenPath.PATH_GENERIC;
+    _CreateDir.bExecute := TRUE;         
+    _CreateDir.tTimeout := Tc2_System.DEFAULT_ADS_TIMEOUT;
+  END_IF
+
+  (*-- ACTION ------------------------------------------------------------------------------------------------------------------*)
+  _CreateDir();
+
+  (*-- TRANSITION --------------------------------------------------------------------------------------------------------------*)
+  IF (_CreateDir.bBusy = FALSE)
+  THEN
+    (*-- folder created => continue -----------------------------------------------------*)
+    IF ( _CreateDir.bError = FALSE )
+    THEN
+      _WriteState:= E_TraceWriteStates.ScanFileStart;
+      (*-- trace it -------------------------------------------------*)
+// example: '11-000-0000-00-0, new folder created,  folder = D:/Traces/1979-01-09/'
+      _Text:= '';
+      _Text:= CONCAT(_Text, F_AddDividerToSisString(SubsystemRegistry.SubsystemName) );
+      _Text:= CONCAT(_Text, ',  new folder created');
+      _Text:= CONCAT(_Text, DebugTextBlocks.FOLDER);
+      _Text:= CONCAT(_Text, _CreateDir.sPathName);
+      Put( MsgType := E_DebugMsgType.INFO,
+           Instance:= ADR(_Instance),
+           Text    := ADR(_Text)  );
+    (*-- folder already exists ----------------------------------------------------------*)
+    ELSIF (    ( _CreateDir.nErrId = 16#070C )     // ADSERR_DEVICE_NOTFOUND
+            OR ( _CreateDir.nErrId = 16#0723 )  )  // ADSERR_DEVICE_ACCESSDENIED
+    THEN                                           // BKF-Flick: Änderung der ReturnCodes ab 4022.20
+      _WriteState:= E_TraceWriteStates.ScanFileStart;
+    (*-- error --------------------------------------------------------------------------*)
+    ELSE
+      _WriteState:= E_TraceWriteStates.Error;
+    END_IF
+  END_IF
+
+
+
+
+(********************************************************************************************************************************)
+(** prepare folder scan for existing files **************************************************************************************)
+E_TraceWriteStates.ScanFileStart:
+  (*-- ENTRY -------------------------------------------------------------------------------------------------------------------*)
+  IF (_WriteStateLast <> _WriteState)
+  THEN
+    _WriteStateLast:= _WriteState;
+    _WriteTime     := F_GetTimeMsTick();
+    (*-----------------------------------------------------------------------------------*)
+    _FileIndex     := 1;  (* Filenummerierung beginnt bei Eins *)
+    _FileCheck.eCmd:= eEnumCmd_First;
+  END_IF
+
+  (*-- ACTION ------------------------------------------------------------------------------------------------------------------*)
+
+  (*-- TRANSITION --------------------------------------------------------------------------------------------------------------*)
+    _WriteState:= E_TraceWriteStates.ScanFileExists;
+
+
+
+
+(********************************************************************************************************************************)
+(** scan folder to check if files exist? ****************************************************************************************)
+E_TraceWriteStates.ScanFileExists:
+  (*-- ENTRY -------------------------------------------------------------------------------------------------------------------*)
+  IF (_WriteStateLast <> _WriteState)
+  THEN
+    _WriteStateLast:= _WriteState;
+    _WriteTime     := F_GetTimeMsTick();
+    (*-- build file name with _FileIndex ------------------------------------------------*)
+{warning disable C0139}
+    M_BuildFileName();    _WriteFileName;
+{warning restore C0139}
+   (*-----------------------------------------------------------------------------------*)
+    _FileCheck( bExecute:= FALSE );
+    _FileCheck.sNetID   := '';  // local
+//  _FileCheck.eCmd;   // maintain this value here 
+    _FileCheck.bExecute := TRUE;
+    _FileCheck.tTimeout := Tc2_System.DEFAULT_ADS_TIMEOUT;
+    (*-----------------------------------------------------------------------------------*)
+    DestStart:= ADR(_FileCheck.sPathName);
+    DestEnd  := ADR(_FileCheck.sPathName) + SIZEOF(_FileCheck.sPathName);
+    DestStart:= F_StringCopy( DestStart:= DestStart,  DestEnd:= DestEnd,  Source:= ADR(_WritePath)  );
+    DestStart:= F_StringCopy( DestStart:= DestStart,  DestEnd:= DestEnd,  Source:= ADR(_WriteFileName)  );
+  END_IF
+
+  (*-- ACTION ------------------------------------------------------------------------------------------------------------------*)
+  _FileCheck();
+
+  (*-- TRANSITION --------------------------------------------------------------------------------------------------------------*)
+  IF (_FileCheck.bBusy = FALSE)
+  THEN
+    _FileCheck.eCmd:= E_EnumCmdType.eEnumCmd_Next;
+    (*-- error --------------------------------------------------------------------------*)
+    IF ( _FileCheck.bError = TRUE )
+    THEN
+      _WriteState:= E_TraceWriteStates.Error;
+    (*-- index does not exist => create & use -------------------------------------------*)
+    ELSIF ( _FileCheck.bEOE = TRUE )
+    THEN
+      _WriteState:= E_TraceWriteStates.CreateOpen;
+    (*-- found: but already too large => keep searching ---------------------------------*)
+    ELSIF (    (_FileCheck.stFindFile.fileSize.dwLowPart)
+            >= (_MaxFileSizeKB * DWORD#1024             )   ) (* kilo bytes => bytes *)
+    THEN
+      _WriteState:= E_TraceWriteStates.ScanFileCancel;
+    (*-- found: smaller than max size => keep using -------------------------------------*)
+    ELSE
+      _WriteState:= E_TraceWriteStates.ScanFileAbort;
+    END_IF
+  END_IF
+
+
+
+
+(********************************************************************************************************************************)
+(** cancel scan *****************************************************************************************************************)
+E_TraceWriteStates.ScanFileCancel:
+  (*-- ENTRY -------------------------------------------------------------------------------------------------------------------*)
+  IF (_WriteStateLast <> _WriteState)
+  THEN
+    _WriteStateLast:= _WriteState;
+    _WriteTime     := F_GetTimeMsTick();
+    (*-----------------------------------------------------------------------------------*)
+    _FileCheck( bExecute:= FALSE );
+    _FileCheck.sNetID   := '';  // local
+//  _FileCheck.sPathName;  // maintain this value here 
+    _FileCheck.eCmd     := E_EnumCmdType.eEnumCmd_Abort;
+    _FileCheck.bExecute := TRUE;
+    _FileCheck.tTimeout := Tc2_System.DEFAULT_ADS_TIMEOUT;
+  END_IF
+
+  (*-- ACTION ------------------------------------------------------------------------------------------------------------------*)
+  _FileCheck();
+
+  (*-- TRANSITION --------------------------------------------------------------------------------------------------------------*)
+  IF (_FileCheck.bBusy = FALSE)
+  THEN
+    (*-- error --------------------------------------------------------------------------*)
+    IF ( _FileCheck.bError = TRUE )
+    THEN
+      _WriteState:= E_TraceWriteStates.Error;
+    (*-- cancellation successful --------------------------------------------------------*)
+    ELSIF ( _FileCheck.bEOE = TRUE )
+    THEN
+      _FileIndex     := _FileIndex + 1;
+      _FileCheck.eCmd:= eEnumCmd_First;
+      _WriteState    := E_TraceWriteStates.ScanFileExists;
+    (*-- keep searching -----------------------------------------------------------------*)
+    ELSE
+      _WriteStateLast:= E_TraceWriteStates.Initialization;  // Re-entry
+    END_IF
+  END_IF
+
+
+
+
+(********************************************************************************************************************************)
+(** cancel scan *****************************************************************************************************************)
+E_TraceWriteStates.ScanFileAbort:
+  (*-- ENTRY -------------------------------------------------------------------------------------------------------------------*)
+  IF (_WriteStateLast <> _WriteState)
+  THEN
+    _WriteStateLast:= _WriteState;
+    _WriteTime     := F_GetTimeMsTick();
+    (*-----------------------------------------------------------------------------------*)
+    _FileCheck( bExecute:= FALSE );
+    _FileCheck.sNetID   := '';  // local
+//  _FileCheck.sPathName;  // maintain this value here 
+    _FileCheck.eCmd     := E_EnumCmdType.eEnumCmd_Abort;
+    _FileCheck.bExecute := TRUE;
+    _FileCheck.tTimeout := Tc2_System.DEFAULT_ADS_TIMEOUT;
+  END_IF
+
+  (*-- ACTION ------------------------------------------------------------------------------------------------------------------*)
+  _FileCheck();
+
+  (*-- TRANSITION --------------------------------------------------------------------------------------------------------------*)
+  IF (_FileCheck.bBusy = FALSE)
+  THEN
+    (*-- error --------------------------------------------------------------------------*)
+    IF    ( _FileCheck.bError = TRUE )
+    THEN
+      _WriteState:= E_TraceWriteStates.Error;
+    (*-- cancellation successful --------------------------------------------------------*)
+    ELSIF ( _FileCheck.bEOE = TRUE )
+    THEN
+      _WriteState:= E_TraceWriteStates.WaitForTrace;
+    (*-- keep searching -----------------------------------------------------------------*)
+    ELSE                                     
+      _WriteStateLast:= E_TraceWriteStates.Initialization;  // Re-entry
+    END_IF
+  END_IF
+
+
+
+
+(********************************************************************************************************************************)
+(** create new file *************************************************************************************************************)
+E_TraceWriteStates.CreateOpen:
+  (*-- ENTRY -------------------------------------------------------------------------------------------------------------------*)
+  IF (_WriteStateLast <> _WriteState)
+  THEN
+    _WriteStateLast:= _WriteState;
+    _WriteTime     := F_GetTimeMsTick();
+    (*-- build file name with _FileIndex ------------------------------------------------*)
+{warning disable C0139}
+    M_BuildFileName();    _WriteFileName;
+{warning restore C0139}
+    (*-----------------------------------------------------------------------------------*)
+    _FileOpen( bExecute:= FALSE );
+    _FileOpen.sNetId   := '';  // local
+    _FileOpen.nMode    := ( FOPEN_MODEWRITE OR FOPEN_MODEPLUS OR FOPEN_MODEBINARY );
+    _FileOpen.ePath    := E_OpenPath.PATH_GENERIC;          
+    _FileOpen.bExecute := TRUE;
+    _FileOpen.tTimeout := Tc2_System.DEFAULT_ADS_TIMEOUT;
+    (*-----------------------------------------------------------------------------------*)
+    DestStart:= ADR(_FileOpen.sPathName);
+    DestEnd  := ADR(_FileOpen.sPathName) + SIZEOF(_FileOpen.sPathName);
+    DestStart:= F_StringCopy( DestStart:= DestStart,  DestEnd:= DestEnd,  Source:= ADR(_WritePath)  );
+    DestStart:= F_StringCopy( DestStart:= DestStart,  DestEnd:= DestEnd,  Source:= ADR(_WriteFileName)  );
+  END_IF
+
+  (*-- ACTION ------------------------------------------------------------------------------------------------------------------*)
+  _FileOpen();
+
+  (*-- TRANSITION --------------------------------------------------------------------------------------------------------------*)
+  IF (_FileOpen.bBusy = FALSE)
+  THEN
+    (*-- File angelegt ------------------------------------------------------------------*)
+    IF    ( _FileOpen.bError = FALSE )  
+    THEN
+      _Statistics.FileOpenCounter:= _Statistics.FileOpenCounter + 1;
+      (*-----------------------------------------*)
+      _Opened        := TRUE;
+      _FileTimeOpened:= F_GetTimeMsTick();
+      _WriteState    := E_TraceWriteStates.CreateHeader;
+   (*-- folder doesn't exist (anymore) --------------------------------------------------*)
+    ELSIF ( _FileOpen.nErrId = 16#070C )
+    THEN
+      _WriteState:= E_TraceWriteStates.StartWork;    
+    (*-- error --------------------------------------------------------------------------*)
+    ELSE
+      _WriteState:= E_TraceWriteStates.Error;
+    END_IF
+  END_IF
+
+
+
+
+(********************************************************************************************************************************)
+(** write header ****************************************************************************************************************)
+E_TraceWriteStates.CreateHeader:
+  (*-- ENTRY -------------------------------------------------------------------------------------------------------------------*)
+  IF (_WriteStateLast <> _WriteState)
+  THEN
+    _WriteStateLast:= _WriteState;
+    _WriteTime     := F_GetTimeMsTick();
+    (*-- create file header -------------------------------------------------------------*)
+{warning disable C0139}
+    M_CreateHeader();   _DataLength;
+{warning restore C0139}
+    (*-----------------------------------------------------------------------------------*)
+    _FileWrite( bExecute:= FALSE );
+    _FileWrite.sNetId    := '';  // local               
+    _FileWrite.hFile     := _FileOpen.hFile;       
+    _FileWrite.pWriteBuff:= ADR(_DataBuffer);
+    _FileWrite.cbWriteLen:= _DataLength;
+    _FileWrite.bExecute  := TRUE;
+    _FileWrite.tTimeout  := Tc2_System.DEFAULT_ADS_TIMEOUT;
+  END_IF
+
+  (*-- ACTION ------------------------------------------------------------------------------------------------------------------*)
+  _FileWrite();
+
+  (*-- TRANSITION --------------------------------------------------------------------------------------------------------------*)
+  IF (_FileWrite.bBusy = FALSE)
+  THEN
+    (*-- error --------------------------------------------------------------------------*)
+    IF    ( _FileWrite.bError = TRUE )
+    THEN
+      _WriteState:= E_TraceWriteStates.Error;
+    (*-- writing successful -------------------------------------------------------------*)
+    ELSE
+      _WriteState:= E_TraceWriteStates.CreateClose;
+    END_IF
+  END_IF
+
+
+
+
+(********************************************************************************************************************************)
+(** close new file **************************************************************************************************************)
+E_TraceWriteStates.CreateClose:
+  (*-- ENTRY -------------------------------------------------------------------------------------------------------------------*)
+  IF (_WriteStateLast <> _WriteState)
+  THEN
+    _WriteStateLast:= _WriteState;
+    _WriteTime     := F_GetTimeMsTick();
+    (*-----------------------------------------------------------------------------------*)
+    _FileClose( bExecute:= FALSE );
+    _FileClose.sNetId  := '';   // local
+    _FileClose.hFile   := _FileOpen.hFile;
+    _FileClose.bExecute:= TRUE;
+    _FileClose.tTimeout:= Tc2_System.DEFAULT_ADS_TIMEOUT;
+  END_IF
+
+  (*-- ACTION ------------------------------------------------------------------------------------------------------------------*)
+  _FileClose();
+
+  (*-- TRANSITION --------------------------------------------------------------------------------------------------------------*)
+  IF (_FileClose.bBusy = FALSE)
+  THEN
+    _PlcRestarted:= FALSE;
+    _Opened      := FALSE;
+    (*-- calculate maximum file open time -----------------------------------------------*)
+    _Statistics.MaxFileOpenTime:= MAX( _Statistics.MaxFileOpenTime, F_GetTimeMsDiff(_FileTimeOpened)  );
+    (*-- error --------------------------------------------------------------------------*)
+    IF    ( _FileClose.bError = TRUE )
+    THEN
+      _WriteState:= E_TraceWriteStates.Error;
+    (*-- closing successful -------------------------------------------------------------*)
+    ELSE
+      _WriteState:= E_TraceWriteStates.WaitForTrace;
+    END_IF
+  END_IF
+
+
+
+
+(********************************************************************************************************************************)
+(** inhibit time (currently not used) *******************************************************************************************)
+E_TraceWriteStates.WaitLocked:
+  (*-- ENTRY -------------------------------------------------------------------------------------------------------------------*)
+  IF (_WriteStateLast <> _WriteState)
+  THEN
+    _WriteStateLast:= _WriteState;
+    _WriteTime     := F_GetTimeMsTick();
+    (*-----------------------------------------------------------------------------------*)
+  END_IF
+
+  (*-- ACTION ------------------------------------------------------------------------------------------------------------------*)
+
+  (*-- TRANSITION --------------------------------------------------------------------------------------------------------------*)
+  (*-- (still) too many traces to be written -> skip inhibit time -----------------------*)
+  IF (_FifoFillLevel >= 256)
+  THEN
+    _WriteState:= E_TraceWriteStates.WaitForTrace;
+  (*-- inhibit time over ----------------------------------------------------------------*)
+  ELSIF (F_GetTimeMsDiff(_WriteTime) >= LOCKTIME)
+  THEN
+    _WriteState:= E_TraceWriteStates.WaitForTrace;
+  (*-- working folder dissapeared -------------------------------------------------------*)
+  ELSIF (_Active = FALSE)
+  THEN
+    _WriteState:= E_TraceWriteStates.WaitFolder;
+  END_IF
+
+
+
+
+(********************************************************************************************************************************)
+(** idle -> wait for traces to write ********************************************************************************************)
+E_TraceWriteStates.WaitForTrace:
+  (*-- ENTRY -------------------------------------------------------------------------------------------------------------------*)
+  IF (_WriteStateLast <> _WriteState)
+  THEN
+    _WriteStateLast:= _WriteState;
+    _WriteTime     := F_GetTimeMsTick();
+    (*-----------------------------------------------------------------------------------*)
+  END_IF
+
+  (*-- ACTION ------------------------------------------------------------------------------------------------------------------*)
+
+  (*-- TRANSITION --------------------------------------------------------------------------------------------------------------*)
+  (*-- traces to write available --------------------------------------------------------*)
+  IF (_FifoFillLevel <> 0)
+  THEN
+//  IF ( _FileIndex <> 1 ) 
+//  THEN
+//     => check if file-one (still) exists
+//  ELSE
+    _FileCheck.eCmd:= E_EnumCmdType.eEnumCmd_First;
+    _WriteState    := E_TraceWriteStates.FileSizeExists;
+  (*-- working folder dissapeared -------------------------------------------------------*)
+  ELSIF (_Active = FALSE)
+  THEN
+    _WriteState:= E_TraceWriteStates.WaitFolder;
+  END_IF
+
+
+
+
+(********************************************************************************************************************************)
+(** check if current file (_FileIndex) still exists and if it's (already) too large *********************************************)
+E_TraceWriteStates.FileSizeExists:
+  (*-- ENTRY -------------------------------------------------------------------------------------------------------------------*)
+  IF (_WriteStateLast <> _WriteState)
+  THEN
+    _WriteStateLast:= _WriteState;
+    _WriteTime     := F_GetTimeMsTick();
+    (*-----------------------------------------------------------------------------------*)
+    _FileCheck( bExecute:= FALSE );
+    _FileCheck.sNetID   := '';   // local
+//  _FileCheck.eCmd;   (* nicht beschreiben *)
+    _FileCheck.bExecute := TRUE;
+    _FileCheck.tTimeout := Tc2_System.DEFAULT_ADS_TIMEOUT;
+    (*-----------------------------------------------------------------------------------*)
+    DestStart:= ADR(_FileCheck.sPathName);
+    DestEnd  := ADR(_FileCheck.sPathName) + SIZEOF(_FileCheck.sPathName);
+    DestStart:= F_StringCopy( DestStart:= DestStart,  DestEnd:= DestEnd,  Source:= ADR(_WritePath)  );
+    DestStart:= F_StringCopy( DestStart:= DestStart,  DestEnd:= DestEnd,  Source:= ADR(_WriteFileName)  );
+  END_IF
+
+  (*-- ACTION ------------------------------------------------------------------------------------------------------------------*)
+  _FileCheck();
+
+  (*-- TRANSITION --------------------------------------------------------------------------------------------------------------*)
+  IF (_FileCheck.bBusy = FALSE)
+  THEN
+    (*-- error --------------------------------------------------------------------------*)
+    IF    (_FileCheck.bError = TRUE)
+    THEN
+      _WriteState:= E_TraceWriteStates.Error;
+    (*-- doesnt exists (anymore) => rescan ----------------------------------------------*)
+    ELSIF (_FileCheck.bEOE = TRUE)
+    THEN
+      _WriteState:= E_TraceWriteStates.ScanFileStart;
+    (*-- exists: => use it --------------------------------------------------------------*)
+    ELSE
+      _FileSize  := (        DWORD_TO_ULINT(_FileCheck.stFindFile.fileSize.dwLowPart )
+                      OR SHL(DWORD_TO_ULINT(_FileCheck.stFindFile.fileSize.dwHighPart), 32)  );
+      (*-- maximal file size exceeded -----------*)
+      IF (    (_FileSize (* KiloBytes => Bytes *) )
+           >= (_MaxFileSizeKB * ULINT#1024        )   )  THEN   _WriteState:= E_TraceWriteStates.FileSizeCancel;  // start over with new file index
+      ELSE                                                      _WriteState:= E_TraceWriteStates.FileSizeAbort;   // use this file again
+      END_IF
+    END_IF
+  END_IF
+
+
+
+
+(********************************************************************************************************************************)
+(** cancel file size/exist check and use this ***********************************************************************************)
+E_TraceWriteStates.FileSizeAbort:
+  (*-- ENTRY -------------------------------------------------------------------------------------------------------------------*)
+  IF (_WriteStateLast <> _WriteState)
+  THEN
+    _WriteStateLast:= _WriteState;
+    _WriteTime     := F_GetTimeMsTick();
+    (*-----------------------------------------------------------------------------------*)
+    _FileCheck( bExecute:= FALSE );
+    _FileCheck.sNetID   := '';   // local
+//  _FileCheck.sPathName;  remain value
+    _FileCheck.eCmd     := E_EnumCmdType.eEnumCmd_Abort;
+    _FileCheck.bExecute := TRUE;
+    _FileCheck.tTimeout := Tc2_System.DEFAULT_ADS_TIMEOUT;
+  END_IF
+
+  (*-- ACTION ------------------------------------------------------------------------------------------------------------------*)
+  _FileCheck();
+
+  (*-- TRANSITION --------------------------------------------------------------------------------------------------------------*)
+  IF ( _FileCheck.bBusy = FALSE )
+  THEN
+    (*-- error --------------------------------------------------------------------------*)
+    IF    (_FileCheck.bError = TRUE)
+    THEN
+      _WriteState:= E_TraceWriteStates.Error;
+    (*-- finished -----------------------------------------------------------------------*)
+    ELSIF (_FileCheck.bEOE = TRUE)
+    THEN
+      _WriteState:= E_TraceWriteStates.OpenAppend;
+    (*-- keep searching -----------------------------------------------------------------*)
+    ELSE
+      _WriteStateLast:= E_TraceWriteStates.Initialization;  // Re-entry
+    END_IF
+  END_IF
+
+
+
+(********************************************************************************************************************************)
+(** cancel file size/exist check due to file size already too large *************************************************************)
+E_TraceWriteStates.FileSizeCancel:
+  (*-- ENTRY -------------------------------------------------------------------------------------------------------------------*)
+  IF (_WriteStateLast <> _WriteState)
+  THEN
+    _WriteStateLast:= _WriteState;
+    _WriteTime     := F_GetTimeMsTick();
+    (*-----------------------------------------------------------------------------------*)
+    _FileCheck( bExecute:= FALSE );
+    _FileCheck.sNetID   := '';   // local
+//  _FileCheck.sPathName;  remain value
+    _FileCheck.eCmd     := E_EnumCmdType.eEnumCmd_Abort;
+    _FileCheck.bExecute := TRUE;
+    _FileCheck.tTimeout := Tc2_System.DEFAULT_ADS_TIMEOUT;
+  END_IF
+
+  (*-- ACTION ------------------------------------------------------------------------------------------------------------------*)
+  _FileCheck();
+
+  (*-- TRANSITION --------------------------------------------------------------------------------------------------------------*)
+  IF ( _FileCheck.bBusy = FALSE )
+  THEN
+    (*-- error --------------------------------------------------------------------------*)
+    IF    (_FileCheck.bError = TRUE)
+    THEN
+      _WriteState:= E_TraceWriteStates.Error;
+    (*-- finished -----------------------------------------------------------------------*)
+    ELSIF (_FileCheck.bEOE = TRUE)
+    THEN
+      _FileIndex := _FileIndex + 1;
+      _WriteState:= E_TraceWriteStates.CreateOpen;
+    (*-- keep searching -----------------------------------------------------------------*)
+    ELSE
+      _WriteStateLast:= E_TraceWriteStates.Initialization;  // Re-entry
+    END_IF
+  END_IF
+
+
+
+
+(********************************************************************************************************************************)
+(** open file to write/append ***************************************************************************************************)
+E_TraceWriteStates.OpenAppend:
+  (*-- ENTRY -------------------------------------------------------------------------------------------------------------------*)
+  IF (_WriteStateLast <> _WriteState)
+  THEN
+    _WriteStateLast:= _WriteState;
+    _WriteTime     := F_GetTimeMsTick();
+    (*-----------------------------------------------------------------------------------*)
+    _FileOpen( bExecute:= FALSE );
+    _FileOpen.sNetId   := '';   // local
+    _FileOpen.nMode    := ( FOPEN_MODEAPPEND OR FOPEN_MODEBINARY );                                
+    _FileOpen.ePath    := E_OpenPath.PATH_GENERIC;          
+    _FileOpen.bExecute := TRUE;
+    _FileOpen.tTimeout := Tc2_System.DEFAULT_ADS_TIMEOUT;
+    (*-----------------------------------------------------------------------------------*)
+    DestStart:= ADR(_FileOpen.sPathName);
+    DestEnd  := ADR(_FileOpen.sPathName) + SIZEOF(_FileOpen.sPathName);
+    DestStart:= F_StringCopy( DestStart:= DestStart,  DestEnd:= DestEnd,  Source:= ADR(_WritePath)  );
+    DestStart:= F_StringCopy( DestStart:= DestStart,  DestEnd:= DestEnd,  Source:= ADR(_WriteFileName)  );
+  END_IF
+
+  (*-- ACTION ------------------------------------------------------------------------------------------------------------------*)
+  _FileOpen();
+
+  (*-- TRANSITION --------------------------------------------------------------------------------------------------------------*)
+  IF ( _FileOpen.bBusy = FALSE )
+  THEN
+    (*-- file opened --------------------------------------------------------------------*)
+    IF    ( _FileOpen.bError = FALSE )  
+    THEN
+      _Statistics.FileOpenCounter:= _Statistics.FileOpenCounter + 1;
+      _FileTimeOpened            := F_GetTimeMsTick();
+      _Opened                    := TRUE;
+      (*-----------------------------------------*)
+      IF (_PlcRestarted = TRUE) THEN   _WriteState:= E_TraceWriteStates.WriteDivider;
+      ELSE                             _WriteState:= E_TraceWriteStates.WriteData;
+      END_IF
+    (*-- folder doesn't exist (anymore) -------------------------------------------------*)
+    ELSIF ( _FileOpen.nErrId = 16#070C )
+    THEN
+      _WriteState:= E_TraceWriteStates.StartWork;    
+    (*-- error --------------------------------------------------------------------------*)
+    ELSE
+      _WriteState:= E_TraceWriteStates.Error;
+    END_IF
+  END_IF
+
+
+
+
+(********************************************************************************************************************************)
+(** add plc restart divider *****************************************************************************************************)
+E_TraceWriteStates.WriteDivider:
+  (*-- ENTRY -------------------------------------------------------------------------------------------------------------------*)
+  IF (_WriteStateLast <> _WriteState)
+  THEN
+    _WriteStateLast:= _WriteState;
+    _WriteTime     := F_GetTimeMsTick();
+    (*-- create plc divider -------------------------------------------------------------*)
+{warning disable C0139}
+    M_CreatePlcDivider();   _DataLength;
+{warning restore C0139}
+    (*-----------------------------------------------------------------------------------*)
+    _FileWrite( bExecute:= FALSE );
+    _FileWrite.sNetId    := '';  // local               
+    _FileWrite.hFile     := _FileOpen.hFile;       
+    _FileWrite.pWriteBuff:= ADR(_DataBuffer);
+    _FileWrite.cbWriteLen:= _DataLength;
+    _FileWrite.bExecute  := TRUE;
+    _FileWrite.tTimeout  := Tc2_System.DEFAULT_ADS_TIMEOUT;
+  END_IF
+
+  (*-- ACTION ------------------------------------------------------------------------------------------------------------------*)
+  _FileWrite();
+
+  (*-- TRANSITION --------------------------------------------------------------------------------------------------------------*)
+  IF (_FileWrite.bBusy = FALSE)
+  THEN
+    _PlcRestarted:= FALSE;
+    _FileSize    := _FileSize + _FileWrite.cbWrite;
+    (*-- error --------------------------------------------------------------------------*)
+    IF    (_FileWrite.bError = TRUE)
+    THEN
+      _WriteState:= E_TraceWriteStates.CloseOpenTime;
+    (*-- writing successful -------------------------------------------------------------*)
+    ELSE
+      _WriteState:= E_TraceWriteStates.WriteData;
+    END_IF
+  END_IF
+
+
+
+
+(********************************************************************************************************************************)
+(** write trace lines ***********************************************************************************************************)
+E_TraceWriteStates.WriteData:
+  (*-- ENTRY -------------------------------------------------------------------------------------------------------------------*)
+  IF (_WriteStateLast <> _WriteState)
+  THEN
+    _WriteStateLast:= _WriteState;
+    _WriteTime     := F_GetTimeMsTick();
+    (*-- create data --------------------------------------------------------------------*)
+{warning disable C0139}
+    _DataDateChanged:= M_CreateData();   _DataLength;
+    (*-----------------------------------------------------------------------------------*)
+    _FileWrite( bExecute:= FALSE );
+    _FileWrite.sNetId    := '';  // local               
+    _FileWrite.hFile     := _FileOpen.hFile;       
+    _FileWrite.pWriteBuff:= ADR(_DataBuffer);
+    _FileWrite.cbWriteLen:= _DataLength;
+    _FileWrite.bExecute  := TRUE;
+    _FileWrite.tTimeout  := Tc2_System.DEFAULT_ADS_TIMEOUT;
+{warning restore C0139}
+  END_IF
+
+  (*-- ACTION ------------------------------------------------------------------------------------------------------------------*)
+  _FileWrite();
+
+  (*-- TRANSITION --------------------------------------------------------------------------------------------------------------*)
+  IF ( _FileWrite.bBusy = FALSE )
+  THEN
+    _FileSize:= _FileSize + _FileWrite.cbWrite;
+    (*-- error --------------------------------------------------------------------------*)
+    IF    (_FileWrite.bError = TRUE)
+    THEN
+      _WriteState:= E_TraceWriteStates.CloseOpenTime;
+    (*-- trace date changed -> new date folder ------------------------------------------*)
+    ELSIF (_DataDateChanged = TRUE)
+    THEN  (* new file/folder for new day *)
+      _WriteState:= E_TraceWriteStates.EofDate;
+    (*-- maximum file size exceeded -----------------------------------------------------*)
+    ELSIF (    (_FileSize (* KiloBytes => Bytes *) )
+            >= (_MaxFileSizeKB * ULINT#1024        )   )
+    THEN  (* start over with new file index *)
+      _WriteState:= E_TraceWriteStates.EofSize;
+    (*-- maximum file open time exceeded (flush) ----------------------------------------*)
+    ELSIF (F_GetTimeMsDiff(_FileTimeOpened) >= MAX_FILEOPEN_TIME)
+    THEN  (* close file and re-open it => file flush *)
+      _WriteState:= E_TraceWriteStates.CloseOpenTime;
+    (*-- more to write? -----------------------------------------------------------------*)
+    ELSIF (_FifoFillLevel <> 0)
+    THEN
+      _WriteStateLast:= E_TraceWriteStates.Initialization;  // Re-entry
+    (*-- no traces to write anymore -> close & wait -------------------------------------*)
+    ELSE
+      _WriteState:= E_TraceWriteStates.CloseOpenTime;
+    END_IF
+  END_IF
+
+
+
+
+(********************************************************************************************************************************)
+(** close due to max open time exceeded *****************************************************************************************)
+E_TraceWriteStates.CloseOpenTime:
+  (*-- ENTRY -------------------------------------------------------------------------------------------------------------------*)
+  IF (_WriteStateLast <> _WriteState)
+  THEN
+    _WriteStateLast:= _WriteState;
+    _WriteTime     := F_GetTimeMsTick();
+    (*-----------------------------------------------------------------------------------*)
+    _FileClose( bExecute:= FALSE );
+    _FileClose.sNetId  := '';  // local
+    _FileClose.hFile   := _FileOpen.hFile;
+    _FileClose.bExecute:= TRUE;
+    _FileClose.tTimeout:= Tc2_System.DEFAULT_ADS_TIMEOUT;
+  END_IF
+
+  (*-- ACTION ------------------------------------------------------------------------------------------------------------------*)
+  _FileClose();
+
+  (*-- TRANSITION --------------------------------------------------------------------------------------------------------------*)
+  IF (_FileClose.bBusy = FALSE)
+  THEN
+    _Opened:= FALSE;
+    (*-- calculate maximum file open time -----------------------------------------------*)
+    _Statistics.MaxFileOpenTime:= MAX( _Statistics.MaxFileOpenTime, F_GetTimeMsDiff(_FileTimeOpened)  );
+    (*-- error --------------------------------------------------------------------------*)
+    IF    (_FileClose.bError = TRUE)
+    THEN
+      _WriteState:= E_TraceWriteStates.Error;
+    (*-- closing successful -------------------------------------------------------------*)
+    ELSE
+      _WriteState:= E_TraceWriteStates.WaitLocked;
+    END_IF
+  END_IF
+
+
+
+
+(********************************************************************************************************************************)
+(** add eof due max file size exceeded ******************************************************************************************)
+E_TraceWriteStates.EofSize:
+  (*-- ENTRY -------------------------------------------------------------------------------------------------------------------*)
+  IF (_WriteStateLast <> _WriteState)
+  THEN
+    _WriteStateLast:= _WriteState;
+    _WriteTime     := F_GetTimeMsTick();
+    (*-- create eof ---------------------------------------------------------------------*)
+{warning disable C0139}
+    M_CreateEof();   _DataLength;
+{warning restore C0139}
+    (*-----------------------------------------------------------------------------------*)
+    _FileWrite( bExecute:= FALSE );
+    _FileWrite.sNetId    := '';  // local               
+    _FileWrite.hFile     := _FileOpen.hFile;       
+    _FileWrite.pWriteBuff:= ADR(_DataBuffer);
+    _FileWrite.cbWriteLen:= _DataLength;
+    _FileWrite.bExecute  := TRUE;
+    _FileWrite.tTimeout  := Tc2_System.DEFAULT_ADS_TIMEOUT;
+  END_IF
+
+  (*-- ACTION ------------------------------------------------------------------------------------------------------------------*)
+  _FileWrite();
+
+  (*-- TRANSITION --------------------------------------------------------------------------------------------------------------*)
+  IF (_FileWrite.bBusy = FALSE)
+  THEN
+    _FileSize  := _FileSize + _FileWrite.cbWrite;
+    _WriteState:= E_TraceWriteStates.CloseSize;
+  END_IF
+
+
+
+
+(********************************************************************************************************************************)
+(** close due to max file size exceeded *****************************************************************************************)
+E_TraceWriteStates.CloseSize:
+  (*-- ENTRY -------------------------------------------------------------------------------------------------------------------*)
+  IF (_WriteStateLast <> _WriteState)
+  THEN
+    _WriteStateLast:= _WriteState;
+    _WriteTime     := F_GetTimeMsTick();
+    (*-----------------------------------------------------------------------------------*)
+    _FileClose( bExecute:= FALSE );
+    _FileClose.sNetId  := '';  // local
+    _FileClose.hFile   := _FileOpen.hFile;
+    _FileClose.bExecute:= TRUE;
+    _FileClose.tTimeout:= Tc2_System.DEFAULT_ADS_TIMEOUT;
+  END_IF
+
+  (*-- ACTION ------------------------------------------------------------------------------------------------------------------*)
+  _FileClose();
+
+  (*-- TRANSITION --------------------------------------------------------------------------------------------------------------*)
+  IF (_FileClose.bBusy = FALSE)
+  THEN
+    _FileIndex:= _FileIndex + 1;
+    _Opened   := FALSE;
+    (*-- calculate maximum file open time -----------------------------------------------*)
+    _Statistics.MaxFileOpenTime:= MAX( _Statistics.MaxFileOpenTime, F_GetTimeMsDiff(_FileTimeOpened)  );
+    (*-- error --------------------------------------------------------------------------*)
+    IF    (_FileClose.bError = TRUE)
+    THEN
+      _WriteState:= E_TraceWriteStates.Error;
+    (*-- closing successful -------------------------------------------------------------*)
+    ELSE
+      _WriteState:= E_TraceWriteStates.CreateOpen;
+    END_IF
+  END_IF
+
+
+
+
+(********************************************************************************************************************************)
+(** add eof due to new date *****************************************************************************************************)
+E_TraceWriteStates.EofDate:
+  (*-- ENTRY -------------------------------------------------------------------------------------------------------------------*)
+  IF (_WriteStateLast <> _WriteState)
+  THEN
+    _WriteStateLast:= _WriteState;
+    _WriteTime     := F_GetTimeMsTick();
+    (*-- create eof ---------------------------------------------------------------------*)
+{warning disable C0139}
+    M_CreateEof();   _DataLength;
+{warning restore C0139}
+    (*-----------------------------------------------------------------------------------*)
+    _FileWrite( bExecute:= FALSE );
+    _FileWrite.sNetId    := '';  // local               
+    _FileWrite.hFile     := _FileOpen.hFile;       
+    _FileWrite.pWriteBuff:= ADR(_DataBuffer);
+    _FileWrite.cbWriteLen:= _DataLength;
+    _FileWrite.bExecute  := TRUE;
+    _FileWrite.tTimeout  := Tc2_System.DEFAULT_ADS_TIMEOUT;
+  END_IF
+
+  (*-- ACTION ------------------------------------------------------------------------------------------------------------------*)
+  _FileWrite();
+
+  (*-- TRANSITION --------------------------------------------------------------------------------------------------------------*)
+  IF (_FileWrite.bBusy = FALSE)
+  THEN
+    _FileSize  := _FileSize + _FileWrite.cbWrite;
+    _WriteState:= E_TraceWriteStates.CloseDate;
+  END_IF
+
+
+
+
+(********************************************************************************************************************************)
+(** close due to new date *******************************************************************************************************)
+E_TraceWriteStates.CloseDate:
+  (*-- ENTRY -------------------------------------------------------------------------------------------------------------------*)
+  IF (_WriteStateLast <> _WriteState)
+  THEN
+    _WriteStateLast:= _WriteState;
+    _WriteTime     := F_GetTimeMsTick();
+    (*-----------------------------------------------------------------------------------*)
+    _FileClose( bExecute:= FALSE );
+    _FileClose.sNetId  := '';  // local
+    _FileClose.hFile   := _FileOpen.hFile;
+    _FileClose.bExecute:= TRUE;
+    _FileClose.tTimeout:= Tc2_System.DEFAULT_ADS_TIMEOUT;
+  END_IF
+
+  (*-- ACTION ------------------------------------------------------------------------------------------------------------------*)
+  _FileClose();
+
+  (*-- TRANSITION --------------------------------------------------------------------------------------------------------------*)
+  IF (_FileClose.bBusy = FALSE)
+  THEN
+    _Opened:= FALSE;
+    (*-- calculate maximum file open time -----------------------------------------------*)
+    _Statistics.MaxFileOpenTime:= MAX( _Statistics.MaxFileOpenTime, F_GetTimeMsDiff(_FileTimeOpened)  );
+    (*-- error --------------------------------------------------------------------------*)
+    IF    (_FileClose.bError = TRUE)
+    THEN
+      _WriteState:= E_TraceWriteStates.Error;
+    (*-- closing successful -------------------------------------------------------------*)
+    ELSE
+      _WriteState:= E_TraceWriteStates.HddUsage;
+    END_IF
+  END_IF
+
+
+
+
+(********************************************************************************************************************************)
+(** read current hdd usage ******************************************************************************************************)
+E_TraceWriteStates.HddUsage:
+  (*-- ENTRY -------------------------------------------------------------------------------------------------------------------*)
+  IF (_WriteStateLast <> _WriteState)
+  THEN
+    _WriteStateLast:= _WriteState;
+    _WriteTime     := F_GetTimeMsTick();
+    (*-----------------------------------------------------------------------------------*)
+    _HddUsage.Start( Drive:= _MainFolder );  // use drive letter from main folder
+  END_IF
+
+  (*-- ACTION ------------------------------------------------------------------------------------------------------------------*)
+
+  (*-- TRANSITION --------------------------------------------------------------------------------------------------------------*)
+  IF (_HddUsage.Busy = FALSE)
+  THEN
+    _HddUsageCount:= _HddUsageCount + 1;
+    _HddStateLast := E_TraceHddUsageStates.Initialization;  // force re-entry and write message
+    (*-------------------------------------------*)
+    _WriteState:= E_TraceWriteStates.StartWork;
+  END_IF
+
+
+
+
+(********************************************************************************************************************************)
+(** unknown *********************************************************************************************************************)
+ELSE
+  _WriteState:= E_TraceWriteStates.Initialization;
+END_CASE
+
+
+
+
+(********************************************************************************************************************************)
+(** done ************************************************************************************************************************)
+]]></ST>
+      </Implementation>
+    </Method>
+    <Property Name="MaxFileSizeKB" Id="{1d4164e0-a4af-4d8c-a3a2-e235dae19903}" FolderPath="Properties\">
+      <Declaration><![CDATA[// maximum file size in kilobytes
+{attribute 'monitoring' := 'call'}
+PROPERTY PUBLIC MaxFileSizeKB : WORD]]></Declaration>
+      <Get Name="Get" Id="{2af74c19-ff28-4e7f-910a-845c33d12fee}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[MaxFileSizeKB:= _MaxFileSizeKB;]]></ST>
+        </Implementation>
+      </Get>
+      <Set Name="Set" Id="{eca2550f-655d-4484-827b-dc6bceef6ff7}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[_MaxFileSizeKB:= MaxFileSizeKB;]]></ST>
+        </Implementation>
+      </Set>
+    </Property>
+    <Property Name="Opened" Id="{617ecbad-aa95-481c-a979-34e8e62c38de}" FolderPath="Properties\">
+      <Declaration><![CDATA[// HI = file is currently open
+{attribute 'monitoring' := 'call'}
+PROPERTY PUBLIC Opened : BOOL]]></Declaration>
+      <Get Name="Get" Id="{90665bb4-caf1-4117-a5b0-042d9f5eb61d}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[Opened:= _Opened;]]></ST>
+        </Implementation>
+      </Get>
+    </Property>
+    <Method Name="Put" Id="{67d6dd9d-f152-4b22-9130-6bac5fcc1978}" FolderPath="Methods\">
+      <Declaration><![CDATA[// puts a new trace line into the current file
+METHOD PUBLIC Put
+
+(********************************************************************************************************************************)
+VAR_INPUT
+  MsgType               : E_DebugMsgType                   := E_DebugMsgType.ERROR;
+  Instance              : POINTER TO BYTE                  := 0;     // pointer to string
+  Text                  : POINTER TO BYTE                  := 0;     // pointer to string
+END_VAR
+
+(********************************************************************************************************************************)
+VAR
+  Entry                 : POINTER TO FB_TraceEntry         := 0;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+(********************************************************************************************************************************)
+(** check inputs ****************************************************************************************************************)
+IF (Text = 0)
+THEN
+  RETURN;
+END_IF
+
+
+
+
+(********************************************************************************************************************************)
+(** enough hdd space? ***********************************************************************************************************)
+IF (_HddTooFull = TRUE)
+THEN
+  _HddFullMissed:= _HddFullMissed + 1;
+  RETURN;
+END_IF
+
+
+
+
+(********************************************************************************************************************************)
+(** fb ready? *******************************************************************************************************************)
+IF (System.fbSystemTime.TIMESTR.wYear = 0)
+THEN
+  _Diag_InvalidDate:= _Diag_InvalidDate + 1;
+  RETURN;
+END_IF
+
+
+
+
+(********************************************************************************************************************************)
+(** space in fifo available? ****************************************************************************************************)
+IF (_FifoFillLevel >= FIFO_SIZE)
+THEN
+  _Diag_FifoFull:= _Diag_FifoFull + 1;
+  RETURN;
+END_IF
+
+
+
+
+(********************************************************************************************************************************)
+(** create entry ****************************************************************************************************************)
+Entry:= __NEW( FB_TraceEntry( DateTime   := System.fbSystemTime.TIMESTR,
+                              TaskCounter:= _TaskCounter + 1,
+                             xMsgType    := MsgType,
+                             xInstance   := Instance,  // leading x in the name:
+                              Text       := Text  ) ); // Beckhoff SUPPORTCH-29439
+IF   (Entry        = 0)      THEN  _Diag_NoMemory:= _Diag_NoMemory + 1;  RETURN;
+ELSIF(Entry^.Valid = FALSE)  THEN  _Diag_NoEntry := _Diag_NoEntry  + 1;  __DELETE(Entry);  RETURN;
+END_IF
+
+_TaskCounter:= _TaskCounter + 1;
+
+
+
+
+
+(********************************************************************************************************************************)
+(** put into fifo ***************************************************************************************************************)
+_Fifo[_FifoInput]:= Entry;
+
+_FifoInput:= _FifoInput + 1;
+IF(_FifoInput >= FIFO_SIZE)
+THEN
+  _FifoInput:= 0;
+END_IF
+
+_FifoFillLevel:= _FifoFillLevel + 1;
+
+
+
+
+(********************************************************************************************************************************)
+(** update statistics ***********************************************************************************************************)
+_Statistics.PutCounter      := _Statistics.PutCounter  + 1;
+_Statistics.MaxFifoFillLevel:= MAX(_Statistics.MaxFifoFillLevel, _FifoFillLevel);
+
+
+
+
+(********************************************************************************************************************************)
+(** done ************************************************************************************************************************)
+]]></ST>
+      </Implementation>
+    </Method>
+    <Property Name="Statistics" Id="{88415d1b-8357-46eb-91be-3330e3ce453d}" FolderPath="Properties\">
+      <Declaration><![CDATA[// diagnosis & statisticals
+{attribute 'monitoring' := 'call'}
+PROPERTY PUBLIC Statistics : I_TraceHandlerStatistics]]></Declaration>
+      <Get Name="Get" Id="{75d4b5c9-f52e-4f03-9bed-3fef83ad743c}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[Statistics:= _Statistics;]]></ST>
+        </Implementation>
+      </Get>
+    </Property>
+    <LineIds Name="FB_TraceHandler">
+      <LineId Id="3" Count="57" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_TraceHandler.Clear">
+      <LineId Id="3" Count="32" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_TraceHandler.Enable.Get">
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_TraceHandler.Enable.Set">
+      <LineId Id="3" Count="13" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_TraceHandler.FB_exit">
+      <LineId Id="3" Count="9" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_TraceHandler.FB_init">
+      <LineId Id="3" Count="11" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_TraceHandler.Folder.Get">
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_TraceHandler.Folder.Set">
+      <LineId Id="3" Count="59" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_TraceHandler.HddUsage.Get">
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_TraceHandler.M_BuildFileName">
+      <LineId Id="3" Count="25" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_TraceHandler.M_RunDelete">
+      <LineId Id="3" Count="353" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_TraceHandler.MaxFileSizeKB.Get">
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_TraceHandler.MaxFileSizeKB.Set">
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_TraceHandler.Opened.Get">
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_TraceHandler.Put">
+      <LineId Id="3" Count="85" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_TraceHandler.Statistics.Get">
+      <LineId Id="2" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

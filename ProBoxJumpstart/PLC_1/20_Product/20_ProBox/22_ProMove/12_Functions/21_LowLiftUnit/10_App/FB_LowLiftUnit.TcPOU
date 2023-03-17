@@ -1,0 +1,502 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <POU Name="FB_LowLiftUnit" Id="{0de04e75-babe-4689-8f5c-d7307c35753d}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK FB_LowLiftUnit EXTENDS FB_StraightBase
+(**************************************************************************************
+ * 	Application		:	ProBox
+ *	Revision		:	$$
+ *	Revision date	:	$$
+ *	Last changed by	:	$$
+ *	URL				:	$$
+ *
+ *	Purpose			:	ProBox Low Lift function.
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ **************************************************************************************)
+VAR_INPUT
+	Config					: ST_CFG_LowLiftUnit; // Configuration
+	HW_Inputs		 		: ST_HW_InputsLowLiftUnit; // Hardware inputs
+END_VAR
+
+VAR_OUTPUT	
+	HW_Outputs				: ST_HW_OutputsLowLiftUnit; // Hardware outputs
+END_VAR
+
+VAR
+	Inputs					: ST_InputsLowLiftUnit; // Function specific inputs
+	Outputs					: ST_OutputsLowLiftUnit; // Function specific outputs
+	Idx						: INT; // Iterator
+	ZoneIdx					: INT; // Iterator	
+	fbTransportControl 		: FB_ProBoxTransportControl; // Transport control for each zone		
+END_VAR
+
+VAR PERSISTENT
+	Settings				: ST_CFG_LowLiftUnit; // Settings - activated configuration 	
+END_VAR]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[(**************************************************************************************************************
+   Input mapping
+***************************************************************************************************************)
+A_InputMapping();
+
+(**************************************************************************************************************
+   Initialization
+***************************************************************************************************************)
+A_Init();
+
+(**************************************************************************************************************
+   External Subsystem transport interface
+***************************************************************************************************************)
+M_ExternalSTI();
+
+(**************************************************************************************************************
+   State control
+***************************************************************************************************************)
+A_StateControl();
+
+(**************************************************************************************************************
+   Error handler
+***************************************************************************************************************)
+A_ErrorHandler();
+_M_CheckErrors();
+
+(**************************************************************************************************************
+   Process AddOns
+***************************************************************************************************************)
+M_ProcessAddOns();
+
+(**************************************************************************************************************
+   Manual control
+***************************************************************************************************************)
+M_ManualControl();
+
+(**********************************************************************************************************
+   Low lift control
+***********************************************************************************************************)
+_M_LowLiftControl();
+
+(**********************************************************************************************************
+   Transport control
+***********************************************************************************************************)
+_M_TransportControl();
+
+(**********************************************************************************************************
+   Assign transport data
+***********************************************************************************************************)
+_M_TransportLink();
+
+(**************************************************************************************************************
+   Interface handler out
+***************************************************************************************************************)
+M_ITC_ProcessOut();
+
+(**************************************************************************************************************
+   Output mapping
+***************************************************************************************************************)
+A_OutputMapping();	]]></ST>
+    </Implementation>
+    <Method Name="_M_CheckErrors" Id="{96768102-58f8-4d96-84cc-5441be2a337a}">
+      <Declaration><![CDATA[METHOD _M_CheckErrors : BOOL
+VAR_INPUT
+END_VAR
+VAR_INST
+	fbOHSensorControl	: FB_OH_SensorControl;
+END_VAR
+VAR
+	TakoverActive	: BOOL;
+	HandoverActive	: BOOL;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[F_ResetError(FALSE,	FunctionData.ErrorData.ErrorDataSet[1]);
+F_ResetError(FALSE,	FunctionData.ErrorData.ErrorDataSet[2]);
+
+TakoverActive  := F_PB_GetTransportControlDataRef(ConfigFunction.eFunctionNumber, 1).eTakeOverState = E_TakeOverState.ACTIVE; 
+HandoverActive := F_PB_GetTransportControlDataRef(ConfigFunction.eFunctionNumber, 1).eHandOverState = E_HandOverState.ACTIVE;
+
+// Overhang Sensors
+IF Settings.OverhangSensorsEnable THEN 
+
+	fbOHSensorControl( FunctionNumber	:= ConfigFunction.eFunctionNumber,
+						ZoneNumber		:= 1,
+						OH_PositionSide	:= 1, //1,2,3 or 4
+						OH_SensorInput	:= HW_Inputs.Sensor_Overhang_12,
+						Mute			:= Outputs.LowLiftEnableTransport <> (TakoverActive OR HandoverActive), //mutes test when it is not needed, e.g. when group is not active
+						Error			:= ZoneData[1].ErrorData.ErrorDataSet[1]);
+	
+	fbOHSensorControl( FunctionNumber	:= ConfigFunction.eFunctionNumber,
+						ZoneNumber		:= 1,
+						OH_PositionSide	:= 2, //1,2,3 or 4
+						OH_SensorInput	:= HW_Inputs.Sensor_Overhang_21,
+						Mute			:= Outputs.LowLiftEnableTransport <> (TakoverActive OR HandoverActive), //mutes test when it is not needed, e.g. when group is not active
+						Error			:= ZoneData[1].ErrorData.ErrorDataSet[2]);
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_LowLiftControl" Id="{977fb340-2bbd-4691-801c-b7eed15e78c5}">
+      <Declaration><![CDATA[METHOD _M_LowLiftControl : BOOL
+VAR_INPUT
+END_VAR
+VAR_INST
+	fbLowLiftControl		: FB_LowLiftControl; // Low lift control
+	fbProBoxMotorControlLift: FB_ProBoxMotorControl; // Motor control for low lift
+	MotorDirectionLift		: E_ProBoxMotorDirection; // Assigned motor direction for lift
+	MotorSpeedLift			: E_ProBoxMotorSpeed; // Assigned motor speed for lift	
+	OrderPos				: E_Positions_LowLiftControl; // Order position for lift
+	HomePos					: E_Positions_LowLiftControl; // Home position for lift
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[(**********************************************************************************************************
+   Low lift control
+***********************************************************************************************************)
+
+// Initialize variables
+OrderPos := E_Positions_LowLiftControl.UNDEFINED; 
+HomePos := E_Positions_LowLiftControl.UNDEFINED; 
+
+// When zone is free
+IF ZoneData[1].TransportControlData.eTransportState = E_TransportState.FREE OR 
+	ZoneData[1].TransportControlData.eTransportState = E_TransportState.TAKEOVER THEN
+	// If previous function is avaiable
+	IF FunctionInterface.In.ePrevFunctionNumber <> E_FunctionNumber.F_BEGIN_FUNCTION THEN
+		// If previous function is on side 1
+		IF FunctionInterface.In.ePrevFunctionNumber = SettingsFunction.eAdjacentFunctionNumberSide[1] THEN
+			OrderPos := E_Positions_LowLiftControl.DOWN;
+		// If previous function is on side 2
+		ELSIF FunctionInterface.In.ePrevFunctionNumber = SettingsFunction.eAdjacentFunctionNumberSide[2] THEN
+			OrderPos := E_Positions_LowLiftControl.UP;
+		END_IF 	
+	ELSE
+		// Set homeposition
+		HomePos := Settings.HomePosFree;	
+	END_IF			
+// When zone is occupied
+ELSIF ZoneData[1].TransportControlData.eTransportState = E_TransportState.OCCUPIED OR
+ 	ZoneData[1].TransportControlData.eTransportState = E_TransportState.HANDOVER THEN
+	// If next function is avaiable
+	IF FunctionInterface.In.eNextFunctionNumber <> E_FunctionNumber.F_BEGIN_FUNCTION THEN
+		// If next function is on side 1
+		IF FunctionInterface.In.eNextFunctionNumber = SettingsFunction.eAdjacentFunctionNumberSide[1] THEN
+			OrderPos := E_Positions_LowLiftControl.DOWN;
+		// If next function is on side 2
+		ELSIF FunctionInterface.In.eNextFunctionNumber = SettingsFunction.eAdjacentFunctionNumberSide[2] THEN
+			OrderPos := E_Positions_LowLiftControl.UP;
+		END_IF
+	ELSE
+		// Set homeposition
+		HomePos := Settings.HomePosOccupied;
+	END_IF		
+END_IF
+ 
+
+fbLowLiftControl(
+	FunctionData			:= FunctionData, // Function data 
+	Sensor_Pos_Down			:= Inputs.Sensor_Pos_Down, // Sensor position lift down
+	Sensor_Creep_Down		:= Inputs.Sensor_Creep_Down, // Sensor creep speed lift down
+	Sensor_EndLimit_Down	:= Inputs.Sensor_EndLimit_Down, // Sensor end limit lift down
+	Sensor_Pos_Up			:= Inputs.Sensor_Pos_Up, // Sensor position lift up
+	Sensor_Creep_Up			:= Inputs.Sensor_Creep_Up, // Sensor creep speed lift up
+	Sensor_EndLimit_Up		:= Inputs.Sensor_EndLimit_Up, // Sensor end limit lift up
+	Signal_HighTempLift		:= Inputs.Signal_HighTempLift, // Signal high tmeperature lift motor
+	TimeoutValueLift		:= Settings.TimeoutValueLift, // Timeout value for lifting
+	OrderPos				:= OrderPos, // Order position Lift		
+	HomePos					:= HomePos, // Home position lift
+	ErrorData				:= ZoneData[1].ErrorData.ErrorDataSet[2],
+	EnableTransport			=> Outputs.LowLiftEnableTransport); // Error data
+
+(**********************************************************************************************************
+   Motor control low lift
+***********************************************************************************************************)			  
+
+// Assign motor direction
+IF fbLowLiftControl.Drive_Run_Down THEN
+	MotorDirectionLift := E_ProBoxMotorDirection.MOTOR_REVERSE;
+ELSIF fbLowLiftControl.Drive_Run_Up THEN
+	MotorDirectionLift := E_ProBoxMotorDirection.MOTOR_FORWARD;
+END_IF;
+
+// Assign motor speed
+IF fbLowLiftControl.Drive_Creep_UpDown THEN
+	MotorSpeedLift := E_ProBoxMotorSpeed.CREEP_SPEED;
+ELSE
+	MotorSpeedLift := E_ProBoxMotorSpeed.NORMAL;		
+END_IF
+
+fbProBoxMotorControlLift(
+				Run 			:= fbLowLiftControl.Drive_Run_Down OR fbLowLiftControl.Drive_Run_Up,
+				MotorSpeed 		:= MotorSpeedLift, 
+				MotorDirection 	:= MotorDirectionLift,
+				MotorStarterOK 	:= Inputs.Signal_MotorUnitOK,
+				ErrorData 		:= ZoneData[1].ErrorData.ErrorDataSet[3],
+				Forward			=> Outputs.Drive_Run_Up,
+				Reverse			=> Outputs.Drive_Run_Down,
+				CreepSpeed		=> Outputs.Drive_Creep_UpDown,
+				LowSpeed		=> Outputs.Drive_Low_UpDown);
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_TransportControl" Id="{88ff09f3-6b53-4dbc-ba17-e175250a4c89}">
+      <Declaration><![CDATA[METHOD PRIVATE _M_TransportControl : BOOL
+VAR	
+	StopSensorOccupied		: BOOL;	// Assigned occupied sensor	last
+	CreepSensor				: BOOL; // Creep sensor
+	ZoneOccupied			: BOOL; // Zone physical occupied
+	DisableTransport		: BOOL;
+	CtrlInputPbTc			: ST_CtrlInPbTc; //Control input for Probox transportControl
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+// Check direction of the conveyor
+SettingsFunction.FlowDirectionREV := _M_DefineTransportDirection(FunctionData.ErrorData.ErrorDataSet[2]);
+
+
+// Assign sensor occpupied
+_M_Check_HW_SensorInput(
+					Sensor_Stop_12		:= Inputs.Sensor_Stop_12, 
+					Sensor_Stop_21		:= Inputs.Sensor_Stop_21, 
+					Sensor_Slug_12		:= FALSE, 
+					Sensor_Slug_21		:= FALSE,
+					Sensor_Creep_12		:= Inputs.Sensor_Creep_12,
+					Sensor_Creep_21		:= Inputs.Sensor_Creep_21, 
+					FlowDirectionREV	:= SettingsFunction.FlowDirectionREV, 
+					HasSluggingSensor	:= FALSE,
+					ExtRunSynteticSensor:= FALSE, 
+					StopSensorOccupied	=> StopSensorOccupied,					
+					CreepSensor			=> CreepSensor);
+
+
+//Disable transport
+DisableTransport := NOT Outputs.LowLiftEnableTransport;	
+
+// call Straight transport method of base class
+CtrlInputPbTc.EnableSlugging 	:= FALSE;
+CtrlInputPbTc.SlugSensor		:= FALSE;
+CtrlInputPbTc.SlugSensorExists	:= FALSE;
+CtrlInputPbTc.StopSensor		:= StopSensorOccupied;
+ 		
+M_StraightTransport(
+				fbTransportControl		:=fbTransportControl,
+				ZoneIx					:= 1, 
+				ExtDisableTakeover		:= DisableTransport, 
+				ExtDisableHandover		:= DisableTransport, 
+				ExtDisableTransport		:= DisableTransport, 
+				CtrlInputPbTc			:= CtrlInputPbTc,
+				CreepHwSensor			:= CreepSensor, 
+				Orientation_Axis		:= E_Axis_Orientation.Element_12);
+
+]]></ST>
+      </Implementation>
+    </Method>
+    <Action Name="A_Init" Id="{33865c8a-d2e9-40ab-bc03-ff5a3dae73cd}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_Init
+ * 	FUNCTION	Initialize function
+ **************************************************************************************)
+ 
+// Update Registry
+M_UpdateRegistry();
+ 
+
+// Init ongoing - Wait until init is released (Sequencial startup)
+IF NOT FunctionData.Init AND FunctionData.InitRunning THEN
+	// When the subsystem is started, 
+	// When its released to initialize
+	IF FunctionData.OperationState.Info.SystemReady AND
+	   SettingsFunction.eFunctionNumber < FunctionData.OperationState.InitRelease.eLimitFunctionNumber THEN
+	   
+	   IF M_InitFunction(FALSE) THEN
+			// Function initialized - and initialization done
+			FunctionData.Init := TRUE;
+			FunctionData.InitRunning := FALSE;
+			
+			// Set reset cmd
+			FunctionData.ErrorData.Error.ResetError := TRUE;
+			
+			DebugMsg := CONCAT('Initialization done. Function: ', ConfigFunction.FunctionName);
+			fbDebugMsg.M_SendInfoMsg(DebugMsg);
+		END_IF
+	END_IF
+(*
+If the function is not initialized,
+clean all values and wait until init is released
+*)
+ELSIF NOT FunctionData.Init THEN
+	// Reset internal variables
+	FunctionData.OperationState := FunctionBase.PositionStateEmpty;
+
+	// Initiate initialization of all zones
+	FOR ZoneIdx := 1 TO SettingsFunction.NumberOfZones DO
+		ZoneData[ZoneIdx].Init := FALSE;
+	END_FOR;
+	
+	// Load function specific configuration to settings
+	Settings := Config;
+	
+	// Reset values and load config
+	M_PreInit();
+	
+	// To start init a valid functionnumber and element link is needed
+	FunctionData.InitRunning := SettingsFunction.eFunctionNumber > 0 AND
+								SettingsFunction.eElementLink > 0;
+																
+END_IF
+
+// Init zones
+IF FunctionData.Init THEN
+	// Set init flag after one cycle
+	FOR ZoneIdx := 1 TO SettingsFunction.NumberOfZones DO
+		// If a zone is not initialized, wait one cycle to finish init
+		IF NOT ZoneData[ZoneIdx].Init THEN
+			IF ZoneData[ZoneIdx].InitRunning THEN
+				ZoneData[ZoneIdx].InitRunning := FALSE;
+				ZoneData[ZoneIdx].Init := TRUE;
+				ZoneData[ZoneIdx].ErrorData.Error.ResetError := TRUE;
+			ELSE	
+				ZoneData[ZoneIdx].InitRunning := TRUE;
+			END_IF
+		END_IF
+	END_FOR;
+END_IF]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="A_InputMapping" Id="{705d0a66-2fdf-4d43-995d-46d4c9c52c8f}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_InputMapping
+ * 	FUNCTION	Input mapping
+ **************************************************************************************)
+ 
+(**************************************************************************************
+   Hardware Inputs
+***************************************************************************************)
+// Adapt input logic state high/low
+// Since no feeddback singnal from the drive is available the HW output signal for the drive is used at fbTransportControl instead.
+Inputs.Sensor_Stop_12			:= Settings.HW_InputInverted.Sensor_Stop_12 XOR HW_Inputs.Sensor_Stop_12;			
+Inputs.Sensor_Slow_12			:= Settings.HW_InputInverted.Sensor_Slow_12 XOR HW_Inputs.Sensor_Slow_12;			
+Inputs.Sensor_Creep_12			:= Settings.HW_InputInverted.Sensor_Creep_12 XOR HW_Inputs.Sensor_Creep_12;	
+Inputs.Sensor_Overhang_12		:= Settings.HW_InputInverted.Sensor_Overhang_12 XOR HW_Inputs.Sensor_Overhang_12;		
+Inputs.Sensor_Stop_21			:= Settings.HW_InputInverted.Sensor_Stop_21 XOR HW_Inputs.Sensor_Stop_21;
+Inputs.Sensor_Slow_21			:= Settings.HW_InputInverted.Sensor_Slow_21 XOR HW_Inputs.Sensor_Slow_21;
+Inputs.Sensor_Creep_21			:= Settings.HW_InputInverted.Sensor_Creep_21 XOR HW_Inputs.Sensor_Creep_21;
+Inputs.Sensor_Overhang_21		:= Settings.HW_InputInverted.Sensor_Overhang_21 XOR HW_Inputs.Sensor_Overhang_21;
+Inputs.Sensor_Pos_Down			:= Settings.HW_InputInverted.Sensor_Pos_Down XOR HW_Inputs.Sensor_Pos_Down;
+Inputs.Sensor_Creep_Down		:= Settings.HW_InputInverted.Sensor_Creep_Down XOR HW_Inputs.Sensor_Creep_Down;
+Inputs.Sensor_EndLimit_Down		:= Settings.HW_InputInverted.Sensor_EndLimit_Down XOR HW_Inputs.Sensor_EndLimit_Down;
+Inputs.Sensor_Pos_Up			:= Settings.HW_InputInverted.Sensor_Pos_Up XOR HW_Inputs.Sensor_Pos_Up;
+Inputs.Sensor_Creep_Up			:= Settings.HW_InputInverted.Sensor_Creep_Up XOR HW_Inputs.Sensor_Creep_Up;
+Inputs.Sensor_EndLimit_Up		:= Settings.HW_InputInverted.Sensor_EndLimit_Up XOR HW_Inputs.Sensor_EndLimit_Up;
+Inputs.Signal_MotorUnitOK		:= Settings.HW_InputInverted.Signal_MotorUnitOK XOR HW_Inputs.Signal_MotorUnitOK;
+Inputs.Signal_HighTempLift		:= Settings.HW_InputInverted.Signal_HighTempLift XOR HW_Inputs.Signal_HighTempLift;
+Inputs.Button_ResetLightgrid	:= Settings.HW_InputInverted.Button_ResetLightgrid XOR HW_Inputs.Button_ResetLightgrid;
+
+(**************************************************************************************
+   Element states
+***************************************************************************************)
+// Get status of the corresponding element
+M_GetElementStates(); 
+
+(**************************************************************************************
+   AddOn states
+***************************************************************************************)
+// Get status of all corresponding AddOn functions and store it in FunctionInterface.In.AddOnOrder
+M_GetAddOnOrder();
+
+]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="A_OutputMapping" Id="{df42adce-0217-40ac-8706-ee958aa416dc}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_OutputMapping
+ * 	FUNCTION	Output mapping
+ **************************************************************************************)
+ 
+(**************************************************************************************
+   Hardware outputs
+***************************************************************************************)
+HW_Outputs.Drive_Run_Down 		:= Outputs.Drive_Run_Down;
+HW_Outputs.Drive_Run_Up 		:= Outputs.Drive_Run_Up;
+HW_Outputs.Drive_Low_UpDown 	:= Outputs.Drive_Low_UpDown;
+HW_Outputs.Drive_Creep_UpDown 	:= Outputs.Drive_Creep_UpDown;
+
+
+(**************************************************************************************
+   Order outputs (Commands to corresponding element)
+***************************************************************************************)
+THIS^.M_OutputMapping(E_Axis_Orientation.Element_12,Ext_Disable:= NOT Outputs.LowLiftEnableTransport);
+
+(**************************************************************************************
+   AddOn outputs
+***************************************************************************************)
+// This function provide no AddOn functionality
+
+
+// ---------------------------------------------------
+//Inhibit stopping for the function when ExtendedRun is driving
+THIS^.InhibitStopping := HW_Outputs.Drive_Run_Down 	OR HW_Outputs.Drive_Run_Up; 	]]></ST>
+      </Implementation>
+    </Action>
+    <LineIds Name="FB_LowLiftUnit">
+      <LineId Id="566" Count="34" />
+      <LineId Id="606" Count="23" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_LowLiftUnit._M_CheckErrors">
+      <LineId Id="34" Count="7" />
+      <LineId Id="13" Count="0" />
+      <LineId Id="8" Count="3" />
+      <LineId Id="5" Count="0" />
+      <LineId Id="15" Count="0" />
+      <LineId Id="27" Count="0" />
+      <LineId Id="21" Count="5" />
+      <LineId Id="12" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_LowLiftUnit._M_LowLiftControl">
+      <LineId Id="6" Count="50" />
+      <LineId Id="59" Count="4" />
+      <LineId Id="90" Count="0" />
+      <LineId Id="64" Count="24" />
+      <LineId Id="98" Count="3" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_LowLiftUnit._M_TransportControl">
+      <LineId Id="72" Count="0" />
+      <LineId Id="7" Count="15" />
+      <LineId Id="24" Count="0" />
+      <LineId Id="95" Count="1" />
+      <LineId Id="25" Count="0" />
+      <LineId Id="97" Count="0" />
+      <LineId Id="26" Count="1" />
+      <LineId Id="106" Count="2" />
+      <LineId Id="28" Count="0" />
+      <LineId Id="35" Count="0" />
+      <LineId Id="37" Count="0" />
+      <LineId Id="69" Count="0" />
+      <LineId Id="38" Count="4" />
+      <LineId Id="44" Count="1" />
+      <LineId Id="48" Count="0" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_LowLiftUnit.A_Init">
+      <LineId Id="2" Count="67" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_LowLiftUnit.A_InputMapping">
+      <LineId Id="2" Count="39" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_LowLiftUnit.A_OutputMapping">
+      <LineId Id="2" Count="11" />
+      <LineId Id="82" Count="0" />
+      <LineId Id="14" Count="4" />
+      <LineId Id="44" Count="4" />
+      <LineId Id="77" Count="3" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

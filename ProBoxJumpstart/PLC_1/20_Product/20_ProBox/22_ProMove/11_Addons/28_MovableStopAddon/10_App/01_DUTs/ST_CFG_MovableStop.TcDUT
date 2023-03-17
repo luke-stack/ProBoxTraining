@@ -1,0 +1,16 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <DUT Name="ST_CFG_MovableStop" Id="{aa0ff2a7-6dcc-482d-a88b-b0d9f605966d}">
+    <Declaration><![CDATA[TYPE ST_CFG_MovableStop :
+STRUCT
+	TimeoutValueLift 			: TIME := T#5S;	// Timeout value for lifting
+	AlignmentTime				: TIME;
+	LiftEnabled					: BOOL;
+	EnableExternalTrigger		: BOOL;
+	DirectionAlignment			: E_DirectionMovableStop := E_DirectionMovableStop.Side_1_2;
+	
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

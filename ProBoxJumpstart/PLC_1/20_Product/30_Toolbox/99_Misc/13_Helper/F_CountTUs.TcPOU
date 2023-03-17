@@ -1,0 +1,76 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.18">
+  <POU Name="F_CountTUs" Id="{88038234-1d47-44e9-ad24-70adb8fea007}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION F_CountTUs : INT
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 453155 $
+ *	Revision date	:	$Date: 2020-05-28 10:31:40 +0200 (tor, 28 maj 2020) $
+ *	Last changed by	:	$Author: b7muotj $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/tags/R1.12.0/01_Software/BCF/BCF/JumpStart/30_Toolbox/99_Misc/13_Helper/F_CountTUs.TcPOU $
+ *
+ *	Purpose			:	Counts present TU's on Function range between BeginCount and EndCount
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				27.05.2020		jmu					Added to the BCF
+ *
+ **************************************************************************************)
+VAR_INPUT
+	BeginCount	: E_FunctionNumber; // Function to start the counting of TU's
+	EndCount	: E_FunctionNumber; // Function to stop the counting of TU's
+END_VAR
+VAR
+	eFunctionNumber	: E_FunctionNumber;
+	i	: INT;
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[F_CountTUs := 0;
+
+//Look for the count of present TUs within the range and add found TUs together
+IF EndCount >= BeginCount 
+	AND BeginCount > F_BEGIN_FUNCTION 
+	AND EndCount < F_END_FUNCTION THEN
+	
+	FOR eFunctionNumber := BeginCount TO EndCount DO
+		
+		IF FunctionRegistry[eFunctionNumber].Enable THEN
+			
+			IF __ISVALIDREF(FunctionRegistry[eFunctionNumber].rFunction) THEN
+				
+				FOR i := 1 TO NUMBER_OF_ZONES_PER_FUNCTION DO
+					
+					F_CountTUs:=F_CountTUs + UINT_TO_INT(FunctionRegistry[eFunctionNumber].rFunction.ZoneData[i].TransportControlData.NumberOfPresentTUs);
+				END_FOR
+			END_IF
+		END_IF
+	END_FOR
+END_IF]]></ST>
+    </Implementation>
+    <LineIds Name="F_CountTUs">
+      <LineId Id="122" Count="0" />
+      <LineId Id="136" Count="0" />
+      <LineId Id="123" Count="1" />
+      <LineId Id="173" Count="1" />
+      <LineId Id="125" Count="0" />
+      <LineId Id="138" Count="0" />
+      <LineId Id="127" Count="0" />
+      <LineId Id="139" Count="0" />
+      <LineId Id="129" Count="0" />
+      <LineId Id="140" Count="0" />
+      <LineId Id="130" Count="0" />
+      <LineId Id="141" Count="0" />
+      <LineId Id="143" Count="0" />
+      <LineId Id="142" Count="0" />
+      <LineId Id="132" Count="3" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

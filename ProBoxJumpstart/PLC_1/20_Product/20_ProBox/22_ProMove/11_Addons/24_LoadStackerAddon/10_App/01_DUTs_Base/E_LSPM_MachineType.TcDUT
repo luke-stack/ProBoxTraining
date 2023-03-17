@@ -1,0 +1,16 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.4">
+  <DUT Name="E_LSPM_MachineType" Id="{8f2202b9-679c-4ed3-ac0e-348dc8f4594e}">
+    <Declaration><![CDATA[{attribute 'qualified_only'}
+{attribute 'strict'}
+TYPE E_LSPM_MachineType :
+(
+	E_UNKNOWN,				
+	E_PALLET_MAGAZINE, 	//Simple pallet magazine type
+	E_SUB_PALLETIZING,	//Sub palletizing machine type, TU_Data is written to support board when sending out stack
+	E_PALLET_STACKER	//Pallet stacks loaded pallets on top of each other, TU data is written to the bottom TU when sending out stack
+);
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

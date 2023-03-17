@@ -1,0 +1,55 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.18">
+  <POU Name="F_AlignEncoderValue" Id="{acc88c02-9f4b-4db8-a89f-728e640c1f47}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION F_AlignEncoderValue : UDINT
+(************************************************************************************** 
+* 	Application 		: BoxControl Framework 
+* 	Revision 			: $Revision: 408723 $ 
+* 	Revision date 		: $Date: 2018-06-27 13:49:08 +0200 (Wed, 27 Jun 2018) $ 
+* 	Last changed by 	: $Author: b7bolm $ 
+* 	URL 				: $URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/21_Projects/BCF_2.0/trunk/BCF/BCF/JumpStart/20_Product/10_App/12_E_Functions/10_Lib/10_Conv/FB_FunctionList.TcPOU $ 
+* ------------------------------------------------------------------------------------ 
+* 	© Swisslog AG 
+* 	Swisslog is not liable for any usage of this source code that is not agreed 
+* 	on between Swisslog and the other party. The mandatory legal liability remains 
+* 	unaffected. 
+* ------------------------------------------------------------------------------------ 
+* 	Revision History: 
+* 
+* 	VERSION 		DATE 			INITIALS 			DESCRIPTION 
+* 	0.1 			25.09.2018 		mbo					First implementation
+* 
+**************************************************************************************)
+VAR_INPUT
+	EncoderValueInc				: UDINT; // Encoder value [increment]
+	MaxEncoderValueInc			: UDINT; // Max encoder value (Range is 0..MaxValue) [increment]
+	EncoderFW_Desc				: BOOL := FALSE; // Encoder counts in descending sequence 9,8,7,6... to move forward
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[
+IF EncoderValueInc = 0 THEN
+	F_AlignEncoderValue := 0;
+	RETURN;
+END_IF
+
+IF EncoderFW_Desc THEN
+	// In:   0 5 4 3 2 1 0 5 4 3 2 1
+	// Out:  0 1 2 3 4 5 0 1 2 3 4 5
+	// Remark: 0 = 0, this is important otherwise a step would be detected
+	// on system startup. 
+	F_AlignEncoderValue := MaxEncoderValueInc - EncoderValueInc + 1;
+ELSE
+	// In:    0 1 2 3 4 5 0 1 2 3 4 5
+	// Out:	  0 1 2 3 4 5 0 1 2 3 4 5
+	F_AlignEncoderValue := EncoderValueInc;
+END_IF]]></ST>
+    </Implementation>
+    <LineIds Name="F_AlignEncoderValue">
+      <LineId Id="65" Count="8" />
+      <LineId Id="79" Count="1" />
+      <LineId Id="74" Count="4" />
+      <LineId Id="7" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

@@ -1,0 +1,59 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <POU Name="FB_ProfileCheckMeasure" Id="{0ca37436-616f-41aa-9f72-ea12d8a1ad68}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK FB_ProfileCheckMeasure
+VAR_INPUT
+	LastBeamBlocked		: UINT;
+	Offset 				: INT; 
+	BeamSpacing 		: INT;
+	StartMeasurement	: BOOL;
+END_VAR
+
+VAR
+ConvertedLastBeamBlocked		: INT;
+TempMeasuredValue : INT;
+END_VAR
+
+VAR_OUTPUT
+	MaxMeasuredValue 	: INT;
+	LiveValue			: INT;
+	LightGridClear		: BOOL;
+END_VAR
+
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[//65535(uint) = -1 (int) = no beams blocked
+ConvertedLastBeamBlocked:= UINT_TO_INT(LastBeamBlocked);
+
+IF ConvertedLastBeamBlocked >= 0 THEN
+	LiveValue := (ConvertedLastBeamBlocked * BeamSpacing) - Offset;	
+ELSE
+	LiveValue := 0;	
+END_IF
+	
+IF StartMeasurement THEN 
+	IF LiveValue > MaxMeasuredValue THEN
+		MaxMeasuredValue := LiveValue;
+	END_IF
+ELSE 
+	MaxMeasuredValue := 0;
+END_IF
+
+IF (ConvertedLastBeamBlocked = -1) THEN
+	LightGridClear := TRUE;
+ELSE
+	LightGridClear := FALSE;	
+END_IF]]></ST>
+    </Implementation>
+    <LineIds Name="FB_ProfileCheckMeasure">
+      <LineId Id="34" Count="8" />
+      <LineId Id="60" Count="0" />
+      <LineId Id="75" Count="1" />
+      <LineId Id="61" Count="0" />
+      <LineId Id="82" Count="1" />
+      <LineId Id="79" Count="0" />
+      <LineId Id="68" Count="4" />
+      <LineId Id="9" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

@@ -1,0 +1,42 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.4">
+  <DUT Name="ST_SluggingAddOnOrder_Zone" Id="{8b1ccbcc-1a9b-4d30-ba30-eba197f05808}">
+    <Declaration><![CDATA[// control data for one colntrolled zone
+TYPE ST_SluggingAddOnOrder_Zone:
+(**************************************************************************************
+ *  Application     :   BoxControl Framework
+ *  Revision date   :   $Date: 2021-04-09 08:29:02 +0200 (fre, 09 apr 2021) $
+ *  Author          :   CDC
+ * ------------------------------------------------------------------------------------
+ *  © Swisslog AG
+ *  Swisslog is not liable for any usage of this source code that is not agreed 
+ *  on between Swisslog and the other party. The mandatory legal liability remains 
+ *  unaffected.
+ * ------------------------------------------------------------------------------------
+ *  Revision History: 
+ *
+ *  VERSION DATE         INITIALS     DESCRIPTION
+ *  0.0     DD.MM.YYYY   (name)       (explain customized modifications)
+ *
+ **************************************************************************************)
+STRUCT
+	eFunctionNumber			: E_FunctionNumber;	// function number
+	ZoneNumber        		: DINT;			    // zone number
+
+	ZoneName				: STRING[NAME_LENGTH];                  // zone name
+	TransportControlData	: REFERENCE TO ST_TransportControlData;	// transport control data
+	FunctionInterface		: REFERENCE TO ST_FunctionInterface;	// function interface (prev/next)
+
+	Enable					: BOOL := TRUE;		// General enable
+	EnableTakeover			: BOOL := TRUE;		// Enable takeover
+	EnableHandover			: BOOL := TRUE;		// Enable Handover
+	EnableSimultaneousTransport	: BOOL; 		// Enable transport as simultanous
+
+    AddOnSensor             : BOOL;
+    AllowDriveTakeover      : BOOL;
+    AllowDriveHandover      : BOOL;
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

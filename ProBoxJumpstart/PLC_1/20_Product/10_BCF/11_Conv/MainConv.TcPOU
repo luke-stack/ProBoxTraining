@@ -1,0 +1,395 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.4">
+  <POU Name="MainConv" Id="{01ce0962-d8fc-4578-aa9a-76e213695e6e}" SpecialFunc="None">
+    <Declaration><![CDATA[PROGRAM MainConv
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 404529 $
+ *	Revision date	:	$Date: 2018-04-23 08:21:38 +0200 (Mo., 23 Apr 2018) $
+ *	Last changed by	:	$Author: b7bolm $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/trunk/01_Software/BCF/BCF/JumpStart/20_Product/10_App/MainConv.TcPOU $
+ *
+ *	Purpose			:	Main program call.
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+  *
+ **************************************************************************************)
+VAR
+	Init								: BOOL := FALSE; // Application is initialized 
+	
+	ActivateSubsystemConfig				: BOOL; // Flag to activate the configuration of the Subsystem 
+	ActivateGroupManagerConfig			: BOOL; // Flag to activate the configuration of the groupmanager 
+	ActivateGroupConfig					: BOOL; // Flag to activate the configuration of the group 
+	ActivatePositionConfig				: BOOL; // Flag to activate the configuration of the element 
+	ActivateCommunicationConfig			: BOOL; // Flag to activate the configuration of the communication 
+	
+	InitializeSubsystem					: BOOL; // Flag to activate initialization
+	InitializeGroupManager				: BOOL; // Flag to activate initialization
+	InitializeGroups					: BOOL; // Flag to activate initialization
+	InitializeFunctions					: BOOL; // Flag to activate initialization
+	InitializeCommunication				: BOOL; // Flag to activate initialization
+	InitializeElements					: BOOL; // Flag to activate initialization
+	ReInit								: BOOL := TRUE; // Reinitialize application
+	fbDebugMsg							: FB_DebugMsg; // Debug instance
+	fbGetSystemTime						: GETSYSTEMTIME; // Gets the system time  
+	LatchedTimeDW						: DWORD; // Latch the system time 
+	LastTimeStamp						: DWORD; // Time stamp
+	fbGetCurTaskIdx  					: GETCURTASKINDEX; // Returns the actual task index
+	
+	fbCommunicationComposition			: FB_CommunicationComposition; // Communication call
+	fbElementComposition				: FB_ElementComposition; // Element calls
+	fbElementCompositionCustomized		: FB_ElementCompositionCustomized; // Element calls
+	fbFunctionComposition				: FB_FunctionComposition; // Function calls
+	fbFunctionCompositionCustomized		: FB_FunctionCompositionCustomized; // Function calls
+	fbGroupComposition					: FB_GroupComposition; // Group calls
+	fbGroupCompositionCustomized		: FB_GroupCompositionCustomized; // Group calls
+	fbSubsystemComposition				: FB_SubsystemComposition; // Subsystem calls
+	fbSubsystemCompositionCustomized	: FB_SubsystemCompositionCustomized; // Subsystem calls
+	fbDeleteOldTU_Data					: FB_DeleteOldTU_Data; // Checks old TU data
+	SubsystemState						: ST_PositionState; // Subsystem state
+END_VAR
+
+
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[// whow
+
+(**************************************************************************************************************
+   Update PLC data
+***************************************************************************************************************)
+A_UpdatePLC_Data();
+
+(**************************************************************************************************************
+   Detect PLC restart
+***************************************************************************************************************)
+A_DetectPLC_Restart();
+
+(**************************************************************************************************************
+   Initialize program
+***************************************************************************************************************)
+A_Init();
+
+(**************************************************************************************************************
+   Call global instances
+***************************************************************************************************************)
+A_GlobalInstances();
+
+(**************************************************************************************************************
+   Call application
+***************************************************************************************************************)
+IF Init THEN
+
+	(**************************************************************************************************************
+	   Update all references
+	***************************************************************************************************************)
+	F_UpdateReferences();
+
+	(**************************************************************************************************************
+	   Update all ISR signals
+	***************************************************************************************************************)
+	F_UpdateISR();
+	
+	(**************************************************************************************************************
+	   Clean up TU-Data table
+	***************************************************************************************************************)
+	A_DeleteOldTU_Data();
+
+	(**************************************************************************************************************
+	  Call functional units
+	***************************************************************************************************************)
+	// Communication 
+	fbCommunicationComposition();
+
+	// Subsystem
+	fbSubsystemCompositionCustomized();
+	fbSubsystemComposition();
+
+	// Groups
+	fbGroupCompositionCustomized();
+	fbGroupComposition();
+	
+	// Elements 
+	fbElementCompositionCustomized();
+ 	fbElementComposition();
+			
+	// Functions
+	fbFunctionCompositionCustomized();
+	fbFunctionComposition();
+
+	// Call supplements (e.g. Commissioning tools)
+	A_Supplements();
+
+END_IF
+]]></ST>
+    </Implementation>
+    <Action Name="A_DeleteOldTU_Data" Id="{a28b5572-0fe4-4ebe-8a36-03a82f95eb50}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_DeleteOldTU_Data
+ * 	FUNCTION	Delete old TU data
+ **************************************************************************************)
+// Get subsystem state
+SubsystemState := F_GetSubsystemOperationState();
+
+// Subsystem is started
+IF SubsystemState.eState = E_PositionState.STARTED THEN
+
+	// Check old TU data
+	fbDeleteOldTU_Data();
+END_IF]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="A_DetectPLC_Restart" Id="{4f75c88a-505d-437f-a862-e53a162d9aa7}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_DetectPLC_Restart
+ * 	FUNCTION	Detects a PLC restart
+ **************************************************************************************)
+
+// Get current cycle count
+fbGetCurTaskIdx();
+
+// Get Timestamp
+IF LatchedTimeDW <= fbGetSystemTime.timeLoDW THEN
+	// No overflow 
+	IF ((fbGetSystemTime.timeLoDW - LatchedTimeDW) > 10 * _TaskInfo[fbGetCurTaskIdx.index].CycleTime )THEN
+		// PLC was stopped reactivate start delay -> Reinit
+		ReInit := TRUE;
+	END_IF
+ELSE
+	// Overflow hapened
+	IF ((fbGetSystemTime.timeLoDW + (4294967296- LatchedTimeDW)) > 10 * _TaskInfo[fbGetCurTaskIdx.index].CycleTime) THEN
+		// PLC was stopped reactivate start delay -> Reinit
+		ReInit := TRUE;
+	END_IF
+END_IF
+
+// Update latched time
+LatchedTimeDW := fbGetSystemTime.timeLoDW;]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="A_GlobalInstances" Id="{c5118ac4-7bde-4677-8ef3-6f16ed5f3e33}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_GlobalInstances
+ * 	FUNCTION	Call global instances
+ **************************************************************************************)
+
+// Call blink pulses
+fbBlink_1s();
+fbBlink_100ms();
+fbBlink_500ms();]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="A_Init" Id="{e680f9b3-cdfd-46b8-8dd8-83b4a565d6c0}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_Init
+ * 	FUNCTION	Initialize application
+ **************************************************************************************)
+// Reset socket closer
+fbSocketCloseAll(bExecute:= FALSE);	
+
+// Force reinitialization
+IF ReInit THEN
+	(*
+	As a reason that it possible that the application
+	was NOT stopped properly, all socket connections
+	need to be closed during init
+	*)
+	System.fbSocketCloseAll(bExecute:= TRUE);	
+	// Force init of application
+	Init := FALSE;
+	// Reset values
+	ReInit := FALSE; 
+END_IF
+
+(*
+	Initialize the application if socket close is done, and
+	we have a system time available
+*)
+IF NOT Init AND NOT fbSocketCloseAll.bBusy AND fbSystemTime.TIMESTR.wYear > 0 THEN
+	Init := TRUE;
+
+	// Update all references before using them after a reset 
+	F_UpdateReferences();
+	
+	// Load configurations
+	F_ConfigProduct();
+	F_ConfigCommunication();
+	F_ConfigPosition();
+	F_ConfigGroup();
+	F_ConfigGroupManager();
+	F_ConfigSubsystem();
+	F_ConfigExternalDestination();
+
+	(* 
+	The initialization order should not be changed!
+	Changing this order can lead to undexpected behavior, 
+	or inconsisten data values
+	*)	
+	F_InitializeCommunication();
+	
+	// Force init Subsystem
+	F_InitializeSubsystem();
+	
+	// Force initializing Group manager 
+	fbGroupManager.M_Init(TRUE);
+
+	// Initialize all groups
+	F_InitializeAllGroups();
+	
+	// Initialize all elements
+	F_InitializeAllElements();
+	
+	// Initialize all functions
+	F_InitializeAllFunctions();
+
+	fbDebugMsg.M_SendInfoMsg('Main initialized.');
+END_IF
+]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="A_Supplements" Id="{d6656ce4-8260-49fd-9817-f50c40acf0b1}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_Supplements
+ * 	FUNCTION	Help functionalities - E.g. commissioning tools, functions...
+ **************************************************************************************)
+
+// Load communication configuration, only used for commissioning 
+IF ActivateCommunicationConfig THEN
+	F_ConfigCommunication();
+	ActivateCommunicationConfig := FALSE;
+END_IF
+
+// Load position configuration, only used for commissioning 
+IF ActivatePositionConfig THEN
+	F_ConfigPosition();
+	ActivatePositionConfig := FALSE;
+END_IF
+
+// Load group configuration, only used for commissioning 
+IF ActivateGroupConfig THEN
+	F_ConfigGroup();
+	ActivateGroupConfig := FALSE;
+END_IF
+
+// Load groupmanager configuration, only used for commissioning 
+IF ActivateGroupManagerConfig THEN
+	F_ConfigGroupManager();
+	ActivateGroupManagerConfig := FALSE;
+END_IF
+
+// Load Subsystem configuration, only used for commissioning 
+IF ActivateSubsystemConfig THEN
+	F_ConfigSubsystem();
+	ActivateSubsystemConfig := FALSE;
+END_IF
+
+// Force init
+IF InitializeSubsystem THEN
+	InitializeSubsystem := FALSE;
+	// Force init Subsystem
+	F_InitializeSubsystem();
+END_IF
+
+// Force init
+IF InitializeGroupManager THEN
+	InitializeGroupManager := FALSE;
+	// Force initializing Group manager 
+	fbGroupManager.M_Init(TRUE);
+END_IF	
+	
+// Force init
+IF InitializeGroups THEN
+	InitializeGroups := FALSE;
+	// Initialize all groups
+	F_InitializeAllGroups();
+END_IF	
+
+// Force init
+IF InitializeFunctions THEN
+	InitializeFunctions := FALSE;
+	// Initialize all funcitons
+	F_InitializeAllFunctions();
+END_IF		
+
+// Force init
+IF InitializeElements THEN
+	InitializeElements := FALSE;
+	// Initialize all elements
+	F_InitializeAllElements();
+END_IF	
+
+// Force init
+IF InitializeCommunication THEN
+	InitializeCommunication := FALSE;
+	// Close all connections
+	F_InitializeCommunication();
+END_IF	
+]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="A_UpdatePLC_Data" Id="{c5a623da-dbe2-468d-8a62-d0db83a2fa68}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_UpdatePLC_Data
+ * 	FUNCTION	Updates all PLC data variables
+ **************************************************************************************)
+
+// System time
+fbSystemTime(START:= TRUE);
+IF NOT fbSystemTime.BUSY THEN
+	// not busy anymore -> restart
+	fbSystemTime(START:= FALSE);
+	fbSystemTime(START:= TRUE);
+END_IF
+
+
+// Save system time in global variable
+TimeStampDT    := SYSTEMTIME_TO_DT    (fbSystemTime.TIMESTR);
+TimeStampString:= SYSTEMTIME_TO_STRING(fbSystemTime.TIMESTR);
+
+
+// Get System Time
+fbGetSystemTime();
+
+// Get Cycle Time
+IF fbGetSystemTime.timeLoDW > LastTimeStamp THEN
+	ActCycleTime := UDINT_TO_DINT((fbGetSystemTime.timeLoDW - LastTimeStamp + 5) / 10);
+END_IF
+
+// Update last time stamp
+LastTimeStamp := fbGetSystemTime.timeLoDW;
+
+]]></ST>
+      </Implementation>
+    </Action>
+    <ObjectProperties>
+      <XmlArchive>
+        <Data>
+          <o xml:space="preserve" t="UMLStereoTypeContainerObject">
+            <v n="IsType" t="UMLType">BaseArea</v>
+            <v n="Stereotype">""</v>
+            <d n="Stereotypes" t="Hashtable" />
+          </o>
+        </Data>
+        <TypeList>
+          <Type n="Hashtable">System.Collections.Hashtable</Type>
+          <Type n="String">System.String</Type>
+          <Type n="UMLStereoTypeContainerObject">{30250973-b110-4e31-b562-c102e042dca4}</Type>
+          <Type n="UMLType">{0197b136-405a-42ee-bb27-fd08b621d0cf}</Type>
+        </TypeList>
+      </XmlArchive>
+    </ObjectProperties>
+  </POU>
+</TcPlcObject>

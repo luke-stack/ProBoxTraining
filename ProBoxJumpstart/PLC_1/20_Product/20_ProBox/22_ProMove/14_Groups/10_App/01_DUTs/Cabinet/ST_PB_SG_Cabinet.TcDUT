@@ -1,0 +1,20 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <DUT Name="ST_PB_SG_Cabinet" Id="{33815761-3601-4d83-80c9-4be7ecd9a0da}">
+    <Declaration><![CDATA[TYPE ST_PB_SG_Cabinet :
+STRUCT
+	OpMcOn				: BOOL; 		// Op Main Contactor ON push button (NO)
+	OpMcOff				: BOOL := TRUE; // Op Main Contactor OFF push button (NC)
+	OpAutoOn			: BOOL; 		// Op Auto on push button, Start group (NO)	
+	OpManAuto			: BOOL := TRUE; // Op Auto/Manual switch Manual, True= AutoMode, False = Manual Mode
+	OpResetError		: BOOL; 		// Op Acknowledge error push button (NO)
+	OpResetSafety		: BOOL; 		// Op Acknowledge Emgergency push button (NO)
+	OpEmgDrive 			: BOOL; 		// OP Emergency drive switch used when end limit is activated
+	OpEntryReq			: BOOL := TRUE; // OP request Entry (NC). High signal = AutoMode. Low signal = Entry Request
+	
+	Conv				: ARRAY[1..2] OF ST_PB_SG_CabinetInputExt; //conveyor and Motion controls
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

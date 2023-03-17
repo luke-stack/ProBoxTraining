@@ -1,0 +1,1399 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <POU Name="F_ConfigPosition_001" Id="{984f4fe4-d68f-4109-b494-91c37032a7d9}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION F_ConfigPosition_001
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[
+
+(****************************** 10-001-0200-00-0 ************************************)
+(*************************** ProBoxElement with one Motor *******************************)
+// Configuration element 
+fbEL_10_001_0200_00_0.ConfigElement.ElementName                     := '10-001-0200-00-0'; // Element name 
+fbEL_10_001_0200_00_0.ConfigElement.eElementNumber                  := E_10_001_0200_00_0; // Number of the element 
+fbEL_10_001_0200_00_0.ConfigElement.eSlaveElementNumber_34          := E_ElementNumber.E_BEGIN_ELEMENT; // Link from Master to slave element
+fbEL_10_001_0200_00_0.ConfigElement.eElementType                    := E_ElementType.NO_TYPE; // No specific type
+
+// Register element 
+ElementRegistry[E_10_001_0200_00_0].Enable                          := TRUE; // Object is called
+ElementRegistry[E_10_001_0200_00_0].eElementNumber                  := fbEL_10_001_0200_00_0.ConfigElement.eElementNumber; 
+
+(****************************** 10-001-0200-01-0 ************************************)
+(************************** ProBox Straight Transport *******************************)
+// Configuration function
+fbF_10_001_0200_01_0.ConfigFunction.FunctionName                       := '10-001-0200-01-0'; // Function name
+fbF_10_001_0200_01_0.ConfigFunction.eFunctionNumber                    := F_10_001_0200_01_0; // Number of the function
+fbF_10_001_0200_01_0.ConfigFunction.eElementLink                       := E_ElementNumber.E_10_001_0200_00_0;
+fbF_10_001_0200_01_0.ConfigFunction.FunctionLink.eFunctionNumber       := E_FunctionNumber.F_BEGIN_FUNCTION;
+fbF_10_001_0200_01_0.ConfigFunction.FunctionLink.ZoneNumber            := 0;
+fbF_10_001_0200_01_0.ConfigFunction.eAdjacentFunctionNumberSide[1]     := E_FunctionNumber.F_BEGIN_FUNCTION;
+fbF_10_001_0200_01_0.ConfigFunction.eAdjacentFunctionNumberSide[2]     := E_FunctionNumber.F_10_001_0201_01_0;
+fbF_10_001_0200_01_0.ConfigFunction.ePrevFunctionNumber                := E_FunctionNumber.F_BEGIN_FUNCTION;
+fbF_10_001_0200_01_0.ConfigFunction.eNextFunctionNumber                := E_FunctionNumber.F_10_001_0201_01_0;
+fbF_10_001_0200_01_0.ConfigFunction.NumberOfZones                      := 1;
+//Config zone 1
+fbF_10_001_0200_01_0.ConfigFunction.Zone[1].ZoneName                   := '10-001-0200-01-1';
+fbF_10_001_0200_01_0.ConfigFunction.Zone[1].EnableMFC                  := TRUE;
+fbF_10_001_0200_01_0.ConfigFunction.Zone[1].EnableSimultaneousTransport:= FALSE; //Disable Simultaneous transport for multi zone functions
+fbF_10_001_0200_01_0.ConfigFunction.Zone[1].EnableLatchOccupiedState   := TRUE;
+fbF_10_001_0200_01_0.ConfigFunction.Zone[1].Length[1]                  := INT_TO_UINT(2000 / fbF_10_001_0200_01_0.ConfigFunction.NumberOfZones);	//Zone length (ie element length / number of zones)
+
+// Register function
+FunctionRegistry[F_10_001_0200_01_0].Enable                            := TRUE; (* Function will be called *)
+FunctionRegistry[F_10_001_0200_01_0].eFunctionNumber                   := fbF_10_001_0200_01_0.ConfigFunction.eFunctionNumber; // Registration number
+
+
+(****************************** 10-001-0200-02-0 ************************************)
+(********************************* In/Out Feed ****************************************)
+// Configuration function 
+fbF_10_001_0200_02_0.ConfigFunction.FunctionName                     := '10-001-0200-02-0'; (* Function name *)
+fbF_10_001_0200_02_0.ConfigFunction.eFunctionNumber                  := F_10_001_0200_02_0; (* Number of the function *)
+fbF_10_001_0200_02_0.ConfigFunction.eElementLink                     := E_ElementNumber.E_10_001_0200_00_0; 
+fbF_10_001_0200_02_0.ConfigFunction.FunctionLink.eFunctionNumber     := E_FunctionNumber.F_10_001_0200_01_0;	//Addon link to function, this is auto generated, an may need to be changed.
+fbF_10_001_0200_02_0.ConfigFunction.FunctionLink.ZoneNumber          := 1;		
+
+fbF_10_001_0200_02_0.Config.tFTLClearTime                  		  := T#5S; //Fork Truck Lift clear time
+fbF_10_001_0200_02_0.Config.tTUSensorTime					  		  := T#5S; //Sensor occupied Time when to add or remove TU
+fbF_10_001_0200_02_0.Config.TimeoutValueLift					  	  := T#10S; //Timeout value for lifting
+fbF_10_001_0200_02_0.Config.LiftEnabled					  	  	  := FALSE; //Config if function has lift
+
+// Register function 
+FunctionRegistry[F_10_001_0200_02_0].Enable                           := TRUE; (* Function will be called *)
+FunctionRegistry[F_10_001_0200_02_0].eFunctionNumber                  := fbF_10_001_0200_02_0.ConfigFunction.eFunctionNumber; (* Registration number *)
+
+
+(****************************** 10-001-0201-00-0 ************************************)
+(*************************** ProBoxElement with one Motor *******************************)
+// Configuration element 
+fbEL_10_001_0201_00_0.ConfigElement.ElementName                     := '10-001-0201-00-0'; // Element name 
+fbEL_10_001_0201_00_0.ConfigElement.eElementNumber                  := E_10_001_0201_00_0; // Number of the element 
+fbEL_10_001_0201_00_0.ConfigElement.eSlaveElementNumber_34          := E_ElementNumber.E_BEGIN_ELEMENT; // Link from Master to slave element
+fbEL_10_001_0201_00_0.ConfigElement.eElementType                    := E_ElementType.NO_TYPE; // No specific type
+
+// Register element 
+ElementRegistry[E_10_001_0201_00_0].Enable                          := TRUE; // Object is called
+ElementRegistry[E_10_001_0201_00_0].eElementNumber                  := fbEL_10_001_0201_00_0.ConfigElement.eElementNumber; 
+
+(****************************** 10-001-0201-01-0 ************************************)
+(******************************** LowLiftUnit  ***************************************)
+// Configuration function
+fbF_10_001_0201_01_0.ConfigFunction.FunctionName                      := '10-001-0201-01-0'; // Function name
+fbF_10_001_0201_01_0.ConfigFunction.eFunctionNumber                   := F_10_001_0201_01_0; // Number of the function
+fbF_10_001_0201_01_0.ConfigFunction.eElementLink                      := E_ElementNumber.E_10_001_0201_00_0;
+fbF_10_001_0201_01_0.ConfigFunction.FunctionLink.eFunctionNumber      := E_FunctionNumber.F_BEGIN_FUNCTION;
+fbF_10_001_0201_01_0.ConfigFunction.FunctionLink.ZoneNumber           := 0;
+fbF_10_001_0201_01_0.ConfigFunction.eAdjacentFunctionNumberSide[1]    := E_FunctionNumber.F_10_001_0200_01_0;
+fbF_10_001_0201_01_0.ConfigFunction.eAdjacentFunctionNumberSide[2]    := E_FunctionNumber.F_10_001_0202_01_0;
+fbF_10_001_0201_01_0.ConfigFunction.ePrevFunctionNumber               := E_FunctionNumber.F_10_001_0200_01_0;
+fbF_10_001_0201_01_0.ConfigFunction.eNextFunctionNumber               := E_FunctionNumber.F_10_001_0202_01_0;
+fbF_10_001_0201_01_0.ConfigFunction.NumberOfZones                     := 1;
+
+fbF_10_001_0201_01_0.ConfigFunction.Zone[1].ZoneName                  := '10-001-0201-01-1';
+fbF_10_001_0201_01_0.ConfigFunction.Zone[1].EnableMFC                 := TRUE;
+fbF_10_001_0201_01_0.ConfigFunction.Zone[1].EnableLatchOccupiedState  := TRUE;
+fbF_10_001_0201_01_0.ConfigFunction.Zone[1].Length[1]                 := 1200;
+
+fbF_10_001_0201_01_0.Config.TimeoutValueLift							:= T#10S;
+fbF_10_001_0201_01_0.Config.HomePosFree                               := E_Positions_LowLiftControl.DOWN;
+fbF_10_001_0201_01_0.Config.HomePosOccupied                           := E_Positions_LowLiftControl.DOWN;
+
+// Register function
+FunctionRegistry[F_10_001_0201_01_0].Enable                           := TRUE; (* Function will be called *)
+FunctionRegistry[F_10_001_0201_01_0].eFunctionNumber                  := fbF_10_001_0201_01_0.ConfigFunction.eFunctionNumber; // Registration number
+
+
+(****************************** 10-001-0202-00-0 ************************************)
+(*************************** ProBoxElement with one Motor *******************************)
+// Configuration element 
+fbEL_10_001_0202_00_0.ConfigElement.ElementName                     := '10-001-0202-00-0'; // Element name 
+fbEL_10_001_0202_00_0.ConfigElement.eElementNumber                  := E_10_001_0202_00_0; // Number of the element 
+fbEL_10_001_0202_00_0.ConfigElement.eSlaveElementNumber_34          := E_ElementNumber.E_BEGIN_ELEMENT; // Link from Master to slave element
+fbEL_10_001_0202_00_0.ConfigElement.eElementType                    := E_ElementType.NO_TYPE; // No specific type
+
+// Register element 
+ElementRegistry[E_10_001_0202_00_0].Enable                          := TRUE; // Object is called
+ElementRegistry[E_10_001_0202_00_0].eElementNumber                  := fbEL_10_001_0202_00_0.ConfigElement.eElementNumber; 
+
+(****************************** 10-001-0202-01-0 ************************************)
+(************************** ProBox Straight Transport *******************************)
+// Configuration function
+fbF_10_001_0202_01_0.ConfigFunction.FunctionName                       := '10-001-0202-01-0'; // Function name
+fbF_10_001_0202_01_0.ConfigFunction.eFunctionNumber                    := F_10_001_0202_01_0; // Number of the function
+fbF_10_001_0202_01_0.ConfigFunction.eElementLink                       := E_ElementNumber.E_10_001_0202_00_0;
+fbF_10_001_0202_01_0.ConfigFunction.FunctionLink.eFunctionNumber       := E_FunctionNumber.F_BEGIN_FUNCTION;
+fbF_10_001_0202_01_0.ConfigFunction.FunctionLink.ZoneNumber            := 0;
+fbF_10_001_0202_01_0.ConfigFunction.eAdjacentFunctionNumberSide[1]     := E_FunctionNumber.F_10_001_0201_01_0;
+fbF_10_001_0202_01_0.ConfigFunction.eAdjacentFunctionNumberSide[2]     := E_FunctionNumber.F_10_001_0203_01_0;
+fbF_10_001_0202_01_0.ConfigFunction.ePrevFunctionNumber                := E_FunctionNumber.F_10_001_0201_01_0;
+fbF_10_001_0202_01_0.ConfigFunction.eNextFunctionNumber                := E_FunctionNumber.F_10_001_0203_01_0;
+fbF_10_001_0202_01_0.ConfigFunction.NumberOfZones                      := 1;
+//Config zone 1
+fbF_10_001_0202_01_0.ConfigFunction.Zone[1].ZoneName                   := '10-001-0202-01-1';
+fbF_10_001_0202_01_0.ConfigFunction.Zone[1].EnableMFC                  := TRUE;
+fbF_10_001_0202_01_0.ConfigFunction.Zone[1].EnableSimultaneousTransport:= FALSE; //Disable Simultaneous transport for multi zone functions
+fbF_10_001_0202_01_0.ConfigFunction.Zone[1].EnableLatchOccupiedState   := TRUE;
+fbF_10_001_0202_01_0.ConfigFunction.Zone[1].Length[1]                  := INT_TO_UINT(1600 / fbF_10_001_0202_01_0.ConfigFunction.NumberOfZones);	//Zone length (ie element length / number of zones)
+
+// Register function
+FunctionRegistry[F_10_001_0202_01_0].Enable                            := TRUE; (* Function will be called *)
+FunctionRegistry[F_10_001_0202_01_0].eFunctionNumber                   := fbF_10_001_0202_01_0.ConfigFunction.eFunctionNumber; // Registration number
+
+
+(****************************** 10-001-0203-00-0 ************************************)
+(*************************** ProBoxElement with one Motor *******************************)
+// Configuration element 
+fbEL_10_001_0203_00_0.ConfigElement.ElementName                     := '10-001-0203-00-0'; // Element name 
+fbEL_10_001_0203_00_0.ConfigElement.eElementNumber                  := E_10_001_0203_00_0; // Number of the element 
+fbEL_10_001_0203_00_0.ConfigElement.eSlaveElementNumber_34          := E_ElementNumber.E_BEGIN_ELEMENT; // Link from Master to slave element
+fbEL_10_001_0203_00_0.ConfigElement.eElementType                    := E_ElementType.NO_TYPE; // No specific type
+
+// Register element 
+ElementRegistry[E_10_001_0203_00_0].Enable                          := TRUE; // Object is called
+ElementRegistry[E_10_001_0203_00_0].eElementNumber                  := fbEL_10_001_0203_00_0.ConfigElement.eElementNumber; 
+
+(****************************** 10-001-0203-01-0 ************************************)
+(************************** ProBox Straight Transport *******************************)
+// Configuration function
+fbF_10_001_0203_01_0.ConfigFunction.FunctionName                       := '10-001-0203-01-0'; // Function name
+fbF_10_001_0203_01_0.ConfigFunction.eFunctionNumber                    := F_10_001_0203_01_0; // Number of the function
+fbF_10_001_0203_01_0.ConfigFunction.eElementLink                       := E_ElementNumber.E_10_001_0203_00_0;
+fbF_10_001_0203_01_0.ConfigFunction.FunctionLink.eFunctionNumber       := E_FunctionNumber.F_BEGIN_FUNCTION;
+fbF_10_001_0203_01_0.ConfigFunction.FunctionLink.ZoneNumber            := 0;
+fbF_10_001_0203_01_0.ConfigFunction.eAdjacentFunctionNumberSide[1]     := E_FunctionNumber.F_10_001_0202_01_0;
+fbF_10_001_0203_01_0.ConfigFunction.eAdjacentFunctionNumberSide[2]     := E_FunctionNumber.F_10_001_0204_01_0;
+fbF_10_001_0203_01_0.ConfigFunction.ePrevFunctionNumber                := E_FunctionNumber.F_10_001_0202_01_0;
+fbF_10_001_0203_01_0.ConfigFunction.eNextFunctionNumber                := E_FunctionNumber.F_BEGIN_FUNCTION;
+fbF_10_001_0203_01_0.ConfigFunction.NumberOfZones                      := 1;
+//Config zone 1
+fbF_10_001_0203_01_0.ConfigFunction.Zone[1].ZoneName                   := '10-001-0203-01-1';
+fbF_10_001_0203_01_0.ConfigFunction.Zone[1].EnableMFC                  := TRUE;
+fbF_10_001_0203_01_0.ConfigFunction.Zone[1].EnableSimultaneousTransport:= FALSE; //Disable Simultaneous transport for multi zone functions
+fbF_10_001_0203_01_0.ConfigFunction.Zone[1].EnableLatchOccupiedState   := TRUE;
+fbF_10_001_0203_01_0.ConfigFunction.Zone[1].Length[1]                  := INT_TO_UINT(1800 / fbF_10_001_0203_01_0.ConfigFunction.NumberOfZones);	//Zone length (ie element length / number of zones)
+
+// Register function
+FunctionRegistry[F_10_001_0203_01_0].Enable                            := TRUE; (* Function will be called *)
+FunctionRegistry[F_10_001_0203_01_0].eFunctionNumber                   := fbF_10_001_0203_01_0.ConfigFunction.eFunctionNumber; // Registration number
+
+
+
+(****************************** 10-001-0203-02-0 ************************************)
+(***************************** Sick Profile Gauge ****************************)
+// Configuration Profile check function
+fbF_10_001_0203_02_0.ConfigFunction.FunctionName                       := '10-001-0203-02-0'; (* Function name *)
+fbF_10_001_0203_02_0.ConfigFunction.eFunctionNumber                    := F_10_001_0203_02_0; (* Number of the function *)
+fbF_10_001_0203_02_0.ConfigFunction.eFunctionType                      := E_FunctionType.NO_TYPE;
+fbF_10_001_0203_02_0.ConfigFunction.eElementLink                       := E_ElementNumber.E_10_001_0203_00_0; 
+fbF_10_001_0203_02_0.ConfigFunction.FunctionLink.eFunctionNumber       := E_FunctionNumber.F_10_001_0203_01_0;	//Addon link to function, this is auto generated, an may need to be changed.
+fbF_10_001_0203_02_0.ConfigFunction.FunctionLink.ZoneNumber            := 1;		
+
+fbF_10_001_0203_02_0.Config.ReportRealMeasureFront						:= TRUE;
+fbF_10_001_0203_02_0.Config.ReportRealMeasureHeight					:= TRUE;
+fbF_10_001_0203_02_0.Config.ReportRealMeasureLeft						:= TRUE;
+fbF_10_001_0203_02_0.Config.ReportRealMeasureRear						:= TRUE;
+fbF_10_001_0203_02_0.Config.ReportRealMeasureRight						:= TRUE;
+
+fbF_10_001_0203_02_0.Config.EnableExternalTrigger 						:= FALSE;
+fbF_10_001_0203_02_0.Config.DoubleHeightLightGrids 					:= FALSE;
+fbF_10_001_0203_02_0.Config.BeamSpacing_HeightLower					:= 20;
+fbF_10_001_0203_02_0.Config.BeamSpacing_HeightUpper					:= 20;
+fbF_10_001_0203_02_0.Config.BeamSpacing_WidthLeft						:= 5;
+fbF_10_001_0203_02_0.Config.BeamSpacing_WidthRight						:= 5;
+fbF_10_001_0203_02_0.Config.BeamSpacing_Length							:= 5;
+fbF_10_001_0203_02_0.Config.ReportValue_Measurement_Error_Left			:= 2;
+fbF_10_001_0203_02_0.Config.ReportValue_Measurement_Error_Right		:= 2;
+fbF_10_001_0203_02_0.Config.ReportValue_Measurement_Error_Height		:= 9;
+fbF_10_001_0203_02_0.Config.ReportValue_Measurement_Error_Front		:= 2;
+fbF_10_001_0203_02_0.Config.ReportValue_Measurement_Error_Rear			:= 2;
+fbF_10_001_0203_02_0.Config.LightGrid_Offset_Height_Lower 				:= 100;
+fbF_10_001_0203_02_0.Config.LightGrid_Offset_Height_Upper				:= 0;
+fbF_10_001_0203_02_0.Config.LightGrid_Offset_Width_Left				:= 135;
+fbF_10_001_0203_02_0.Config.LightGrid_Offset_Width_Right				:= 90;
+fbF_10_001_0203_02_0.Config.LightGrid_Offset_Length_Front				:= 155;
+fbF_10_001_0203_02_0.Config.LightGrid_Offset_Length_Rear				:= 155;
+              
+fbF_10_001_0203_02_0.Config.ProfileRule_Height[1].TU_Type				:= 0;
+fbF_10_001_0203_02_0.Config.ProfileRule_Height[1].Minimum				:= 200;
+fbF_10_001_0203_02_0.Config.ProfileRule_Height[1].Maximum				:= 1200;
+fbF_10_001_0203_02_0.Config.ProfileRule_Height[1].ReportValue			:= 1;
+fbF_10_001_0203_02_0.Config.ProfileRule_Height[1].Default				:= 0;
+            
+fbF_10_001_0203_02_0.Config.ProfileRule_OverhangLeft[1].TU_Type		:= 0;
+fbF_10_001_0203_02_0.Config.ProfileRule_OverhangLeft[1].ReportValue	:= 1;
+fbF_10_001_0203_02_0.Config.ProfileRule_OverhangLeft[1].Minimum		:= 0;
+fbF_10_001_0203_02_0.Config.ProfileRule_OverhangLeft[1].Maximum		:= 50;
+fbF_10_001_0203_02_0.Config.ProfileRule_OverhangLeft[1].Default		:= 400;
+             
+fbF_10_001_0203_02_0.Config.ProfileRule_OverhangRight[1].TU_Type		:= 0;
+fbF_10_001_0203_02_0.Config.ProfileRule_OverhangRight[1].ReportValue 	:= 1;
+fbF_10_001_0203_02_0.Config.ProfileRule_OverhangRight[1].Minimum		:= 0;
+fbF_10_001_0203_02_0.Config.ProfileRule_OverhangRight[1].Maximum		:= 50;
+fbF_10_001_0203_02_0.Config.ProfileRule_OverhangRight[1].Default		:= 400;
+           
+fbF_10_001_0203_02_0.Config.ProfileRule_OverhangFront[1].TU_Type		:= 0;
+fbF_10_001_0203_02_0.Config.ProfileRule_OverhangFront[1].ReportValue	:= 1;
+fbF_10_001_0203_02_0.Config.ProfileRule_OverhangFront[1].Minimum		:= 0;
+fbF_10_001_0203_02_0.Config.ProfileRule_OverhangFront[1].Maximum		:= 50;
+fbF_10_001_0203_02_0.Config.ProfileRule_OverhangFront[1].Default		:= 600;
+            
+fbF_10_001_0203_02_0.Config.ProfileRule_OverhangRear[1].TU_Type			:= 0;
+fbF_10_001_0203_02_0.Config.ProfileRule_OverhangRear[1].ReportValue		:= 1;
+fbF_10_001_0203_02_0.Config.ProfileRule_OverhangRear[1].Minimum			:= 0;
+fbF_10_001_0203_02_0.Config.ProfileRule_OverhangRear[1].Maximum			:= 50;
+fbF_10_001_0203_02_0.Config.ProfileRule_OverhangRear[1].Default			:= 600;
+
+
+// Register function 
+FunctionRegistry[F_10_001_0203_02_0].Enable                     		:= TRUE; (* Function will be called *)
+FunctionRegistry[F_10_001_0203_02_0].eFunctionNumber 					:= fbF_10_001_0203_02_0.ConfigFunction.eFunctionNumber; // Registration number 
+
+(****************************** 10-001-0203-03-0 ************************************)
+(****************************** SICK Scanner CLV 6xx **************************************)
+// Configuration function 
+fbF_10_001_0203_03_0.ConfigFunction.FunctionName                     := '10-001-0203-03-0'; (* Function name *)
+fbF_10_001_0203_03_0.ConfigFunction.eFunctionNumber                  := F_10_001_0203_03_0; (* Number of the function *)
+fbF_10_001_0203_03_0.ConfigFunction.eFunctionType                    := E_FunctionType.NO_TYPE;
+fbF_10_001_0203_03_0.ConfigFunction.eElementLink                     := E_ElementNumber.E_10_001_0203_00_0; 
+fbF_10_001_0203_03_0.ConfigFunction.FunctionLink.eFunctionNumber     := E_FunctionNumber.F_10_001_0203_01_0;	//Addon link to function, this is auto generated, an may need to be changed.
+fbF_10_001_0203_03_0.ConfigFunction.FunctionLink.ZoneNumber          := 1;		
+
+fbF_10_001_0203_03_0.Config.MaxLabelLength                           := 18; // Maximum label length
+fbF_10_001_0203_03_0.Config.EnableExternalTrigger					  := FALSE; 
+fbF_10_001_0203_03_0.Config.AcceptedNoReadSeries					  := 5; // 0 = disabled. Number of accepted no reads before setting an error.
+fbF_10_001_0203_03_0.Config.tComTimeout                              := T#5S; // Scanner heartbeat signal timeout
+fbF_10_001_0203_03_0.Config.SendTTQ                                  := FALSE; // Send TTQ
+fbF_10_001_0203_03_0.Config.MoveDataLabelField                       := TRUE; //Barcode written to lable field. If false, move data to TU ID
+fbF_10_001_0203_03_0.Config.ConfigFilePath                           := ''; //Path to file to write to scanner during State CONFIG. Empty = not enabled
+
+// Register function 
+FunctionRegistry[F_10_001_0203_03_0].Enable                           := TRUE; (* Function will be called *)
+FunctionRegistry[F_10_001_0203_03_0].eFunctionNumber                  := fbF_10_001_0203_03_0.ConfigFunction.eFunctionNumber; (* Registration number *)
+
+
+(****************************** 10-001-0203-04-0 ************************************)
+(******************************** TLB4 Weight ***************************************)
+// Configuration function 
+fbF_10_001_0203_04_0.ConfigFunction.FunctionName                     := '10-001-0203-04-0'; (* Function name *)
+fbF_10_001_0203_04_0.ConfigFunction.eFunctionNumber                  := F_10_001_0203_04_0; (* Number of the function *)
+fbF_10_001_0203_04_0.ConfigFunction.eFunctionType                    := E_FunctionType.NO_TYPE;
+fbF_10_001_0203_04_0.ConfigFunction.eElementLink                     := E_ElementNumber.E_10_001_0203_00_0; 
+fbF_10_001_0203_04_0.ConfigFunction.FunctionLink.eFunctionNumber     := E_FunctionNumber.F_10_001_0203_01_0;	//Addon link to function, this is auto generated, an may need to be changed.
+fbF_10_001_0203_04_0.ConfigFunction.FunctionLink.ZoneNumber          := 1;		
+
+fbF_10_001_0203_04_0.Config.MaxDiffFromZero							:= 30;
+fbF_10_001_0203_04_0.Config.MaxWeight								:= 1000000;
+fbF_10_001_0203_04_0.Config.MinWeight								:= 0;
+fbF_10_001_0203_04_0.Config.WaitForStability						:= TRUE;
+
+// Register function 
+FunctionRegistry[F_10_001_0203_04_0].Enable                           := TRUE; (* Function will be called *)
+FunctionRegistry[F_10_001_0203_04_0].eFunctionNumber                  := fbF_10_001_0203_04_0.ConfigFunction.eFunctionNumber; (* Registration number *)
+
+
+(****************************** 10-001-0203-05-0 ************************************)
+(******************************** PalletCheckAddon ***************************************)
+// Configuration function 
+fbF_10_001_0203_05_0.ConfigFunction.FunctionName                     := '10-001-0203-05-0'; (* Function name *)
+fbF_10_001_0203_05_0.ConfigFunction.eFunctionNumber                  := F_10_001_0203_05_0; (* Number of the function *)
+fbF_10_001_0203_05_0.ConfigFunction.eFunctionType                    := E_FunctionType.NO_TYPE;
+fbF_10_001_0203_05_0.ConfigFunction.eElementLink                     := E_ElementNumber.E_10_001_0203_00_0; 
+fbF_10_001_0203_05_0.ConfigFunction.FunctionLink.eFunctionNumber     := E_FunctionNumber.F_10_001_0203_01_0;	//Addon link to function, this is auto generated, an may need to be changed.
+fbF_10_001_0203_05_0.ConfigFunction.FunctionLink.ZoneNumber          := 1;		
+
+
+fbF_10_001_0203_05_0.Config.EnableExternalTrigger 						:= FALSE;
+
+
+// Register function
+FunctionRegistry[F_10_001_0203_05_0].Enable                           := TRUE; (* Function will be called *)
+FunctionRegistry[F_10_001_0203_05_0].eFunctionNumber                  := fbF_10_001_0203_05_0.ConfigFunction.eFunctionNumber; (* Registration number *)
+
+
+
+
+(****************************** 10-001-0204-00-0 ************************************)
+(*************************** ProBoxElement with one Motor *******************************)
+// Configuration element 
+fbEL_10_001_0204_00_0.ConfigElement.ElementName                     := '10-001-0204-00-0'; // Element name 
+fbEL_10_001_0204_00_0.ConfigElement.eElementNumber                  := E_10_001_0204_00_0; // Number of the element 
+fbEL_10_001_0204_00_0.ConfigElement.eSlaveElementNumber_34          := E_ElementNumber.E_BEGIN_ELEMENT; // Link from Master to slave element
+fbEL_10_001_0204_00_0.ConfigElement.eElementType                    := E_ElementType.NO_TYPE; // No specific type
+
+// Register element 
+ElementRegistry[E_10_001_0204_00_0].Enable                          := TRUE; // Object is called
+ElementRegistry[E_10_001_0204_00_0].eElementNumber                  := fbEL_10_001_0204_00_0.ConfigElement.eElementNumber; 
+
+(****************************** 10-001-0204-01-0 ************************************)
+(******************************** TurnTable with one drive *************************************)
+// Configuration function
+fbF_10_001_0204_01_0.ConfigFunction.FunctionName                      := '10-001-0204-01-0'; // Function name
+fbF_10_001_0204_01_0.ConfigFunction.eFunctionNumber                   := F_10_001_0204_01_0; // Number of the function
+fbF_10_001_0204_01_0.ConfigFunction.eElementLink                      := E_ElementNumber.E_10_001_0204_00_0;
+fbF_10_001_0204_01_0.ConfigFunction.FunctionLink.eFunctionNumber      := E_FunctionNumber.F_BEGIN_FUNCTION;
+fbF_10_001_0204_01_0.ConfigFunction.FunctionLink.ZoneNumber           := 0;
+fbF_10_001_0204_01_0.ConfigFunction.eAdjacentFunctionNumberSide[1]    := E_FunctionNumber.F_10_001_0203_01_0;
+fbF_10_001_0204_01_0.ConfigFunction.eAdjacentFunctionNumberSide[2]    := E_FunctionNumber.F_10_001_0233_01_0;
+fbF_10_001_0204_01_0.ConfigFunction.eAdjacentFunctionNumberSide[4]    := E_FunctionNumber.F_10_002_0206_01_0;
+fbF_10_001_0204_01_0.ConfigFunction.ePrevFunctionNumber               := E_FunctionNumber.F_10_001_0203_01_0;
+fbF_10_001_0204_01_0.ConfigFunction.eNextFunctionNumber               := E_FunctionNumber.F_BEGIN_FUNCTION;
+fbF_10_001_0204_01_0.ConfigFunction.FlowDirectionREV                  := FALSE;
+fbF_10_001_0204_01_0.ConfigFunction.NumberOfZones                     := 1;
+
+fbF_10_001_0204_01_0.ConfigFunction.Zone[1].ZoneName                  := '10-001-0204-01-1';
+fbF_10_001_0204_01_0.ConfigFunction.Zone[1].EnableMFC                 := TRUE;
+fbF_10_001_0204_01_0.ConfigFunction.Zone[1].EnableLatchOccupiedState  := TRUE;
+fbF_10_001_0204_01_0.ConfigFunction.Zone[1].Length[1]                 := 1000;
+
+fbF_10_001_0204_01_0.Config.TurnHomePosFree                           := E_Positions_TurnControl.MIDDLE;
+fbF_10_001_0204_01_0.Config.TurnHomePosOccupied                       := E_Positions_TurnControl.CW;
+fbF_10_001_0204_01_0.Config.TurnTimeoutValue                          := T#15S;
+
+// Register function
+FunctionRegistry[F_10_001_0204_01_0].Enable                           := TRUE; (* Function will be called *)
+FunctionRegistry[F_10_001_0204_01_0].eFunctionNumber                  := fbF_10_001_0204_01_0.ConfigFunction.eFunctionNumber; // Registration number
+
+
+(****************************** 10-001-0205-00-0 ************************************)
+(*************************** ProBoxElement with one Motor *******************************)
+// Configuration element 
+fbEL_10_001_0205_00_0.ConfigElement.ElementName                     := '10-001-0205-00-0'; // Element name 
+fbEL_10_001_0205_00_0.ConfigElement.eElementNumber                  := E_10_001_0205_00_0; // Number of the element 
+fbEL_10_001_0205_00_0.ConfigElement.eSlaveElementNumber_34          := E_ElementNumber.E_BEGIN_ELEMENT; // Link from Master to slave element
+fbEL_10_001_0205_00_0.ConfigElement.eElementType                    := E_ElementType.NO_TYPE; // No specific type
+
+// Register element 
+ElementRegistry[E_10_001_0205_00_0].Enable                          := TRUE; // Object is called
+ElementRegistry[E_10_001_0205_00_0].eElementNumber                  := fbEL_10_001_0205_00_0.ConfigElement.eElementNumber; 
+
+(****************************** 10-001-0207-00-0 ************************************)
+(*************************** ProBoxElement with one Motor *******************************)
+// Configuration element 
+fbEL_10_001_0207_00_0.ConfigElement.ElementName                     := '10-001-0207-00-0'; // Element name 
+fbEL_10_001_0207_00_0.ConfigElement.eElementNumber                  := E_10_001_0207_00_0; // Number of the element 
+fbEL_10_001_0207_00_0.ConfigElement.eSlaveElementNumber_34          := E_ElementNumber.E_BEGIN_ELEMENT; // Link from Master to slave element
+fbEL_10_001_0207_00_0.ConfigElement.eElementType                    := E_ElementType.NO_TYPE; // No specific type
+
+// Register element 
+ElementRegistry[E_10_001_0207_00_0].Enable                          := TRUE; // Object is called
+ElementRegistry[E_10_001_0207_00_0].eElementNumber                  := fbEL_10_001_0207_00_0.ConfigElement.eElementNumber; 
+
+(****************************** 10-001-0207-01-0 ************************************)
+(************************** ProBox Straight Transport *******************************)
+// Configuration function
+fbF_10_001_0207_01_0.ConfigFunction.FunctionName                       := '10-001-0207-01-0'; // Function name
+fbF_10_001_0207_01_0.ConfigFunction.eFunctionNumber                    := F_10_001_0207_01_0; // Number of the function
+fbF_10_001_0207_01_0.ConfigFunction.eElementLink                       := E_ElementNumber.E_10_001_0207_00_0;
+fbF_10_001_0207_01_0.ConfigFunction.FunctionLink.eFunctionNumber       := E_FunctionNumber.F_BEGIN_FUNCTION;
+fbF_10_001_0207_01_0.ConfigFunction.FunctionLink.ZoneNumber            := 0;
+fbF_10_001_0207_01_0.ConfigFunction.eAdjacentFunctionNumberSide[1]     := E_FunctionNumber.F_BEGIN_FUNCTION;
+fbF_10_001_0207_01_0.ConfigFunction.eAdjacentFunctionNumberSide[2]     := E_FunctionNumber.F_BEGIN_FUNCTION;
+fbF_10_001_0207_01_0.ConfigFunction.ePrevFunctionNumber                := E_FunctionNumber.F_BEGIN_FUNCTION;
+fbF_10_001_0207_01_0.ConfigFunction.eNextFunctionNumber                := E_FunctionNumber.F_BEGIN_FUNCTION;
+fbF_10_001_0207_01_0.ConfigFunction.NumberOfZones                      := 1;
+//Config zone 1
+fbF_10_001_0207_01_0.ConfigFunction.Zone[1].ZoneName                   := '10-001-0207-01-1';
+fbF_10_001_0207_01_0.ConfigFunction.Zone[1].EnableMFC                  := TRUE;
+fbF_10_001_0207_01_0.ConfigFunction.Zone[1].EnableSimultaneousTransport:= FALSE; //Disable Simultaneous transport for multi zone functions
+fbF_10_001_0207_01_0.ConfigFunction.Zone[1].EnableLatchOccupiedState   := TRUE;
+fbF_10_001_0207_01_0.ConfigFunction.Zone[1].Length[1]                  := INT_TO_UINT(1500 / fbF_10_001_0207_01_0.ConfigFunction.NumberOfZones);	//Zone length (ie element length / number of zones)
+
+// Register function
+FunctionRegistry[F_10_001_0207_01_0].Enable                            := TRUE; (* Function will be called *)
+FunctionRegistry[F_10_001_0207_01_0].eFunctionNumber                   := fbF_10_001_0207_01_0.ConfigFunction.eFunctionNumber; // Registration number
+
+
+(****************************** 10-001-0207-02-0 ************************************)
+(****************************** PalletMagazine Addon *************************************)
+// Configuration function 
+fbF_10_001_0207_02_0.ConfigFunction.FunctionName					:= '10-001-0207-02-0'; (* Function name *)
+fbF_10_001_0207_02_0.ConfigFunction.eFunctionNumber				:= F_10_001_0207_02_0; (* Number of the function *)
+fbF_10_001_0207_02_0.ConfigFunction.eFunctionType					:= E_FunctionType.NO_TYPE;
+fbF_10_001_0207_02_0.ConfigFunction.eElementLink					:= E_ElementNumber.E_10_001_0207_00_0; 
+fbF_10_001_0207_02_0.ConfigFunction.FunctionLink.eFunctionNumber	:= E_FunctionNumber.F_10_001_0207_01_0;	//Addon link to function, this is auto generated, an may need to be changed.
+fbF_10_001_0207_02_0.ConfigFunction.FunctionLink.ZoneNumber		:= 1;		
+
+fbF_10_001_0207_02_0.Config.TimeoutValueLift						:= T#20S; //Timeout when moving lift
+fbF_10_001_0207_02_0.Config.TimeoutValueSeq						:= T#2M;  //Timeout for complete sequence
+fbF_10_001_0207_02_0.Config.IdleStacking							:= FALSE; //Lift pallet up to optimze stacking
+
+// Register function 
+FunctionRegistry[F_10_001_0207_02_0].Enable                           := TRUE; (* Function will be called *)
+FunctionRegistry[F_10_001_0207_02_0].eFunctionNumber                  := fbF_10_001_0207_02_0.ConfigFunction.eFunctionNumber; (* Registration number *)
+
+(****************************** 10-001-0208-00-0 ************************************)
+(*************************** ProBoxElement with one Motor *******************************)
+// Configuration element 
+fbEL_10_001_0208_00_0.ConfigElement.ElementName                     := '10-001-0208-00-0'; // Element name 
+fbEL_10_001_0208_00_0.ConfigElement.eElementNumber                  := E_10_001_0208_00_0; // Number of the element 
+fbEL_10_001_0208_00_0.ConfigElement.eSlaveElementNumber_34          := E_ElementNumber.E_BEGIN_ELEMENT; // Link from Master to slave element
+fbEL_10_001_0208_00_0.ConfigElement.eElementType                    := E_ElementType.NO_TYPE; // No specific type
+
+// Register element 
+ElementRegistry[E_10_001_0208_00_0].Enable                          := TRUE; // Object is called
+ElementRegistry[E_10_001_0208_00_0].eElementNumber                  := fbEL_10_001_0208_00_0.ConfigElement.eElementNumber; 
+
+(****************************** 10-001-0208-01-0 ************************************)
+(************************** ProBox Straight Transport *******************************)
+// Configuration function
+fbF_10_001_0208_01_0.ConfigFunction.FunctionName                       := '10-001-0208-01-0'; // Function name
+fbF_10_001_0208_01_0.ConfigFunction.eFunctionNumber                    := F_10_001_0208_01_0; // Number of the function
+fbF_10_001_0208_01_0.ConfigFunction.eElementLink                       := E_ElementNumber.E_10_001_0208_00_0;
+fbF_10_001_0208_01_0.ConfigFunction.FunctionLink.eFunctionNumber       := E_FunctionNumber.F_BEGIN_FUNCTION;
+fbF_10_001_0208_01_0.ConfigFunction.FunctionLink.ZoneNumber            := 0;
+fbF_10_001_0208_01_0.ConfigFunction.eAdjacentFunctionNumberSide[1]     := E_FunctionNumber.F_10_002_0206_01_0;
+fbF_10_001_0208_01_0.ConfigFunction.eAdjacentFunctionNumberSide[2]     := E_FunctionNumber.F_10_001_0209_01_0;
+fbF_10_001_0208_01_0.ConfigFunction.ePrevFunctionNumber                := E_FunctionNumber.F_10_002_0206_01_0;
+fbF_10_001_0208_01_0.ConfigFunction.eNextFunctionNumber                := E_FunctionNumber.F_10_001_0209_01_0;
+fbF_10_001_0208_01_0.ConfigFunction.NumberOfZones                      := 1;
+//Config zone 1
+fbF_10_001_0208_01_0.ConfigFunction.Zone[1].ZoneName                   := '10-001-0208-01-1';
+fbF_10_001_0208_01_0.ConfigFunction.Zone[1].EnableMFC                  := TRUE;
+fbF_10_001_0208_01_0.ConfigFunction.Zone[1].EnableSimultaneousTransport:= FALSE; //Disable Simultaneous transport for multi zone functions
+fbF_10_001_0208_01_0.ConfigFunction.Zone[1].EnableLatchOccupiedState   := TRUE;
+fbF_10_001_0208_01_0.ConfigFunction.Zone[1].Length[1]                  := INT_TO_UINT(1800 / fbF_10_001_0208_01_0.ConfigFunction.NumberOfZones);	//Zone length (ie element length / number of zones)
+
+// Register function
+FunctionRegistry[F_10_001_0208_01_0].Enable                            := TRUE; (* Function will be called *)
+FunctionRegistry[F_10_001_0208_01_0].eFunctionNumber                   := fbF_10_001_0208_01_0.ConfigFunction.eFunctionNumber; // Registration number
+
+
+(****************************** 10-001-0209-00-0 ************************************)
+(*************************** ProBoxElement with one Motor *******************************)
+// Configuration element 
+fbEL_10_001_0209_00_0.ConfigElement.ElementName                     := '10-001-0209-00-0'; // Element name 
+fbEL_10_001_0209_00_0.ConfigElement.eElementNumber                  := E_10_001_0209_00_0; // Number of the element 
+fbEL_10_001_0209_00_0.ConfigElement.eSlaveElementNumber_34          := E_ElementNumber.E_10_001_0214_00_0; // Link from Master to slave element
+fbEL_10_001_0209_00_0.ConfigElement.eElementType                    := E_ElementType.NO_TYPE; // No specific type
+
+// Register element 
+ElementRegistry[E_10_001_0209_00_0].Enable                          := TRUE; // Object is called
+ElementRegistry[E_10_001_0209_00_0].eElementNumber                  := fbEL_10_001_0209_00_0.ConfigElement.eElementNumber; 
+
+(****************************** 10-001-0209-01-0 ************************************)
+(******************************** Transfer Unit *************************************)
+// Configuration function
+fbF_10_001_0209_01_0.ConfigFunction.FunctionName                    := '10-001-0209-01-0'; // Function name
+fbF_10_001_0209_01_0.ConfigFunction.eFunctionNumber                 := F_10_001_0209_01_0; // Number of the function
+fbF_10_001_0209_01_0.ConfigFunction.eElementLink                    := E_ElementNumber.E_10_001_0209_00_0;
+fbF_10_001_0209_01_0.ConfigFunction.FunctionLink.eFunctionNumber    := E_FunctionNumber.F_BEGIN_FUNCTION;
+fbF_10_001_0209_01_0.ConfigFunction.FunctionLink.ZoneNumber         := 0;
+fbF_10_001_0209_01_0.ConfigFunction.eAdjacentFunctionNumberSide[1]  := E_FunctionNumber.F_10_001_0208_01_0;
+fbF_10_001_0209_01_0.ConfigFunction.eAdjacentFunctionNumberSide[2]  := E_FunctionNumber.F_10_001_0211_01_0;
+fbF_10_001_0209_01_0.ConfigFunction.eAdjacentFunctionNumberSide[3]  := E_FunctionNumber.F_10_001_0227_01_0;
+fbF_10_001_0209_01_0.ConfigFunction.eAdjacentFunctionNumberSide[4]  := E_FunctionNumber.F_10_001_0214_01_0;
+fbF_10_001_0209_01_0.ConfigFunction.ePrevFunctionNumber             := E_FunctionNumber.F_BEGIN_FUNCTION;
+fbF_10_001_0209_01_0.ConfigFunction.eNextFunctionNumber             := E_FunctionNumber.F_BEGIN_FUNCTION;
+fbF_10_001_0209_01_0.ConfigFunction.FlowDirectionREV                := FALSE;
+fbF_10_001_0209_01_0.ConfigFunction.NumberOfZones                   := 1;
+
+fbF_10_001_0209_01_0.ConfigFunction.Zone[1].ZoneName                := '10-001-0209-01-1';
+fbF_10_001_0209_01_0.ConfigFunction.Zone[1].EnableMFC                 := TRUE;
+fbF_10_001_0209_01_0.ConfigFunction.Zone[1].EnableLatchOccupiedState  := TRUE;
+fbF_10_001_0209_01_0.ConfigFunction.Zone[1].Length[1]               := 1000;
+
+fbF_10_001_0209_01_0.Config.TimeoutValueLift                        := T#15S; // Timeout value for lifting
+fbF_10_001_0209_01_0.Config.HomePosFree                             := E_Positions_LiftControl.UP; // Homeposition lift when zone free, UNDIFINED=> No home position is set, and lift stays where it is.
+fbF_10_001_0209_01_0.Config.HomePosOccupied                         := E_Positions_LiftControl.DOWN; // Homeposition lift when zone occupied, UNDIFINED=> No home position is set, and lift stays where it is.
+fbF_10_001_0209_01_0.Config.LiftType                                := E_LiftType.E_LiftChain; // Configured lifting type, Roller or Chain
+fbF_10_001_0209_01_0.Config.SingleTUMode							 := E_SingleTuMode.SingleTuMode; // Transfer unit and slave element's extended functions only allow one TU at a time. Change to optimize the transfer unit.
+
+// Register function                                                     
+FunctionRegistry[F_10_001_0209_01_0].Enable                         := TRUE; (* Function will be called *)
+FunctionRegistry[F_10_001_0209_01_0].eFunctionNumber                := fbF_10_001_0209_01_0.ConfigFunction.eFunctionNumber; // Registration number
+
+
+(****************************** 10-001-0211-00-0 ************************************)
+(*************************** ProBoxElement with one Motor *******************************)
+// Configuration element 
+fbEL_10_001_0211_00_0.ConfigElement.ElementName                     := '10-001-0211-00-0'; // Element name 
+fbEL_10_001_0211_00_0.ConfigElement.eElementNumber                  := E_10_001_0211_00_0; // Number of the element 
+fbEL_10_001_0211_00_0.ConfigElement.eSlaveElementNumber_34          := E_ElementNumber.E_BEGIN_ELEMENT; // Link from Master to slave element
+fbEL_10_001_0211_00_0.ConfigElement.eElementType                    := E_ElementType.NO_TYPE; // No specific type
+
+// Register element 
+ElementRegistry[E_10_001_0211_00_0].Enable                          := TRUE; // Object is called
+ElementRegistry[E_10_001_0211_00_0].eElementNumber                  := fbEL_10_001_0211_00_0.ConfigElement.eElementNumber; 
+
+(****************************** 10-001-0211-01-0 ************************************)
+(************************** ProBox Straight Transport *******************************)
+// Configuration function
+fbF_10_001_0211_01_0.ConfigFunction.FunctionName                       := '10-001-0211-01-0'; // Function name
+fbF_10_001_0211_01_0.ConfigFunction.eFunctionNumber                    := F_10_001_0211_01_0; // Number of the function
+fbF_10_001_0211_01_0.ConfigFunction.eElementLink                       := E_ElementNumber.E_10_001_0211_00_0;
+fbF_10_001_0211_01_0.ConfigFunction.FunctionLink.eFunctionNumber       := E_FunctionNumber.F_BEGIN_FUNCTION;
+fbF_10_001_0211_01_0.ConfigFunction.FunctionLink.ZoneNumber            := 0;
+fbF_10_001_0211_01_0.ConfigFunction.eAdjacentFunctionNumberSide[1]     := E_FunctionNumber.F_10_001_0209_01_0;
+fbF_10_001_0211_01_0.ConfigFunction.eAdjacentFunctionNumberSide[2]     := E_FunctionNumber.F_10_001_0212_01_0;
+fbF_10_001_0211_01_0.ConfigFunction.ePrevFunctionNumber                := E_FunctionNumber.F_10_001_0209_01_0;
+fbF_10_001_0211_01_0.ConfigFunction.eNextFunctionNumber                := E_FunctionNumber.F_10_001_0212_01_0;
+fbF_10_001_0211_01_0.ConfigFunction.NumberOfZones                      := 1;
+//Config zone 1
+fbF_10_001_0211_01_0.ConfigFunction.Zone[1].ZoneName                   := '10-001-0211-01-1';
+fbF_10_001_0211_01_0.ConfigFunction.Zone[1].EnableMFC                  := TRUE;
+fbF_10_001_0211_01_0.ConfigFunction.Zone[1].EnableSimultaneousTransport:= FALSE; //Disable Simultaneous transport for multi zone functions
+fbF_10_001_0211_01_0.ConfigFunction.Zone[1].EnableLatchOccupiedState   := TRUE;
+fbF_10_001_0211_01_0.ConfigFunction.Zone[1].Length[1]                  := INT_TO_UINT(1400 / fbF_10_001_0211_01_0.ConfigFunction.NumberOfZones);	//Zone length (ie element length / number of zones)
+
+// Register function
+FunctionRegistry[F_10_001_0211_01_0].Enable                            := TRUE; (* Function will be called *)
+FunctionRegistry[F_10_001_0211_01_0].eFunctionNumber                   := fbF_10_001_0211_01_0.ConfigFunction.eFunctionNumber; // Registration number
+
+
+(****************************** 10-001-0212-00-0 ************************************)
+(*************************** ProBoxElement with one Motor *******************************)
+// Configuration element 
+fbEL_10_001_0212_00_0.ConfigElement.ElementName                     := '10-001-0212-00-0'; // Element name 
+fbEL_10_001_0212_00_0.ConfigElement.eElementNumber                  := E_10_001_0212_00_0; // Number of the element 
+fbEL_10_001_0212_00_0.ConfigElement.eSlaveElementNumber_34          := E_ElementNumber.E_10_001_0217_00_0; // Link from Master to slave element
+fbEL_10_001_0212_00_0.ConfigElement.eElementType                    := E_ElementType.NO_TYPE; // No specific type
+
+// Register element 
+ElementRegistry[E_10_001_0212_00_0].Enable                          := TRUE; // Object is called
+ElementRegistry[E_10_001_0212_00_0].eElementNumber                  := fbEL_10_001_0212_00_0.ConfigElement.eElementNumber; 
+
+(****************************** 10-001-0212-01-0 ************************************)
+(******************************** Transfer Unit *************************************)
+// Configuration function
+fbF_10_001_0212_01_0.ConfigFunction.FunctionName                    := '10-001-0212-01-0'; // Function name
+fbF_10_001_0212_01_0.ConfigFunction.eFunctionNumber                 := F_10_001_0212_01_0; // Number of the function
+fbF_10_001_0212_01_0.ConfigFunction.eElementLink                    := E_ElementNumber.E_10_001_0212_00_0;
+fbF_10_001_0212_01_0.ConfigFunction.FunctionLink.eFunctionNumber    := E_FunctionNumber.F_BEGIN_FUNCTION;
+fbF_10_001_0212_01_0.ConfigFunction.FunctionLink.ZoneNumber         := 0;
+fbF_10_001_0212_01_0.ConfigFunction.eAdjacentFunctionNumberSide[1]  := E_FunctionNumber.F_10_001_0211_01_0;
+fbF_10_001_0212_01_0.ConfigFunction.eAdjacentFunctionNumberSide[2]  := E_FunctionNumber.F_10_001_0213_01_0;
+fbF_10_001_0212_01_0.ConfigFunction.eAdjacentFunctionNumberSide[3]  := E_FunctionNumber.F_10_001_0217_01_0;
+fbF_10_001_0212_01_0.ConfigFunction.eAdjacentFunctionNumberSide[4]  := E_FunctionNumber.F_10_001_0218_01_0;
+fbF_10_001_0212_01_0.ConfigFunction.ePrevFunctionNumber             := E_FunctionNumber.F_BEGIN_FUNCTION;
+fbF_10_001_0212_01_0.ConfigFunction.eNextFunctionNumber             := E_FunctionNumber.F_BEGIN_FUNCTION;
+fbF_10_001_0212_01_0.ConfigFunction.FlowDirectionREV                := FALSE;
+fbF_10_001_0212_01_0.ConfigFunction.NumberOfZones                   := 1;
+
+fbF_10_001_0212_01_0.ConfigFunction.Zone[1].ZoneName                := '10-001-0212-01-1';
+fbF_10_001_0212_01_0.ConfigFunction.Zone[1].EnableMFC                 := TRUE;
+fbF_10_001_0212_01_0.ConfigFunction.Zone[1].EnableLatchOccupiedState  := TRUE;
+fbF_10_001_0212_01_0.ConfigFunction.Zone[1].Length[1]               := 1000;
+
+fbF_10_001_0212_01_0.Config.TimeoutValueLift                        := T#15S; // Timeout value for lifting
+fbF_10_001_0212_01_0.Config.HomePosFree                             := E_Positions_LiftControl.UNDIFINED; // Homeposition lift when zone free, UNDIFINED=> No home position is set, and lift stays where it is.
+fbF_10_001_0212_01_0.Config.HomePosOccupied                         := E_Positions_LiftControl.UNDIFINED; // Homeposition lift when zone occupied, UNDIFINED=> No home position is set, and lift stays where it is.
+fbF_10_001_0212_01_0.Config.LiftType                                := E_LiftType.E_LiftChain; // Configured lifting type, Roller or Chain
+fbF_10_001_0212_01_0.Config.SingleTUMode							 := E_SingleTuMode.SingleTuMode; // Transfer unit and slave element's extended functions only allow one TU at a time. Change to optimize the transfer unit.
+
+// Register function                                                     
+FunctionRegistry[F_10_001_0212_01_0].Enable                         := TRUE; (* Function will be called *)
+FunctionRegistry[F_10_001_0212_01_0].eFunctionNumber                := fbF_10_001_0212_01_0.ConfigFunction.eFunctionNumber; // Registration number
+
+
+(****************************** 10-001-0213-00-0 ************************************)
+(*************************** ProBoxElement with one Motor *******************************)
+// Configuration element 
+fbEL_10_001_0213_00_0.ConfigElement.ElementName                     := '10-001-0213-00-0'; // Element name 
+fbEL_10_001_0213_00_0.ConfigElement.eElementNumber                  := E_10_001_0213_00_0; // Number of the element 
+fbEL_10_001_0213_00_0.ConfigElement.eSlaveElementNumber_34          := E_ElementNumber.E_BEGIN_ELEMENT; // Link from Master to slave element
+fbEL_10_001_0213_00_0.ConfigElement.eElementType                    := E_ElementType.NO_TYPE; // No specific type
+
+// Register element 
+ElementRegistry[E_10_001_0213_00_0].Enable                          := TRUE; // Object is called
+ElementRegistry[E_10_001_0213_00_0].eElementNumber                  := fbEL_10_001_0213_00_0.ConfigElement.eElementNumber; 
+
+(****************************** 10-001-0213-01-0 ************************************)
+(************************** ProBox Straight Transport *******************************)
+// Configuration function
+fbF_10_001_0213_01_0.ConfigFunction.FunctionName                       := '10-001-0213-01-0'; // Function name
+fbF_10_001_0213_01_0.ConfigFunction.eFunctionNumber                    := F_10_001_0213_01_0; // Number of the function
+fbF_10_001_0213_01_0.ConfigFunction.eElementLink                       := E_ElementNumber.E_10_001_0213_00_0;
+fbF_10_001_0213_01_0.ConfigFunction.FunctionLink.eFunctionNumber       := E_FunctionNumber.F_BEGIN_FUNCTION;
+fbF_10_001_0213_01_0.ConfigFunction.FunctionLink.ZoneNumber            := 0;
+fbF_10_001_0213_01_0.ConfigFunction.eAdjacentFunctionNumberSide[1]     := E_FunctionNumber.F_10_001_0212_01_0;
+fbF_10_001_0213_01_0.ConfigFunction.eAdjacentFunctionNumberSide[2]     := E_FunctionNumber.F_BEGIN_FUNCTION;
+fbF_10_001_0213_01_0.ConfigFunction.ePrevFunctionNumber                := E_FunctionNumber.F_10_001_0212_01_0;
+fbF_10_001_0213_01_0.ConfigFunction.eNextFunctionNumber                := E_FunctionNumber.F_BEGIN_FUNCTION;
+fbF_10_001_0213_01_0.ConfigFunction.NumberOfZones                      := 1;
+//Config zone 1
+fbF_10_001_0213_01_0.ConfigFunction.Zone[1].ZoneName                   := '10-001-0213-01-1';
+fbF_10_001_0213_01_0.ConfigFunction.Zone[1].EnableMFC                  := TRUE;
+fbF_10_001_0213_01_0.ConfigFunction.Zone[1].EnableSimultaneousTransport:= FALSE; //Disable Simultaneous transport for multi zone functions
+fbF_10_001_0213_01_0.ConfigFunction.Zone[1].EnableLatchOccupiedState   := TRUE;
+fbF_10_001_0213_01_0.ConfigFunction.Zone[1].Length[1]                  := INT_TO_UINT(1500 / fbF_10_001_0213_01_0.ConfigFunction.NumberOfZones);	//Zone length (ie element length / number of zones)
+
+// Register function
+FunctionRegistry[F_10_001_0213_01_0].Enable                            := TRUE; (* Function will be called *)
+FunctionRegistry[F_10_001_0213_01_0].eFunctionNumber                   := fbF_10_001_0213_01_0.ConfigFunction.eFunctionNumber; // Registration number
+
+
+(****************************** 10-001-0213-02-0 ************************************)
+(****************************** PalletMagazine Addon *************************************)
+// Configuration function 
+fbF_10_001_0213_02_0.ConfigFunction.FunctionName					:= '10-001-0213-02-0'; (* Function name *)
+fbF_10_001_0213_02_0.ConfigFunction.eFunctionNumber				:= F_10_001_0213_02_0; (* Number of the function *)
+fbF_10_001_0213_02_0.ConfigFunction.eFunctionType					:= E_FunctionType.NO_TYPE;
+fbF_10_001_0213_02_0.ConfigFunction.eElementLink					:= E_ElementNumber.E_10_001_0213_00_0; 
+fbF_10_001_0213_02_0.ConfigFunction.FunctionLink.eFunctionNumber	:= E_FunctionNumber.F_10_001_0213_01_0;	//Addon link to function, this is auto generated, an may need to be changed.
+fbF_10_001_0213_02_0.ConfigFunction.FunctionLink.ZoneNumber		:= 1;		
+
+fbF_10_001_0213_02_0.Config.TimeoutValueLift						:= T#20S; //Timeout when moving lift
+fbF_10_001_0213_02_0.Config.TimeoutValueSeq						:= T#2M;  //Timeout for complete sequence
+fbF_10_001_0213_02_0.Config.IdleStacking							:= FALSE; //Lift pallet up to optimze stacking
+
+// Register function 
+FunctionRegistry[F_10_001_0213_02_0].Enable                           := TRUE; (* Function will be called *)
+FunctionRegistry[F_10_001_0213_02_0].eFunctionNumber                  := fbF_10_001_0213_02_0.ConfigFunction.eFunctionNumber; (* Registration number *)
+
+(****************************** 10-001-0214-00-0 ************************************)
+(*************************** ProBoxElement with one Motor *******************************)
+// Configuration element 
+fbEL_10_001_0214_00_0.ConfigElement.ElementName                     := '10-001-0214-00-0'; // Element name 
+fbEL_10_001_0214_00_0.ConfigElement.eElementNumber                  := E_10_001_0214_00_0; // Number of the element 
+fbEL_10_001_0214_00_0.ConfigElement.eSlaveElementNumber_34          := E_ElementNumber.E_BEGIN_ELEMENT; // Link from Master to slave element
+fbEL_10_001_0214_00_0.ConfigElement.eElementType                    := E_ElementType.NO_TYPE; // No specific type
+
+// Register element 
+ElementRegistry[E_10_001_0214_00_0].Enable                          := TRUE; // Object is called
+ElementRegistry[E_10_001_0214_00_0].eElementNumber                  := fbEL_10_001_0214_00_0.ConfigElement.eElementNumber; 
+
+(****************************** 10-001-0214-01-0 ************************************)
+(************************** ProBox Straight Transport *******************************)
+// Configuration function
+fbF_10_001_0214_01_0.ConfigFunction.FunctionName                       := '10-001-0214-01-0'; // Function name
+fbF_10_001_0214_01_0.ConfigFunction.eFunctionNumber                    := F_10_001_0214_01_0; // Number of the function
+fbF_10_001_0214_01_0.ConfigFunction.eElementLink                       := E_ElementNumber.E_10_001_0214_00_0;
+fbF_10_001_0214_01_0.ConfigFunction.FunctionLink.eFunctionNumber       := E_FunctionNumber.F_BEGIN_FUNCTION;
+fbF_10_001_0214_01_0.ConfigFunction.FunctionLink.ZoneNumber            := 0;
+fbF_10_001_0214_01_0.ConfigFunction.eAdjacentFunctionNumberSide[1]     := E_FunctionNumber.F_10_001_0209_01_0;
+fbF_10_001_0214_01_0.ConfigFunction.eAdjacentFunctionNumberSide[2]     := E_FunctionNumber.F_10_001_0215_01_0;
+fbF_10_001_0214_01_0.ConfigFunction.ePrevFunctionNumber                := E_FunctionNumber.F_10_001_0209_01_0;
+fbF_10_001_0214_01_0.ConfigFunction.eNextFunctionNumber                := E_FunctionNumber.F_10_001_0215_01_0;
+fbF_10_001_0214_01_0.ConfigFunction.NumberOfZones                      := 1;
+//Config zone 1
+fbF_10_001_0214_01_0.ConfigFunction.Zone[1].ZoneName                   := '10-001-0214-01-1';
+fbF_10_001_0214_01_0.ConfigFunction.Zone[1].EnableMFC                  := TRUE;
+fbF_10_001_0214_01_0.ConfigFunction.Zone[1].EnableSimultaneousTransport:= FALSE; //Disable Simultaneous transport for multi zone functions
+fbF_10_001_0214_01_0.ConfigFunction.Zone[1].EnableLatchOccupiedState   := TRUE;
+fbF_10_001_0214_01_0.ConfigFunction.Zone[1].Length[1]                  := INT_TO_UINT(3000 / fbF_10_001_0214_01_0.ConfigFunction.NumberOfZones);	//Zone length (ie element length / number of zones)
+
+// Register function
+FunctionRegistry[F_10_001_0214_01_0].Enable                            := TRUE; (* Function will be called *)
+FunctionRegistry[F_10_001_0214_01_0].eFunctionNumber                   := fbF_10_001_0214_01_0.ConfigFunction.eFunctionNumber; // Registration number
+
+
+(****************************** 10-001-0215-00-0 ************************************)
+(*************************** ProBoxElement with one Motor *******************************)
+// Configuration element 
+fbEL_10_001_0215_00_0.ConfigElement.ElementName                     := '10-001-0215-00-0'; // Element name 
+fbEL_10_001_0215_00_0.ConfigElement.eElementNumber                  := E_10_001_0215_00_0; // Number of the element 
+fbEL_10_001_0215_00_0.ConfigElement.eSlaveElementNumber_34          := E_ElementNumber.E_BEGIN_ELEMENT; // Link from Master to slave element
+fbEL_10_001_0215_00_0.ConfigElement.eElementType                    := E_ElementType.NO_TYPE; // No specific type
+
+// Register element 
+ElementRegistry[E_10_001_0215_00_0].Enable                          := TRUE; // Object is called
+ElementRegistry[E_10_001_0215_00_0].eElementNumber                  := fbEL_10_001_0215_00_0.ConfigElement.eElementNumber; 
+
+(****************************** 10-001-0215-01-0 ************************************)
+(************************** ProBox Straight Transport *******************************)
+// Configuration function
+fbF_10_001_0215_01_0.ConfigFunction.FunctionName                       := '10-001-0215-01-0'; // Function name
+fbF_10_001_0215_01_0.ConfigFunction.eFunctionNumber                    := F_10_001_0215_01_0; // Number of the function
+fbF_10_001_0215_01_0.ConfigFunction.eElementLink                       := E_ElementNumber.E_10_001_0215_00_0;
+fbF_10_001_0215_01_0.ConfigFunction.FunctionLink.eFunctionNumber       := E_FunctionNumber.F_BEGIN_FUNCTION;
+fbF_10_001_0215_01_0.ConfigFunction.FunctionLink.ZoneNumber            := 0;
+fbF_10_001_0215_01_0.ConfigFunction.eAdjacentFunctionNumberSide[1]     := E_FunctionNumber.F_10_001_0214_01_0;
+fbF_10_001_0215_01_0.ConfigFunction.eAdjacentFunctionNumberSide[2]     := E_FunctionNumber.F_10_001_0215_02_0;
+fbF_10_001_0215_01_0.ConfigFunction.ePrevFunctionNumber                := E_FunctionNumber.F_10_001_0214_01_0;
+fbF_10_001_0215_01_0.ConfigFunction.eNextFunctionNumber                := E_FunctionNumber.F_10_001_0215_02_0;
+fbF_10_001_0215_01_0.ConfigFunction.NumberOfZones                      := 1;
+//Config zone 1
+fbF_10_001_0215_01_0.ConfigFunction.Zone[1].ZoneName                   := '10-001-0215-01-1';
+fbF_10_001_0215_01_0.ConfigFunction.Zone[1].EnableMFC                  := TRUE;
+fbF_10_001_0215_01_0.ConfigFunction.Zone[1].EnableSimultaneousTransport:= FALSE; //Disable Simultaneous transport for multi zone functions
+fbF_10_001_0215_01_0.ConfigFunction.Zone[1].EnableLatchOccupiedState   := TRUE;
+fbF_10_001_0215_01_0.ConfigFunction.Zone[1].Length[1]                  := INT_TO_UINT(2600 / fbF_10_001_0215_01_0.ConfigFunction.NumberOfZones);	//Zone length (ie element length / number of zones)
+
+// Register function
+FunctionRegistry[F_10_001_0215_01_0].Enable                            := TRUE; (* Function will be called *)
+FunctionRegistry[F_10_001_0215_01_0].eFunctionNumber                   := fbF_10_001_0215_01_0.ConfigFunction.eFunctionNumber; // Registration number
+
+
+(****************************** 10-001-0215-02-0 ************************************)
+(************************** ProBox Straight Transport *******************************)
+// Configuration function
+fbF_10_001_0215_02_0.ConfigFunction.FunctionName                       := '10-001-0215-02-0'; // Function name
+fbF_10_001_0215_02_0.ConfigFunction.eFunctionNumber                    := F_10_001_0215_02_0; // Number of the function
+fbF_10_001_0215_02_0.ConfigFunction.eElementLink                       := E_ElementNumber.E_10_001_0215_00_0;
+fbF_10_001_0215_02_0.ConfigFunction.FunctionLink.eFunctionNumber       := E_FunctionNumber.F_BEGIN_FUNCTION;
+fbF_10_001_0215_02_0.ConfigFunction.FunctionLink.ZoneNumber            := 0;
+fbF_10_001_0215_02_0.ConfigFunction.eAdjacentFunctionNumberSide[1]     := E_FunctionNumber.F_10_001_0215_01_0;
+fbF_10_001_0215_02_0.ConfigFunction.eAdjacentFunctionNumberSide[2]     := E_FunctionNumber.F_BEGIN_FUNCTION;
+fbF_10_001_0215_02_0.ConfigFunction.ePrevFunctionNumber                := E_FunctionNumber.F_10_001_0215_01_0;
+fbF_10_001_0215_02_0.ConfigFunction.eNextFunctionNumber                := E_FunctionNumber.F_BEGIN_FUNCTION;
+fbF_10_001_0215_02_0.ConfigFunction.NumberOfZones                      := 1;
+//Config zone 1
+fbF_10_001_0215_02_0.ConfigFunction.Zone[1].ZoneName                   := '10-001-0215-02-1';
+fbF_10_001_0215_02_0.ConfigFunction.Zone[1].EnableMFC                  := TRUE;
+fbF_10_001_0215_02_0.ConfigFunction.Zone[1].EnableSimultaneousTransport:= FALSE; //Disable Simultaneous transport for multi zone functions
+fbF_10_001_0215_02_0.ConfigFunction.Zone[1].EnableLatchOccupiedState   := TRUE;
+fbF_10_001_0215_02_0.ConfigFunction.Zone[1].Length[1]                  := INT_TO_UINT(2600 / fbF_10_001_0215_02_0.ConfigFunction.NumberOfZones);	//Zone length (ie element length / number of zones)
+
+// Register function
+FunctionRegistry[F_10_001_0215_02_0].Enable                            := TRUE; (* Function will be called *)
+FunctionRegistry[F_10_001_0215_02_0].eFunctionNumber                   := fbF_10_001_0215_02_0.ConfigFunction.eFunctionNumber; // Registration number
+
+
+(****************************** 10-001-0215-03-0 ************************************)
+(******************************* Crane Handover/Takeover ***********************************)
+// Configuration function 
+fbF_10_001_0215_03_0.ConfigFunction.FunctionName                      	 := '10-001-0215-03-0'; (* Function name *)
+fbF_10_001_0215_03_0.ConfigFunction.eFunctionNumber                  	 := F_10_001_0215_03_0; (* Number of the function *)
+fbF_10_001_0215_03_0.ConfigFunction.eElementLink                     	 := E_ElementNumber.E_10_001_0215_00_0; 
+fbF_10_001_0215_03_0.ConfigFunction.FunctionLink.eFunctionNumber     	 := E_FunctionNumber.F_10_001_0215_01_0;	//Addon link to function, this is auto generated, an may need to be changed.
+fbF_10_001_0215_03_0.ConfigFunction.FunctionLink.ZoneNumber         	 := 1;		
+
+fbF_10_001_0215_03_0.Config.TimeoutValueLift							 := T#10S;								// Timeout value for lifting
+fbF_10_001_0215_03_0.Config.HomePosFree								 := E_Positions_LiftControl.DOWN;		// Homeposition lift when zone free
+fbF_10_001_0215_03_0.Config.HomePosOccupied							 := E_Positions_LiftControl.UP;			// Homeposition lift when zone occupied
+fbF_10_001_0215_03_0.Config.CraneXoverType								 := E_CvCraneXoverType.eCOMBINATION; 	// Function Crane Deposit and Crane Pickup
+fbF_10_001_0215_03_0.Config.LiftEnabled								 := FALSE;								// config if station has lift	
+fbF_10_001_0215_03_0.Config.CfgMotorTransfer.EnableMotorTransferTU		 := FALSE;  								// Enable or Disable motor drive chain transfer 
+fbF_10_001_0215_03_0.Config.CfgMotorTransfer.HandoverMotorDir			 := E_DriveDirection.FWD; 				// Direction during handover
+fbF_10_001_0215_03_0.Config.CfgMotorTransfer.TakeoverMotorDir			 := E_DriveDirection.FWD; 				// Direction during takeover
+fbF_10_001_0215_03_0.Config.CfgMotorTransfer.MotorDriveTimeout			 := T#20S;	
+fbF_10_001_0215_03_0.Config.CfgMotorTransfer.MotorSpeed				 := E_ProBoxMotorSpeed.NORMAL;
+
+fbF_10_001_0215_03_0.Config.CraneCom.TCP_IP_Config.ChannelName          := 'CraneTCPIPcom';
+fbF_10_001_0215_03_0.Config.CraneCom.TCP_IP_Config.EnableConnection     := TRUE;
+fbF_10_001_0215_03_0.Config.CraneCom.TCP_IP_Config.RemoteHost           := '192.168.1.1';
+fbF_10_001_0215_03_0.Config.CraneCom.TCP_IP_Config.RemotePort           := 2011;
+fbF_10_001_0215_03_0.Config.CraneCom.TCP_IP_Config.LocalHost            := '0.0.0.0';
+fbF_10_001_0215_03_0.Config.CraneCom.TCP_IP_Config.LocalPort            := 5001;
+fbF_10_001_0215_03_0.Config.CraneCom.TCP_IP_Config.Server               := FALSE;
+fbF_10_001_0215_03_0.Config.CraneCom.TCP_IP_Config.ConnectTimeout       := T#10S;
+fbF_10_001_0215_03_0.Config.CraneCom.TCP_IP_Config.ClientRetryInterval  := T#5S;
+fbF_10_001_0215_03_0.Config.CraneCom.TCP_IP_Config.ServerRetryInterval  := T#1S;
+fbF_10_001_0215_03_0.Config.CraneCom.TCP_IP_Config.AcceptPollInterval   := T#10S;
+fbF_10_001_0215_03_0.Config.CraneCom.TCP_IP_Config.EnableDebugMsg       := TRUE;	
+
+
+// Register function 
+FunctionRegistry[F_10_001_0215_03_0].Enable                          	 := TRUE; (* Function will be called *)
+FunctionRegistry[F_10_001_0215_03_0].eFunctionNumber                  	 := fbF_10_001_0215_03_0.ConfigFunction.eFunctionNumber; (* Registration number *)
+
+
+(****************************** 10-001-0216-00-0 ************************************)
+(*************************** ProBoxElement with one Motor *******************************)
+// Configuration element 
+fbEL_10_001_0216_00_0.ConfigElement.ElementName                     := '10-001-0216-00-0'; // Element name 
+fbEL_10_001_0216_00_0.ConfigElement.eElementNumber                  := E_10_001_0216_00_0; // Number of the element 
+fbEL_10_001_0216_00_0.ConfigElement.eSlaveElementNumber_34          := E_ElementNumber.E_BEGIN_ELEMENT; // Link from Master to slave element
+fbEL_10_001_0216_00_0.ConfigElement.eElementType                    := E_ElementType.NO_TYPE; // No specific type
+
+// Register element 
+ElementRegistry[E_10_001_0216_00_0].Enable                          := TRUE; // Object is called
+ElementRegistry[E_10_001_0216_00_0].eElementNumber                  := fbEL_10_001_0216_00_0.ConfigElement.eElementNumber; 
+
+(****************************** 10-001-0216-01-0 ************************************)
+(************************** ProBox Straight Transport *******************************)
+// Configuration function
+fbF_10_001_0216_01_0.ConfigFunction.FunctionName                       := '10-001-0216-01-0'; // Function name
+fbF_10_001_0216_01_0.ConfigFunction.eFunctionNumber                    := F_10_001_0216_01_0; // Number of the function
+fbF_10_001_0216_01_0.ConfigFunction.eElementLink                       := E_ElementNumber.E_10_001_0216_00_0;
+fbF_10_001_0216_01_0.ConfigFunction.FunctionLink.eFunctionNumber       := E_FunctionNumber.F_BEGIN_FUNCTION;
+fbF_10_001_0216_01_0.ConfigFunction.FunctionLink.ZoneNumber            := 0;
+fbF_10_001_0216_01_0.ConfigFunction.eAdjacentFunctionNumberSide[1]     := E_FunctionNumber.F_BEGIN_FUNCTION;
+fbF_10_001_0216_01_0.ConfigFunction.eAdjacentFunctionNumberSide[2]     := E_FunctionNumber.F_10_001_0217_01_0;
+fbF_10_001_0216_01_0.ConfigFunction.ePrevFunctionNumber                := E_FunctionNumber.F_BEGIN_FUNCTION;
+fbF_10_001_0216_01_0.ConfigFunction.eNextFunctionNumber                := E_FunctionNumber.F_10_001_0217_01_0;
+fbF_10_001_0216_01_0.ConfigFunction.NumberOfZones                      := 2;
+//Config zone 1
+fbF_10_001_0216_01_0.ConfigFunction.Zone[1].ZoneName                   := '10-001-0216-01-1';
+fbF_10_001_0216_01_0.ConfigFunction.Zone[1].EnableMFC                  := TRUE;
+fbF_10_001_0216_01_0.ConfigFunction.Zone[1].EnableSimultaneousTransport:= TRUE; //Enable Simultaneous transport for multi zone functions
+fbF_10_001_0216_01_0.ConfigFunction.Zone[1].EnableLatchOccupiedState   := TRUE;
+fbF_10_001_0216_01_0.ConfigFunction.Zone[1].Length[1]                  := INT_TO_UINT(2600 / fbF_10_001_0216_01_0.ConfigFunction.NumberOfZones);	//Zone length (ie element length / number of zones)
+
+//Config remaining zones equal to zone 1.
+fbF_10_001_0216_01_0.ConfigFunction.Zone[2]                            := fbF_10_001_0216_01_0.ConfigFunction.Zone[1];
+fbF_10_001_0216_01_0.ConfigFunction.Zone[2].ZoneName                   := '10-001-0216-01-2';
+
+fbF_10_001_0216_01_0.Config.TwoSensorFunction                          := FALSE; // Slugging sensor present
+
+// Register function
+FunctionRegistry[F_10_001_0216_01_0].Enable                            := TRUE; (* Function will be called *)
+FunctionRegistry[F_10_001_0216_01_0].eFunctionNumber                   := fbF_10_001_0216_01_0.ConfigFunction.eFunctionNumber; // Registration number
+
+
+(****************************** 10-001-0216-02-0 ************************************)
+(******************************* Crane Handover/Takeover ***********************************)
+// Configuration function 
+fbF_10_001_0216_02_0.ConfigFunction.FunctionName                      	 := '10-001-0216-02-0'; (* Function name *)
+fbF_10_001_0216_02_0.ConfigFunction.eFunctionNumber                  	 := F_10_001_0216_02_0; (* Number of the function *)
+fbF_10_001_0216_02_0.ConfigFunction.eElementLink                     	 := E_ElementNumber.E_10_001_0216_00_0; 
+fbF_10_001_0216_02_0.ConfigFunction.FunctionLink.eFunctionNumber     	 := E_FunctionNumber.F_10_001_0216_01_0;	//Addon link to function, this is auto generated, an may need to be changed.
+fbF_10_001_0216_02_0.ConfigFunction.FunctionLink.ZoneNumber         	 := 1;		
+
+fbF_10_001_0216_02_0.Config.TimeoutValueLift							 := T#10S;								// Timeout value for lifting
+fbF_10_001_0216_02_0.Config.HomePosFree								 := E_Positions_LiftControl.DOWN;		// Homeposition lift when zone free
+fbF_10_001_0216_02_0.Config.HomePosOccupied							 := E_Positions_LiftControl.UP;			// Homeposition lift when zone occupied
+fbF_10_001_0216_02_0.Config.CraneXoverType								 := E_CvCraneXoverType.eCOMBINATION; 	// Function Crane Deposit and Crane Pickup
+fbF_10_001_0216_02_0.Config.LiftEnabled								 := FALSE;								// config if station has lift	
+fbF_10_001_0216_02_0.Config.CfgMotorTransfer.EnableMotorTransferTU		 := FALSE;  								// Enable or Disable motor drive chain transfer 
+fbF_10_001_0216_02_0.Config.CfgMotorTransfer.HandoverMotorDir			 := E_DriveDirection.FWD; 				// Direction during handover
+fbF_10_001_0216_02_0.Config.CfgMotorTransfer.TakeoverMotorDir			 := E_DriveDirection.FWD; 				// Direction during takeover
+fbF_10_001_0216_02_0.Config.CfgMotorTransfer.MotorDriveTimeout			 := T#20S;	
+fbF_10_001_0216_02_0.Config.CfgMotorTransfer.MotorSpeed				 := E_ProBoxMotorSpeed.NORMAL;
+
+fbF_10_001_0216_02_0.Config.CraneCom.TCP_IP_Config.ChannelName          := 'CraneTCPIPcom';
+fbF_10_001_0216_02_0.Config.CraneCom.TCP_IP_Config.EnableConnection     := TRUE;
+fbF_10_001_0216_02_0.Config.CraneCom.TCP_IP_Config.RemoteHost           := '192.168.1.1';
+fbF_10_001_0216_02_0.Config.CraneCom.TCP_IP_Config.RemotePort           := 2011;
+fbF_10_001_0216_02_0.Config.CraneCom.TCP_IP_Config.LocalHost            := '0.0.0.0';
+fbF_10_001_0216_02_0.Config.CraneCom.TCP_IP_Config.LocalPort            := 5001;
+fbF_10_001_0216_02_0.Config.CraneCom.TCP_IP_Config.Server               := FALSE;
+fbF_10_001_0216_02_0.Config.CraneCom.TCP_IP_Config.ConnectTimeout       := T#10S;
+fbF_10_001_0216_02_0.Config.CraneCom.TCP_IP_Config.ClientRetryInterval  := T#5S;
+fbF_10_001_0216_02_0.Config.CraneCom.TCP_IP_Config.ServerRetryInterval  := T#1S;
+fbF_10_001_0216_02_0.Config.CraneCom.TCP_IP_Config.AcceptPollInterval   := T#10S;
+fbF_10_001_0216_02_0.Config.CraneCom.TCP_IP_Config.EnableDebugMsg       := TRUE;	
+
+
+// Register function 
+FunctionRegistry[F_10_001_0216_02_0].Enable                          	 := TRUE; (* Function will be called *)
+FunctionRegistry[F_10_001_0216_02_0].eFunctionNumber                  	 := fbF_10_001_0216_02_0.ConfigFunction.eFunctionNumber; (* Registration number *)
+
+
+(****************************** 10-001-0217-00-0 ************************************)
+(*************************** ProBoxElement with one Motor *******************************)
+// Configuration element 
+fbEL_10_001_0217_00_0.ConfigElement.ElementName                     := '10-001-0217-00-0'; // Element name 
+fbEL_10_001_0217_00_0.ConfigElement.eElementNumber                  := E_10_001_0217_00_0; // Number of the element 
+fbEL_10_001_0217_00_0.ConfigElement.eSlaveElementNumber_34          := E_ElementNumber.E_BEGIN_ELEMENT; // Link from Master to slave element
+fbEL_10_001_0217_00_0.ConfigElement.eElementType                    := E_ElementType.NO_TYPE; // No specific type
+
+// Register element 
+ElementRegistry[E_10_001_0217_00_0].Enable                          := TRUE; // Object is called
+ElementRegistry[E_10_001_0217_00_0].eElementNumber                  := fbEL_10_001_0217_00_0.ConfigElement.eElementNumber; 
+
+(****************************** 10-001-0217-01-0 ************************************)
+(************************** ProBox Straight Transport *******************************)
+// Configuration function
+fbF_10_001_0217_01_0.ConfigFunction.FunctionName                       := '10-001-0217-01-0'; // Function name
+fbF_10_001_0217_01_0.ConfigFunction.eFunctionNumber                    := F_10_001_0217_01_0; // Number of the function
+fbF_10_001_0217_01_0.ConfigFunction.eElementLink                       := E_ElementNumber.E_10_001_0217_00_0;
+fbF_10_001_0217_01_0.ConfigFunction.FunctionLink.eFunctionNumber       := E_FunctionNumber.F_BEGIN_FUNCTION;
+fbF_10_001_0217_01_0.ConfigFunction.FunctionLink.ZoneNumber            := 0;
+fbF_10_001_0217_01_0.ConfigFunction.eAdjacentFunctionNumberSide[1]     := E_FunctionNumber.F_10_001_0216_01_0;
+fbF_10_001_0217_01_0.ConfigFunction.eAdjacentFunctionNumberSide[2]     := E_FunctionNumber.F_10_001_0212_01_0;
+fbF_10_001_0217_01_0.ConfigFunction.ePrevFunctionNumber                := E_FunctionNumber.F_10_001_0216_01_0;
+fbF_10_001_0217_01_0.ConfigFunction.eNextFunctionNumber                := E_FunctionNumber.F_10_001_0212_01_0;
+fbF_10_001_0217_01_0.ConfigFunction.NumberOfZones                      := 1;
+//Config zone 1
+fbF_10_001_0217_01_0.ConfigFunction.Zone[1].ZoneName                   := '10-001-0217-01-1';
+fbF_10_001_0217_01_0.ConfigFunction.Zone[1].EnableMFC                  := TRUE;
+fbF_10_001_0217_01_0.ConfigFunction.Zone[1].EnableSimultaneousTransport:= FALSE; //Disable Simultaneous transport for multi zone functions
+fbF_10_001_0217_01_0.ConfigFunction.Zone[1].EnableLatchOccupiedState   := TRUE;
+fbF_10_001_0217_01_0.ConfigFunction.Zone[1].Length[1]                  := INT_TO_UINT(3000 / fbF_10_001_0217_01_0.ConfigFunction.NumberOfZones);	//Zone length (ie element length / number of zones)
+
+// Register function
+FunctionRegistry[F_10_001_0217_01_0].Enable                            := TRUE; (* Function will be called *)
+FunctionRegistry[F_10_001_0217_01_0].eFunctionNumber                   := fbF_10_001_0217_01_0.ConfigFunction.eFunctionNumber; // Registration number
+
+
+(****************************** 10-001-0218-00-0 ************************************)
+(*************************** ProBoxElement with one Motor *******************************)
+// Configuration element 
+fbEL_10_001_0218_00_0.ConfigElement.ElementName                     := '10-001-0218-00-0'; // Element name 
+fbEL_10_001_0218_00_0.ConfigElement.eElementNumber                  := E_10_001_0218_00_0; // Number of the element 
+fbEL_10_001_0218_00_0.ConfigElement.eSlaveElementNumber_34          := E_ElementNumber.E_BEGIN_ELEMENT; // Link from Master to slave element
+fbEL_10_001_0218_00_0.ConfigElement.eElementType                    := E_ElementType.NO_TYPE; // No specific type
+
+// Register element 
+ElementRegistry[E_10_001_0218_00_0].Enable                          := TRUE; // Object is called
+ElementRegistry[E_10_001_0218_00_0].eElementNumber                  := fbEL_10_001_0218_00_0.ConfigElement.eElementNumber; 
+
+(****************************** 10-001-0218-01-0 ************************************)
+(************************** ProBox Straight Transport *******************************)
+// Configuration function
+fbF_10_001_0218_01_0.ConfigFunction.FunctionName                       := '10-001-0218-01-0'; // Function name
+fbF_10_001_0218_01_0.ConfigFunction.eFunctionNumber                    := F_10_001_0218_01_0; // Number of the function
+fbF_10_001_0218_01_0.ConfigFunction.eElementLink                       := E_ElementNumber.E_10_001_0218_00_0;
+fbF_10_001_0218_01_0.ConfigFunction.FunctionLink.eFunctionNumber       := E_FunctionNumber.F_BEGIN_FUNCTION;
+fbF_10_001_0218_01_0.ConfigFunction.FunctionLink.ZoneNumber            := 0;
+fbF_10_001_0218_01_0.ConfigFunction.eAdjacentFunctionNumberSide[1]     := E_FunctionNumber.F_10_001_0212_01_0;
+fbF_10_001_0218_01_0.ConfigFunction.eAdjacentFunctionNumberSide[2]     := E_FunctionNumber.F_10_001_0219_01_0;
+fbF_10_001_0218_01_0.ConfigFunction.ePrevFunctionNumber                := E_FunctionNumber.F_10_001_0212_01_0;
+fbF_10_001_0218_01_0.ConfigFunction.eNextFunctionNumber                := E_FunctionNumber.F_10_001_0219_01_0;
+fbF_10_001_0218_01_0.ConfigFunction.NumberOfZones                      := 2;
+//Config zone 1
+fbF_10_001_0218_01_0.ConfigFunction.Zone[1].ZoneName                   := '10-001-0218-01-1';
+fbF_10_001_0218_01_0.ConfigFunction.Zone[1].EnableMFC                  := TRUE;
+fbF_10_001_0218_01_0.ConfigFunction.Zone[1].EnableSimultaneousTransport:= TRUE; //Enable Simultaneous transport for multi zone functions
+fbF_10_001_0218_01_0.ConfigFunction.Zone[1].EnableLatchOccupiedState   := TRUE;
+fbF_10_001_0218_01_0.ConfigFunction.Zone[1].Length[1]                  := INT_TO_UINT(2600 / fbF_10_001_0218_01_0.ConfigFunction.NumberOfZones);	//Zone length (ie element length / number of zones)
+
+//Config remaining zones equal to zone 1.
+fbF_10_001_0218_01_0.ConfigFunction.Zone[2]                            := fbF_10_001_0218_01_0.ConfigFunction.Zone[1];
+fbF_10_001_0218_01_0.ConfigFunction.Zone[2].ZoneName                   := '10-001-0218-01-2';
+
+fbF_10_001_0218_01_0.Config.TwoSensorFunction                          := FALSE; // Slugging sensor present
+
+// Register function
+FunctionRegistry[F_10_001_0218_01_0].Enable                            := TRUE; (* Function will be called *)
+FunctionRegistry[F_10_001_0218_01_0].eFunctionNumber                   := fbF_10_001_0218_01_0.ConfigFunction.eFunctionNumber; // Registration number
+
+
+(****************************** 10-001-0219-00-0 ************************************)
+(*************************** ProBoxElement with one Motor *******************************)
+// Configuration element 
+fbEL_10_001_0219_00_0.ConfigElement.ElementName                     := '10-001-0219-00-0'; // Element name 
+fbEL_10_001_0219_00_0.ConfigElement.eElementNumber                  := E_10_001_0219_00_0; // Number of the element 
+fbEL_10_001_0219_00_0.ConfigElement.eSlaveElementNumber_34          := E_ElementNumber.E_BEGIN_ELEMENT; // Link from Master to slave element
+fbEL_10_001_0219_00_0.ConfigElement.eElementType                    := E_ElementType.NO_TYPE; // No specific type
+
+// Register element 
+ElementRegistry[E_10_001_0219_00_0].Enable                          := TRUE; // Object is called
+ElementRegistry[E_10_001_0219_00_0].eElementNumber                  := fbEL_10_001_0219_00_0.ConfigElement.eElementNumber; 
+
+(****************************** 10-001-0219-01-0 ************************************)
+(************************** ProBox Straight Transport *******************************)
+// Configuration function
+fbF_10_001_0219_01_0.ConfigFunction.FunctionName                       := '10-001-0219-01-0'; // Function name
+fbF_10_001_0219_01_0.ConfigFunction.eFunctionNumber                    := F_10_001_0219_01_0; // Number of the function
+fbF_10_001_0219_01_0.ConfigFunction.eElementLink                       := E_ElementNumber.E_10_001_0219_00_0;
+fbF_10_001_0219_01_0.ConfigFunction.FunctionLink.eFunctionNumber       := E_FunctionNumber.F_BEGIN_FUNCTION;
+fbF_10_001_0219_01_0.ConfigFunction.FunctionLink.ZoneNumber            := 0;
+fbF_10_001_0219_01_0.ConfigFunction.eAdjacentFunctionNumberSide[1]     := E_FunctionNumber.F_10_001_0218_01_0;
+fbF_10_001_0219_01_0.ConfigFunction.eAdjacentFunctionNumberSide[2]     := E_FunctionNumber.F_10_001_0220_01_0;
+fbF_10_001_0219_01_0.ConfigFunction.ePrevFunctionNumber                := E_FunctionNumber.F_10_001_0218_01_0;
+fbF_10_001_0219_01_0.ConfigFunction.eNextFunctionNumber                := E_FunctionNumber.F_10_001_0220_01_0;
+fbF_10_001_0219_01_0.ConfigFunction.NumberOfZones                      := 2;
+//Config zone 1
+fbF_10_001_0219_01_0.ConfigFunction.Zone[1].ZoneName                   := '10-001-0219-01-1';
+fbF_10_001_0219_01_0.ConfigFunction.Zone[1].EnableMFC                  := TRUE;
+fbF_10_001_0219_01_0.ConfigFunction.Zone[1].EnableSimultaneousTransport:= TRUE; //Enable Simultaneous transport for multi zone functions
+fbF_10_001_0219_01_0.ConfigFunction.Zone[1].EnableLatchOccupiedState   := TRUE;
+fbF_10_001_0219_01_0.ConfigFunction.Zone[1].Length[1]                  := INT_TO_UINT(2600 / fbF_10_001_0219_01_0.ConfigFunction.NumberOfZones);	//Zone length (ie element length / number of zones)
+
+//Config remaining zones equal to zone 1.
+fbF_10_001_0219_01_0.ConfigFunction.Zone[2]                            := fbF_10_001_0219_01_0.ConfigFunction.Zone[1];
+fbF_10_001_0219_01_0.ConfigFunction.Zone[2].ZoneName                   := '10-001-0219-01-2';
+
+fbF_10_001_0219_01_0.Config.TwoSensorFunction                          := TRUE; // Slugging sensor present
+
+// Register function
+FunctionRegistry[F_10_001_0219_01_0].Enable                            := TRUE; (* Function will be called *)
+FunctionRegistry[F_10_001_0219_01_0].eFunctionNumber                   := fbF_10_001_0219_01_0.ConfigFunction.eFunctionNumber; // Registration number
+
+
+(****************************** 10-001-0220-00-0 ************************************)
+(*************************** ProBoxElement with one Motor *******************************)
+// Configuration element 
+fbEL_10_001_0220_00_0.ConfigElement.ElementName                     := '10-001-0220-00-0'; // Element name 
+fbEL_10_001_0220_00_0.ConfigElement.eElementNumber                  := E_10_001_0220_00_0; // Number of the element 
+fbEL_10_001_0220_00_0.ConfigElement.eSlaveElementNumber_34          := E_ElementNumber.E_BEGIN_ELEMENT; // Link from Master to slave element
+fbEL_10_001_0220_00_0.ConfigElement.eElementType                    := E_ElementType.NO_TYPE; // No specific type
+
+// Register element 
+ElementRegistry[E_10_001_0220_00_0].Enable                          := TRUE; // Object is called
+ElementRegistry[E_10_001_0220_00_0].eElementNumber                  := fbEL_10_001_0220_00_0.ConfigElement.eElementNumber; 
+
+(****************************** 10-001-0220-01-0 ************************************)
+(************************** ProBox Straight Transport *******************************)
+// Configuration function
+fbF_10_001_0220_01_0.ConfigFunction.FunctionName                       := '10-001-0220-01-0'; // Function name
+fbF_10_001_0220_01_0.ConfigFunction.eFunctionNumber                    := F_10_001_0220_01_0; // Number of the function
+fbF_10_001_0220_01_0.ConfigFunction.eElementLink                       := E_ElementNumber.E_10_001_0220_00_0;
+fbF_10_001_0220_01_0.ConfigFunction.FunctionLink.eFunctionNumber       := E_FunctionNumber.F_BEGIN_FUNCTION;
+fbF_10_001_0220_01_0.ConfigFunction.FunctionLink.ZoneNumber            := 0;
+fbF_10_001_0220_01_0.ConfigFunction.eAdjacentFunctionNumberSide[1]     := E_FunctionNumber.F_10_001_0219_01_0;
+fbF_10_001_0220_01_0.ConfigFunction.eAdjacentFunctionNumberSide[2]     := E_FunctionNumber.F_10_001_0221_01_0;
+fbF_10_001_0220_01_0.ConfigFunction.ePrevFunctionNumber                := E_FunctionNumber.F_10_001_0219_01_0;
+fbF_10_001_0220_01_0.ConfigFunction.eNextFunctionNumber                := E_FunctionNumber.F_10_001_0221_01_0;
+fbF_10_001_0220_01_0.ConfigFunction.NumberOfZones                      := 1;
+//Config zone 1
+fbF_10_001_0220_01_0.ConfigFunction.Zone[1].ZoneName                   := '10-001-0220-01-1';
+fbF_10_001_0220_01_0.ConfigFunction.Zone[1].EnableMFC                  := TRUE;
+fbF_10_001_0220_01_0.ConfigFunction.Zone[1].EnableSimultaneousTransport:= FALSE; //Disable Simultaneous transport for multi zone functions
+fbF_10_001_0220_01_0.ConfigFunction.Zone[1].EnableLatchOccupiedState   := TRUE;
+fbF_10_001_0220_01_0.ConfigFunction.Zone[1].Length[1]                  := INT_TO_UINT(3300 / fbF_10_001_0220_01_0.ConfigFunction.NumberOfZones);	//Zone length (ie element length / number of zones)
+
+// Register function
+FunctionRegistry[F_10_001_0220_01_0].Enable                            := TRUE; (* Function will be called *)
+FunctionRegistry[F_10_001_0220_01_0].eFunctionNumber                   := fbF_10_001_0220_01_0.ConfigFunction.eFunctionNumber; // Registration number
+
+
+(****************************** 10-001-0221-00-0 ************************************)
+(*************************** ProBoxElement with one Motor *******************************)
+// Configuration element 
+fbEL_10_001_0221_00_0.ConfigElement.ElementName                     := '10-001-0221-00-0'; // Element name 
+fbEL_10_001_0221_00_0.ConfigElement.eElementNumber                  := E_10_001_0221_00_0; // Number of the element 
+fbEL_10_001_0221_00_0.ConfigElement.eSlaveElementNumber_34          := E_ElementNumber.E_10_001_0220_00_0; // Link from Master to slave element
+fbEL_10_001_0221_00_0.ConfigElement.eElementType                    := E_ElementType.NO_TYPE; // No specific type
+
+// Register element 
+ElementRegistry[E_10_001_0221_00_0].Enable                          := TRUE; // Object is called
+ElementRegistry[E_10_001_0221_00_0].eElementNumber                  := fbEL_10_001_0221_00_0.ConfigElement.eElementNumber; 
+
+(****************************** 10-001-0221-01-0 ************************************)
+(******************************** Transfer Unit *************************************)
+// Configuration function
+fbF_10_001_0221_01_0.ConfigFunction.FunctionName                    := '10-001-0221-01-0'; // Function name
+fbF_10_001_0221_01_0.ConfigFunction.eFunctionNumber                 := F_10_001_0221_01_0; // Number of the function
+fbF_10_001_0221_01_0.ConfigFunction.eElementLink                    := E_ElementNumber.E_10_001_0221_00_0;
+fbF_10_001_0221_01_0.ConfigFunction.FunctionLink.eFunctionNumber    := E_FunctionNumber.F_BEGIN_FUNCTION;
+fbF_10_001_0221_01_0.ConfigFunction.FunctionLink.ZoneNumber         := 0;
+fbF_10_001_0221_01_0.ConfigFunction.eAdjacentFunctionNumberSide[1]  := E_FunctionNumber.F_BEGIN_FUNCTION;
+fbF_10_001_0221_01_0.ConfigFunction.eAdjacentFunctionNumberSide[2]  := E_FunctionNumber.F_10_001_0222_01_0;
+fbF_10_001_0221_01_0.ConfigFunction.eAdjacentFunctionNumberSide[3]  := E_FunctionNumber.F_10_001_0220_01_0;
+fbF_10_001_0221_01_0.ConfigFunction.eAdjacentFunctionNumberSide[4]  := E_FunctionNumber.F_BEGIN_FUNCTION;
+fbF_10_001_0221_01_0.ConfigFunction.ePrevFunctionNumber             := E_FunctionNumber.F_10_001_0220_01_0;
+fbF_10_001_0221_01_0.ConfigFunction.eNextFunctionNumber             := E_FunctionNumber.F_10_001_0222_01_0;
+fbF_10_001_0221_01_0.ConfigFunction.FlowDirectionREV                := FALSE;
+fbF_10_001_0221_01_0.ConfigFunction.NumberOfZones                   := 1;
+
+fbF_10_001_0221_01_0.ConfigFunction.Zone[1].ZoneName                := '10-001-0221-01-1';
+fbF_10_001_0221_01_0.ConfigFunction.Zone[1].EnableMFC                 := TRUE;
+fbF_10_001_0221_01_0.ConfigFunction.Zone[1].EnableLatchOccupiedState  := TRUE;
+fbF_10_001_0221_01_0.ConfigFunction.Zone[1].Length[1]               := 1000;
+
+fbF_10_001_0221_01_0.Config.TimeoutValueLift                        := T#15S; // Timeout value for lifting
+fbF_10_001_0221_01_0.Config.HomePosFree                             := E_Positions_LiftControl.UNDIFINED; // Homeposition lift when zone free, UNDIFINED=> No home position is set, and lift stays where it is.
+fbF_10_001_0221_01_0.Config.HomePosOccupied                         := E_Positions_LiftControl.UNDIFINED; // Homeposition lift when zone occupied, UNDIFINED=> No home position is set, and lift stays where it is.
+fbF_10_001_0221_01_0.Config.LiftType                                := E_LiftType.E_LiftChain; // Configured lifting type, Roller or Chain
+fbF_10_001_0221_01_0.Config.SingleTUMode							 := E_SingleTuMode.SingleTuMode; // Transfer unit and slave element's extended functions only allow one TU at a time. Change to optimize the transfer unit.
+
+// Register function                                                     
+FunctionRegistry[F_10_001_0221_01_0].Enable                         := TRUE; (* Function will be called *)
+FunctionRegistry[F_10_001_0221_01_0].eFunctionNumber                := fbF_10_001_0221_01_0.ConfigFunction.eFunctionNumber; // Registration number
+
+
+(****************************** 10-001-0222-00-0 ************************************)
+(*************************** ProBoxElement with one Motor *******************************)
+// Configuration element 
+fbEL_10_001_0222_00_0.ConfigElement.ElementName                     := '10-001-0222-00-0'; // Element name 
+fbEL_10_001_0222_00_0.ConfigElement.eElementNumber                  := E_10_001_0222_00_0; // Number of the element 
+fbEL_10_001_0222_00_0.ConfigElement.eSlaveElementNumber_34          := E_ElementNumber.E_10_001_0223_00_0; // Link from Master to slave element
+fbEL_10_001_0222_00_0.ConfigElement.eElementType                    := E_ElementType.NO_TYPE; // No specific type
+
+// Register element 
+ElementRegistry[E_10_001_0222_00_0].Enable                          := TRUE; // Object is called
+ElementRegistry[E_10_001_0222_00_0].eElementNumber                  := fbEL_10_001_0222_00_0.ConfigElement.eElementNumber; 
+
+(****************************** 10-001-0222-01-0 ************************************)
+(******************************** Transfer Unit *************************************)
+// Configuration function
+fbF_10_001_0222_01_0.ConfigFunction.FunctionName                    := '10-001-0222-01-0'; // Function name
+fbF_10_001_0222_01_0.ConfigFunction.eFunctionNumber                 := F_10_001_0222_01_0; // Number of the function
+fbF_10_001_0222_01_0.ConfigFunction.eElementLink                    := E_ElementNumber.E_10_001_0222_00_0;
+fbF_10_001_0222_01_0.ConfigFunction.FunctionLink.eFunctionNumber    := E_FunctionNumber.F_BEGIN_FUNCTION;
+fbF_10_001_0222_01_0.ConfigFunction.FunctionLink.ZoneNumber         := 0;
+fbF_10_001_0222_01_0.ConfigFunction.eAdjacentFunctionNumberSide[1]  := E_FunctionNumber.F_10_001_0221_01_0;
+fbF_10_001_0222_01_0.ConfigFunction.eAdjacentFunctionNumberSide[2]  := E_FunctionNumber.F_10_001_0230_01_0;
+fbF_10_001_0222_01_0.ConfigFunction.eAdjacentFunctionNumberSide[3]  := E_FunctionNumber.F_BEGIN_FUNCTION;
+fbF_10_001_0222_01_0.ConfigFunction.eAdjacentFunctionNumberSide[4]  := E_FunctionNumber.F_10_001_0225_01_0;
+fbF_10_001_0222_01_0.ConfigFunction.ePrevFunctionNumber             := E_FunctionNumber.F_10_001_0221_01_0;
+fbF_10_001_0222_01_0.ConfigFunction.eNextFunctionNumber             := E_FunctionNumber.F_BEGIN_FUNCTION;
+fbF_10_001_0222_01_0.ConfigFunction.FlowDirectionREV                := FALSE;
+fbF_10_001_0222_01_0.ConfigFunction.NumberOfZones                   := 1;
+
+fbF_10_001_0222_01_0.ConfigFunction.Zone[1].ZoneName                := '10-001-0222-01-1';
+fbF_10_001_0222_01_0.ConfigFunction.Zone[1].EnableMFC                 := TRUE;
+fbF_10_001_0222_01_0.ConfigFunction.Zone[1].EnableLatchOccupiedState  := TRUE;
+fbF_10_001_0222_01_0.ConfigFunction.Zone[1].Length[1]               := 1000;
+
+fbF_10_001_0222_01_0.Config.TimeoutValueLift                        := T#15S; // Timeout value for lifting
+fbF_10_001_0222_01_0.Config.HomePosFree                             := E_Positions_LiftControl.UNDIFINED; // Homeposition lift when zone free, UNDIFINED=> No home position is set, and lift stays where it is.
+fbF_10_001_0222_01_0.Config.HomePosOccupied                         := E_Positions_LiftControl.UNDIFINED; // Homeposition lift when zone occupied, UNDIFINED=> No home position is set, and lift stays where it is.
+fbF_10_001_0222_01_0.Config.LiftType                                := E_LiftType.E_LiftChain; // Configured lifting type, Roller or Chain
+fbF_10_001_0222_01_0.Config.SingleTUMode							 := E_SingleTuMode.SingleTuMode; // Transfer unit and slave element's extended functions only allow one TU at a time. Change to optimize the transfer unit.
+
+// Register function                                                     
+FunctionRegistry[F_10_001_0222_01_0].Enable                         := TRUE; (* Function will be called *)
+FunctionRegistry[F_10_001_0222_01_0].eFunctionNumber                := fbF_10_001_0222_01_0.ConfigFunction.eFunctionNumber; // Registration number
+
+
+(****************************** 10-001-0223-00-0 ************************************)
+(*************************** ProBoxElement with one Motor *******************************)
+// Configuration element 
+fbEL_10_001_0223_00_0.ConfigElement.ElementName                     := '10-001-0223-00-0'; // Element name 
+fbEL_10_001_0223_00_0.ConfigElement.eElementNumber                  := E_10_001_0223_00_0; // Number of the element 
+fbEL_10_001_0223_00_0.ConfigElement.eSlaveElementNumber_34          := E_ElementNumber.E_BEGIN_ELEMENT; // Link from Master to slave element
+fbEL_10_001_0223_00_0.ConfigElement.eElementType                    := E_ElementType.NO_TYPE; // No specific type
+
+// Register element 
+ElementRegistry[E_10_001_0223_00_0].Enable                          := TRUE; // Object is called
+ElementRegistry[E_10_001_0223_00_0].eElementNumber                  := fbEL_10_001_0223_00_0.ConfigElement.eElementNumber; 
+
+(****************************** 10-001-0225-00-0 ************************************)
+(*************************** ProBoxElement with one Motor *******************************)
+// Configuration element 
+fbEL_10_001_0225_00_0.ConfigElement.ElementName                     := '10-001-0225-00-0'; // Element name 
+fbEL_10_001_0225_00_0.ConfigElement.eElementNumber                  := E_10_001_0225_00_0; // Number of the element 
+fbEL_10_001_0225_00_0.ConfigElement.eSlaveElementNumber_34          := E_ElementNumber.E_BEGIN_ELEMENT; // Link from Master to slave element
+fbEL_10_001_0225_00_0.ConfigElement.eElementType                    := E_ElementType.NO_TYPE; // No specific type
+
+// Register element 
+ElementRegistry[E_10_001_0225_00_0].Enable                          := TRUE; // Object is called
+ElementRegistry[E_10_001_0225_00_0].eElementNumber                  := fbEL_10_001_0225_00_0.ConfigElement.eElementNumber; 
+
+(****************************** 10-001-0225-01-0 ************************************)
+(************************** ProBox Straight Transport *******************************)
+// Configuration function
+fbF_10_001_0225_01_0.ConfigFunction.FunctionName                       := '10-001-0225-01-0'; // Function name
+fbF_10_001_0225_01_0.ConfigFunction.eFunctionNumber                    := F_10_001_0225_01_0; // Number of the function
+fbF_10_001_0225_01_0.ConfigFunction.eElementLink                       := E_ElementNumber.E_10_001_0225_00_0;
+fbF_10_001_0225_01_0.ConfigFunction.FunctionLink.eFunctionNumber       := E_FunctionNumber.F_BEGIN_FUNCTION;
+fbF_10_001_0225_01_0.ConfigFunction.FunctionLink.ZoneNumber            := 0;
+fbF_10_001_0225_01_0.ConfigFunction.eAdjacentFunctionNumberSide[1]     := E_FunctionNumber.F_10_001_0222_01_0;
+fbF_10_001_0225_01_0.ConfigFunction.eAdjacentFunctionNumberSide[2]     := E_FunctionNumber.F_10_001_0226_01_0;
+fbF_10_001_0225_01_0.ConfigFunction.ePrevFunctionNumber                := E_FunctionNumber.F_10_001_0222_01_0;
+fbF_10_001_0225_01_0.ConfigFunction.eNextFunctionNumber                := E_FunctionNumber.F_10_001_0226_01_0;
+fbF_10_001_0225_01_0.ConfigFunction.NumberOfZones                      := 2;
+//Config zone 1
+fbF_10_001_0225_01_0.ConfigFunction.Zone[1].ZoneName                   := '10-001-0225-01-1';
+fbF_10_001_0225_01_0.ConfigFunction.Zone[1].EnableMFC                  := TRUE;
+fbF_10_001_0225_01_0.ConfigFunction.Zone[1].EnableSimultaneousTransport:= TRUE; //Enable Simultaneous transport for multi zone functions
+fbF_10_001_0225_01_0.ConfigFunction.Zone[1].EnableLatchOccupiedState   := TRUE;
+fbF_10_001_0225_01_0.ConfigFunction.Zone[1].Length[1]                  := INT_TO_UINT(2600 / fbF_10_001_0225_01_0.ConfigFunction.NumberOfZones);	//Zone length (ie element length / number of zones)
+
+//Config remaining zones equal to zone 1.
+fbF_10_001_0225_01_0.ConfigFunction.Zone[2]                            := fbF_10_001_0225_01_0.ConfigFunction.Zone[1];
+fbF_10_001_0225_01_0.ConfigFunction.Zone[2].ZoneName                   := '10-001-0225-01-2';
+
+fbF_10_001_0225_01_0.Config.TwoSensorFunction                          := FALSE; // Slugging sensor present
+
+// Register function
+FunctionRegistry[F_10_001_0225_01_0].Enable                            := TRUE; (* Function will be called *)
+FunctionRegistry[F_10_001_0225_01_0].eFunctionNumber                   := fbF_10_001_0225_01_0.ConfigFunction.eFunctionNumber; // Registration number
+
+
+(****************************** 10-001-0226-00-0 ************************************)
+(*************************** ProBoxElement with one Motor *******************************)
+// Configuration element 
+fbEL_10_001_0226_00_0.ConfigElement.ElementName                     := '10-001-0226-00-0'; // Element name 
+fbEL_10_001_0226_00_0.ConfigElement.eElementNumber                  := E_10_001_0226_00_0; // Number of the element 
+fbEL_10_001_0226_00_0.ConfigElement.eSlaveElementNumber_34          := E_ElementNumber.E_BEGIN_ELEMENT; // Link from Master to slave element
+fbEL_10_001_0226_00_0.ConfigElement.eElementType                    := E_ElementType.NO_TYPE; // No specific type
+
+// Register element 
+ElementRegistry[E_10_001_0226_00_0].Enable                          := TRUE; // Object is called
+ElementRegistry[E_10_001_0226_00_0].eElementNumber                  := fbEL_10_001_0226_00_0.ConfigElement.eElementNumber; 
+
+(****************************** 10-001-0226-01-0 ************************************)
+(************************** ProBox Straight Transport *******************************)
+// Configuration function
+fbF_10_001_0226_01_0.ConfigFunction.FunctionName                       := '10-001-0226-01-0'; // Function name
+fbF_10_001_0226_01_0.ConfigFunction.eFunctionNumber                    := F_10_001_0226_01_0; // Number of the function
+fbF_10_001_0226_01_0.ConfigFunction.eElementLink                       := E_ElementNumber.E_10_001_0226_00_0;
+fbF_10_001_0226_01_0.ConfigFunction.FunctionLink.eFunctionNumber       := E_FunctionNumber.F_BEGIN_FUNCTION;
+fbF_10_001_0226_01_0.ConfigFunction.FunctionLink.ZoneNumber            := 0;
+fbF_10_001_0226_01_0.ConfigFunction.eAdjacentFunctionNumberSide[1]     := E_FunctionNumber.F_10_001_0225_01_0;
+fbF_10_001_0226_01_0.ConfigFunction.eAdjacentFunctionNumberSide[2]     := E_FunctionNumber.F_10_001_0227_01_0;
+fbF_10_001_0226_01_0.ConfigFunction.ePrevFunctionNumber                := E_FunctionNumber.F_10_001_0225_01_0;
+fbF_10_001_0226_01_0.ConfigFunction.eNextFunctionNumber                := E_FunctionNumber.F_10_001_0227_01_0;
+fbF_10_001_0226_01_0.ConfigFunction.NumberOfZones                      := 2;
+//Config zone 1
+fbF_10_001_0226_01_0.ConfigFunction.Zone[1].ZoneName                   := '10-001-0226-01-1';
+fbF_10_001_0226_01_0.ConfigFunction.Zone[1].EnableMFC                  := TRUE;
+fbF_10_001_0226_01_0.ConfigFunction.Zone[1].EnableSimultaneousTransport:= TRUE; //Enable Simultaneous transport for multi zone functions
+fbF_10_001_0226_01_0.ConfigFunction.Zone[1].EnableLatchOccupiedState   := TRUE;
+fbF_10_001_0226_01_0.ConfigFunction.Zone[1].Length[1]                  := INT_TO_UINT(2600 / fbF_10_001_0226_01_0.ConfigFunction.NumberOfZones);	//Zone length (ie element length / number of zones)
+
+//Config remaining zones equal to zone 1.
+fbF_10_001_0226_01_0.ConfigFunction.Zone[2]                            := fbF_10_001_0226_01_0.ConfigFunction.Zone[1];
+fbF_10_001_0226_01_0.ConfigFunction.Zone[2].ZoneName                   := '10-001-0226-01-2';
+
+fbF_10_001_0226_01_0.Config.TwoSensorFunction                          := FALSE; // Slugging sensor present
+
+// Register function
+FunctionRegistry[F_10_001_0226_01_0].Enable                            := TRUE; (* Function will be called *)
+FunctionRegistry[F_10_001_0226_01_0].eFunctionNumber                   := fbF_10_001_0226_01_0.ConfigFunction.eFunctionNumber; // Registration number
+
+
+(****************************** 10-001-0227-00-0 ************************************)
+(*************************** ProBoxElement with one Motor *******************************)
+// Configuration element 
+fbEL_10_001_0227_00_0.ConfigElement.ElementName                     := '10-001-0227-00-0'; // Element name 
+fbEL_10_001_0227_00_0.ConfigElement.eElementNumber                  := E_10_001_0227_00_0; // Number of the element 
+fbEL_10_001_0227_00_0.ConfigElement.eSlaveElementNumber_34          := E_ElementNumber.E_BEGIN_ELEMENT; // Link from Master to slave element
+fbEL_10_001_0227_00_0.ConfigElement.eElementType                    := E_ElementType.NO_TYPE; // No specific type
+
+// Register element 
+ElementRegistry[E_10_001_0227_00_0].Enable                          := TRUE; // Object is called
+ElementRegistry[E_10_001_0227_00_0].eElementNumber                  := fbEL_10_001_0227_00_0.ConfigElement.eElementNumber; 
+
+(****************************** 10-001-0227-01-0 ************************************)
+(************************** ProBox Straight Transport *******************************)
+// Configuration function
+fbF_10_001_0227_01_0.ConfigFunction.FunctionName                       := '10-001-0227-01-0'; // Function name
+fbF_10_001_0227_01_0.ConfigFunction.eFunctionNumber                    := F_10_001_0227_01_0; // Number of the function
+fbF_10_001_0227_01_0.ConfigFunction.eElementLink                       := E_ElementNumber.E_10_001_0227_00_0;
+fbF_10_001_0227_01_0.ConfigFunction.FunctionLink.eFunctionNumber       := E_FunctionNumber.F_BEGIN_FUNCTION;
+fbF_10_001_0227_01_0.ConfigFunction.FunctionLink.ZoneNumber            := 0;
+fbF_10_001_0227_01_0.ConfigFunction.eAdjacentFunctionNumberSide[1]     := E_FunctionNumber.F_10_001_0226_01_0;
+fbF_10_001_0227_01_0.ConfigFunction.eAdjacentFunctionNumberSide[2]     := E_FunctionNumber.F_10_001_0209_01_0;
+fbF_10_001_0227_01_0.ConfigFunction.ePrevFunctionNumber                := E_FunctionNumber.F_10_001_0226_01_0;
+fbF_10_001_0227_01_0.ConfigFunction.eNextFunctionNumber                := E_FunctionNumber.F_10_001_0209_01_0;
+fbF_10_001_0227_01_0.ConfigFunction.NumberOfZones                      := 1;
+//Config zone 1
+fbF_10_001_0227_01_0.ConfigFunction.Zone[1].ZoneName                   := '10-001-0227-01-1';
+fbF_10_001_0227_01_0.ConfigFunction.Zone[1].EnableMFC                  := TRUE;
+fbF_10_001_0227_01_0.ConfigFunction.Zone[1].EnableSimultaneousTransport:= FALSE; //Disable Simultaneous transport for multi zone functions
+fbF_10_001_0227_01_0.ConfigFunction.Zone[1].EnableLatchOccupiedState   := TRUE;
+fbF_10_001_0227_01_0.ConfigFunction.Zone[1].Length[1]                  := INT_TO_UINT(1400 / fbF_10_001_0227_01_0.ConfigFunction.NumberOfZones);	//Zone length (ie element length / number of zones)
+
+// Register function
+FunctionRegistry[F_10_001_0227_01_0].Enable                            := TRUE; (* Function will be called *)
+FunctionRegistry[F_10_001_0227_01_0].eFunctionNumber                   := fbF_10_001_0227_01_0.ConfigFunction.eFunctionNumber; // Registration number
+
+
+(****************************** 10-001-0230-00-0 ************************************)
+(*************************** ProBoxElement with one Motor *******************************)
+// Configuration element 
+fbEL_10_001_0230_00_0.ConfigElement.ElementName                     := '10-001-0230-00-0'; // Element name 
+fbEL_10_001_0230_00_0.ConfigElement.eElementNumber                  := E_10_001_0230_00_0; // Number of the element 
+fbEL_10_001_0230_00_0.ConfigElement.eSlaveElementNumber_34          := E_ElementNumber.E_BEGIN_ELEMENT; // Link from Master to slave element
+fbEL_10_001_0230_00_0.ConfigElement.eElementType                    := E_ElementType.NO_TYPE; // No specific type
+
+// Register element 
+ElementRegistry[E_10_001_0230_00_0].Enable                          := TRUE; // Object is called
+ElementRegistry[E_10_001_0230_00_0].eElementNumber                  := fbEL_10_001_0230_00_0.ConfigElement.eElementNumber; 
+
+(****************************** 10-001-0230-01-0 ************************************)
+(******************************** TransferCC  ***************************************)
+// Configuration function
+fbF_10_001_0230_01_0.ConfigFunction.FunctionName                      := '10-001-0230-01-0'; // Function name
+fbF_10_001_0230_01_0.ConfigFunction.eFunctionNumber                   := F_10_001_0230_01_0; // Number of the function
+fbF_10_001_0230_01_0.ConfigFunction.eElementLink                      := E_ElementNumber.E_10_001_0230_00_0;
+fbF_10_001_0230_01_0.ConfigFunction.FunctionLink.eFunctionNumber      := E_FunctionNumber.F_BEGIN_FUNCTION;
+fbF_10_001_0230_01_0.ConfigFunction.FunctionLink.ZoneNumber           := 0;
+fbF_10_001_0230_01_0.ConfigFunction.eAdjacentFunctionNumberSide[1]    := E_FunctionNumber.F_10_001_0222_01_0;
+fbF_10_001_0230_01_0.ConfigFunction.eAdjacentFunctionNumberSide[2]    := E_FunctionNumber.F_10_001_0232_01_0;
+fbF_10_001_0230_01_0.ConfigFunction.eAdjacentFunctionNumberSide[3]    := E_FunctionNumber.F_BEGIN_FUNCTION;
+fbF_10_001_0230_01_0.ConfigFunction.eAdjacentFunctionNumberSide[4]    := E_FunctionNumber.F_BEGIN_FUNCTION;
+fbF_10_001_0230_01_0.ConfigFunction.ePrevFunctionNumber               := E_FunctionNumber.F_10_001_0222_01_0;
+fbF_10_001_0230_01_0.ConfigFunction.eNextFunctionNumber               := E_FunctionNumber.F_10_001_0232_01_0;
+fbF_10_001_0230_01_0.ConfigFunction.FlowDirectionREV                  := FALSE;
+fbF_10_001_0230_01_0.ConfigFunction.NumberOfZones                     := 1;
+
+fbF_10_001_0230_01_0.ConfigFunction.Zone[1].ZoneName                  := '10-001-0230-01-1';
+fbF_10_001_0230_01_0.ConfigFunction.Zone[1].EnableMFC                 := TRUE;
+fbF_10_001_0230_01_0.ConfigFunction.Zone[1].EnableLatchOccupiedState  := TRUE;
+fbF_10_001_0230_01_0.ConfigFunction.Zone[1].Length[1]                 := 1400;
+
+
+fbF_10_001_0230_01_0.Config.HomePosFree								  := E_Positions_HorizontalControl.LEFT;
+fbF_10_001_0230_01_0.Config.HomePosOccupied							  := E_Positions_HorizontalControl.LEFT;
+fbF_10_001_0230_01_0.Config.ReleaseBreakTime						  := T#500MS;
+fbF_10_001_0230_01_0.Config.TimeoutValueMotor						  := T#30S;
+
+// Register function
+FunctionRegistry[F_10_001_0230_01_0].Enable                     		:= TRUE; (* Function will be called *)
+FunctionRegistry[F_10_001_0230_01_0].eFunctionNumber 					:= fbF_10_001_0230_01_0.ConfigFunction.eFunctionNumber; // Registration number
+
+
+(****************************** 10-001-0232-00-0 ************************************)
+(*************************** ProBoxElement with one Motor *******************************)
+// Configuration element 
+fbEL_10_001_0232_00_0.ConfigElement.ElementName                     := '10-001-0232-00-0'; // Element name 
+fbEL_10_001_0232_00_0.ConfigElement.eElementNumber                  := E_10_001_0232_00_0; // Number of the element 
+fbEL_10_001_0232_00_0.ConfigElement.eSlaveElementNumber_34          := E_ElementNumber.E_BEGIN_ELEMENT; // Link from Master to slave element
+fbEL_10_001_0232_00_0.ConfigElement.eElementType                    := E_ElementType.NO_TYPE; // No specific type
+
+// Register element 
+ElementRegistry[E_10_001_0232_00_0].Enable                          := TRUE; // Object is called
+ElementRegistry[E_10_001_0232_00_0].eElementNumber                  := fbEL_10_001_0232_00_0.ConfigElement.eElementNumber; 
+
+(****************************** 10-001-0232-01-0 ************************************)
+(************************** ProBox Straight Transport *******************************)
+// Configuration function
+fbF_10_001_0232_01_0.ConfigFunction.FunctionName                       := '10-001-0232-01-0'; // Function name
+fbF_10_001_0232_01_0.ConfigFunction.eFunctionNumber                    := F_10_001_0232_01_0; // Number of the function
+fbF_10_001_0232_01_0.ConfigFunction.eElementLink                       := E_ElementNumber.E_10_001_0232_00_0;
+fbF_10_001_0232_01_0.ConfigFunction.FunctionLink.eFunctionNumber       := E_FunctionNumber.F_BEGIN_FUNCTION;
+fbF_10_001_0232_01_0.ConfigFunction.FunctionLink.ZoneNumber            := 0;
+fbF_10_001_0232_01_0.ConfigFunction.eAdjacentFunctionNumberSide[1]     := E_FunctionNumber.F_10_001_0230_01_0;
+fbF_10_001_0232_01_0.ConfigFunction.eAdjacentFunctionNumberSide[2]     := E_FunctionNumber.F_BEGIN_FUNCTION;
+fbF_10_001_0232_01_0.ConfigFunction.ePrevFunctionNumber                := E_FunctionNumber.F_10_001_0230_01_0;
+fbF_10_001_0232_01_0.ConfigFunction.eNextFunctionNumber                := E_FunctionNumber.F_BEGIN_FUNCTION;
+fbF_10_001_0232_01_0.ConfigFunction.NumberOfZones                      := 2;
+//Config zone 1
+fbF_10_001_0232_01_0.ConfigFunction.Zone[1].ZoneName                   := '10-001-0232-01-1';
+fbF_10_001_0232_01_0.ConfigFunction.Zone[1].EnableMFC                  := TRUE;
+fbF_10_001_0232_01_0.ConfigFunction.Zone[1].EnableSimultaneousTransport:= TRUE; //Enable Simultaneous transport for multi zone functions
+fbF_10_001_0232_01_0.ConfigFunction.Zone[1].EnableLatchOccupiedState   := TRUE;
+fbF_10_001_0232_01_0.ConfigFunction.Zone[1].Length[1]                  := INT_TO_UINT(3000 / fbF_10_001_0232_01_0.ConfigFunction.NumberOfZones);	//Zone length (ie element length / number of zones)
+
+//Config remaining zones equal to zone 1.
+fbF_10_001_0232_01_0.ConfigFunction.Zone[2]                            := fbF_10_001_0232_01_0.ConfigFunction.Zone[1];
+fbF_10_001_0232_01_0.ConfigFunction.Zone[2].ZoneName                   := '10-001-0232-01-2';
+
+fbF_10_001_0232_01_0.Config.TwoSensorFunction                          := TRUE; // Slugging sensor present
+
+// Register function
+FunctionRegistry[F_10_001_0232_01_0].Enable                            := TRUE; (* Function will be called *)
+FunctionRegistry[F_10_001_0232_01_0].eFunctionNumber                   := fbF_10_001_0232_01_0.ConfigFunction.eFunctionNumber; // Registration number
+
+
+(****************************** 10-001-0232-02-0 ************************************)
+(********************************* In/Out Feed ****************************************)
+// Configuration function 
+fbF_10_001_0232_02_0.ConfigFunction.FunctionName                     := '10-001-0232-02-0'; (* Function name *)
+fbF_10_001_0232_02_0.ConfigFunction.eFunctionNumber                  := F_10_001_0232_02_0; (* Number of the function *)
+fbF_10_001_0232_02_0.ConfigFunction.eElementLink                     := E_ElementNumber.E_10_001_0232_00_0; 
+fbF_10_001_0232_02_0.ConfigFunction.FunctionLink.eFunctionNumber     := E_FunctionNumber.F_10_001_0232_01_0;	//Addon link to function, this is auto generated, an may need to be changed.
+fbF_10_001_0232_02_0.ConfigFunction.FunctionLink.ZoneNumber          := 1;		
+
+fbF_10_001_0232_02_0.Config.tFTLClearTime                  		  := T#5S; //Fork Truck Lift clear time
+fbF_10_001_0232_02_0.Config.tTUSensorTime					  		  := T#5S; //Sensor occupied Time when to add or remove TU
+fbF_10_001_0232_02_0.Config.TimeoutValueLift					  	  := T#10S; //Timeout value for lifting
+fbF_10_001_0232_02_0.Config.LiftEnabled					  	  	  := FALSE; //Config if function has lift
+
+// Register function 
+FunctionRegistry[F_10_001_0232_02_0].Enable                           := TRUE; (* Function will be called *)
+FunctionRegistry[F_10_001_0232_02_0].eFunctionNumber                  := fbF_10_001_0232_02_0.ConfigFunction.eFunctionNumber; (* Registration number *)
+
+
+(****************************** 10-001-0233-00-0 ************************************)
+(*************************** ProBoxElement with one Motor *******************************)
+// Configuration element 
+fbEL_10_001_0233_00_0.ConfigElement.ElementName                     := '10-001-0233-00-0'; // Element name 
+fbEL_10_001_0233_00_0.ConfigElement.eElementNumber                  := E_10_001_0233_00_0; // Number of the element 
+fbEL_10_001_0233_00_0.ConfigElement.eSlaveElementNumber_34          := E_ElementNumber.E_BEGIN_ELEMENT; // Link from Master to slave element
+fbEL_10_001_0233_00_0.ConfigElement.eElementType                    := E_ElementType.NO_TYPE; // No specific type
+
+// Register element 
+ElementRegistry[E_10_001_0233_00_0].Enable                          := TRUE; // Object is called
+ElementRegistry[E_10_001_0233_00_0].eElementNumber                  := fbEL_10_001_0233_00_0.ConfigElement.eElementNumber; 
+
+(****************************** 10-001-0233-01-0 ************************************)
+(************************** ProBox Straight Transport *******************************)
+// Configuration function
+fbF_10_001_0233_01_0.ConfigFunction.FunctionName                       := '10-001-0233-01-0'; // Function name
+fbF_10_001_0233_01_0.ConfigFunction.eFunctionNumber                    := F_10_001_0233_01_0; // Number of the function
+fbF_10_001_0233_01_0.ConfigFunction.eElementLink                       := E_ElementNumber.E_10_001_0233_00_0;
+fbF_10_001_0233_01_0.ConfigFunction.FunctionLink.eFunctionNumber       := E_FunctionNumber.F_BEGIN_FUNCTION;
+fbF_10_001_0233_01_0.ConfigFunction.FunctionLink.ZoneNumber            := 0;
+fbF_10_001_0233_01_0.ConfigFunction.eAdjacentFunctionNumberSide[1]     := E_FunctionNumber.F_10_001_0204_01_0;
+fbF_10_001_0233_01_0.ConfigFunction.eAdjacentFunctionNumberSide[2]     := E_FunctionNumber.F_BEGIN_FUNCTION;
+fbF_10_001_0233_01_0.ConfigFunction.ePrevFunctionNumber                := E_FunctionNumber.F_10_001_0204_01_0;
+fbF_10_001_0233_01_0.ConfigFunction.eNextFunctionNumber                := E_FunctionNumber.F_BEGIN_FUNCTION;
+fbF_10_001_0233_01_0.ConfigFunction.NumberOfZones                      := 1;
+//Config zone 1
+fbF_10_001_0233_01_0.ConfigFunction.Zone[1].ZoneName                   := '10-001-0233-01-1';
+fbF_10_001_0233_01_0.ConfigFunction.Zone[1].EnableMFC                  := TRUE;
+fbF_10_001_0233_01_0.ConfigFunction.Zone[1].EnableSimultaneousTransport:= FALSE; //Disable Simultaneous transport for multi zone functions
+fbF_10_001_0233_01_0.ConfigFunction.Zone[1].EnableLatchOccupiedState   := TRUE;
+fbF_10_001_0233_01_0.ConfigFunction.Zone[1].Length[1]                  := INT_TO_UINT(1600 / fbF_10_001_0233_01_0.ConfigFunction.NumberOfZones);	//Zone length (ie element length / number of zones)
+
+// Register function
+FunctionRegistry[F_10_001_0233_01_0].Enable                            := TRUE; (* Function will be called *)
+FunctionRegistry[F_10_001_0233_01_0].eFunctionNumber                   := fbF_10_001_0233_01_0.ConfigFunction.eFunctionNumber; // Registration number
+
+
+]]></ST>
+    </Implementation>
+    <LineIds Name="F_ConfigPosition_001">
+      <LineId Id="3" Count="328" />
+      <LineId Id="333" Count="1054" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

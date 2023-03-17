@@ -1,0 +1,15 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <DUT Name="E_DirectionMovableStop" Id="{06f19f20-e9e5-4a47-a1d0-808c69bb68a3}">
+    <Declaration><![CDATA[{attribute 'qualified_only'}
+{attribute 'strict'}
+TYPE E_DirectionMovableStop :
+(
+// Generall states
+    Side_1_2, 	//0
+	Side_2_1
+);
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

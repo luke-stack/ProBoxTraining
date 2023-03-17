@@ -1,0 +1,76 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.4">
+  <Itf Name="I_TraceHandlerStatistics" Id="{61b069b0-ee12-4856-b4cb-1c7fb78fcda6}">
+    <Declaration><![CDATA[// statistical data for FB_TraceHandler
+{attribute 'monitoring' := 'call'}
+INTERFACE PUBLIC I_TraceHandlerStatistics
+]]></Declaration>
+    <Folder Name="Methods" Id="{fcaec11f-c353-4bfa-8cff-beaadf0a2977}" />
+    <Folder Name="Properties" Id="{cb7288a6-63b1-41c1-a733-df2ff5c29575}" />
+    <Method Name="Clear" Id="{b4d3f26f-0502-4ec2-a856-f648308ce146}" FolderPath="Methods\">
+      <Declaration><![CDATA[// clears all statistically informations
+METHOD PUBLIC Clear
+
+(********************************************************************************************************************************)
+VAR_INPUT
+END_VAR
+]]></Declaration>
+    </Method>
+    <Property Name="FileOpenCounter" Id="{0bc0f05a-00b9-4469-afdb-3ab66db1af81}" FolderPath="Properties\">
+      <Declaration><![CDATA[// counter for opening file
+{attribute 'monitoring' := 'call'}
+PROPERTY PUBLIC FileOpenCounter : ULINT]]></Declaration>
+      <Get Name="Get" Id="{6d89c62c-995c-4bbf-a784-48f993130874}">
+        <Declaration><![CDATA[]]></Declaration>
+      </Get>
+    </Property>
+    <Property Name="MaxDataItemsPerRow" Id="{23378306-63b3-4049-8d90-8350c6cb7c90}" FolderPath="Properties\">
+      <Declaration><![CDATA[// maximum data items being written into one piece
+{attribute 'monitoring' := 'call'}
+PROPERTY PUBLIC MaxDataItemsPerRow : WORD]]></Declaration>
+      <Get Name="Get" Id="{b2529122-9ce7-4f8c-8035-8ac4475f0535}">
+        <Declaration><![CDATA[]]></Declaration>
+      </Get>
+    </Property>
+    <Property Name="MaxDataLength" Id="{80c8e413-e342-4b45-8043-c9f2b76d1a7a}" FolderPath="Properties\">
+      <Declaration><![CDATA[// maximum length/usage of write buffer
+{attribute 'monitoring' := 'call'}
+PROPERTY PUBLIC MaxDataLength : DWORD]]></Declaration>
+      <Get Name="Get" Id="{352b8271-db59-4610-9ef6-faa08c3380ec}">
+        <Declaration><![CDATA[]]></Declaration>
+      </Get>
+    </Property>
+    <Property Name="MaxExecutionDuration" Id="{645341ba-f883-4fc2-a8c9-e1745a8c47ca}" FolderPath="Properties\">
+      <Declaration><![CDATA[// maximum duration of execution in microseconds
+{attribute 'monitoring' := 'call'}
+PROPERTY PUBLIC MaxExecutionDuration : ULINT]]></Declaration>
+      <Get Name="Get" Id="{7bde0d09-2327-4171-b9db-49f8c623b758}">
+        <Declaration><![CDATA[]]></Declaration>
+      </Get>
+    </Property>
+    <Property Name="MaxFifoFillLevel" Id="{86eff08a-3c98-48e0-a642-b695c35efabc}" FolderPath="Properties\">
+      <Declaration><![CDATA[// maximum fifo fill level
+{attribute 'monitoring' := 'call'}
+PROPERTY PUBLIC MaxFifoFillLevel : WORD]]></Declaration>
+      <Get Name="Get" Id="{3cc23e5d-99f3-4c01-b5df-54f6d1e64257}">
+        <Declaration><![CDATA[]]></Declaration>
+      </Get>
+    </Property>
+    <Property Name="MaxFileOpenTime" Id="{74604000-386f-46b7-a939-8567f443cfa2}" FolderPath="Properties\">
+      <Declaration><![CDATA[// maximum time file has been opened
+{attribute 'monitoring' := 'call'}
+PROPERTY PUBLIC MaxFileOpenTime : TIME]]></Declaration>
+      <Get Name="Get" Id="{61ff329d-5931-4bdb-aff6-348819286131}">
+        <Declaration><![CDATA[]]></Declaration>
+      </Get>
+    </Property>
+    <Property Name="PutCounter" Id="{c4e89f70-9b14-4bc2-8660-fad821b70cbf}" FolderPath="Properties\">
+      <Declaration><![CDATA[// counter for put calls
+{attribute 'monitoring' := 'call'}
+PROPERTY PutCounter : ULINT]]></Declaration>
+      <Get Name="Get" Id="{d72ce6a3-a062-4c78-a1a3-1a38c5978db7}">
+        <Declaration><![CDATA[]]></Declaration>
+      </Get>
+    </Property>
+  </Itf>
+</TcPlcObject>

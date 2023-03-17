@@ -1,0 +1,15 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <DUT Name="E_ProfileCheckMeasurement" Id="{6643494d-ff16-46b3-8ddb-09f270a9074b}">
+    <Declaration><![CDATA[TYPE E_ProfileCheckMeasurement :
+(
+	IDLE,
+	BLOCKED,
+	READY,
+	MEASURING,
+	DONE
+);
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

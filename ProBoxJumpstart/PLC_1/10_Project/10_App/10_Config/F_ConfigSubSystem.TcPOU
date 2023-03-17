@@ -1,0 +1,37 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <POU Name="F_ConfigSubSystem" Id="{0e7a19ac-a774-45a7-a30f-fe0d221f2f31}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION F_ConfigSubSystem : BOOL
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[
+(***********************************************************************************
+   Subsystem 10
+ ***********************************************************************************)
+fbSubsystem10.ConfigSubsystem.SubSystemName         := '10-000-0000-000';
+fbSubsystem10.ConfigSubsystem.SubsystemNumber       := 10;
+fbSubsystem10.ConfigSubsystem.MaxMasterSpeed        := 100;
+fbSubsystem10.ConfigSubsystem.MinMasterSpeed        := 50;
+fbSubsystem10.ConfigSubsystem.MaxInitCallsPerCycle  := 10;
+fbSubsystem10.Config.CPU_FanExists                  := FALSE;
+fbSubsystem10.Config.MinFanSpeed                    := 0;
+fbSubsystem10.Config.AM_Exists                      := TRUE;
+fbSubsystem10.Config.SPOC_Exists                    := TRUE;
+fbSubsystem10.Config.tDelayMonitoring               := T#2S;
+fbSubsystem10.Config.tDelayStopping                 := T#1M;
+fbSubsystem10.Config.EnableTimeSync                 := TRUE;
+fbSubsystem10.Config.MinTimeSync                    := T#24H;
+fbSubsystem10.Config.tRequestReset                  := T#1M;
+fbSubsystem10.Config.CPU_UsageWarning               := 50;
+fbSubsystem10.Config.CPU_UsageError                 := 60;
+fbSubsystem10.Config.CPU_TemperatureWarning         := 85;
+fbSubsystem10.Config.CPU_TemperatureError           := 95;
+
+]]></ST>
+    </Implementation>
+    <LineIds Name="F_ConfigSubSystem">
+      <LineId Id="3" Count="22" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

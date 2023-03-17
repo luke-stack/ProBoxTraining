@@ -1,0 +1,428 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <POU Name="FB_MovableStopAddon" Id="{08a57360-ccbd-4ed5-8464-49c858b54249}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK FB_MovableStopAddon EXTENDS FB_FunctionConv
+VAR_INPUT
+	Config						: ST_CFG_MovableStop; 		// Configuration
+	HW_Inputs					: ST_HW_InputsMovableStop; 	// Hardware inputs
+	CtrlIn						: ST_CtrlInMovableStop;		// User function control inputs
+END_VAR
+VAR_OUTPUT
+	HW_Outputs					: ST_HW_OutputsMovableStop;	// Hardware outputs
+	CtrlOut						: ST_CtrlOutMovableStop;	// User function control outputs
+END_VAR
+VAR
+	MovableStopStates			: ST_MovableStopStates;	
+	Inputs						: ST_InputsMovableStop; 	// Function specific inputs
+	Outputs						: ST_OutputsMovableStop; 	// Function specific outputs
+	fbAddOnErrHandler			: FB_AddOnErrHandler;	
+	fbLiftControl				: FB_LiftControl; // Lift control	
+	fbProBoxMotorControlLift	: FB_ProBoxMotorControl; // Motor control for lift		
+	TransportData				: REFERENCE TO ST_TransportControlData;		
+	OrderLiftUp					: BOOL;
+	Trigger						: BOOL;
+	MainFunctionOrder			: ST_FunctionOrders;
+	MainFunctionInterface		: ST_FunctionInterface;
+	MainReqDriveFwd				: BOOL;
+	MainReqDriveRev				: BOOL;
+	TON_Alignment				: TON;
+	RunMotor					: BOOL;
+END_VAR
+VAR PERSISTENT
+	Settings					: ST_CFG_MovableStop; 		// Settings - activated configuration 
+END_VAR]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[(**************************************************************************************************************
+   Input mapping
+***************************************************************************************************************)
+A_InputMapping();
+
+(**************************************************************************************************************
+   Initialization
+***************************************************************************************************************)
+A_Init();
+
+
+(**************************************************************************************************************
+   BCF State control
+***************************************************************************************************************)
+A_StateControl();
+
+(**************************************************************************************************************
+   Error handler
+***************************************************************************************************************)
+A_ErrorHandler();
+fbAddOnErrHandler(AddOnSettingsFunction:= SettingsFunction, AddOnFunctionData:= FunctionData);
+
+(**************************************************************************************************************
+   BCF Process AddOns
+***************************************************************************************************************)
+M_ProcessAddOns();
+
+(**********************************************************************************************************
+   MovableStop sequence
+***********************************************************************************************************)
+A_MovableStopStates();
+_M_ControlLift();
+
+(**************************************************************************************************************
+   BCF Interface handler out
+***************************************************************************************************************)
+M_ITC_ProcessOut();
+
+(**************************************************************************************************************
+   Output mapping
+***************************************************************************************************************)
+A_OutputMapping();	]]></ST>
+    </Implementation>
+    <Method Name="_M_ControlLift" Id="{5c881749-7149-4b91-af86-ca606e9e18b8}">
+      <Declaration><![CDATA[METHOD PRIVATE _M_ControlLift
+
+VAR
+	LiftOrderPos				:E_Positions_LiftControl := E_Positions_LiftControl.UNDIFINED;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[		F_ResetError(FALSE,	FunctionData.ErrorData.ErrorDataSet[2]);
+		F_ResetError(FALSE,	FunctionData.ErrorData.ErrorDataSet[3]);
+	
+	IF(Settings.LiftEnabled) THEN	
+		
+		// Upon handing over TU to Crane, the lift (if enabled) must be up.
+		// upon taking over TU from crane, the lift (if enabled) shall be down.
+		// order lift up if zone is occupied, keep up until handover state is completed (CraneHandlerType <> eTYPE_HANDOVER)
+		IF OrderLiftUp THEN
+			LiftOrderPos := E_Positions_LiftControl.UP; //Lift Up
+		ELSE
+			LiftOrderPos := E_Positions_LiftControl.DOWN;  //Lift down
+		END_IF
+	
+		fbLiftControl(	
+						LinkedElementNumber		:= SettingsFunction.eElementLink,			
+						FunctionData 			:= FunctionData, 
+						Sensor_Pos_Down 		:= Inputs.HW.LiftDown, 
+						Sensor_Pos_Up 			:= Inputs.HW.LiftUp, 
+						TimeoutValueLift 		:= Settings.TimeoutValueLift, 
+						OrderPos 				:= LiftOrderPos, 
+						HomePos 				:= E_Positions_LiftControl.DOWN, 
+						ErrorData 				:= FunctionData.ErrorData.ErrorDataSet[2]);
+	
+		fbProBoxMotorControlLift(	Run 					:= fbLiftControl.Drive_Run_UpDown,
+									MotorSpeed 				:= E_ProBoxMotorSpeed.NORMAL, 
+									MotorDirection 			:= E_ProBoxMotorDirection.MOTOR_FORWARD,
+									MotorStarterOK 			:= TRUE,
+									ErrorData 				:= FunctionData.ErrorData.ErrorDataSet[3]);
+	
+	END_IF
+	]]></ST>
+      </Implementation>
+    </Method>
+    <Action Name="A_Init" Id="{1890cfbe-3680-49e2-9b9f-bfade77da422}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_Init
+ * 	FUNCTION	Initialize function
+ **************************************************************************************)
+ 
+// Update Registry
+M_UpdateRegistry();
+
+IF NOT FunctionData.Init AND FunctionData.InitRunning THEN
+	// When the subsystem is started, 
+	// and its released to initialize
+	IF FunctionData.OperationState.Info.SystemReady AND
+	   SettingsFunction.eFunctionNumber < FunctionData.OperationState.InitRelease.eLimitFunctionNumber THEN
+	   
+	   IF M_InitFunction(FALSE) THEN
+			// Function initialized - and initialization done
+			FunctionData.Init := TRUE;
+			FunctionData.InitRunning := FALSE;
+			
+			MovableStopStates.eLastState := MovableStopStates.eState;
+			MovableStopStates.eState := E_MovableStopStates.INIT;
+			
+			// Set reset cmd
+			FunctionData.ErrorData.Error.ResetError := TRUE;
+			
+			DebugMsg := CONCAT('Initialization done. Function: ', ConfigFunction.FunctionName);
+			fbDebugMsg.M_SendInfoMsg(DebugMsg);
+		END_IF
+	END_IF
+ELSIF NOT FunctionData.Init THEN
+	MovableStopStates.eLastState := MovableStopStates.eState;
+	MovableStopStates.eState := E_MovableStopStates.INIT;
+	
+	FunctionData.OperationState := FunctionBase.PositionStateEmpty;
+	
+	Settings := Config;
+	
+	M_PreInit();
+	
+	FunctionData.InitRunning := SettingsFunction.eFunctionNumber > 0 AND
+								SettingsFunction.eElementLink > 0;
+	
+END_IF
+ ]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="A_InputMapping" Id="{3ab47bc7-6cba-4d13-b99e-621ee9f5690e}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_InputMapping
+ * 	FUNCTION	Input mapping
+ **************************************************************************************)
+ 
+(**************************************************************************************
+   Hardware Inputs
+***************************************************************************************)
+Inputs.HW		:= Hw_Inputs;
+Inputs.CtrlIn	:= CtrlIn;
+
+(**************************************************************************************
+   Element states
+***************************************************************************************)
+// Get status of the corresponding element
+M_GetElementStates(); ]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="A_MovableStopStates" Id="{1295c12e-6780-46be-891f-beac024831fc}">
+      <Implementation>
+        <ST><![CDATA[// Reset Error - Infeed addon failed to add TU Data Index during TU detection.
+F_ResetError(
+	Reset 	  := FALSE,
+	ErrorData := FunctionData.ErrorData.ErrorDataSet[1]);
+	
+//Get transportdata reference(only for reading)
+TransportData REF= F_PB_GetTransportControlDataRef(ConfigFunction.FunctionLink.eFunctionNumber, ConfigFunction.FunctionLink.ZoneNumber);	
+
+MainFunctionOrder := F_GetElementOrders(ConfigFunction.FunctionLink.eFunctionNumber);
+//Set an error if lift is up during an transport	
+IF Inputs.HW.LiftUp AND (TransportData.eTakeOverState = E_TakeOverState.ACTIVE OR TransportData.eHandOverState = E_HandOverState.ACTIVE) AND
+	((Settings.DirectionAlignment = E_DirectionMovableStop.Side_1_2 AND MainFunctionOrder.ReqDriveRun AND NOT MainFunctionOrder.ReqDriveDirection) OR
+	(Settings.DirectionAlignment = E_DirectionMovableStop.Side_2_1 AND MainFunctionOrder.ReqDriveRun AND MainFunctionOrder.ReqDriveDirection)) THEN
+
+		F_SetError(
+			ErrorType := E_ErrorType.ERROR, 
+			ErrorParam := 'Lift not down during trp', 
+			ErrorMsg := E_ErrorConv.POSITIONING_ERROR, 
+			ErrorData := FunctionData.ErrorData.ErrorDataSet[1]);		
+END_IF
+	
+
+// Get function interface from straight transport or transfer unit
+MainFunctionInterface := F_GetFunctionInterface(ConfigFunction.FunctionLink.eFunctionNumber);
+
+TON_Alignment(PT := Settings.AlignmentTime);
+
+//Trigger to start alignment
+IF Settings.EnableExternalTrigger AND CtrlIn.ExternalTrigger THEN
+	Trigger := TRUE;
+ELSIF NOT Settings.EnableExternalTrigger AND  TransportData.eTakeOverState = E_TakeOverState.ACTIVE THEN
+	Trigger := TRUE;
+ELSE
+	Trigger := FALSE;
+END_IF
+
+
+
+	
+CASE MovableStopStates.eState OF
+(**************************************************************************************************************
+   INIT
+***************************************************************************************************************)
+	E_MovableStopStates.INIT:
+		OrderLiftUp := FALSE;
+	
+		IF FunctionData.ErrorData.Error.ErrorType <> E_ErrorType.ERROR AND
+			FunctionInterface.In.Element.OperationState.eState = E_PositionState.STARTED THEN
+			
+			MovableStopStates.eLastState := MovableStopStates.eState;
+			MovableStopStates.eState := E_MovableStopStates.IDLE;
+			
+		ELSIF FunctionData.ErrorData.Error.ErrorType = E_ErrorType.ERROR THEN
+			// Change state
+			MovableStopStates.eLastState := MovableStopStates.eState;
+			MovableStopStates.eState := E_MovableStopStates.ERROR;
+		END_IF	
+	
+(**************************************************************************************************************
+   Idle
+***************************************************************************************************************)	
+	E_MovableStopStates.IDLE:
+	
+		IF FunctionData.ErrorData.Error.ErrorType = E_ErrorType.ERROR THEN
+			// Change state
+			MovableStopStates.eLastState := MovableStopStates.eState;
+			MovableStopStates.eState := E_MovableStopStates.ERROR;
+		
+		ELSIF Trigger THEN 
+			// Change state
+			MovableStopStates.eLastState := MovableStopStates.eState;
+			MovableStopStates.eState := E_MovableStopStates.READY;
+
+		END_IF			
+
+(**************************************************************************************************************
+   Ready
+***************************************************************************************************************)	
+	E_MovableStopStates.READY:
+		
+		IF NOT Settings.LiftEnabled THEN
+				// Change state
+				MovableStopStates.eLastState := MovableStopStates.eState;
+				MovableStopStates.eState := E_MovableStopStates.ALIGN;	
+				
+		ELSIF TransportData.eTakeOverState = E_TakeOverState.COMPLETE OR 	
+		((Settings.DirectionAlignment = E_DirectionMovableStop.Side_1_2 AND MainFunctionOrder.ReqDriveRun AND MainFunctionOrder.ReqDriveDirection) OR
+		(Settings.DirectionAlignment = E_DirectionMovableStop.Side_2_1 AND MainFunctionOrder.ReqDriveRun AND NOT MainFunctionOrder.ReqDriveDirection)) THEN
+				// Change state
+				MovableStopStates.eLastState := MovableStopStates.eState;
+				MovableStopStates.eState := E_MovableStopStates.ALIGN;		
+		END_IF
+
+		IF(TransportData.Occupied) THEN
+			// Change state
+				MovableStopStates.eLastState := MovableStopStates.eState;
+				MovableStopStates.eState := E_MovableStopStates.MOVE_OUT;	
+		END_IF
+		
+(**************************************************************************************************************
+   Moving
+***************************************************************************************************************)	
+	E_MovableStopStates.ALIGN:
+		OrderLiftUp := TRUE;
+		
+		IF TON_Alignment.Q THEN
+			TON_Alignment.IN := FALSE; 
+			RunMotor := FALSE;
+			// Change state
+			MovableStopStates.eLastState := MovableStopStates.eState;
+			MovableStopStates.eState := E_MovableStopStates.MOVE_OUT;	
+			
+		ELSIF TransportData.Occupied THEN
+			TON_Alignment.IN := TRUE; 
+			RunMotor := TRUE;		
+			
+			IF(NOT Inputs.HW.LiftUp AND Settings.LiftEnabled) THEN
+				// lift Sensor Up is not present during aligning 
+				F_SetError(
+					ErrorType := E_ErrorType.ERROR, 
+					ErrorParam := 'Lift not up during aligning', 
+					ErrorMsg := E_ErrorConv.POSITIONING_ERROR, 
+					ErrorData := FunctionData.ErrorData.ErrorDataSet[1]);		
+			END_IF
+			
+		END_IF
+							
+(**************************************************************************************************************
+   Moving
+***************************************************************************************************************)	
+	E_MovableStopStates.MOVE_OUT:
+
+		
+		IF(MainFunctionInterface.In.eNextFunctionNumber <> F_BEGIN_FUNCTION OR TransportData.NumberOfPresentTUs=0 (* TU deleted*)) THEN
+			OrderLiftUp := FALSE;				
+		END_IF
+		
+		//Wait for lift is down OR if zone is free (then keep lift up) 
+		IF (Inputs.HW.LiftDown OR NOT Settings.LiftEnabled ) AND NOT TransportData.Occupied THEN
+			// Change state
+			MovableStopStates.eLastState := MovableStopStates.eState;
+			MovableStopStates.eState := E_MovableStopStates.IDLE;	
+			
+		END_IF
+	
+(**************************************************************************************************************
+   ERROR
+***************************************************************************************************************)	
+	E_MovableStopStates.ERROR:
+		
+		// Wait until error is resetted
+		IF FunctionData.ErrorData.Error.ErrorType <> E_ErrorType.ERROR THEN
+			MovableStopStates.eLastState := MovableStopStates.eState;
+			MovableStopStates.eState := E_MovableStopStates.INIT;
+		END_IF
+		
+(**************************************************************************************************************)
+END_CASE	]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="A_OutputMapping" Id="{3e3d0a1c-e05c-4fe6-bb9b-021e42b2ed6a}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_OutputMapping
+ * 	FUNCTION	Output mapping
+ **************************************************************************************)
+ 
+(**************************************************************************************
+   Hardware outputs
+***************************************************************************************)
+Outputs.HW.Drive_Run_UpDown 								:= fbLiftControl.Drive_Run_UpDown;
+
+HW_Outputs													:= Outputs.HW;
+
+
+(**************************************************************************************
+   Order outputs (Commands to corresponding element)
+***************************************************************************************)
+                                                        	
+// Allow element to drive                               	
+	FunctionInterface.Out.FunctionOrders.Enable 				:= FunctionData.ErrorData.Error.ErrorType <> E_ErrorType.ERROR;
+	FunctionInterface.Out.FunctionOrders.ReqDriveRun 			:= RunMotor AND (Settings.DirectionAlignment = E_DirectionMovableStop.Side_1_2 OR Settings.DirectionAlignment = E_DirectionMovableStop.Side_2_1);
+	FunctionInterface.Out.FunctionOrders.ReqDriveDirection 		:= RunMotor AND Settings.DirectionAlignment = E_DirectionMovableStop.Side_1_2;
+	FunctionInterface.Out.FunctionOrders.ReqSpeed 				:= 0;	
+
+		FunctionInterface.Out.FunctionOrders.Enable_34 				:= FunctionData.ErrorData.Error.ErrorType <> E_ErrorType.ERROR;
+(**************************************************************************************
+   AddOn outputs
+***************************************************************************************)
+FunctionInterface.Out.AddOnOrders.Enable 					:= FunctionData.ErrorData.Error.ErrorType <> E_ErrorType.ERROR;
+FunctionInterface.Out.AddOnOrders.EnableHandover 			:= (MovableStopStates.eState = E_MovableStopStates.IDLE OR MovableStopStates.eState = E_MovableStopStates.MOVE_OUT) AND (Inputs.HW.LiftDown OR NOT Settings.LiftEnabled);
+FunctionInterface.Out.AddOnOrders.EnableTakeover 			:= MovableStopStates.eState = E_MovableStopStates.IDLE AND (Inputs.HW.LiftDown OR NOT Settings.LiftEnabled);
+
+(**************************************************************************************
+   Status outputs
+***************************************************************************************)
+CtrlOut.AlignmentDone := MovableStopStates.eState = E_MovableStopStates.MOVE_OUT OR MovableStopStates.eState = E_MovableStopStates.IDLE;]]></ST>
+      </Implementation>
+    </Action>
+    <LineIds Name="FB_MovableStopAddon">
+      <LineId Id="3" Count="40" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_MovableStopAddon._M_ControlLift">
+      <LineId Id="3" Count="30" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_MovableStopAddon.A_Init">
+      <LineId Id="2" Count="42" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_MovableStopAddon.A_InputMapping">
+      <LineId Id="2" Count="14" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_MovableStopAddon.A_MovableStopStates">
+      <LineId Id="2" Count="91" />
+      <LineId Id="154" Count="0" />
+      <LineId Id="150" Count="0" />
+      <LineId Id="157" Count="1" />
+      <LineId Id="155" Count="1" />
+      <LineId Id="148" Count="0" />
+      <LineId Id="95" Count="15" />
+      <LineId Id="143" Count="0" />
+      <LineId Id="145" Count="1" />
+      <LineId Id="160" Count="3" />
+      <LineId Id="159" Count="0" />
+      <LineId Id="147" Count="0" />
+      <LineId Id="144" Count="0" />
+      <LineId Id="111" Count="11" />
+      <LineId Id="142" Count="0" />
+      <LineId Id="123" Count="18" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_MovableStopAddon.A_OutputMapping">
+      <LineId Id="2" Count="33" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

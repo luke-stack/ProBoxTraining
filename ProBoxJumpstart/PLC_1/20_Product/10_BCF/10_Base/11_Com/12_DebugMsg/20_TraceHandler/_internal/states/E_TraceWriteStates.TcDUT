@@ -1,0 +1,44 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.4">
+  <DUT Name="E_TraceWriteStates" Id="{088dfa15-b27b-4d3d-9852-d36f505fa3e1}">
+    <Declaration><![CDATA[// file write work states for FB_TraceHandler
+{attribute 'qualified_only'}
+{attribute 'strict'}
+TYPE E_TraceWriteStates:
+(
+	Initialization    :=  0,
+  Error             :=  1,
+  WaitFolder        :=  2,
+  (*-------------------------*)
+  StartWork         := 11,
+  CreateDir         := 12,
+  ScanFileStart     := 13,
+  ScanFileExists    := 14,
+  ScanFileCancel    := 15,
+  ScanFileAbort     := 16,
+  (*-------------------------*)
+  CreateOpen        := 21,
+  CreateHeader      := 22,
+  CreateClose       := 23,
+  (*-------------------------*)
+  WaitLocked        := 50, 
+  WaitForTrace      := 51,
+  (*-------------------------*)
+  FileSizeExists    := 71,
+  FileSizeCancel    := 72,
+  FileSizeAbort     := 73,
+  (*-------------------------*)
+  OpenAppend        := 81,
+  WriteDivider      := 82,
+  WriteData         := 83,
+  CloseOpenTime     := 91,
+  EofSize           := 92,
+  CloseSize         := 93,
+  EofDate           := 94,
+  CloseDate         := 95,
+  HddUsage          := 96
+)BYTE;
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

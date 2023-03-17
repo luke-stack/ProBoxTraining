@@ -1,0 +1,92 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.12">
+  <POU Name="F_ITC_SendGVR" Id="{a1fbb8c5-5033-4e91-a842-6954c1bfba64}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION F_ITC_SendGVR : BOOL
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 404529 $
+ *	Revision date	:	$Date: 2018-04-23 08:21:38 +0200 (Mo., 23 Apr 2018) $
+ *	Last changed by	:	$Author: b7bolm $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/trunk/01_Software/BCF/BCF/JumpStart/20_Product/10_App/11_Com/10_Lib/10_Conv/11_ITC/F_ITC_SendGVR.TcPOU $
+ *
+ *	Purpose			:	Wrap message - GVR
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+VAR_INPUT
+	eChannelSrc		: E_MFCS_Channel; // Source communicaton channel
+	Number			: INT; // Number
+	Quantity		: INT; // Quantity
+	Variable0		: DINT; // Variable
+	Variable1		: DINT; // Variable
+	Variable2		: DINT; // Variable
+	Variable3		: DINT; // Variable
+	Variable4		: DINT; // Variable
+	Variable5		: DINT; // Variable
+	Variable6		: DINT; // Variable
+	Variable7		: DINT; // Variable
+	Variable8		: DINT; // Variable
+	Variable9		: DINT; // Variable
+	ReturnCode		: INT; // ReturnCode
+END_VAR
+VAR
+	GVR					: ST_ITC_GVR; 
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[// Map values
+GVR.Number := Number;
+GVR.Quantity := Quantity;
+GVR.Variable[0] := Variable0;
+GVR.Variable[1] := Variable1;
+GVR.Variable[2] := Variable2;
+GVR.Variable[3] := Variable3;
+GVR.Variable[4] := Variable4;
+GVR.Variable[5] := Variable5;
+GVR.Variable[6] := Variable6;
+GVR.Variable[7] := Variable7;
+GVR.Variable[8] := Variable8;
+GVR.Variable[9] := Variable9;
+GVR.ReturnCode := ReturnCode;
+
+// Forward to ITC
+F_ITC_SendGVR := fbITC_Manager.M_SendData(
+					meChannel	:= eChannelSrc,
+					mMsgType	:= E_ITC_MsgTypeConv.GLOBAL_VARIABLE_REPORT,
+					mpData		:= ADR(GVR),
+					mLen		:= SIZEOF(GVR));
+
+]]></ST>
+    </Implementation>
+    <ObjectProperties>
+      <XmlArchive>
+        <Data>
+          <o xml:space="preserve" t="UMLStereoTypeContainerObject">
+            <v n="IsType" t="UMLType">BaseArea</v>
+            <v n="Stereotype">""</v>
+            <d n="Stereotypes" t="Hashtable" />
+          </o>
+        </Data>
+        <TypeList>
+          <Type n="Hashtable">System.Collections.Hashtable</Type>
+          <Type n="String">System.String</Type>
+          <Type n="UMLStereoTypeContainerObject">{30250973-b110-4e31-b562-c102e042dca4}</Type>
+          <Type n="UMLType">{0197b136-405a-42ee-bb27-fd08b621d0cf}</Type>
+        </TypeList>
+      </XmlArchive>
+    </ObjectProperties>
+    <LineIds Name="F_ITC_SendGVR">
+      <LineId Id="3" Count="21" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

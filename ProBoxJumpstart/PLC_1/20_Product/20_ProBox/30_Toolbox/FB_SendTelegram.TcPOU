@@ -1,0 +1,366 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <POU Name="FB_SendTelegram" Id="{568805cb-e64d-418a-a9b5-c629a315a217}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK FB_SendTelegram  
+VAR_INPUT
+	FunctionNumber		: E_FunctionNumber; // FunctionNumber on which  telegram needs to be send
+	ZoneNumber			: INT; 				// ZoneNumber on which zone telegram needs to be send	
+END_VAR
+VAR
+	TransportCtrlData			:  ST_TransportControlData;	
+END_VAR
+
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[
+TransportCtrlData := F_GetTransportControlData(FunctionNumber, ZoneNumber);
+
+
+]]></ST>
+    </Implementation>
+    <Method Name="M_SendIPR" Id="{9c29c964-8304-4f5e-932b-b99c26cb8784}">
+      <Declaration><![CDATA[//Send IPR Telegram, internal check that zone is occupied and all addons finalized before sending telegram
+METHOD PUBLIC M_SendIPR : BOOL
+VAR_INPUT
+	IPR_Errorcode: INT; // set Project specific error code 
+	Sendtelegram: BOOL;  //Condition to send telegram
+END_VAR
+
+VAR_INST
+	SendIPR  : BOOL;	// trigger when ready to send telegram
+END_VAR
+
+VAR
+	ZoneData  : ST_ZoneData;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+// Check if function number and zone is valid
+IF FunctionNumber > E_FunctionNumber.F_BEGIN_FUNCTION AND
+   FunctionNumber < E_FunctionNumber.F_END_FUNCTION AND
+   ZoneNumber > 0 AND ZoneNumber <= NUMBER_OF_ZONES_PER_FUNCTION THEN
+
+	/// Sent IPR
+	ZoneData:= F_GetZoneData(FunctionNumber, ZoneNumber);
+	IF ZoneData.AddOn.Orders.DataReady  AND
+	   ZoneData.TransportControlData.Occupied  THEN 
+		IF Sendtelegram AND NOT SendIPR THEN
+			SendIPR:= TRUE;
+			M_SendIPR:=F_ITC_SendIPR(
+							eChannelSrc:= E_MFCS_Channel.AM, 
+							Position:= F_ReduceToAlphaNumeric(F_GetFunctionName(FunctionNumber,ZoneNumber)), 
+							TU_DataIndex:= ZoneData.TransportControlData.TU_DataIndex, 
+							MSG_Sequence:= 0, 
+							TU_ID:= TU_Table.TU_DataTable[ZoneData.TransportControlData.TU_DataIndex].TU_ID.ASCII, 
+							TU_Type:= TU_Table.TU_DataTable[ZoneData.TransportControlData.TU_DataIndex].DataSet.TU_Type, 
+							AssignmentID:= TU_Table.TU_DataTable[ZoneData.TransportControlData.TU_DataIndex].AssignmentID, 
+							Height:= TU_Table.TU_DataTable[ZoneData.TransportControlData.TU_DataIndex].Profile.Height, 
+							WidthRight:=  TU_Table.TU_DataTable[ZoneData.TransportControlData.TU_DataIndex].Profile.ProfileRight, 
+							WidthLeft:=  TU_Table.TU_DataTable[ZoneData.TransportControlData.TU_DataIndex].Profile.ProfileLeft, 
+							LengthFront:=  TU_Table.TU_DataTable[ZoneData.TransportControlData.TU_DataIndex].Profile.ProfileFront, 
+							LengthRear:=  TU_Table.TU_DataTable[ZoneData.TransportControlData.TU_DataIndex].Profile.ProfileRear, 
+							Weight:= TU_Table.TU_DataTable[ZoneData.TransportControlData.TU_DataIndex].Profile.Weight, 
+							Tunnel:= TU_Table.TU_DataTable[ZoneData.TransportControlData.TU_DataIndex].Profile.Tunnel, 
+							Runner:= TU_Table.TU_DataTable[ZoneData.TransportControlData.TU_DataIndex].Profile.Runner, 
+							ErrorCode:= IPR_Errorcode, 
+							ValidLabelString:= 0, 
+							Label:= TU_Table.TU_DataTable[ZoneData.TransportControlData.TU_DataIndex].Label.ASCII);
+		  END_IF
+	END_IF
+END_IF
+IF NOT ZoneData.TransportControlData.Occupied THEN
+	SendIPR:= FALSE;
+END_IF
+M_SendIPR:= SendIPR;
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_SendMSG" Id="{397df5ed-c0f8-48ab-a8aa-fe84d2b7cd10}">
+      <Declaration><![CDATA[METHOD PUBLIC M_SendMSG : BOOL
+VAR_INPUT
+	eMsgChannel			: E_MFCS_Channel; // Source communicaton channel	
+	lMsgLength			: UDINT; // Length of structure SIZEOF/LEN
+	pMsgPointer  		: PVOID; // Pointer to message structure
+	Sendtelegram : BOOL; //Set to ture on the basis of condition return outside
+END_VAR
+VAR_INST
+	SendMSG  :BOOL; // trigger when ready to send telegram
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+// Check if function number and zone is valid
+IF FunctionNumber > E_FunctionNumber.F_BEGIN_FUNCTION AND
+   FunctionNumber < E_FunctionNumber.F_END_FUNCTION AND
+   ZoneNumber > 0 AND ZoneNumber <= NUMBER_OF_ZONES_PER_FUNCTION THEN
+	/// sent MSG
+
+	IF  Sendtelegram AND NOT SendMSG  THEN
+	   SendMSG:= TRUE;
+	   M_SendMSG:=F_ITC_SendMSG(eChannelSrc:= eMsgChannel, pMsgData:=pMsgPointer , Len:=lMsgLength);
+	END_IF
+
+ END_IF
+M_SendMSG:=SendMSG;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_SendPOR0" Id="{9531f76a-ffbe-4f16-afd1-021d51fd1abb}">
+      <Declaration><![CDATA[//Send POR0 telegram, internal check that NumberOfPresentTUs > 0 before sending telegram
+METHOD PUBLIC M_SendPOR0 : BOOL
+VAR_INPUT
+	Sendtelegram : BOOL; //Condition to send telegram
+END_VAR
+VAR_INST
+	SendPOR0  :BOOL; // trigger when ready to send telegram
+END_VAR
+VAR
+	rLastTuData		: ST_LastTUdata;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+
+// Check if function number and zone is valid
+IF NOT(FunctionNumber > E_FunctionNumber.F_BEGIN_FUNCTION AND FunctionNumber < E_FunctionNumber.F_END_FUNCTION AND
+   	   ZoneNumber > 0 AND ZoneNumber <= NUMBER_OF_ZONES_PER_FUNCTION) THEN
+	   RETURN; //not valid
+END_IF
+//zonedata reference is valid
+IF (NOT __ISVALIDREF(FunctionRegistry[FunctionNumber].Zone[ZoneNumber].refZoneData)) THEN
+	RETURN; //not valid
+ELSE
+	rLastTuData := FunctionRegistry[FunctionNumber].Zone[ZoneNumber].refZoneData.LastTUdata;
+END_IF
+
+/// sent POR0 when TU leaving the zone
+IF  TransportCtrlData.NumberOfPresentTUs =0 AND TransportCtrlData.Occupied  THEN
+	IF Sendtelegram AND NOT SendPOR0 THEN
+		SendPOR0 := TRUE;
+		M_SendPOR0:=F_ITC_SendPOR(
+					eChannelSrc:= E_MFCS_Channel.AM, 
+					Position	:= F_ReduceToAlphaNumeric(F_GetFunctionName(FunctionNumber,ZoneNumber)), 
+					TU_ID		:= rLastTuData.TU_ID,
+					TU_Type		:= rLastTuData.TU_Type,
+					AssignmentID:= rLastTuData.AssignmentID, 
+					LoadInformation:=FALSE );
+	END_IF
+END_IF
+	
+//Clear flag
+IF TransportCtrlData.NumberOfPresentTUs >0 OR NOT TransportCtrlData.Occupied  THEN
+	SendPOR0 := FALSE;
+END_IF
+
+M_SendPOR0:= SendPOR0;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_SendPOR1" Id="{7243552e-6b37-417c-8ba8-80be08877a2f}">
+      <Declaration><![CDATA[//Send POR1 telegram, internal check that NumberOfPresentTUs > 0 before sending telegram
+METHOD PUBLIC M_SendPOR1 : BOOL
+VAR_INPUT
+	Sendtelegram : BOOL; //Condition to send telegram
+END_VAR
+
+VAR_INST
+	SendPOR1  :BOOL; // trigger when ready to send telegram
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+// Check if function number and zone is valid
+IF FunctionNumber > E_FunctionNumber.F_BEGIN_FUNCTION AND
+   FunctionNumber < E_FunctionNumber.F_END_FUNCTION AND
+   ZoneNumber > 0 AND ZoneNumber <= NUMBER_OF_ZONES_PER_FUNCTION THEN
+
+	/// sent POR1
+	IF TransportCtrlData.NumberOfPresentTUs > 0  THEN
+		IF Sendtelegram AND NOT SendPOR1 THEN
+			SendPOR1 := TRUE;
+			M_SendPOR1:=F_ITC_SendPOR(
+						eChannelSrc:= E_MFCS_Channel.AM, 
+						Position:=F_ReduceToAlphaNumeric(F_GetFunctionName(FunctionNumber,ZoneNumber)), 
+						TU_ID:= TU_DataTable[TransportCtrlData.TU_DataIndex].TU_ID.ASCII,
+						TU_Type:= TU_DataTable[TransportCtrlData.TU_DataIndex].DataSet.TU_Type,
+						AssignmentID:= TU_DataTable[TransportCtrlData.TU_DataIndex].AssignmentID, 
+						LoadInformation:=TRUE );
+		END_IF
+	END_IF
+END_IF
+
+IF TransportCtrlData.NumberOfPresentTUs = 0  THEN
+	SendPOR1 := FALSE;
+END_IF
+
+M_SendPOR1:=SendPOR1;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_SendTTC" Id="{05a84d35-35fc-46aa-adc0-d4548826bd9b}">
+      <Declaration><![CDATA[//Send TTC Telegram, internal check that zone is occupied before sending telegram
+METHOD PUBLIC M_SendTTC : BOOL
+VAR_INPUT
+	TTC_ErroCode 		: INT :=0; 	//TTC project specific error code
+	TTC_Destination		: E_FunctionNumber; // Give destination function number for exmaple if position needs to have specifc destionation to send TTC, use F_END_FUNCTION if this shall not be considered
+	Sendtelegram 		: BOOL; //Condition to send telegram
+END_VAR
+VAR_INST
+	TRIGSendTTC: BOOL; // trigger when ready to send telegram
+	SendTTC :BOOL; // trigger when ready to send telegram
+END_VAR
+VAR
+	DestinationFunction				: E_FunctionNumber;
+	TU_DataIndex: INT;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+// Check if function number and zone is valid
+IF FunctionNumber > E_FunctionNumber.F_BEGIN_FUNCTION AND
+   FunctionNumber < E_FunctionNumber.F_END_FUNCTION AND
+   ZoneNumber > 0 AND ZoneNumber <= NUMBER_OF_ZONES_PER_FUNCTION THEN
+   
+	TU_DataIndex:= DINT_TO_INT(TransportCtrlData.TU_DataIndex);
+	DestinationFunction := F_PB_GetTuDestination(FunctionNumber,ZoneNumber,1);
+	
+	IF TransportCtrlData.DataPresent AND (DestinationFunction = TTC_Destination OR TTC_Destination = E_FunctionNumber.F_END_FUNCTION) THEN
+		TRIGSendTTC:= TRUE;				
+	END_IF
+END_IF   
+ 
+/// send TTC
+IF  TransportCtrlData.Occupied AND TRIGSendTTC  THEN
+	IF  Sendtelegram AND NOT SendTTC  THEN
+	   SendTTC:= TRUE;
+		F_ITC_SendTTC(
+					eChannelSrc				:= E_MFCS_Channel.AM,
+					PositionName			:= F_ReduceToAlphaNumeric(F_GetFunctionName(FunctionNumber,ZoneNumber)),
+					TU_DataIndex			:= TransportCtrlData.TU_DataIndex,
+					MsgSequence				:= 0,
+					TU_ID					:= TU_DataTable[TransportCtrlData.TU_DataIndex].TU_ID.ASCII,
+					AssignmentID			:= TU_DataTable[TransportCtrlData.TU_DataIndex].AssignmentID,
+					eReturnCode				:= TTC_ErroCode);	
+	END_IF
+END_IF
+//clear flags if no zone data
+IF NOT TransportCtrlData.Occupied THEN
+	SendTTC:= FALSE;
+END_IF
+IF TransportCtrlData.NumberOfPresentTUs=0 THEN	
+	TRIGSendTTC:= FALSE;
+END_IF
+M_SendTTC:=SendTTC;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_SendTTQ" Id="{30b37d88-b5fc-4e4c-ba21-f031782c7876}">
+      <Declaration><![CDATA[METHOD M_SendTTQ : BOOL
+VAR_INPUT
+	Sendtelegram : BOOL;	 
+END_VAR
+VAR_INST
+	SendTTQ  :BOOL;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+// Check if function number and zone is valid
+IF FunctionNumber > E_FunctionNumber.F_BEGIN_FUNCTION AND
+   FunctionNumber < E_FunctionNumber.F_END_FUNCTION AND
+   ZoneNumber > 0 AND ZoneNumber <= NUMBER_OF_ZONES_PER_FUNCTION THEN
+	// send TTQ
+	IF(TransportCtrlData.Occupied AND TransportCtrlData.NumberOfPresentTUs>0)  THEN
+		IF Sendtelegram AND NOT SendTTQ THEN
+			SendTTQ := TRUE;
+			M_SendTTQ:=F_ITC_SendTTQ(
+						eChannelSrc		:= E_MFCS_Channel.AM, 
+						PositionName	:= F_ReduceToAlphaNumeric(F_GetFunctionName(FunctionNumber,ZoneNumber)), 
+						TU_DataIndex	:= TransportCtrlData.TU_DataIndex, 
+						TU_ID			:= TU_DataTable[TransportCtrlData.TU_DataIndex].TU_ID.ASCII, 
+						NbrOfTT			:= 1, 
+						Label			:= '');
+		END_IF
+	ELSE
+		SendTTQ := FALSE;
+	END_IF
+END_IF	
+
+M_SendTTQ:= SendTTQ;]]></ST>
+      </Implementation>
+    </Method>
+    <LineIds Name="FB_SendTelegram">
+      <LineId Id="76" Count="3" />
+      <LineId Id="98" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_SendTelegram.M_SendIPR">
+      <LineId Id="3" Count="31" />
+      <LineId Id="71" Count="0" />
+      <LineId Id="39" Count="0" />
+      <LineId Id="84" Count="1" />
+      <LineId Id="53" Count="0" />
+      <LineId Id="40" Count="0" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_SendTelegram.M_SendMSG">
+      <LineId Id="3" Count="10" />
+      <LineId Id="16" Count="1" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_SendTelegram.M_SendPOR0">
+      <LineId Id="63" Count="0" />
+      <LineId Id="3" Count="2" />
+      <LineId Id="7" Count="0" />
+      <LineId Id="64" Count="1" />
+      <LineId Id="67" Count="0" />
+      <LineId Id="66" Count="0" />
+      <LineId Id="68" Count="0" />
+      <LineId Id="71" Count="1" />
+      <LineId Id="69" Count="1" />
+      <LineId Id="8" Count="0" />
+      <LineId Id="31" Count="0" />
+      <LineId Id="10" Count="0" />
+      <LineId Id="38" Count="0" />
+      <LineId Id="12" Count="8" />
+      <LineId Id="24" Count="0" />
+      <LineId Id="50" Count="2" />
+      <LineId Id="49" Count="0" />
+      <LineId Id="73" Count="0" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_SendTelegram.M_SendPOR1">
+      <LineId Id="3" Count="4" />
+      <LineId Id="33" Count="0" />
+      <LineId Id="8" Count="10" />
+      <LineId Id="53" Count="0" />
+      <LineId Id="55" Count="0" />
+      <LineId Id="24" Count="0" />
+      <LineId Id="68" Count="3" />
+      <LineId Id="67" Count="0" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_SendTelegram.M_SendTTC">
+      <LineId Id="5" Count="4" />
+      <LineId Id="139" Count="0" />
+      <LineId Id="141" Count="1" />
+      <LineId Id="140" Count="0" />
+      <LineId Id="135" Count="0" />
+      <LineId Id="71" Count="0" />
+      <LineId Id="144" Count="0" />
+      <LineId Id="44" Count="1" />
+      <LineId Id="10" Count="1" />
+      <LineId Id="14" Count="10" />
+      <LineId Id="28" Count="1" />
+      <LineId Id="146" Count="2" />
+      <LineId Id="112" Count="0" />
+      <LineId Id="145" Count="0" />
+      <LineId Id="111" Count="0" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_SendTelegram.M_SendTTQ">
+      <LineId Id="6" Count="8" />
+      <LineId Id="34" Count="0" />
+      <LineId Id="47" Count="0" />
+      <LineId Id="35" Count="3" />
+      <LineId Id="21" Count="2" />
+      <LineId Id="56" Count="0" />
+      <LineId Id="55" Count="0" />
+      <LineId Id="24" Count="1" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

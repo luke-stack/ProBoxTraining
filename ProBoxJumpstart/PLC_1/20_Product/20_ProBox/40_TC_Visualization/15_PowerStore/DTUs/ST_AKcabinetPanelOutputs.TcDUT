@@ -1,0 +1,15 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.4">
+  <DUT Name="ST_AKcabinetPanelOutputs" Id="{af7ad1a1-aee7-48c8-ba60-28ca6052c0b1}">
+    <Declaration><![CDATA[TYPE ST_AKcabinetPanelOutputs :
+STRUCT
+	LED_MainContactorActivated :BOOL; // LED-lamp main contactor is activated
+	LED_AutoIsOn : BOOL; // LED-lamp automatic mode is activated
+	LED_ClearEnterance : BOOL; // LED-lamp clear to enter
+	LED_EmergencyStop : BOOL; // LED-lamp emergency stop
+	LED_Error : BOOL; // LED-lamp error
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

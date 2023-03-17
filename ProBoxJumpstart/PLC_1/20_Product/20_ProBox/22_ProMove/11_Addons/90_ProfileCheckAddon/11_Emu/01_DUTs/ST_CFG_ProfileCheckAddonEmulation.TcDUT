@@ -1,0 +1,22 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.12">
+  <DUT Name="ST_CFG_ProfileCheckAddonEmulation" Id="{9296bcf6-243c-4956-95f5-6f4fc3a4eada}">
+    <Declaration><![CDATA[TYPE ST_CFG_ProfileCheckAddonEmulation :
+(**************************************************************************************
+ * 	Application		:	ProBox
+ *	Revision		:	$Revision:  $
+ *	Revision date	:	$Date:  $
+ *	Last changed by	:	$Author: q8hedls $
+ *	URL				:	$URL:  $
+ *
+ *	Purpose			:	Profile check addon emulation configuration
+ *  
+ **************************************************************************************)
+STRUCT
+	DefaultWidth			: INT := 800;	// the Pallet width, the overhang data is set according to ATQ TU width + Default pallet width
+	DefaultLength			: INT := 1200;	// the Pallet length, the overhang data is set according to ATQ TU lenght + Default pallet Length	
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

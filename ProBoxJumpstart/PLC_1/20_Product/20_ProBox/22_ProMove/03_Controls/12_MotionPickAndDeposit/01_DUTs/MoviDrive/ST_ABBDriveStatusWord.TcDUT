@@ -1,0 +1,26 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.12">
+  <DUT Name="ST_ABBDriveStatusWord" Id="{849935e3-33c4-4c47-9f57-173f730fde8b}">
+    <Declaration><![CDATA[TYPE ST_ABBDriveStatusWord :
+STRUCT
+	ReadyToSwitchOn				: BIT;
+	ReadyToOperate				: BIT;
+	OperationEnabled			: BIT; 
+	Fault						: BIT;
+	Off2Inactive				: BIT;
+	Off3Inactive				: BIT;
+	SwitchOnInhibited			: BIT;
+	Warning						: BIT;
+	SetpointReached				: BIT; 
+	RemoteCtrl					: BIT; //Fieldbus control activated
+	Spare_3						: BIT; 
+	Spare_4						: BIT; 
+	Spare_5						: BIT; 
+	Spare_6						: BIT; 
+	Spare_7						: BIT; 	
+	Spare_8						: BIT; 		
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

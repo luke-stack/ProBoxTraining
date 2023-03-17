@@ -1,0 +1,14 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <DUT Name="ST_LastTUdata" Id="{13ecc5ed-2716-44e4-ab09-415ee27adccc}">
+    <Declaration><![CDATA[TYPE ST_LastTUdata :
+STRUCT
+	TU_ID			: STRING(Conveyor.TU_ID_STRINGLENGTH); // TU_ID as characters 1 to 18 
+  	AssignmentID	: UDINT; // Assignment ID
+  	TU_Type			: INT; // Type of transport unit 
+END_STRUCT
+END_TYPE
+
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

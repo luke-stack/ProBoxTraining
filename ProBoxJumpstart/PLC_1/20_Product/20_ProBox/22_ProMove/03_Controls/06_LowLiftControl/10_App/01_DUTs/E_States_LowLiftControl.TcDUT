@@ -1,0 +1,52 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4020.6">
+  <DUT Name="E_States_LowLiftControl" Id="{56196591-aaa5-4f56-9100-d36711795c6e}">
+    <Declaration><![CDATA[TYPE E_States_LowLiftControl :
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 417092 $
+ *	Revision date	:	$Date: 2018-11-14 12:58:58 +0100 (Mi., 14 Nov 2018) $
+ *	Last changed by	:	$Author: q8aberh $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/ProMove/02_Controls/ProBox/03_Implementation/01_DevelopmentProject/01_Software/ProBox_COE/ProBox_DevProj_v1.0/PLC_1/20_Product/10_App/12_E_Functions/11_ProBox/02_Functions/06_LowLiftControl/10_App/ $
+ *
+ *	Purpose			:	Dummy scanner state
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)	
+(
+	INIT,
+	ERROR,
+	IDLE,
+	LIFT_DOWN,
+	LIFT_UP	
+);
+END_TYPE
+]]></Declaration>
+    <ObjectProperties>
+      <XmlArchive>
+        <Data>
+          <o xml:space="preserve" t="UMLStereoTypeContainerObject">
+            <v n="IsType" t="UMLType">BaseArea</v>
+            <v n="Stereotype">""</v>
+            <d n="Stereotypes" t="Hashtable" />
+          </o>
+        </Data>
+        <TypeList>
+          <Type n="Hashtable">System.Collections.Hashtable</Type>
+          <Type n="String">System.String</Type>
+          <Type n="UMLStereoTypeContainerObject">{30250973-b110-4e31-b562-c102e042dca4}</Type>
+          <Type n="UMLType">{0197b136-405a-42ee-bb27-fd08b621d0cf}</Type>
+        </TypeList>
+      </XmlArchive>
+    </ObjectProperties>
+  </DUT>
+</TcPlcObject>

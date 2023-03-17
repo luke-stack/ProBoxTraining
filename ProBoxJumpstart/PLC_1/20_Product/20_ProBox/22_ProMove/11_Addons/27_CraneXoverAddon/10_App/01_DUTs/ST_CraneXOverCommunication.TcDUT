@@ -1,0 +1,12 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <DUT Name="ST_CraneXOverCommunication" Id="{d24ca841-65d6-4b77-b1f6-a6b22b4d4886}">
+    <Declaration><![CDATA[TYPE ST_CraneXOverCommunication :
+STRUCT
+	ComType			: E_CraneCommunicationType;
+	TCP_IP_Config 	: ST_CFG_TcpDriver;
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

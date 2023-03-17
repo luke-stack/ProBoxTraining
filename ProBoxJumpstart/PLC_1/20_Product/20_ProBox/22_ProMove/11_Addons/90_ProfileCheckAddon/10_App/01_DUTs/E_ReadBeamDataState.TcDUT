@@ -1,0 +1,16 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4020.6">
+  <DUT Name="E_ReadBeamDataState" Id="{c483b717-391e-4601-9066-9dd5283aaf7a}">
+    <Declaration><![CDATA[
+TYPE E_ReadBeamDataState :
+(
+	INIT,
+	REQUEST_DATA,
+	DATA_READY,
+	MEASUREMENT_DONE,
+	ERROR
+);
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

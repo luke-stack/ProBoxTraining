@@ -1,0 +1,32 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.12">
+  <DUT Name="ST_VIR_6_1" Id="{9fd63ffc-5d2f-44e8-b2b0-ce8a5703f10b}">
+    <Declaration><![CDATA[TYPE ST_VIR_6_1 :
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 404529 $
+ *	Revision date	:	$Date: 2018-04-23 08:21:38 +0200 (Mo., 23 Apr 2018) $
+ *	Last changed by	:	$Author: b7bolm $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/trunk/01_Software/BCF/BCF/JumpStart/20_Product/10_App/11_Com/10_Lib/10_Conv/12_MFCS/11_SIS/01_DUTs/11_SIS_6_1/ST_VIR_6_1.TcDUT $
+ *
+ *	Purpose			:	VIR Structure
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+STRUCT
+	Position				: STRING(SIS_6_1.POSITION_STRINGLENGTH); // 12 Digit SIS Location MM-GGG-EEEE-FF-Z
+	NumberOfKeyValuePairs	: STRING(SIS_6_1.VIR_NUM_OF_KEYVALUEPAIRS_STRINGLENGTH); // 2 Digit Numner of Variables
+	KeyValuePairs			: ARRAY [1..99] OF ST_VIR_SET_6_1; // Variable sets
+END_STRUCT
+END_TYPE]]></Declaration>
+  </DUT>
+</TcPlcObject>

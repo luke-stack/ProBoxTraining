@@ -1,0 +1,13 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <DUT Name="ST_InputsMovableStop" Id="{018ab452-6f5a-40fc-9de1-1ee1c46d8443}">
+    <Declaration><![CDATA[// Load stacker HW inputs
+TYPE ST_InputsMovableStop :
+STRUCT	
+	HW				: ST_HW_InputsMovableStop;	// Hardware inputs
+	CtrlIn			: ST_CtrlInMovableStop;		// ser function control inputs	
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

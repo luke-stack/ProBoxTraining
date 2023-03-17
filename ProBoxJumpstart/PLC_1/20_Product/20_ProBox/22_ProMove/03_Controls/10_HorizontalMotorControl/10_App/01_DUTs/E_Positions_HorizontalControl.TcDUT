@@ -1,0 +1,34 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.12">
+  <DUT Name="E_Positions_HorizontalControl" Id="{45890918-c9a9-41a5-9433-441ddc515602}">
+    <Declaration><![CDATA[{attribute 'qualified_only'} 
+TYPE E_Positions_HorizontalControl :
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 417092 $
+ *	Revision date	:	$Date: 2018-11-14 12:58:58 +0100 (Mi., 14 Nov 2018) $
+ *	Last changed by	:	$Author: q8aberh $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/ProMove/02_Controls/ProBox/03_Implementation/01_DevelopmentProject/01_Software/ProBox_COE/ProBox_DevProj_v1.0/PLC_1/20_Product/10_App/12_E_Functions/11_ProBox/02_Functions/05_LiftControl/10_App/01_ $
+ *
+ *	Purpose			:	positions for lift control 
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.05.2018		lca					Example
+ *
+ **************************************************************************************)	
+(
+	UNDEFINED,
+	LEFT,
+	RIGHT
+);
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

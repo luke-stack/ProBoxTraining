@@ -1,0 +1,148 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.4">
+  <POU Name="F_StringToTimeDate" Id="{401921f0-5eb9-446f-b9ef-44f1fc5b4537}" SpecialFunc="None">
+    <Declaration><![CDATA[// HI = parsing string 'Y-M-D, h:m:s.ms' or 'Y-M-D Th:m:s.ms' to TIMESTRUCT successful
+FUNCTION PUBLIC F_StringToTimeDate : BOOL
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		  :	$Revision: 461868 $
+ *	Revision date	:	$Date: 1979-01-09 14:35:13 +0200 (Di., 09 Jan 1979) $
+ *	Last changed by	:	$Author: b7lipim $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/branches/R1.x/01_Software/BCF/BCF/JumpStart/20_Product/10_BCF/10_Base/11_Com/12_DebugMsg/00_GVLs/DebugTextBlocks.TcGVL $
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ *  VERSION DATE         INITIALS     DESCRIPTION
+ *  0.0     DD.MM.YYYY   (name)       (explain customized modifications)
+ *
+ **************************************************************************************)
+
+(********************************************************************************************************************************)
+VAR_INPUT
+  DestStart             : POINTER TO BYTE                  := 0;     // = ADR(MyString)                    -> start position to concat
+  DestEnd               : POINTER TO BYTE                  := 0;     // = ADR(MyString) + SIZEOF(MyString) -> buffer/string end
+  (*----------------------------------------------------------------------------------------------------------------------------*)
+  AllowInvalidChars     : BOOL                             := FALSE; // HI = ignore invalid char
+END_VAR
+
+(********************************************************************************************************************************)
+VAR_OUTPUT
+  Result                : TIMESTRUCT;                                     // parsing result
+END_VAR
+
+(********************************************************************************************************************************)
+VAR
+  Char                  : BYTE                             := 0;
+  ItemType              : BYTE                             := UNDEF;
+END_VAR
+
+(********************************************************************************************************************************)
+VAR CONSTANT
+  UNDEF                 : BYTE := 0;
+  YEAR                  : BYTE := 1;
+  MONTH                 : BYTE := 2;
+  DAY                   : BYTE := 3;
+  HOUR                  : BYTE := 4;
+  MINUTE                : BYTE := 5;
+  SECOND                : BYTE := 6;
+  MSEC                  : BYTE := 7;
+END_VAR]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[
+(********************************************************************************************************************************)
+(** check inputs ****************************************************************************************************************)
+IF (    ( DestStart = 0 )
+     OR ( DestEnd   = 0 )  )
+THEN
+  F_StringToTimeDate:= FALSE;
+  RETURN;
+END_IF
+
+
+
+
+(********************************************************************************************************************************)
+(********************************************************************************************************************************)
+ItemType    := YEAR;
+
+WHILE(DestStart^ <> 16#00)
+DO
+  Char     := DestStart^;
+  DestStart:= DestStart + SIZEOF(DestStart^);
+  (*-- numbers ----------------------------------------------------------------------------------------------*)
+  IF (     ( Char >= 16#30 )
+       AND ( Char <= 16#39 )  )
+  THEN
+    IF   (ItemType          = YEAR  ) THEN  Result.wYear        := (Result.wYear         * WORD#10) + BYTE_TO_WORD(Char - 16#30); 
+    ELSIF(ItemType          = MONTH ) THEN  Result.wMonth       := (Result.wMonth        * WORD#10) + BYTE_TO_WORD(Char - 16#30);
+    ELSIF(ItemType          = DAY   ) THEN  Result.wDay         := (Result.wDay          * WORD#10) + BYTE_TO_WORD(Char - 16#30);
+    ELSIF(ItemType          = HOUR  ) THEN  Result.wHour        := (Result.wHour         * WORD#10) + BYTE_TO_WORD(Char - 16#30);
+    ELSIF(ItemType          = MINUTE) THEN  Result.wMinute      := (Result.wMinute       * WORD#10) + BYTE_TO_WORD(Char - 16#30);
+    ELSIF(ItemType          = SECOND) THEN  Result.wSecond      := (Result.wSecond       * WORD#10) + BYTE_TO_WORD(Char - 16#30);
+    ELSIF(ItemType          = MSEC  ) THEN  Result.wMilliseconds:= (Result.wMilliseconds * WORD#10) + BYTE_TO_WORD(Char - 16#30);
+    ELSIF(AllowInvalidChars = FALSE ) THEN  F_StringToTimeDate:= FALSE;  RETURN;
+    END_IF
+
+  (*-- separation during date -------------------------------------------------------------------------------*)
+  ELSIF( Char = 16#2D ) (* '-' *)
+  THEN
+    IF   (ItemType          = YEAR  ) THEN  ItemType:= MONTH; 
+    ELSIF(ItemType          = MONTH ) THEN  ItemType:= DAY;
+    ELSIF(AllowInvalidChars = FALSE ) THEN  F_StringToTimeDate:= FALSE;  RETURN;
+    END_IF
+
+  (*-- separation date->time --------------------------------------------------------------------------------*)
+  ELSIF(    ( Char = 16#2C )    (* ',' *)
+         OR ( Char = 16#54 )  ) (* 'T' *)
+  THEN
+    IF   (ItemType          = DAY   ) THEN  ItemType:= HOUR; 
+    ELSIF(AllowInvalidChars = FALSE ) THEN  F_StringToTimeDate:= FALSE;  RETURN;
+    END_IF
+
+  (*-- separation during time -------------------------------------------------------------------------------*)
+  ELSIF( Char = 16#3A ) (* ':' *)
+  THEN
+    IF   (ItemType          = HOUR   ) THEN  ItemType:= MINUTE; 
+    ELSIF(ItemType          = MINUTE ) THEN  ItemType:= SECOND;
+    ELSIF(AllowInvalidChars = FALSE  ) THEN  F_StringToTimeDate:= FALSE;  RETURN;
+    END_IF
+
+  (*-- separation during time -------------------------------------------------------------------------------*)
+  ELSIF( Char = 16#2E ) (* '.' *)
+  THEN
+    IF   (ItemType          = SECOND ) THEN  ItemType:= MSEC; 
+    ELSIF(AllowInvalidChars = FALSE  ) THEN  F_StringToTimeDate:= FALSE;  RETURN;
+    END_IF
+
+  (*-- always ignore spaces ---------------------------------------------------------------------------------*)
+  ELSIF( Char = 16#20) (* ' ' *)
+  THEN
+    CONTINUE;
+
+  (*---------------------------------------------------------------------------------------------------------*)
+  ELSIF (AllowInvalidChars = FALSE )
+  THEN
+    F_StringToTimeDate:= FALSE;
+    RETURN;
+  END_IF
+
+END_WHILE
+
+
+
+
+(********************************************************************************************************************************)
+(** done ************************************************************************************************************************)
+F_StringToTimeDate:=TRUE;]]></ST>
+    </Implementation>
+    <LineIds Name="F_StringToTimeDate">
+      <LineId Id="3" Count="84" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

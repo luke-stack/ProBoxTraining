@@ -1,0 +1,841 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.18">
+  <POU Name="FB_FunctionConvEmulation" Id="{527aa150-d942-4737-8c26-17876a137987}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK FB_FunctionConvEmulation EXTENDS FB_BaseObjectEmulation
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 461869 $
+ *	Revision date	:	$Date: 2020-09-25 14:40:24 +0200 (fre, 25 sep 2020) $
+ *	Last changed by	:	$Author: d7mangc $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/tags/R1.12.0/01_Software/BCF/BCF/JumpStart/20_Product/10_BCF/11_Conv/12_E_Functions/09_Emulation/FB_FunctionConvEmulation.TcPOU $
+ *
+ *	Purpose			:	Base emulation function.
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * --------------------------- ---------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+VAR_INPUT
+	eFunctionNumber					: E_FunctionNumber; // Function number
+END_VAR
+
+VAR
+	FunctionBase					: ST_FunctionBaseEmulation; // Collecting variables used by framework
+	Idx								: INT; // Iterator
+END_VAR
+
+VAR PERSISTENT
+	ITC								: ST_ITC_FunctionEmulation; // ITC Emulation	
+	FunctionData					: ST_FunctionDataEmulation; // Function data emulation
+	ZoneData						: ARRAY[1..NUMBER_OF_ZONES_PER_FUNCTION] OF ST_ZoneDataEmulation; // Zone data
+END_VAR]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[;]]></ST>
+    </Implementation>
+    <Action Name="A_ExternalSTI" Id="{a720e88b-b48d-483b-b39f-ec1c2bef7d8d}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_ExternalSTI
+ * 	FUNCTION	External Subsystem transport interface
+ **************************************************************************************)
+
+
+(**************************************************************************************
+   External Subsystem transport interfaces
+***************************************************************************************)
+FOR Idx := 1 TO NUMBER_OF_STI DO
+	// Is an external Subsystem transport interface configured
+	IF FunctionBase.rSettingsFunctionReal.eExternalSTI_FunctionNumber[Idx] > E_FunctionNumber.F_BEGIN_EXTERN_FUNCTION AND
+	   FunctionBase.rSettingsFunctionReal.eExternalSTI_FunctionNumber[Idx] < E_FunctionNumber.F_END_EXTERN_FUNCTION THEN
+	   
+		// When interface is valid
+		IF __QUERYINTERFACE(fbSTI_ChannelsEmulation[FunctionBase.rSettingsFunctionReal.eExternalSTI_FunctionNumber[Idx]].Instance,FunctionBase.STI_Instance) THEN
+			// Call external inbound interface
+			fbSTI_ChannelsEmulation[FunctionBase.rSettingsFunctionReal.eExternalSTI_FunctionNumber[Idx]].Instance.M_CallInterface();
+		END_IF
+	END_IF
+END_FOR
+]]></ST>
+      </Implementation>
+    </Action>
+    <Method Name="M_GetNextTransportData" Id="{807f7fa6-f43e-417c-9a52-fddc2eb43a68}">
+      <Declaration><![CDATA[METHOD PROTECTED M_GetNextTransportData : REFERENCE TO ST_TransportDataEmulation
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 461869 $
+ *	Revision date	:	$Date: 2020-09-25 14:40:24 +0200 (fre, 25 sep 2020) $
+ *	Last changed by	:	$Author: d7mangc $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/tags/R1.12.0/01_Software/BCF/BCF/JumpStart/20_Product/10_BCF/11_Conv/12_E_Functions/09_Emulation/FB_FunctionConvEmulation.TcPOU $
+ *
+ *	Purpose			:	Get transport data for next zone
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+VAR_INPUT
+	mZoneNumber : INT; // Number of the zone
+END_VAR
+
+VAR
+	meFunctionNumber : E_FunctionNumber;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[(*
+Initialize
+Reference points initialy to an empty struct, to ensure
+always a valid reference, even no decision could be made.
+*)
+
+FunctionBase.TransportDataEmpty.eFunctionNumber := E_FunctionNumber.F_BEGIN_FUNCTION;
+FunctionBase.TransportDataEmpty.ZoneNumber := 0;
+FunctionBase.TransportDataEmpty.rTransportControlData REF= FunctionBase.TransportControlDataEmptyEmulation;
+FunctionBase.TransportDataEmpty.rSettings REF= FunctionBase.ZoneSettingsEmpty;
+FunctionBase.TransportDataEmpty.rRealObjTrspControlData REF= FunctionBase.TransportControlDataEmpty;
+M_GetNextTransportData REF= FunctionBase.TransportDataEmpty;
+
+// If flow direction is forward
+IF NOT FunctionBase.rSettingsFunctionReal.FlowDirectionREV THEN
+	// If is it the last zone within the function 
+	IF mZoneNumber = FunctionBase.rSettingsFunctionReal.NumberOfZones THEN
+		// If the function number is valid
+		IF FunctionBase.rFunctionInterfaceReal.In.eNextFunctionNumber > F_BEGIN_FUNCTION AND
+           FunctionBase.rFunctionInterfaceReal.In.eNextFunctionNumber < F_END_FUNCTION THEN
+
+			meFunctionNumber := FunctionBase.rFunctionInterfaceReal.In.eNextFunctionNumber;
+			
+			// If the reference is valid and the real function is initialized
+			IF __ISVALIDREF(FunctionRegistryEmulation[meFunctionNumber].rFunction) AND
+			   F_IsFunctionInitialized(meFunctionNumber) THEN 
+				// Return adjacent transport data of the adjacent function
+				M_GetNextTransportData REF= FunctionRegistryEmulation[meFunctionNumber].rFunction.
+											M_GetTransportData(meFunctionNumber := FunctionBase.rSettingsFunctionReal.eFunctionNumber);
+			END_IF
+
+		// If the function number points to an external interface
+		ELSIF FunctionBase.rFunctionInterfaceReal.In.eNextFunctionNumber > E_FunctionNumber.F_BEGIN_EXTERN_FUNCTION AND
+			  FunctionBase.rFunctionInterfaceReal.In.eNextFunctionNumber < E_FunctionNumber.F_END_EXTERN_FUNCTION THEN
+			
+			// If the reference is valid and the real function is initialized
+			IF __QUERYINTERFACE(fbSTI_ChannelsEmulation[FunctionBase.rFunctionInterfaceReal.In.eNextFunctionNumber].Instance,FunctionBase.STI_Instance) THEN
+				// Return adjacent transport data of the adjacent function
+				M_GetNextTransportData REF= fbSTI_ChannelsEmulation[FunctionBase.rFunctionInterfaceReal.In.eNextFunctionNumber].Instance.M_GetTransportData();
+			END_IF
+		END_IF
+	ELSE
+		// Return trasnport data of the previous function internal zone
+		FunctionBase.NextTransportData.eFunctionNumber := FunctionBase.rSettingsFunctionReal.eFunctionNumber;
+		FunctionBase.NextTransportData.ZoneNumber := mZoneNumber +1;
+		FunctionBase.NextTransportData.rTransportControlData REF= ZoneData[mZoneNumber +1].TransportControlData;
+		FunctionBase.NextTransportData.rSettings REF= FunctionBase.rSettingsFunctionReal.Zone[mZoneNumber +1];
+		FunctionBase.NextTransportData.rRealObjTrspControlData REF= FunctionBase.rZoneDataReal[mZoneNumber +1].TransportControlData;
+		M_GetNextTransportData REF= FunctionBase.NextTransportData;
+	END_IF
+
+// Flow direction is reverse
+ELSE
+	// If is it the first zone within the function 
+	IF mZoneNumber = 1 THEN
+		// If then function number is valid
+		IF FunctionBase.rFunctionInterfaceReal.In.eNextFunctionNumber > F_BEGIN_FUNCTION AND
+           FunctionBase.rFunctionInterfaceReal.In.eNextFunctionNumber < F_END_FUNCTION THEN
+		   
+			meFunctionNumber := FunctionBase.rFunctionInterfaceReal.In.eNextFunctionNumber;
+			
+			// If the reference is valid and the real function is initialized
+			IF __ISVALIDREF(FunctionRegistryEmulation[meFunctionNumber].rFunction) AND
+			   F_IsFunctionInitialized(meFunctionNumber) THEN
+				// Return adjacent transport data of the adjacent function
+				M_GetNextTransportData REF= FunctionRegistryEmulation[meFunctionNumber].rFunction.
+											M_GetTransportData(meFunctionNumber := FunctionBase.rSettingsFunctionReal.eFunctionNumber);	
+			END_IF
+
+		// If the function number points to an external interface
+		ELSIF FunctionBase.rFunctionInterfaceReal.In.eNextFunctionNumber > E_FunctionNumber.F_BEGIN_EXTERN_FUNCTION AND
+			  FunctionBase.rFunctionInterfaceReal.In.eNextFunctionNumber < E_FunctionNumber.F_END_EXTERN_FUNCTION THEN
+			  
+			// If the reference is valid and the real function is initialized
+			IF __QUERYINTERFACE(fbSTI_ChannelsEmulation[FunctionBase.rFunctionInterfaceReal.In.eNextFunctionNumber].Instance,FunctionBase.STI_Instance) THEN
+				// Return adjacent transport data of the adjacent function
+				M_GetNextTransportData REF= fbSTI_ChannelsEmulation[FunctionBase.rFunctionInterfaceReal.In.eNextFunctionNumber].Instance.M_GetTransportData();
+			END_IF
+		END_IF
+	ELSE
+		// Return trasnport data of the previous function internal zone
+		FunctionBase.NextTransportData.eFunctionNumber := FunctionBase.rSettingsFunctionReal.eFunctionNumber;
+		FunctionBase.NextTransportData.ZoneNumber := mZoneNumber -1;	
+		FunctionBase.NextTransportData.rTransportControlData REF= ZoneData[mZoneNumber -1].TransportControlData;
+		FunctionBase.NextTransportData.rSettings REF= FunctionBase.rSettingsFunctionReal.Zone[mZoneNumber -1];
+		FunctionBase.NextTransportData.rRealObjTrspControlData REF= FunctionBase.rZoneDataReal[mZoneNumber -1].TransportControlData;
+		M_GetNextTransportData REF= FunctionBase.NextTransportData;
+	END_IF
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_GetPreviousTransportData" Id="{eaf8f93c-a1fc-4741-a32a-06f2eedcdaca}">
+      <Declaration><![CDATA[METHOD PROTECTED M_GetPreviousTransportData : REFERENCE TO ST_TransportDataEmulation
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 461869 $
+ *	Revision date	:	$Date: 2020-09-25 14:40:24 +0200 (fre, 25 sep 2020) $
+ *	Last changed by	:	$Author: d7mangc $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/tags/R1.12.0/01_Software/BCF/BCF/JumpStart/20_Product/10_BCF/11_Conv/12_E_Functions/09_Emulation/FB_FunctionConvEmulation.TcPOU $
+ *
+ *	Purpose			:	Get transport data from previous zone
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+VAR_INPUT
+	mZoneNumber : INT; // Number of the zone
+END_VAR
+
+VAR
+	meFunctionNumber : E_FunctionNumber;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[(*
+Initialize
+Reference points initialy to an empty struct, to ensure
+always a valid reference, even no decision could be made.
+*)
+
+FunctionBase.TransportDataEmpty.eFunctionNumber := E_FunctionNumber.F_BEGIN_FUNCTION;
+FunctionBase.TransportDataEmpty.ZoneNumber := 0;
+FunctionBase.TransportDataEmpty.rTransportControlData REF= FunctionBase.TransportControlDataEmptyEmulation;
+FunctionBase.TransportDataEmpty.rSettings REF= FunctionBase.ZoneSettingsEmpty;
+FunctionBase.TransportDataEmpty.rRealObjTrspControlData REF= FunctionBase.TransportControlDataEmpty;
+M_GetPreviousTransportData REF= FunctionBase.TransportDataEmpty;
+
+// If flow direction is forward
+IF NOT FunctionBase.rSettingsFunctionReal.FlowDirectionREV THEN 
+	// If is it the first zone within the function
+	IF mZoneNumber = 1 THEN
+		// If the function number is valid
+		IF FunctionBase.rFunctionInterfaceReal.In.ePrevFunctionNumber > F_BEGIN_FUNCTION AND
+           FunctionBase.rFunctionInterfaceReal.In.ePrevFunctionNumber < F_END_FUNCTION THEN
+		   
+		   meFunctionNumber := FunctionBase.rFunctionInterfaceReal.In.ePrevFunctionNumber;
+		   
+			// If the reference is valid and the real function is initialized
+			IF __ISVALIDREF(FunctionRegistryEmulation[meFunctionNumber].rFunction) AND
+			   F_IsFunctionInitialized(meFunctionNumber) THEN
+				// Return adjacent transport data of the adjacent function
+				M_GetPreviousTransportData REF= FunctionRegistryEmulation[meFunctionNumber].rFunction.M_GetTransportData(
+													meFunctionNumber :=FunctionBase.rSettingsFunctionReal.eFunctionNumber);
+			END_IF
+
+		// If the function number points to an external interface
+		ELSIF FunctionBase.rFunctionInterfaceReal.In.ePrevFunctionNumber > E_FunctionNumber.F_BEGIN_EXTERN_FUNCTION AND
+			  FunctionBase.rFunctionInterfaceReal.In.ePrevFunctionNumber < E_FunctionNumber.F_END_EXTERN_FUNCTION THEN
+
+			// If the reference is valid and the real function is initialized
+			IF __QUERYINTERFACE(fbSTI_ChannelsEmulation[FunctionBase.rFunctionInterfaceReal.In.ePrevFunctionNumber].Instance,FunctionBase.STI_Instance) THEN
+				// If the reference is valid and the real function is initialized
+				M_GetPreviousTransportData REF= fbSTI_ChannelsEmulation[FunctionBase.rFunctionInterfaceReal.In.ePrevFunctionNumber].Instance.M_GetTransportData();
+			END_IF
+		END_IF
+	ELSE
+		// Return trasnport data of the previous function internal zone
+		FunctionBase.PrevTransportData.eFunctionNumber := FunctionBase.rSettingsFunctionReal.eFunctionNumber;
+		FunctionBase.PrevTransportData.ZoneNumber := mZoneNumber -1;	
+		FunctionBase.PrevTransportData.rTransportControlData REF= ZoneData[mZoneNumber -1].TransportControlData;
+		FunctionBase.PrevTransportData.rSettings REF= FunctionBase.rSettingsFunctionReal.Zone[mZoneNumber -1];
+		FunctionBase.PrevTransportData.rRealObjTrspControlData REF= FunctionBase.rZoneDataReal[mZoneNumber -1].TransportControlData;
+		M_GetPreviousTransportData REF= FunctionBase.PrevTransportData;
+	END_IF
+
+// Flow direction is reverse
+ELSE
+	// If is it the last zone within the function
+	IF mZoneNumber = FunctionBase.rSettingsFunctionReal.NumberOfZones THEN
+		// If the function number is valid
+		IF FunctionBase.rFunctionInterfaceReal.In.ePrevFunctionNumber > F_BEGIN_FUNCTION AND
+           FunctionBase.rFunctionInterfaceReal.In.ePrevFunctionNumber < F_END_FUNCTION THEN
+			
+			meFunctionNumber := FunctionBase.rFunctionInterfaceReal.In.ePrevFunctionNumber;
+		   
+			// If the reference is valid and the real function is initialized
+			IF __ISVALIDREF(FunctionRegistryEmulation[meFunctionNumber].rFunction) AND
+			   F_IsFunctionInitialized(meFunctionNumber) THEN
+				// Return adjacent transport data of the adjacent function
+				M_GetPreviousTransportData REF= FunctionRegistryEmulation[meFunctionNumber].rFunction.M_GetTransportData(
+													meFunctionNumber := FunctionBase.rSettingsFunctionReal.eFunctionNumber);
+			END_IF
+
+		// If the function number points to an external interface
+		ELSIF FunctionBase.rFunctionInterfaceReal.In.ePrevFunctionNumber > E_FunctionNumber.F_BEGIN_EXTERN_FUNCTION AND
+			  FunctionBase.rFunctionInterfaceReal.In.ePrevFunctionNumber < E_FunctionNumber.F_END_EXTERN_FUNCTION THEN
+			  
+			// If the reference is valid and the real function is initialized
+			IF __QUERYINTERFACE(fbSTI_ChannelsEmulation[FunctionBase.rFunctionInterfaceReal.In.ePrevFunctionNumber].Instance,FunctionBase.STI_Instance) THEN
+				// If the reference is valid and the real function is initialized
+				M_GetPreviousTransportData REF= fbSTI_ChannelsEmulation[FunctionBase.rFunctionInterfaceReal.In.ePrevFunctionNumber].Instance.M_GetTransportData();
+			END_IF
+		END_IF
+	ELSE
+		// Return trasnport data of the previous function internal zone
+		FunctionBase.PrevTransportData.eFunctionNumber := FunctionBase.rSettingsFunctionReal.eFunctionNumber;
+		FunctionBase.PrevTransportData.ZoneNumber := mZoneNumber +1;	
+		FunctionBase.PrevTransportData.rTransportControlData REF= ZoneData[mZoneNumber +1].TransportControlData;
+		FunctionBase.PrevTransportData.rSettings REF= FunctionBase.rSettingsFunctionReal.Zone[mZoneNumber +1];
+		FunctionBase.PrevTransportData.rRealObjTrspControlData REF= FunctionBase.rZoneDataReal[mZoneNumber +1].TransportControlData;
+		M_GetPreviousTransportData REF= FunctionBase.PrevTransportData;
+	END_IF
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_GetTransportControlParam" Id="{7cd0a1ad-a609-4759-ad0d-91045bcb7777}">
+      <Declaration><![CDATA[METHOD PROTECTED M_GetTransportControlParam : REFERENCE TO ST_TransportControlParam
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 461869 $
+ *	Revision date	:	$Date: 2020-09-25 14:40:24 +0200 (fre, 25 sep 2020) $
+ *	Last changed by	:	$Author: d7mangc $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/tags/R1.12.0/01_Software/BCF/BCF/JumpStart/20_Product/10_BCF/11_Conv/12_E_Functions/09_Emulation/FB_FunctionConvEmulation.TcPOU $
+ *
+ *	Purpose			:	Get transport control parameter
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+VAR_INPUT
+	mZoneNumber 			: INT; // Number of the zone
+END_VAR
+
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+// Return function number
+FunctionBase.TransportControlParam.reFunctionNumber REF= FunctionBase.rSettingsFunctionReal.eFunctionNumber;
+// Return function state
+FunctionBase.TransportControlParam.rOperationState REF= FunctionBase.rFunctionDataReal.OperationState;
+// Return zone number
+FunctionBase.TransportControlParam.ZoneNumber := mZoneNumber;
+// Return zone settings
+FunctionBase.TransportControlParam.rSettings REF= FunctionBase.rSettingsFunctionReal.Zone[mZoneNumber];
+// Return zone enable
+FunctionBase.TransportControlParam.rZoneEnable REF= FunctionBase.rZoneInterfaceReal[mZoneNumber].In.Enable;
+// Return external zone enable
+FunctionBase.TransportControlParam.rExternalZoneEnable REF= FunctionBase.rZoneInterfaceReal[mZoneNumber].In.ZoneEnable;
+
+M_GetTransportControlParam REF= FunctionBase.TransportControlParam;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_GetTransportData" Id="{beeeef32-50e2-44c7-ad91-a419074f7572}">
+      <Declaration><![CDATA[METHOD M_GetTransportData : REFERENCE TO ST_TransportDataEmulation;
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 461869 $
+ *	Revision date	:	$Date: 2020-09-25 14:40:24 +0200 (fre, 25 sep 2020) $
+ *	Last changed by	:	$Author: d7mangc $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/tags/R1.12.0/01_Software/BCF/BCF/JumpStart/20_Product/10_BCF/11_Conv/12_E_Functions/09_Emulation/FB_FunctionConvEmulation.TcPOU $
+ *
+ *	Purpose			:	Get adjacent zone
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+VAR_INPUT
+	meFunctionNumber : E_FunctionNumber; // Own element function number
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[(*
+Initialize
+Reference points initialy to an empty struct, to ensure
+always a valid reference, even no decision could be made.
+*)
+FunctionBase.TransportDataEmpty.eFunctionNumber := E_FunctionNumber.F_BEGIN_FUNCTION;
+FunctionBase.TransportDataEmpty.ZoneNumber := 0;
+FunctionBase.TransportDataEmpty.rTransportControlData REF= FunctionBase.TransportControlDataEmptyEmulation;
+FunctionBase.TransportDataEmpty.rSettings REF= FunctionBase.ZoneSettingsEmpty;
+FunctionBase.TransportDataEmpty.rRealObjTrspControlData REF= FunctionBase.TransportControlDataEmpty;
+M_GetTransportData REF= FunctionBase.TransportDataEmpty;
+
+// If the function number is valid and function is initialized
+IF meFunctionNumber > F_BEGIN_FUNCTION AND FunctionData.Init THEN
+	// If the requesting function is the previous function
+	IF meFunctionNumber = FunctionBase.rFunctionInterfaceReal.In.ePrevFunctionNumber THEN
+		
+		// If the flow direction is forward
+		IF NOT FunctionBase.rSettingsFunctionReal.FlowDirectionREV THEN
+			// Return the transport data of the first zone
+			FunctionBase.TransportData.eFunctionNumber := FunctionBase.rSettingsFunctionReal.eFunctionNumber;
+			FunctionBase.TransportData.ZoneNumber := 1;
+			FunctionBase.TransportData.rSettings REF= FunctionBase.rSettingsFunctionReal.Zone[1];
+			FunctionBase.TransportData.rTransportControlData REF= ZoneData[1].TransportControlData;
+			FunctionBase.TransportData.rRealObjTrspControlData REF= FunctionBase.rZoneDataReal[1].TransportControlData;
+			M_GetTransportData REF= FunctionBase.TransportData;
+		ELSE
+			// If the zone number is valid
+			IF FunctionBase.rSettingsFunctionReal.NumberOfZones <> 0 THEN
+				// Return the transport data of the last zone
+				FunctionBase.TransportData.eFunctionNumber := FunctionBase.rSettingsFunctionReal.eFunctionNumber;
+				FunctionBase.TransportData.ZoneNumber := FunctionBase.rSettingsFunctionReal.NumberOfZones;
+				FunctionBase.TransportData.rSettings REF= FunctionBase.rSettingsFunctionReal.Zone[FunctionBase.rSettingsFunctionReal.NumberOfZones];
+				FunctionBase.TransportData.rTransportControlData REF= ZoneData[FunctionBase.rSettingsFunctionReal.NumberOfZones].TransportControlData;
+				FunctionBase.TransportData.rRealObjTrspControlData REF= FunctionBase.rZoneDataReal[FunctionBase.rSettingsFunctionReal.NumberOfZones].TransportControlData;	
+				M_GetTransportData REF= FunctionBase.TransportData;	
+			END_IF	
+		END_IF
+	
+	// If the requesting function is the next function
+	ELSIF meFunctionNumber = FunctionBase.rFunctionInterfaceReal.In.eNextFunctionNumber THEN
+		
+		// If the flow direction is forward
+		IF NOT FunctionBase.rSettingsFunctionReal.FlowDirectionREV THEN
+			// If the zone number is valid
+			IF FunctionBase.rSettingsFunctionReal.NumberOfZones <> 0 THEN
+				// Return the transport data of the last zone
+				FunctionBase.TransportData.eFunctionNumber := FunctionBase.rSettingsFunctionReal.eFunctionNumber;
+				FunctionBase.TransportData.ZoneNumber := FunctionBase.rSettingsFunctionReal.NumberOfZones;
+				FunctionBase.TransportData.rSettings REF= FunctionBase.rSettingsFunctionReal.Zone[FunctionBase.rSettingsFunctionReal.NumberOfZones];
+				FunctionBase.TransportData.rTransportControlData REF= ZoneData[FunctionBase.rSettingsFunctionReal.NumberOfZones].TransportControlData;
+				FunctionBase.TransportData.rRealObjTrspControlData REF= FunctionBase.rZoneDataReal[FunctionBase.rSettingsFunctionReal.NumberOfZones].TransportControlData;	
+				M_GetTransportData REF= FunctionBase.TransportData;	
+			END_IF
+		ELSE
+			// Return the transport data of the first zone
+			FunctionBase.TransportData.eFunctionNumber := FunctionBase.rSettingsFunctionReal.eFunctionNumber;
+			FunctionBase.TransportData.ZoneNumber := 1;
+			FunctionBase.TransportData.rSettings REF= FunctionBase.rSettingsFunctionReal.Zone[1];
+			FunctionBase.TransportData.rTransportControlData REF= ZoneData[1].TransportControlData;
+			FunctionBase.TransportData.rRealObjTrspControlData REF= FunctionBase.rZoneDataReal[1].TransportControlData;		
+			M_GetTransportData REF= FunctionBase.TransportData;	
+		END_IF
+	END_IF
+END_IF
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_GetTU_PresentState" Id="{db87f60b-90aa-42d7-a449-8e92899a8d41}">
+      <Declaration><![CDATA[METHOD M_GetTU_PresentState : BOOL
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 461869 $
+ *	Revision date	:	$Date: 2020-09-25 14:40:24 +0200 (fre, 25 sep 2020) $
+ *	Last changed by	:	$Author: d7mangc $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/tags/R1.12.0/01_Software/BCF/BCF/JumpStart/20_Product/10_BCF/11_Conv/12_E_Functions/09_Emulation/FB_FunctionConvEmulation.TcPOU $
+ *
+ *	Purpose			:	Base get TU present state, needs to be overriden from inheritance object
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+VAR_INPUT
+	mZone	 : INT; // Zone number
+	mPosition : UINT; // Position [mm]
+END_VAR
+VAR_OUTPUT
+	mTU_DataIndex : DINT;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_ITC_ATQ" Id="{01fbe052-b599-4aa6-aca7-9590fa583c93}">
+      <Declaration><![CDATA[METHOD PRIVATE M_ITC_ATQ : BOOL
+VAR_INPUT
+	meChannelSrc		: E_MFCS_CHANNEL; // Number of the source 
+	mpData				: PVOID; // Data  pointer 
+	mLen				: UDINT; // Data length
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[// Map data
+F_BlockCopy(
+	pSrc:= mpData, 
+	LenSrc:= mLen, 
+	pDest:= ADR(FunctionBase.Data), 
+	LenDest:= SIZEOF(FunctionBase.Data));
+	
+// If a data index is available
+IF FunctionBase.Data.TU_DataIndex > 0 THEN
+	// If a valid zone number is ready
+	IF FunctionBase.Data.ZoneNumber > 0 THEN
+		// Send "Add TU" request to zone
+		ZoneData[FunctionBase.Data.ZoneNumber].ITC.Commands.AddTU := TRUE;
+		ZoneData[FunctionBase.Data.ZoneNumber].ITC.Commands.TU_DataIndexToAdd := FunctionBase.Data.TU_DataIndex;
+	ELSE
+		// Invalid zone number
+		DebugMsg := 'ADD_TU_DATA - No valid ZoneNumber, request rejected';
+		fbDebugMsg.M_SendErrorMsg(DebugMsg);
+	END_IF
+ELSE
+	// Invalid TU index
+	DebugMsg := 'ADD_TU_DATA - No valid TU index, request rejected';
+	fbDebugMsg.M_SendErrorMsg(DebugMsg);
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_ITC_ERQ" Id="{af0c3563-fd1f-4187-986c-caee4753ef29}">
+      <Declaration><![CDATA[METHOD PRIVATE M_ITC_ERQ : BOOL
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 461869 $
+ *	Revision date	:	$Date: 2020-09-25 14:40:24 +0200 (fre, 25 sep 2020) $
+ *	Last changed by	:	$Author: d7mangc $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/tags/R1.12.0/01_Software/BCF/BCF/JumpStart/20_Product/10_BCF/11_Conv/12_E_Functions/09_Emulation/FB_FunctionConvEmulation.TcPOU $
+ *
+ *	Purpose			:	Add ERQ
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+VAR_INPUT
+	meChannelSrc		: E_MFCS_CHANNEL; // Number of the source 
+	mpData				: PVOID; // Data  pointer 
+	mLen				: UDINT; // Data length
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[// Map data
+F_BlockCopy(
+	pSrc:= mpData, 
+	LenSrc:= mLen, 
+	pDest:= ADR(FunctionBase.ERQ), 
+	LenDest:= SIZEOF(FunctionBase.ERQ));		
+	
+FunctionBase.Position := F_SearchFunctionPosition(Position := FunctionBase.ERQ.Position);
+
+// If request goes to function
+IF FunctionBase.Position.ZoneNumber = 0 THEN
+	// Send "Error" request to zone
+	ITC.FunctionITC.Commands.Error := FunctionBase.ERQ.Code = 0;
+	ITC.FunctionITC.Commands.ErrorCode := FunctionBase.ERQ.ErrorCode;
+// If request has a zonenumber
+ELSIF FunctionBase.Position.ZoneNumber > 0 THEN
+	// Send "Error" request to zone
+	ZoneData[FunctionBase.Position.ZoneNumber].ITC.Commands.Error := FunctionBase.ERQ.Code = 0;
+	ZoneData[FunctionBase.Position.ZoneNumber].ITC.Commands.ErrorCode := FunctionBase.ERQ.ErrorCode;
+ELSE
+	// Invalid zone number
+	DebugMsg := 'MODIFY_EMULATION_ERROR - No valid ZoneNumber, request rejected';
+	fbDebugMsg.M_SendErrorMsg(DebugMsg);
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_ITC_ProcessMsg" Id="{e40140ae-532a-4631-ab48-268caa4410e6}">
+      <Declaration><![CDATA[METHOD M_ITC_ProcessMsg : BOOL
+VAR_INPUT
+	meChannelSrc		: E_MFCS_CHANNEL; // Number of the source 
+	mMsgType			: INT; // Message type
+	mpData				: PVOID; // Data  pointer 
+	mLen				: UDINT; // Data length
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+// Initialize
+M_ITC_ProcessMsg := TRUE;
+
+// Validate inputs
+IF mpData > 0 AND
+   mLen > 0 THEN
+	// map enum
+	FunctionBase.eMsgType := mMsgType;
+
+	// Validate message type
+	CASE FunctionBase.eMsgType OF
+
+		(*******************************************************************************
+		  No Message
+		********************************************************************************)
+		E_ITC_MsgTypeConv.NO_MESSAGE_TYPE:
+			// Empty message received
+			DebugMsg := 'Empty ITC message received.';
+			fbDebugMsg.M_SendErrorMsg(DebugMsg);
+			
+		(*******************************************************************************
+		  Add TU data
+		********************************************************************************)
+		E_ITC_MsgTypeConv.E_ADD_TU_REQUEST:
+			M_ITC_ATQ(meChannelSrc := meChannelSrc, mpData := mpData, mLen := mLen);
+			
+		(*******************************************************************************
+		  Remove TU data
+		********************************************************************************)
+		E_ITC_MsgTypeConv.E_REMOVE_TU_REQUEST:
+			M_ITC_RTQ(meChannelSrc := meChannelSrc, mpData := mpData, mLen := mLen);
+			
+		(*******************************************************************************
+		  Modify error 
+		********************************************************************************)
+		E_ITC_MsgTypeConv.E_ERROR_REQUEST:
+			M_ITC_ERQ(meChannelSrc := meChannelSrc, mpData := mpData, mLen := mLen);
+
+	ELSE
+		// Unknown ITC message type received
+		DebugMsg := CONCAT('Function emulation unknown ITC Message type: ', INT_TO_STRING(FunctionBase.eMsgType));
+		fbDebugMsg.M_SendErrorMsg(DebugMsg);
+	END_CASE
+END_IF
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_ITC_RTQ" Id="{70b08369-8d9d-4467-8309-786578ba7173}">
+      <Declaration><![CDATA[METHOD PRIVATE M_ITC_RTQ : BOOL
+VAR_INPUT
+	meChannelSrc		: E_MFCS_CHANNEL; // Number of the source 
+	mpData				: PVOID; // Data  pointer 
+	mLen				: UDINT; // Data length
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[// Map data
+F_BlockCopy(
+	pSrc:= mpData, 
+	LenSrc:= mLen, 
+	pDest:= ADR(FunctionBase.Data), 
+	LenDest:= SIZEOF(FunctionBase.Data));
+
+// If a valid zone number is ready
+IF FunctionBase.Data.ZoneNumber > 0 THEN
+	// Send "Remove TU" request to zone
+	ZoneData[FunctionBase.Data.ZoneNumber].ITC.Commands.RemoveTU := TRUE;
+	ZoneData[FunctionBase.Data.ZoneNumber].ITC.Commands.IndexToRemove := FunctionBase.IndexToRemove[FunctionBase.Data.ZoneNumber];
+ELSE
+	// Invalid zone number
+	DebugMsg := 'REMOVE_TU_DATA - No valid ZoneNumber, request rejected';
+	fbDebugMsg.M_SendErrorMsg(DebugMsg);
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_MoveTU_DataIndex" Id="{006e25c7-db14-44a4-99c3-34c1b9addb3c}">
+      <Declaration><![CDATA[METHOD M_MoveTU_DataIndex : DINT;
+VAR_INPUT
+	mZoneNumber : INT;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[// Return current TU-data index
+M_MoveTU_dataIndex := ZoneData[mZoneNumber].TransportControlData.TU_DataIndex;
+// Update last TU-data index
+ZoneData[mZoneNumber].TransportControlData.LastTU_DataIndex := M_MoveTU_dataIndex;
+// Delete current TU-data index
+ZoneData[mZoneNumber].TransportControlData.TU_DataIndex := 0;
+// Reset data present
+ZoneData[mZoneNumber].TransportControlData.DataPresent := FALSE;
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_SetHW_Inputs" Id="{0fb20a55-5cee-4dae-90b7-137477345e78}">
+      <Declaration><![CDATA[METHOD M_SetHW_Inputs : BOOL
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 461869 $
+ *	Revision date	:	$Date: 2020-09-25 14:40:24 +0200 (fre, 25 sep 2020) $
+ *	Last changed by	:	$Author: d7mangc $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/tags/R1.12.0/01_Software/BCF/BCF/JumpStart/20_Product/10_BCF/11_Conv/12_E_Functions/09_Emulation/FB_FunctionConvEmulation.TcPOU $
+ *
+ *	Purpose			:	Base set HW inputs, needs to be overriden from inheritance object
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+VAR_INPUT
+	mZoneNumber : INT; // Zone number
+	mSetHW_Input : ST_SetHW_Inputs; // Set HW inputs state
+	mEnableHW_Input : ST_SetHW_Inputs; // Enable HW inputs for processing
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_UpdateRealObjectData" Id="{59033426-7283-481d-bc54-20dd7e8be026}">
+      <Declaration><![CDATA[METHOD M_UpdateRealObjectData
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 461869 $
+ *	Revision date	:	$Date: 2020-09-25 14:40:24 +0200 (fre, 25 sep 2020) $
+ *	Last changed by	:	$Author: d7mangc $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/tags/R1.12.0/01_Software/BCF/BCF/JumpStart/20_Product/10_BCF/11_Conv/12_E_Functions/09_Emulation/FB_FunctionConvEmulation.TcPOU $
+ *
+ *	Purpose			:	This methode gets always the current values of the real object
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+IF __ISVALIDREF(FunctionRegistry[eFunctionNumber].rFunctionData) THEN
+	FunctionBase.rFunctionDataReal	REF= FunctionRegistry[eFunctionNumber].rFunctionData;
+ELSE
+	FunctionBase.rFunctionDataReal REF= FunctionBase.FunctionDataEmpty;
+END_IF
+
+IF __ISVALIDREF(FunctionRegistry[eFunctionNumber].rFunctionInterface) THEN
+	FunctionBase.rFunctionInterfaceReal REF= FunctionRegistry[eFunctionNumber].rFunctionInterface;
+ELSE
+	FunctionBase.rFunctionInterfaceReal REF= FunctionBase.FunctionInterfaceEmpty;
+END_IF
+
+IF __ISVALIDREF(FunctionRegistry[eFunctionNumber].rFunction) THEN
+	FunctionBase.rZoneDataReal	REF= FunctionRegistry[eFunctionNumber].rFunction.ZoneData;
+ELSE
+	FunctionBase.rZoneDataReal REF= FunctionBase.ZoneDataEmpty;
+END_IF
+
+IF __ISVALIDREF(FunctionRegistry[eFunctionNumber].rFunction) THEN
+	FunctionBase.rZoneInterfaceReal REF= FunctionRegistry[eFunctionNumber].rFunction.ZoneInterface;
+ELSE
+	FunctionBase.rZoneInterfaceReal REF= FunctionBase.ZoneInterfaceEmpty;
+END_IF
+
+IF __ISVALIDREF(FunctionRegistry[eFunctionNumber].rSettingsFunction) THEN
+	FunctionBase.rSettingsFunctionReal REF= FunctionRegistry[eFunctionNumber].rSettingsFunction;
+ELSE
+	FunctionBase.rSettingsFunctionReal REF= FunctionBase.SettingsEmpty;
+END_IF
+
+
+
+]]></ST>
+      </Implementation>
+    </Method>
+    <ObjectProperties>
+      <XmlArchive>
+        <Data>
+          <o xml:space="preserve" t="UMLStereoTypeContainerObject">
+            <v n="IsType" t="UMLType">BaseArea</v>
+            <v n="Stereotype">""</v>
+            <d n="Stereotypes" t="Hashtable" />
+          </o>
+        </Data>
+        <TypeList>
+          <Type n="Hashtable">System.Collections.Hashtable</Type>
+          <Type n="String">System.String</Type>
+          <Type n="UMLStereoTypeContainerObject">{30250973-b110-4e31-b562-c102e042dca4}</Type>
+          <Type n="UMLType">{0197b136-405a-42ee-bb27-fd08b621d0cf}</Type>
+        </TypeList>
+      </XmlArchive>
+    </ObjectProperties>
+    <LineIds Name="FB_FunctionConvEmulation">
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_FunctionConvEmulation.A_ExternalSTI">
+      <LineId Id="2" Count="20" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_FunctionConvEmulation.M_GetNextTransportData">
+      <LineId Id="3" Count="87" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_FunctionConvEmulation.M_GetPreviousTransportData">
+      <LineId Id="3" Count="87" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_FunctionConvEmulation.M_GetTransportControlParam">
+      <LineId Id="3" Count="13" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_FunctionConvEmulation.M_GetTransportData">
+      <LineId Id="3" Count="64" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_FunctionConvEmulation.M_GetTU_PresentState">
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_FunctionConvEmulation.M_ITC_ATQ">
+      <LineId Id="3" Count="22" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_FunctionConvEmulation.M_ITC_ERQ">
+      <LineId Id="3" Count="22" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_FunctionConvEmulation.M_ITC_ProcessMsg">
+      <LineId Id="3" Count="44" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_FunctionConvEmulation.M_ITC_RTQ">
+      <LineId Id="3" Count="15" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_FunctionConvEmulation.M_MoveTU_DataIndex">
+      <LineId Id="3" Count="7" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_FunctionConvEmulation.M_SetHW_Inputs">
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_FunctionConvEmulation.M_UpdateRealObjectData">
+      <LineId Id="3" Count="32" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

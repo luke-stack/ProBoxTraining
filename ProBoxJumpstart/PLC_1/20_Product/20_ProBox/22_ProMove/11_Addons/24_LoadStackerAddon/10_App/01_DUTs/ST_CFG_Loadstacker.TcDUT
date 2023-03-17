@@ -1,0 +1,20 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <DUT Name="ST_CFG_Loadstacker" Id="{b94bef42-de5b-4918-93e5-8f5371f7c07c}">
+    <Declaration><![CDATA[TYPE ST_CFG_Loadstacker :
+STRUCT
+	TimeoutValueLift 			: TIME := T#10S;	// Timeout value for lifting
+	TimeoutValueFork 			: TIME := T#5S;		// Timeout value for Motorized Forks
+	TimeoutValueSeq				: TIME := T#1M; 	// Timeout value entire sequence
+	TimeSafeTorque				: TIME := T#1S; 	// Time on delay for applying safe torque
+	IdleStacking				: BOOL := FALSE;	// Optimize stacking. Enables lifting of TU if the pallet magazine chain/roller has to run without moving the pallet.
+	//IdleDestacking				: BOOL; // Optimize De-Stacking. Enables lifting of the second pallet up, to optimize destacking.
+	EnableForkGapSensor			: BOOL := FALSE;	// When enabled, the HW input LoadStackerGapSensor is used.
+	LiftType					: E_LSPM_LiftType;		// Set the actual method to determine the positioning, either encoder or inductive sensors.
+	LoadstackerType				: E_LSPM_MachineType;  	// PalletLoadstacker, Sub palletizer, Pallet magazine	
+	LiftEncoder					: ST_LS_CfgLiftEncoder;// encoder configuration, positions and preset parameters
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

@@ -1,0 +1,94 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.4">
+  <Itf Name="I_SluggingAddOn_Summary" Id="{6c6dee11-b455-401c-8ae1-156f2136633f}">
+    <Declaration><![CDATA[// train summary for FB_SluggingAddOn
+{attribute 'monitoring' := 'call'}
+INTERFACE PUBLIC I_SluggingAddOn_Summary
+(**************************************************************************************
+ *  Application     :   BoxControl Framework
+ *  Revision date   :   $Date: 2021-04-09 08:29:02 +0200 (fre, 09 apr 2021) $
+ *  Author          :   CDC
+ * ------------------------------------------------------------------------------------
+ *  © Swisslog AG
+ *  Swisslog is not liable for any usage of this source code that is not agreed 
+ *  on between Swisslog and the other party. The mandatory legal liability remains 
+ *  unaffected.
+ * ------------------------------------------------------------------------------------
+ *  Revision History: 
+ *
+ *  VERSION DATE         INITIALS     DESCRIPTION
+ *  0.0     DD.MM.YYYY   (name)       (explain customized modifications)
+ *
+ **************************************************************************************)]]></Declaration>
+    <Property Name="P_Empty" Id="{0696330f-8c83-4c3f-b8d1-adc17c194b13}">
+      <Declaration><![CDATA[// train is empty
+{attribute 'monitoring' := 'call'}
+PROPERTY PUBLIC P_Empty : BOOL]]></Declaration>
+      <Get Name="Get" Id="{84ab595d-7952-49c8-a5ca-c4717bb1e641}">
+        <Declaration><![CDATA[]]></Declaration>
+      </Get>
+    </Property>
+    <Property Name="P_Full" Id="{dd83c03e-78a6-4fd7-8ddc-a8e3ae8b73c0}">
+      <Declaration><![CDATA[// train is full
+{attribute 'monitoring' := 'call'}
+PROPERTY PUBLIC P_Full : BOOL]]></Declaration>
+      <Get Name="Get" Id="{67127fde-aaad-448c-b00c-84c3e423cc4b}">
+        <Declaration><![CDATA[]]></Declaration>
+      </Get>
+    </Property>
+    <Property Name="P_Length" Id="{7ded68eb-695e-41a5-9d33-33e7a57b863c}">
+      <Declaration><![CDATA[// current number of TUs in the train
+{attribute 'monitoring' := 'call'}
+PROPERTY PUBLIC P_Length : WORD]]></Declaration>
+      <Get Name="Get" Id="{b633b23d-9c93-4856-812b-d9448d514227}">
+        <Declaration><![CDATA[]]></Declaration>
+      </Get>
+    </Property>
+    <Property Name="P_NbrOfZones" Id="{5a3e4360-c239-41aa-b6db-c94934fcbb4d}">
+      <Declaration><![CDATA[// number of configured zones
+{attribute 'monitoring' := 'call'}
+PROPERTY PUBLIC P_NbrOfZones : WORD]]></Declaration>
+      <Get Name="Get" Id="{657525a1-213a-4c11-b982-cb277300caa5}">
+        <Declaration><![CDATA[]]></Declaration>
+      </Get>
+    </Property>
+    <Property Name="P_Percentage" Id="{62b9378e-44a4-414b-9cdd-3207b3513b1d}">
+      <Declaration><![CDATA[// length in percent
+{attribute 'monitoring' := 'call'}
+PROPERTY PUBLIC P_Percentage : BYTE]]></Declaration>
+      <Get Name="Get" Id="{981da016-7803-4964-b878-1906a6cc69f9}">
+        <Declaration><![CDATA[]]></Declaration>
+      </Get>
+    </Property>
+    <Property Name="P_Text" Id="{28e9b834-a2ec-4de6-9409-4891bd854093}">
+      <Declaration><![CDATA[// length in 'number/total'
+{attribute 'monitoring' := 'call'}
+PROPERTY PUBLIC P_Text : STRING[15]]]></Declaration>
+      <Get Name="Get" Id="{0029867d-d51a-4a79-902d-e5c241820503}">
+        <Declaration><![CDATA[]]></Declaration>
+      </Get>
+    </Property>
+    <Property Name="P_Trains" Id="{a4327113-115c-4bf4-99bd-0a228b214849}">
+      <Declaration><![CDATA[// counter of created trains
+{attribute 'monitoring' := 'call'}
+PROPERTY PUBLIC P_Trains : ULINT]]></Declaration>
+      <Get Name="Get" Id="{16ae2d8a-59c0-4073-b112-a9ae1b6014d4}">
+        <Declaration><![CDATA[]]></Declaration>
+      </Get>
+      <Set Name="Set" Id="{8747bfdf-2a59-4a80-a0de-a8d3bc629900}">
+        <Declaration><![CDATA[]]></Declaration>
+      </Set>
+    </Property>
+    <Property Name="P_TUs" Id="{9a990bd5-4e96-45fe-b5bf-3f0e21207a04}">
+      <Declaration><![CDATA[// counter of added TUs
+{attribute 'monitoring' := 'call'}
+PROPERTY PUBLIC P_TUs : ULINT]]></Declaration>
+      <Get Name="Get" Id="{75874f6f-552e-498b-bed3-5aa4dedb5675}">
+        <Declaration><![CDATA[]]></Declaration>
+      </Get>
+      <Set Name="Set" Id="{f9d46194-74f6-4ece-9c19-bab092ba2cbe}">
+        <Declaration><![CDATA[]]></Declaration>
+      </Set>
+    </Property>
+  </Itf>
+</TcPlcObject>

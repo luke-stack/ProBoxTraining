@@ -1,0 +1,236 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <POU Name="FB_LoadstackerAddonEmulation" Id="{9d19597c-0922-49e7-bc65-1f2448eae476}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK FB_LoadstackerAddonEmulation EXTENDS FB_FunctionConvEmulation
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: q8hedls $
+ *	Revision date	:	$Date: $
+ *	Last changed by	:	$Author:  $
+ *	URL				:	$URL:  $
+ *
+ *	Purpose			:	Emulation of inOutFeed
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				26.04.2019		SHE					LowLiftUnitEmulation
+ *
+ **************************************************************************************)
+VAR_INPUT
+	Config							: ST_CFG_LoadstackerAddonEmulation;
+END_VAR 
+
+VAR
+	pFunction						: POINTER TO FB_LoadstackerAddon; // Address to function
+	rFunction						: REFERENCE TO FB_LoadstackerAddon; // Reference to function
+	fbLoadstackerLiftControl 		: FB_StackerLiftControlEmulation; // Lift control emulation
+	fbMotorizedForkControl			: FB_StackerForkControlEmulation; // Motorized fork					
+	fbPalletCounter					: FB_LS_Emu_PalletCounter();
+	SwitchManualAuto				: BOOL := TRUE;
+	EncoderResulution				: REAL;
+	
+END_VAR]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[(**************************************************************************************************************
+   Initialization
+***************************************************************************************************************)
+//initialize configuration of lift
+A_Init();
+
+(**************************************************************************************************************
+   Update reference
+***************************************************************************************************************)
+A_UpdateReference();
+
+(**************************************************************************************************************
+   Emulation
+***************************************************************************************************************)
+// If emulation function is initialized
+IF FunctionData.Init THEN
+
+	// Update data of real object
+	M_UpdateRealObjectData();
+	
+	// Handle external Subsystem-Subsystem interfaces
+	// not needed for Add On emulation
+	//A_ExternalSTI();
+	
+	// Call Lift control
+	fbLoadstackerLiftControl(		
+		LiftRange 				:= Config.MaxLiftPosition, 
+		DriveRunUpLift			:= rFunction.HW_Outputs.Lift.LiftUp, 
+		DriveRunDownLift		:= rFunction.HW_Outputs.Lift.LiftDown);
+	
+	// Call Motorized forks control	
+	fbMotorizedForkControl(
+		ForkRange				:= Config.MaxLiftPosition, 
+		DriveRun_Out			:= rFunction.HW_Outputs.LeftFork.MoveOut, 
+		DriveRun_In				:= rFunction.HW_Outputs.LeftFork.MoveIn);
+
+	//Counts number of pallets left in stack	
+	fbPalletCounter(
+		RealFunctionNumber		:= rFunction.ConfigFunction.FunctionLink.eFunctionNumber, 
+		RealZoneNumber			:= rFunction.ConfigFunction.FunctionLink.ZoneNumber, 
+		RealLoadstackerState	:= rFunction.BaseFunctionData.States.eState, 
+		RealLoadStackerMode		:= rFunction.Inputs.CtrlIn.Mode, 
+		ConfigNumberPalletStack	:= Config.NumberPalletStack, 
+		ConfigNumberPalletFull	:= Config.NumberPalletFull);
+	
+	// Overwrite inputs
+	A_OverWriteInputs();
+END_IF]]></ST>
+    </Implementation>
+    <Action Name="A_Init" Id="{9ba89ce0-46b6-404b-a964-87d766e8791d}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_Init
+ * 	FUNCTION	Initialize emulated dummy function
+ **************************************************************************************)
+
+// If dummy function is not initialized
+IF NOT FunctionData.Init Then
+	// Check that linked dummy function number is valid
+	IF eFunctionNumber > E_FunctionNumber.F_BEGIN_FUNCTION AND
+	   eFunctionNumber < E_FunctionNumber.F_END_FUNCTION THEN   
+		
+		// Check if the real module is initialized
+		IF F_IsFunctionInitialized(eFunctionNumber := eFunctionNumber) THEN
+			// Module is initialized
+			FunctionData.Init:= TRUE;
+			
+			// Send debug message
+			DebugMsg := CONCAT('Initialization done. Element Function: ', FunctionRegistry[eFunctionNumber].FunctionName);
+			fbDebugMsg.M_SendInfoMsg(DebugMsg);
+			
+			// Initialize real module
+			F_InitializeFunction(eFunctionNumber := eFunctionNumber);
+		END_IF
+	END_IF
+END_IF
+]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="A_OverWriteInputs" Id="{1ed562cb-dccf-44b4-ae91-cb1394a069ef}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_OverWriteInputs
+ * 	FUNCTION	Overwrite inputs for emulation
+ **************************************************************************************)
+
+
+//Lifting emulation
+rFunction.HW_Inputs.Lift.SensorPosDown 				:= fbLoadstackerLiftControl.LiftPosDown;
+rFunction.HW_Inputs.Lift.SensorPosDownCS 			:= fbLoadstackerLiftControl.LiftPosDownCS;
+rFunction.HW_Inputs.Lift.SensorPosMiddleDown 		:= fbLoadstackerLiftControl.LiftPosMiddleBelow;
+rFunction.HW_Inputs.Lift.SensorPosMiddleUp 			:= fbLoadstackerLiftControl.LiftPosMiddleAbove;
+rFunction.HW_Inputs.Lift.SensorPosUp 				:= fbLoadstackerLiftControl.LiftPosUp;
+rFunction.HW_Inputs.Lift.SensorEndlimitDown			:= TRUE;
+rFunction.HW_Inputs.Lift.SensorEndlimitUP 			:= TRUE;
+
+rFunction.HW_Inputs.RightFork.ForksOut				:= fbMotorizedForkControl.ForkPosOutReachedD1;
+rFunction.HW_Inputs.LeftFork.ForksOut				:= fbMotorizedForkControl.ForkPosOutReachedD1;
+rFunction.HW_Inputs.RightFork.ForksIn				:= fbMotorizedForkControl.ForkPosIn;
+rFunction.HW_Inputs.LeftFork.ForksIn				:= fbMotorizedForkControl.ForkPosIn;
+	
+rFunction.HW_Inputs.Element.SignalMotorUnitOK		:= TRUE; 
+rFunction.HW_Inputs.Element.SensorOccupied			:= fbPalletCounter.SensorOccupied;
+rFunction.HW_Inputs.Element.SensorMagazineFull 		:= fbPalletCounter.SensorMagazineFull;
+rFunction.HW_Inputs.Manual.SwitchManualAuto			:= SwitchManualAuto;
+
+//encoder
+EncoderResulution := ABS(UDINT_TO_REAL(rFunction.Settings.LiftEncoder.Positions.Upper-rFunction.Settings.LiftEncoder.Positions.Lower)/INT_TO_REAL(Config.MaxLiftPosition));
+rFunction.HW_Inputs.Lift.EncoderValue := rFunction.Settings.LiftEncoder.Positions.Lower + FLOAT_TO_UDINT(EncoderResulution * fbLoadstackerLiftControl.EncoderOffset);
+//Load stacker fork gap sensor					
+rFunction.HW_Inputs.Lift.LoadStackerGapSensor_1 := NOT(rFunction.BaseFunctionData.States.eState = E_LSPM_States.STACKING_ORDER_LIFT OR 
+												 rFunction.BaseFunctionData.States.eState = E_LSPM_States.STACKING_LIFT_ACTIVE OR
+												 rFunction.BaseFunctionData.States.eState = E_LSPM_States.STACKING_LOWER_STACK OR
+												(rFunction.BaseFunctionData.States.eState = E_LSPM_States.STACKING_MIDDLE_DONE AND
+												 rFunction.HW_Inputs.Lift.EncoderValue >  (rFunction.Settings.LiftEncoder.Positions.Middle+rFunction.Settings.LiftEncoder.Positions.Tolerance)));
+rFunction.HW_Inputs.Lift.LoadStackerGapSensor_2 := rFunction.HW_Inputs.Lift.LoadStackerGapSensor_1;
+
+														]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="A_UpdateReference" Id="{a1f5e472-f9ac-4345-a883-2ab72ed46581}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_UpdateReference
+ * 	FUNCTION	Update reference to real object
+ **************************************************************************************)
+
+// Check valid function number
+IF eFunctionNumber > E_FunctionNumber.F_BEGIN_FUNCTION AND
+   eFunctionNumber < E_FunctionNumber.F_END_FUNCTION THEN
+
+	// Is reference valid  
+	IF __ISVALIDREF(FunctionRegistry[eFunctionNumber].rFunction) THEN
+		// Build address to reference
+		pFunction := ADR(FunctionRegistry[eFunctionNumber].rFunction);
+
+		// If address is possible
+		IF pFunction <> 0 THEN
+			// Build reference to memory
+			rFunction REF= pFunction^;
+		ELSE
+			// Reinitialize module
+			FunctionData.Init:= FALSE;
+		END_IF
+	ELSE
+		// Reinitialize module
+		FunctionData.Init:= FALSE;
+	END_IF
+END_IF
+		]]></ST>
+      </Implementation>
+    </Action>
+    <LineIds Name="FB_LoadstackerAddonEmulation">
+      <LineId Id="179" Count="25" />
+      <LineId Id="266" Count="0" />
+      <LineId Id="206" Count="9" />
+      <LineId Id="315" Count="6" />
+      <LineId Id="217" Count="2" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_LoadstackerAddonEmulation.A_Init">
+      <LineId Id="2" Count="24" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_LoadstackerAddonEmulation.A_OverWriteInputs">
+      <LineId Id="2" Count="3" />
+      <LineId Id="8" Count="3" />
+      <LineId Id="30" Count="0" />
+      <LineId Id="13" Count="0" />
+      <LineId Id="15" Count="1" />
+      <LineId Id="56" Count="1" />
+      <LineId Id="17" Count="4" />
+      <LineId Id="24" Count="0" />
+      <LineId Id="26" Count="0" />
+      <LineId Id="31" Count="0" />
+      <LineId Id="54" Count="0" />
+      <LineId Id="29" Count="0" />
+      <LineId Id="33" Count="0" />
+      <LineId Id="32" Count="0" />
+      <LineId Id="51" Count="0" />
+      <LineId Id="50" Count="0" />
+      <LineId Id="40" Count="0" />
+      <LineId Id="52" Count="0" />
+      <LineId Id="58" Count="0" />
+      <LineId Id="60" Count="0" />
+      <LineId Id="59" Count="0" />
+      <LineId Id="62" Count="0" />
+      <LineId Id="61" Count="0" />
+      <LineId Id="53" Count="0" />
+      <LineId Id="38" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_LoadstackerAddonEmulation.A_UpdateReference">
+      <LineId Id="2" Count="26" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

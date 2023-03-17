@@ -1,0 +1,274 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.4">
+  <POU Name="FB_DebugMsg" Id="{9322272c-7c04-4b84-b82d-0944882a87ae}" SpecialFunc="None">
+    <Declaration><![CDATA[{attribute 'reflection'}
+FUNCTION_BLOCK FB_DebugMsg
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 404529 $
+ *	Revision date	:	$Date: 2018-04-23 08:21:38 +0200 (Mo., 23 Apr 2018) $
+ *	Last changed by	:	$Author: b7bolm $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/trunk/01_Software/BCF/BCF/JumpStart/20_Product/10_App/11_Com/10_Lib/FB_DebugMsg.TcPOU $
+ *
+ *	Purpose			:	Debug massage
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * VERSION DATE         INITIALS     DESCRIPTION
+ * 0.0     DD.MM.YYYY   (name)       (explain customized modifications)
+ *
+ **************************************************************************************)
+VAR
+	{attribute 'instance-path'}
+	{attribute 'no_init'}
+	InstanceName				: STRING[System.DEBUGSOURCELENGTH];
+	//------------------------------------------------------------------
+	LastMessage					: STRING[System.DEBUGMESSAGELENGTH];
+	fbGetCurTaskIdx				: GETCURTASKINDEX; // Returns the actual task index
+	LastCycleCounterValue		: UDINT;
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[// Body never called]]></ST>
+    </Implementation>
+    <Method Name="FB_init" Id="{4f740809-97e1-4bfe-b4e3-f490dcf8cf35}">
+      <Declaration><![CDATA[METHOD FB_init : BOOL
+
+(********************************************************************************************************************************)
+VAR_INPUT
+	bInitRetains          : BOOL; // if TRUE, the retain variables are initialized (warm start / cold start)
+	bInCopyCode           : BOOL;  // if TRUE, the instance afterwards gets moved into the copy code (online change)
+  (*----------------------------------------------------------------------------------------------------------------------------*)
+END_VAR
+
+(********************************************************************************************************************************)
+VAR
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+(********************************************************************************************************************************)
+(** remove 'QB2Jumpstart.JumpStart.' from instance path *************************************************************************)
+F_InstancePathRemovals(DestStart     := ADR(InstanceName),
+                       DestEnd       := ADR(InstanceName) + SIZEOF(InstanceName),
+                       RemoveLastPart:= TRUE);  
+
+
+
+
+(********************************************************************************************************************************)
+(** done ************************************************************************************************************************)
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_SendErrorMsg" Id="{88cb378c-e8e9-4dda-a76b-f62e6b2d70cb}">
+      <Declaration><![CDATA[METHOD M_SendErrorMsg
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 404529 $
+ *	Revision date	:	$Date: 2018-04-23 08:21:38 +0200 (Mo., 23 Apr 2018) $
+ *	Last changed by	:	$Author: b7bolm $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/trunk/01_Software/BCF/BCF/JumpStart/20_Product/10_App/11_Com/10_Lib/FB_DebugMsg.TcPOU $
+ *
+ *	Purpose			:	Send error message
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+VAR_INPUT
+	mMessage	: STRING(System.DEBUGMESSAGELENGTH);
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[// message is not equal to last sent message
+// same message can be sent in same cycle several times
+fbDebugMsgManager.M_SendMessage(E_DebugMsgType.ERROR, InstanceName, ADR(mMessage), INT_TO_UDINT(LEN(mMessage)));
+LastMessage := mMessage;
+// Get current cycle count
+fbGetCurTaskIdx();
+LastCycleCounterValue := _TaskInfo[fbGetCurTaskIdx.index].CycleCount;
+
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_SendInfoMsg" Id="{b25e85b6-2c1f-459b-8c0c-98cb0a02ee42}">
+      <Declaration><![CDATA[METHOD M_SendInfoMsg
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 404529 $
+ *	Revision date	:	$Date: 2018-04-23 08:21:38 +0200 (Mo., 23 Apr 2018) $
+ *	Last changed by	:	$Author: b7bolm $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/trunk/01_Software/BCF/BCF/JumpStart/20_Product/10_App/11_Com/10_Lib/FB_DebugMsg.TcPOU $
+ *
+ *	Purpose			:	Send info message
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+VAR_INPUT
+	mMessage			: STRING(System.DEBUGMESSAGELENGTH);
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[// message is not equal to last sent message
+// same message can be sent in same cycle several times
+fbDebugMsgManager.M_SendMessage(E_DebugMsgType.INFO, InstanceName, ADR(mMessage), INT_TO_UDINT(LEN(mMessage)));
+LastMessage := mMessage;
+// Get current cycle count
+fbGetCurTaskIdx();
+LastCycleCounterValue := _TaskInfo[fbGetCurTaskIdx.index].CycleCount;
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_SendLongMsg" Id="{b4441626-6749-46b6-86d1-1c75db5e54a9}">
+      <Declaration><![CDATA[METHOD M_SendLongMsg
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 404529 $
+ *	Revision date	:	$Date: 2018-04-23 08:21:38 +0200 (Mo., 23 Apr 2018) $
+ *	Last changed by	:	$Author: b7bolm $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/trunk/01_Software/BCF/BCF/JumpStart/20_Product/10_App/11_Com/10_Lib/FB_DebugMsg.TcPOU $
+ *
+ *	Purpose			:	Send long message
+ *						Long messages will be separated in messages < MAX_STRING_LENGTH
+ *						and forwarded as normal messages.
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+VAR_INPUT
+	mDebugMsgType	: E_DebugMsgType; // Message type
+	mpData			: PVOID; // Address to data source
+	mLen			: UDINT; // Length of the message (Attention, if the input is String use LEN instead of SIZEOF
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+// message is not equal to last sent message
+// same message can be sent in same cycle several times
+fbDebugMsgManager.M_SendMessage(mDebugMsgType, InstanceName, mpData, mLen);
+
+// Store first 255 characters for debugging
+F_BlockCopy(
+	pSrc:= mpData, 
+	LenSrc:= mLen, 
+	pDest:= ADR(LastMessage), 
+	LenDest:= SIZEOF(LastMessage));
+	
+// Get current cycle count
+fbGetCurTaskIdx();
+LastCycleCounterValue := _TaskInfo[fbGetCurTaskIdx.index].CycleCount;
+
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_SendWarningMsg" Id="{565269e8-1618-4732-85f8-fc3b1deaba55}">
+      <Declaration><![CDATA[METHOD M_SendWarningMsg
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 404529 $
+ *	Revision date	:	$Date: 2018-04-23 08:21:38 +0200 (Mo., 23 Apr 2018) $
+ *	Last changed by	:	$Author: b7bolm $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/trunk/01_Software/BCF/BCF/JumpStart/20_Product/10_App/11_Com/10_Lib/FB_DebugMsg.TcPOU $
+ *
+ *	Purpose			:	Send warning message
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+VAR_INPUT
+	mMessage		: STRING(System.DEBUGMESSAGELENGTH);
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[// message is not equal to last sent message
+// same message can be sent in same cycle several times
+fbDebugMsgManager.M_SendMessage(E_DebugMsgType.WARNING, InstanceName, ADR(mMessage), INT_TO_UDINT(LEN(mMessage)));
+LastMessage := mMessage;
+// Get current cycle count
+fbGetCurTaskIdx();
+LastCycleCounterValue := _TaskInfo[fbGetCurTaskIdx.index].CycleCount;;
+
+	
+]]></ST>
+      </Implementation>
+    </Method>
+    <ObjectProperties>
+      <XmlArchive>
+        <Data>
+          <o xml:space="preserve" t="UMLStereoTypeContainerObject">
+            <v n="IsType" t="UMLType">BaseArea</v>
+            <v n="Stereotype">""</v>
+            <d n="Stereotypes" t="Hashtable" />
+          </o>
+        </Data>
+        <TypeList>
+          <Type n="Hashtable">System.Collections.Hashtable</Type>
+          <Type n="String">System.String</Type>
+          <Type n="UMLStereoTypeContainerObject">{30250973-b110-4e31-b562-c102e042dca4}</Type>
+          <Type n="UMLType">{0197b136-405a-42ee-bb27-fd08b621d0cf}</Type>
+        </TypeList>
+      </XmlArchive>
+    </ObjectProperties>
+    <LineIds Name="FB_DebugMsg">
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_DebugMsg.FB_init">
+      <LineId Id="3" Count="11" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_DebugMsg.M_SendErrorMsg">
+      <LineId Id="3" Count="7" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_DebugMsg.M_SendInfoMsg">
+      <LineId Id="3" Count="6" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_DebugMsg.M_SendLongMsg">
+      <LineId Id="3" Count="15" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_DebugMsg.M_SendWarningMsg">
+      <LineId Id="3" Count="8" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

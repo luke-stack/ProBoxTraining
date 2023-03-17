@@ -1,0 +1,56 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.12">
+  <POU Name="F_ITC_SendVIR" Id="{850a46ee-4a40-40e0-a21a-6bb4445e66f4}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION F_ITC_SendVIR : BOOL
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 404529 $
+ *	Revision date	:	$Date: 2018-04-23 08:21:38 +0200 (Mo., 23 Apr 2018) $
+ *	Last changed by	:	$Author: b7bolm $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/trunk/01_Software/BCF/BCF/JumpStart/20_Product/10_App/11_Com/10_Lib/F_ITC_SendVIR.TcPOU $
+ *
+ *	Purpose			:	Wrap message - POR
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+VAR_INPUT
+	eChannelSrc			: E_MFCS_Channel; // Source communicaton channel		
+	Position			: STRING(System.NAME_LENGTH); // SIS MM-GGG-EEEE-FF-Z
+	NumOfKeyValuePairs	: INT;
+	KeyValuePairs		: ARRAY [1..System.NUMBER_OF_KEYVALUE_PAIRS_VIR] OF ST_ITC_VIR_SET;
+END_VAR
+VAR
+	VIR					: ST_ITC_VIR;
+	Idx					: INT; 
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[// Map values
+VIR.Position := Position;
+VIR.NumOfKeyValuePairs := NumOfKeyValuePairs;
+VIR.KeyValuePair := KeyValuePairs;
+
+// Forward to ITC
+F_ITC_SendVIR := fbITC_Manager.M_SendData(
+					meChannel	:= eChannelSrc,
+					mMsgType	:= E_ITC_MsgTypeConv.VISUALIZATION_INFORMATION_REPORT,
+					mpData		:= ADR(VIR),
+					mLen        := SIZEOF(VIR));
+
+]]></ST>
+    </Implementation>
+    <LineIds Name="F_ITC_SendVIR">
+      <LineId Id="3" Count="11" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

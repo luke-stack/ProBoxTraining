@@ -1,0 +1,18 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.4">
+  <DUT Name="ST_InputsCraneXover" Id="{7afc6151-95fd-417b-bb87-d96793e91818}">
+    <Declaration><![CDATA[TYPE ST_InputsCraneXover :
+STRUCT
+	Sensor_Pos_Down					: BOOL; // Sensor position lift down
+	Sensor_Pos_Up					: BOOL; // Sensor position lift up
+	Signal_MotorUnitOK				: BOOL; // Signal motor unit OK (lift & element)
+	Sensor_Occupied					: BOOL;		
+	HandshakeCraneInterfaceReceive	: ST_Conveyor_Interface_5_1;	
+	HW_InputsMotorTransfer			: ST_HW_InputsMotorTransfer; 
+	TransportData					: ST_TransportControlData; // Transport control data of corresponding zone
+	
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

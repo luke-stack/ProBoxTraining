@@ -1,0 +1,19 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.4">
+  <DUT Name="ST_HW_InputsPalletMagazine" Id="{429ed486-dfc2-4450-ac7c-2fd1e1e54b2d}">
+    <Declaration><![CDATA[TYPE ST_HW_InputsPalletMagazine :
+STRUCT
+	SensorPosDown					: BOOL; // Sensor position lift down
+	SensorPosMiddle					: BOOL; // Sensor position lift down	
+	SensorPosUp						: BOOL; // Sensor position lift up
+	SignalMotorUnitOK				: BOOL; // Signal motor unit OK of Pallet magazine compact starter
+	SensorOccupied					: BOOL; // Sensor occupied on element
+	SensorFull						: BOOL; // Sensor full
+	SensorEndlimitUp				: BOOL; // Upper endlimit
+	SensorEndlimitDown				: BOOL; // Lower endlimit
+
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

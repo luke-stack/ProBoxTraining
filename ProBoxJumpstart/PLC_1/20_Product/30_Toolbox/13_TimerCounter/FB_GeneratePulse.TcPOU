@@ -1,0 +1,120 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4020.6">
+  <POU Name="FB_GeneratePulse" Id="{eb8be0e7-2e8b-40b1-8687-f850175ff0a7}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK FB_GeneratePulse
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 404529 $
+ *	Revision date	:	$Date: 2018-04-23 08:21:38 +0200 (Mo., 23 Apr 2018) $
+ *	Last changed by	:	$Author: b7bolm $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/trunk/01_Software/BCF/BCF/JumpStart/30_Toolbox/13_TimerCounter/FB_GeneratePulse.TcPOU $
+ *
+ *	Purpose			:	FB_GeneratePulse uses the internal sps timer to generate a continuous output waveform 
+ *						with programmable high and low time. The accuracy of gen_pulse is depending on the task cycle time.
+ *						Start = TRUE will start and Start = FALSE will stop the generator.The number of pulse can be 
+ * 						preset with the "NumberOfPulses" Input. If "NumberOfPulses" is set to "0" then a continous waveform
+ *      				is generated. The "Hold" input allows to stop the waveform at any point and continue the waveform at
+ *     					the stop position after releasing the "Hold" input. The inputs "PulseTimeOn" and "PulseTimeOff" allows to 
+ * 						to configure the waveform high and low time.
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+VAR_INPUT
+	Start		:BOOL;		(* Start Timer with rising edge, end puls generator with IN := FALSE *)
+	Hold		:BOOL;		(* Hold generator with rising edge, continue timing with falling edge *)
+	NumberOfPulses	:INT  := 0;	(* Number of expected pulses *)
+	PulseTimeOn	:TIME := T#1S; (* Pulse time length for off puls *)
+	PulseTimeOff	:TIME := T#1S; (* Pulse time length for on puls *)
+END_VAR
+
+VAR_OUTPUT
+	Pulse		:BOOL;		(* Resulting puls *)
+	eState		:E_PulsGen; (* Status for pulse generator *)
+	CntPulses	:INT;		(* Actual count of generated pulses *)
+END_VAR
+
+VAR
+	Init		:BOOL;		(* Initialize once timer with start trigger *)
+	TimerOn		:FB_Timer;	(* Timer for on puls *)
+	TimerOff	:FB_Timer;	(* Timer for off puls *)
+END_VAR]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[IF Start THEN
+
+	(* Check hold state *)
+	IF NOT Hold THEN
+		(* Run pulse sequence *)
+		IF CntPulses < NumberOfPulses OR NumberOfPulses = 0 THEN
+			(* Produce predefined number of pulses *)
+
+			IF NOT Pulse THEN
+				(* Timeout pulse off *)
+				TimerOff(IN := TRUE, PT := PulseTimeOff, Hold := FALSE);
+
+				(* If time elapsed or initializing then set pulse high *)
+				IF TimerOff.Q OR NOT Init THEN
+				 	Pulse := TRUE;
+					TimerOff(IN := FALSE);
+					TimerOn(IN := TRUE);
+					Init := TRUE;
+				END_IF
+			ELSE
+				(* Timeout pulse on *)
+				TimerOn(IN := TRUE, PT := PulseTimeOn, hold := FALSE);
+
+				(* If time elapsed set puls low *)
+				IF TimerOn.Q THEN
+				 	Pulse := FALSE;
+					CntPulses := CntPulses + 1;
+					TimerOn(IN := FALSE);
+					TimerOff(IN := TRUE);
+				END_IF
+			END_IF
+			eState := E_PulsGen.PG_BUSY;
+		ELSE
+			eState := E_PulsGen.PG_END;
+		END_IF
+	ELSE
+		(* Pulse generator is on hold set timers on hold *)
+		TimerOn(hold := TRUE);
+		TimerOff(hold := TRUE);
+	END_IF
+
+ELSE
+	(* Initialize values *)
+	Init := FALSE;
+	CntPulses := 0;
+	eState := E_PulsGen.PG_READY;
+	Pulse := FALSE;
+	TimerOff(IN := FALSE);
+	TimerOn(IN := FALSE);
+END_IF]]></ST>
+    </Implementation>
+    <ObjectProperties>
+      <XmlArchive>
+        <Data>
+          <o xml:space="preserve" t="UMLStereoTypeContainerObject">
+            <v n="IsType" t="UMLType">BaseArea</v>
+            <v n="Stereotype">""</v>
+            <d n="Stereotypes" t="Hashtable" />
+          </o>
+        </Data>
+        <TypeList>
+          <Type n="Hashtable">System.Collections.Hashtable</Type>
+          <Type n="String">System.String</Type>
+          <Type n="UMLStereoTypeContainerObject">{30250973-b110-4e31-b562-c102e042dca4}</Type>
+          <Type n="UMLType">{0197b136-405a-42ee-bb27-fd08b621d0cf}</Type>
+        </TypeList>
+      </XmlArchive>
+    </ObjectProperties>
+  </POU>
+</TcPlcObject>

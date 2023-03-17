@@ -1,0 +1,15 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.4">
+  <DUT Name="ST_MotorDriver" Id="{121dfc54-98c9-476e-ac20-ecd83a7b62ca}">
+    <Declaration><![CDATA[TYPE ST_MotorDriver :
+	STRUCT		
+		FeatureEnabled			: BOOL; //Transfer TU conveyor motor feature enabled by config.
+		ReqDriveRun				: BOOL;
+		ReqDriveDirection		: BOOL;	//True = drive forward request
+		ReqSpeed 				: INT;		
+		HW_InputsMotorTransfer	: ST_HW_InputsMotorTransfer; 
+	END_STRUCT	
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

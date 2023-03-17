@@ -1,0 +1,22 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <DUT Name="ST_MPD_ExternalErrors" Id="{6c5f6a21-a122-4e32-8454-73227a5ac46c}">
+    <Declaration><![CDATA[TYPE ST_MPD_ExternalErrors :
+STRUCT
+	// NO = Normally open -> Default FALSE
+	// NC = Normally closed -> Default TRUE
+	HighTempResDrive			: BOOL := FALSE; // NO, High temp brake resistor drive
+	HighTempResLift				: BOOL := FALSE; //NO, High temp lift resistor drive
+	EndLimit					: BOOL := FALSE; // NC, End limit switch
+	FrequencyInverterError		: BOOL := FALSE; // NO, ACS880 Frequency error
+	BeltMonitoring				: BOOL := TRUE; // NC, Belt monitoring (From Safe PLC) 
+	FallBrake					: BOOL := TRUE; // NC, Fall brake switch (From Safe PLC)
+	FallBrakeSpeedRegulator		: BOOL := TRUE; // NC, Fall brake speed regulator switch From Safety PLC
+	SlackWire					: BOOL := TRUE; // NC, Slack wire limit switch	
+	DoorClosedLevel				: ARRAY[1..32] OF BOOL  := [32(TRUE)]; // NC, Door closed at level 1,2,3..32
+	
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

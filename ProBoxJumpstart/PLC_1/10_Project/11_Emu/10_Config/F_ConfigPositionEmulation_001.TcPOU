@@ -1,0 +1,167 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <POU Name="F_ConfigPositionEmulation_001" Id="{a5e733db-9963-4291-9f0b-9a8af0153965}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION F_ConfigPositionEmulation_001
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[
+
+
+
+
+
+
+(****************************** 10-001-0201-01-0 ************************************)
+(**************************** LowLift Unit Emulation ***************************)
+// Configuration emulation
+fbF_10_001_0201_01_0_Emulation.Config.Position_Max_Down			:= 0;
+fbF_10_001_0201_01_0_Emulation.Config.Position_Max_Up	  			:= 600;	
+fbF_10_001_0201_01_0_Emulation.Config.Position_Down				:= 100;
+fbF_10_001_0201_01_0_Emulation.Config.Position_Up	  				:= 500;
+
+
+
+
+
+
+(****************************** 10-001-0203-02-0 ************************************)
+(******************************** Profile Check Emulation *****************************)
+// Configuration emulation
+fbF_10_001_0203_02_0_Emulation.Config.DefaultWidth					:= 800;
+fbF_10_001_0203_02_0_Emulation.Config.DefaultLength					:= 1200;	
+
+(****************************** 10-001-0203-03-0 ************************************)
+// Configuration Scanner emulation
+fbF_10_001_0203_03_0_Emulation.Config.CreateLabelLength				:= 18; // Label length when ATQ Msg field data is set to 'CREATECODE'
+
+
+
+
+
+
+
+(****************************** 10-001-0204-01-0 ************************************)
+(**************************** TurnTable with one drive ***************************)
+// Configuration emulation
+fbF_10_001_0204_01_0_Emulation.Config.TurnTableCfg.Position_Max_CW	  	:= 500;
+fbF_10_001_0204_01_0_Emulation.Config.TurnTableCfg.Position_Max_CCW	:= 0;	
+fbF_10_001_0204_01_0_Emulation.Config.TurnTableCfg.Position_CW	  		:= 400;
+fbF_10_001_0204_01_0_Emulation.Config.TurnTableCfg.Position_CCW		:= 0;
+fbF_10_001_0204_01_0_Emulation.Config.TurnTableCfg.Position_Middle_CW	:= 200;
+fbF_10_001_0204_01_0_Emulation.Config.TurnTableCfg.Position_Middle_CCW	:= 200;
+
+
+
+
+
+
+(****************************** 10-001-0207-02-0 ************************************)
+(****************************** PalletMagazine Addon *************************************)
+
+fbF_10_001_0207_02_0_Emulation.Config.MaxLiftPosition			:= 600;
+fbF_10_001_0207_02_0_Emulation.Config.NumberPalletStack		:= 5;	
+fbF_10_001_0207_02_0_Emulation.Config.NumberPalletFull			:= 7;
+
+
+
+
+
+
+(****************************** 10-001-0209-01-0 ************************************)
+(**************************** Transfer Unit Emulation ***************************)
+// Configuration emulation
+fbF_10_001_0209_01_0_Emulation.Config.Position_Max_Down			:= 0;
+fbF_10_001_0209_01_0_Emulation.Config.Position_Max_Up	  			:= 400;	
+fbF_10_001_0209_01_0_Emulation.Config.Position_Down				:= 100;
+fbF_10_001_0209_01_0_Emulation.Config.Position_Up	  				:= 300;
+
+
+
+
+
+
+(****************************** 10-001-0212-01-0 ************************************)
+(**************************** Transfer Unit Emulation ***************************)
+// Configuration emulation
+fbF_10_001_0212_01_0_Emulation.Config.Position_Max_Down			:= 0;
+fbF_10_001_0212_01_0_Emulation.Config.Position_Max_Up	  			:= 400;	
+fbF_10_001_0212_01_0_Emulation.Config.Position_Down				:= 100;
+fbF_10_001_0212_01_0_Emulation.Config.Position_Up	  				:= 300;
+
+
+
+(****************************** 10-001-0213-02-0 ************************************)
+(****************************** PalletMagazine Addon *************************************)
+
+fbF_10_001_0213_02_0_Emulation.Config.MaxLiftPosition			:= 600;
+fbF_10_001_0213_02_0_Emulation.Config.NumberPalletStack		:= 5;	
+fbF_10_001_0213_02_0_Emulation.Config.NumberPalletFull			:= 7;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+(****************************** 10-001-0221-01-0 ************************************)
+(**************************** Transfer Unit Emulation ***************************)
+// Configuration emulation
+fbF_10_001_0221_01_0_Emulation.Config.Position_Max_Down			:= 0;
+fbF_10_001_0221_01_0_Emulation.Config.Position_Max_Up	  			:= 400;	
+fbF_10_001_0221_01_0_Emulation.Config.Position_Down				:= 100;
+fbF_10_001_0221_01_0_Emulation.Config.Position_Up	  				:= 300;
+
+
+
+
+(****************************** 10-001-0222-01-0 ************************************)
+(**************************** Transfer Unit Emulation ***************************)
+// Configuration emulation
+fbF_10_001_0222_01_0_Emulation.Config.Position_Max_Down			:= 0;
+fbF_10_001_0222_01_0_Emulation.Config.Position_Max_Up	  			:= 400;	
+fbF_10_001_0222_01_0_Emulation.Config.Position_Down				:= 100;
+fbF_10_001_0222_01_0_Emulation.Config.Position_Up	  				:= 300;
+
+
+
+
+
+
+
+
+
+
+(****************************** 10-001-0230-01-0 ************************************)
+(**************************** TransferCC Emulation ***************************)
+// Configuration emulation
+fbF_10_001_0230_01_0_Emulation.Config.Position_Max_Left			:= 0;
+fbF_10_001_0230_01_0_Emulation.Config.Position_Max_Right	  			:= 600;	
+fbF_10_001_0230_01_0_Emulation.Config.Position_Left				:= 100;
+fbF_10_001_0230_01_0_Emulation.Config.Position_Right	  				:= 500;
+
+
+
+
+
+]]></ST>
+    </Implementation>
+    <LineIds Name="F_ConfigPositionEmulation_001">
+      <LineId Id="3" Count="152" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

@@ -1,0 +1,194 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.12">
+  <POU Name="FB_GroupConvEmulation" Id="{26c9a228-8433-44f6-bcdc-30d95072ca75}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK FB_GroupConvEmulation EXTENDS FB_BaseObjectEmulation
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 404529 $
+ *	Revision date	:	$Date: 2018-04-23 08:21:38 +0200 (Mo., 23 Apr 2018) $
+ *	Last changed by	:	$Author: b7bolm $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/trunk/01_Software/BCF/BCF/JumpStart/20_Product/11_Emu/14_Groups/10_Lib/10_Conv/FB_GroupConvEmulation.TcPOU $
+ *
+ *	Purpose			:	Base Group - Emulation.
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+VAR_INPUT
+	eGroupNumber				: E_GroupNumber; // Group enum link
+END_VAR
+
+VAR
+	GroupBase					: ST_GroupBaseEmulation;
+END_VAR
+
+VAR PERSISTENT
+	GroupData					: ST_GroupDataEmulation; // Element data emulation
+END_VAR
+
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[(**************************************************************************************************************
+   Group Emulation - Body never called!
+***************************************************************************************************************)
+;]]></ST>
+    </Implementation>
+    <Method Name="M_ITC_ERQ" Id="{166536c0-7270-4ad6-9168-51630a47269f}">
+      <Declaration><![CDATA[METHOD PRIVATE M_ITC_ERQ : BOOL
+VAR_INPUT
+	meChannelSrc		: E_MFCS_CHANNEL; // Number of the source 
+	mpData				: PVOID; // Data  pointer 
+	mLen				: UDINT; // Data length
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[// Map data
+F_BlockCopy(
+	pSrc:= mpData, 
+	LenSrc:= mLen, 
+	pDest:= ADR(GroupBase.ERQ), 
+	LenDest:= SIZEOF(GroupBase.ERQ));		
+
+// Send "Error" request
+GroupData.ITC.Commands.Error :=  GroupBase.ERQ.Code = 0;
+GroupData.ITC.Commands.ErrorCode := GroupBase.ERQ.ErrorCode;
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_ITC_ProcessMsg" Id="{8798359d-a3af-4f50-a6a1-4fe5f892c832}">
+      <Declaration><![CDATA[METHOD M_ITC_ProcessMsg : BOOL
+VAR_INPUT
+	meChannelSrc		: E_MFCS_CHANNEL; // Number of the source 
+	mMsgType			: INT; // Message type
+	mpData				: PVOID; // Data  pointer 
+	mLen				: UDINT; // Data length
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+// Initialize
+M_ITC_ProcessMsg := TRUE;
+
+// Validate inputs
+IF mpData > 0 AND
+   mLen > 0 THEN
+	// map enum
+	GroupBase.eMsgType := mMsgType;
+
+	// Validate message type
+	CASE GroupBase.eMsgType OF
+
+		(*******************************************************************************
+		  No Message
+		********************************************************************************)
+		E_ITC_MsgTypeConv.NO_MESSAGE_TYPE:
+			// Empty message received
+			DebugMsg := 'Empty ITC message received.';
+			fbDebugMsg.M_SendErrorMsg(DebugMsg);
+			
+		(*******************************************************************************
+		  Modify error 
+		********************************************************************************)
+		E_ITC_MsgTypeConv.E_ERROR_REQUEST:
+			M_ITC_ERQ(meChannelSrc := meChannelSrc, mpData := mpData, mLen := mLen);
+
+	ELSE
+		// Unknown ITC message type received
+		DebugMsg := CONCAT('Group emulation unknown ITC Message type: ', INT_TO_STRING(GroupBase.eMsgType));
+		fbDebugMsg.M_SendErrorMsg(DebugMsg);
+	END_CASE
+END_IF
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_UpdateRealObjectData" Id="{986e5fdd-475b-4336-b134-bc4739d0439f}">
+      <Declaration><![CDATA[METHOD M_UpdateRealObjectData
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 404529 $
+ *	Revision date	:	$Date: 2018-04-23 08:21:38 +0200 (Mo., 23 Apr 2018) $
+ *	Last changed by	:	$Author: b7bolm $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/trunk/01_Software/BCF/BCF/JumpStart/20_Product/11_Emu/14_Groups/10_Lib/10_Conv/FB_GroupConvEmulation.TcPOU $
+ *
+ *	Purpose			:	This methode gets always the current values of the real object
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+IF __ISVALIDREF(GroupRegistry[eGroupNumber].rGroupData) THEN
+	GroupBase.rGroupDataReal REF= GroupRegistry[eGroupNumber].rGroupData;
+ELSE
+	GroupBase.rGroupDataReal REF= GroupBase.GroupDataEmpty;
+END_IF
+
+IF __ISVALIDREF(GroupRegistry[eGroupNumber].rGroupInterface) THEN
+	GroupBase.rGroupInterfaceReal REF= GroupRegistry[eGroupNumber].rGroupInterface;
+ELSE
+	GroupBase.rGroupInterfaceReal REF= GroupBase.GroupInterfaceEmpty;
+END_IF
+
+IF __ISVALIDREF(GroupRegistry[eGroupNumber].rSettingsGroup) THEN
+	GroupBase.rSettingsGroupReal REF= GroupRegistry[eGroupNumber].rSettingsGroup;
+ELSE
+	GroupBase.rSettingsGroupReal REF= GroupBase.SettingsGroupEmpty;
+END_IF
+
+
+
+]]></ST>
+      </Implementation>
+    </Method>
+    <ObjectProperties>
+      <XmlArchive>
+        <Data>
+          <o xml:space="preserve" t="UMLStereoTypeContainerObject">
+            <v n="IsType" t="UMLType">BaseArea</v>
+            <v n="Stereotype">""</v>
+            <d n="Stereotypes" t="Hashtable" />
+          </o>
+        </Data>
+        <TypeList>
+          <Type n="Hashtable">System.Collections.Hashtable</Type>
+          <Type n="String">System.String</Type>
+          <Type n="UMLStereoTypeContainerObject">{30250973-b110-4e31-b562-c102e042dca4}</Type>
+          <Type n="UMLType">{0197b136-405a-42ee-bb27-fd08b621d0cf}</Type>
+        </TypeList>
+      </XmlArchive>
+    </ObjectProperties>
+    <LineIds Name="FB_GroupConvEmulation">
+      <LineId Id="3" Count="2" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_GroupConvEmulation.M_ITC_ERQ">
+      <LineId Id="3" Count="9" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_GroupConvEmulation.M_ITC_ProcessMsg">
+      <LineId Id="3" Count="32" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_GroupConvEmulation.M_UpdateRealObjectData">
+      <LineId Id="3" Count="20" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

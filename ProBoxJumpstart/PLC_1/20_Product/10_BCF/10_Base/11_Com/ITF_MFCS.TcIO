@@ -1,0 +1,128 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.12">
+  <Itf Name="ITF_MFCS" Id="{f42a6522-eab4-4330-9fde-664df387db6a}">
+    <Declaration><![CDATA[INTERFACE ITF_MFCS EXTENDS __System.IQueryInterface
+]]></Declaration>
+    <Method Name="M_BufferLevelAlarm" Id="{7ae14fe8-1b33-4ddc-8af8-77c54ab476cc}">
+      <Declaration><![CDATA[METHOD M_BufferLevelAlarm : BOOL
+VAR_INPUT
+END_VAR
+]]></Declaration>
+    </Method>
+    <Method Name="M_BufferLevelWarning" Id="{2aaa2401-cd77-4c6b-b5a7-5dcbcc6ac85d}">
+      <Declaration><![CDATA[METHOD M_BufferLevelWarning : BOOL
+VAR_INPUT
+END_VAR
+]]></Declaration>
+    </Method>
+    <Method Name="M_CallCommunicationService" Id="{3bddbcbe-01cc-42b1-bb41-c38f063fe4dd}">
+      <Declaration><![CDATA[METHOD M_CallCommunicationService
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 355272 $
+ *	Revision date	:	$Date: 2015-09-23 11:26:06 +0200 (Wed, 23 Sep 2015) $
+ *	Last changed by	:	$Author: b7bolm $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/trunk/01_Software/BoxControlFramework/BoxControlFramework/JumpStart/11_Library/10_Application/11_Communication/11_ITC/ITF_MsgManageable.TcIO $
+ *
+ *	Purpose			:	Interface for call communication service.
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+VAR_INPUT
+END_VAR
+]]></Declaration>
+    </Method>
+    <Method Name="M_GetReceivedData" Id="{91304c86-10f3-4cb8-903f-2fb592bd0b43}">
+      <Declaration><![CDATA[METHOD M_GetReceivedData : ST_PointerSet
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 355272 $
+ *	Revision date	:	$Date: 2015-09-23 11:26:06 +0200 (Wed, 23 Sep 2015) $
+ *	Last changed by	:	$Author: b7bolm $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/trunk/01_Software/BoxControlFramework/BoxControlFramework/JumpStart/11_Library/10_Application/11_Communication/11_ITC/ITF_MsgManageable.TcIO $
+ *
+ *	Purpose			:	Received data
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+]]></Declaration>
+    </Method>
+    <Method Name="M_Init" Id="{06f4f75c-f58e-4c81-b0b9-e7007453fe67}">
+      <Declaration><![CDATA[METHOD M_Init : BOOL
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 355272 $
+ *	Revision date	:	$Date: 2015-09-23 11:26:06 +0200 (Wed, 23 Sep 2015) $
+ *	Last changed by	:	$Author: b7bolm $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/trunk/01_Software/BoxControlFramework/BoxControlFramework/JumpStart/11_Library/10_Application/11_Communication/12_MFCS/11_SIS/11_SIS_6_0/FB_SIS_MsgManager_6_0.TcPOU $
+ *
+ *	Purpose			:	Initialize 
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+VAR_INPUT
+	mInit		: BOOL; // Force init
+END_VAR
+]]></Declaration>
+    </Method>
+    <Method Name="M_IsConnected" Id="{186c3b0d-4756-4ff2-acbf-ea22723391ca}">
+      <Declaration><![CDATA[METHOD M_IsConnected : BOOL
+VAR_INPUT
+END_VAR
+]]></Declaration>
+    </Method>
+    <Method Name="M_SendData" Id="{550140a2-4258-4573-991d-7d425e004fd1}">
+      <Declaration><![CDATA[METHOD M_SendData : BOOL
+VAR_INPUT
+	meChannelSrc	: E_MFCS_Channel; // Source communicaton channel	
+	mMsgType		: INT;
+	mpData			: PVOID;
+	mLen			: UDINT;
+END_VAR]]></Declaration>
+    </Method>
+    <ObjectProperties>
+      <XmlArchive>
+        <Data>
+          <o xml:space="preserve" t="UMLStereoTypeContainerObject">
+            <v n="IsType" t="UMLType">BaseArea</v>
+            <v n="Stereotype">""</v>
+            <d n="Stereotypes" t="Hashtable" />
+          </o>
+        </Data>
+        <TypeList>
+          <Type n="Hashtable">System.Collections.Hashtable</Type>
+          <Type n="String">System.String</Type>
+          <Type n="UMLStereoTypeContainerObject">{30250973-b110-4e31-b562-c102e042dca4}</Type>
+          <Type n="UMLType">{0197b136-405a-42ee-bb27-fd08b621d0cf}</Type>
+        </TypeList>
+      </XmlArchive>
+    </ObjectProperties>
+  </Itf>
+</TcPlcObject>

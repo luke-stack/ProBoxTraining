@@ -1,0 +1,17 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <DUT Name="ST_PB_TransportCtrl" Id="{716b8b23-45ec-4a21-a496-013700012df5}">
+    <Declaration><![CDATA[TYPE ST_PB_TransportCtrl :
+STRUCT
+	Init			: BOOL;
+	NumberOfZones	: INT:=1;	//Number of zones for the function
+	IsFirstZone		: BOOL;		//first zone is normally zone index 1, but when going reverse, it is the last zone index
+	IsLastZone		: BOOL;		//Last zone is normally last zone index, but when going reverse, it is the first zone index
+	LastZoneIx		: INT:=1;	//Last zone is normally last zone index, but when going reverse, it is the first zone index
+	FirstZoneIx		: INT:=1;	//First zone is normally first zone index, but when going reverse, it is the last zone index
+	//ExtErrorCode	: INT:=0;	//(ErrorMsg)Error set fron Another instance of PB_TransportControl 
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

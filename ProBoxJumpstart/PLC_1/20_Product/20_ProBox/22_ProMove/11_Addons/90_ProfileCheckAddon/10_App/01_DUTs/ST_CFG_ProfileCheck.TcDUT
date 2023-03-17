@@ -1,0 +1,69 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <DUT Name="ST_CFG_ProfileCheck" Id="{e3ba9e6b-7e98-4a99-8ece-8c2b5ca5400a}">
+    <Declaration><![CDATA[TYPE ST_CFG_ProfileCheck :
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 417092 $
+ *	Revision date	:	$Date: 2018-11-14 12:58:58 +0100 (Mi., 14 Nov 2018) $
+ *	Last changed by	:	$Author: q8aberh $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/ProMove/02_Controls/ProBox/03_Implementation/01_DevelopmentProject/01_Software/ProBox_COE/ProBox_DevProj_v1.0/PLC_1/20_Product/10_App/12_E_Functions/11_ProBox/90_ProfileCheckAddon/10_App/01_DUTs/ST $
+ *
+ *	Purpose			:	Profile Check configuration
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+STRUCT
+	
+	EnableExternalTrigger					: BOOL; // Enable an external trigger for customization.
+
+	// Configuration
+	DoubleHeightLightGrids					: BOOL := FALSE;
+	ReportRealMeasureHeight					: BOOL;
+	ReportRealMeasureLeft					: BOOL;
+	ReportRealMeasureRight					: BOOL;
+	ReportRealMeasureFront					: BOOL;
+	ReportRealMeasureRear					: BOOL;	
+	
+	// Beam spacing / light grid
+	BeamSpacing_HeightLower					: INT := 20;
+	BeamSpacing_HeightUpper					: INT := 20;
+	BeamSpacing_WidthLeft					: INT := 5;
+	BeamSpacing_WidthRight					: INT := 5;
+	BeamSpacing_Length						: INT := 5;	
+	
+	ReportValue_Measurement_Error_Height	: INT := 9;
+	ReportValue_Measurement_Error_Left		: INT := 2;
+	ReportValue_Measurement_Error_Right		: INT := 2;
+	ReportValue_Measurement_Error_Front		: INT := 2;
+	ReportValue_Measurement_Error_Rear		: INT := 2;
+	
+	// Light grid mechanical offsets
+	LightGrid_Offset_Height_Lower			: INT := 0;
+	LightGrid_Offset_Height_Upper			: INT := 0;
+	LightGrid_Offset_Width_Left				: INT := 0;
+	LightGrid_Offset_Width_Right			: INT := 0;
+	LightGrid_Offset_Length_Front			: INT := 0;
+	LightGrid_Offset_Length_Rear			: INT := 0;
+	
+	// Profile rules
+	ProfileRule_OverhangFront				: ARRAY[1..9] OF ST_CFG_ProfileRule;
+	ProfileRule_OverhangRear				: ARRAY[1..9] OF ST_CFG_ProfileRule;
+	ProfileRule_OverhangLeft				: ARRAY[1..9] OF ST_CFG_ProfileRule;
+	ProfileRule_OverhangRight				: ARRAY[1..9] OF ST_CFG_ProfileRule;
+	ProfileRule_Height						: ARRAY[1..9] OF ST_CFG_ProfileRule;	
+	ePalletOrientation          			:E_PalletOrientation;
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

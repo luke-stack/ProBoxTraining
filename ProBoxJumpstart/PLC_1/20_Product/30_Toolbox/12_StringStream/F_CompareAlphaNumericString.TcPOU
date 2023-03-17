@@ -1,0 +1,123 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4020.6">
+  <POU Name="F_CompareAlphaNumericString" Id="{4bbdd8ec-6e33-4184-9539-fd20f0eaafd0}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION F_CompareAlphaNumericString : BOOL
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 404529 $
+ *	Revision date	:	$Date: 2018-04-23 08:21:38 +0200 (Mo., 23 Apr 2018) $
+ *	Last changed by	:	$Author: b7bolm $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/trunk/01_Software/BCF/BCF/JumpStart/30_Toolbox/12_StringStream/F_CompareAlphaNumericString.TcPOU $
+ *
+ *	Purpose			:	Compares two strings. Chars which are not from the 
+ *						following type are ignored: 0..9, A..Z, a..z.
+ *						Example: 21-001-0010-001 -> 210010010001
+ *						Return value will be TRUE if both strings are identical.
+ *						
+ *						Length allows to compare only a certain part of a string.
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+VAR_INPUT
+	InputString1		: STRING(100); // Compare string 1
+	InputString2		: STRING(100); // Compare string 2
+	Length				: INT; // Length of input string
+END_VAR
+
+VAR
+	pASCII_ARRAY_1  	: POINTER TO ARRAY [1..100] OF BYTE; // Pointer for mapping 
+	ASCII_Value_1		: INT; // Value of the ascii-cahr 
+	pASCII_ARRAY_2  	: POINTER TO ARRAY [1..100] OF BYTE; // Pointer for mapping 
+	ASCII_Value_2		: INT; // Value of the ascii-cahr 
+	Idx 				: INT; // Index variable 
+	ArrayIdx_1			: INT; // Index variable 
+	ArrayIdx_2			: INT; // Index variable 
+	ASCII_OK_1			: BOOL; // Char is a alphanumeric sign 
+	ASCII_OK_2			: BOOL; // Char is a alphanumeric sign 
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[// Initialize
+F_CompareAlphaNumericString := FALSE;
+ArrayIdx_1 := 1;
+ArrayIdx_2 := 1;
+
+// Create pointer of the InputString 
+pASCII_ARRAY_1 := ADR(InputString1);
+pASCII_ARRAY_2 := ADR(InputString2);
+
+// Go trough strings
+FOR Idx := 1 TO Length DO
+	// Get first sign
+	ASCII_Value_1 := BYTE_TO_INT(pASCII_ARRAY_1^[ArrayIdx_1]);
+	
+	// Only if it is a char between 0..9, A..Z, a..z 
+	ASCII_OK_1 := ((ASCII_Value_1 > 47) AND (ASCII_Value_1 < 58))
+		 	OR ((ASCII_Value_1 > 64) AND (ASCII_Value_1 < 91))
+			OR ((ASCII_Value_1 > 96) AND (ASCII_Value_1 < 123));
+
+	// Get second sign
+	ASCII_Value_2 := BYTE_TO_INT(pASCII_ARRAY_2^[ArrayIdx_2]);
+	
+	// Only if it is a char between 0..9, A..Z, a..z 
+	ASCII_OK_2 := ((ASCII_Value_2 > 47) AND (ASCII_Value_2 < 58))
+			OR ((ASCII_Value_2 > 64) AND (ASCII_Value_2 < 91))
+			OR ((ASCII_Value_2 > 96) AND (ASCII_Value_2 < 123));
+
+	// Both chars are alphanumeric 
+	IF ASCII_OK_1 AND ASCII_OK_2 THEN
+		// Both are the same
+		IF ASCII_Value_1 = ASCII_Value_2 THEN
+			// Continue
+			F_CompareAlphaNumericString := TRUE;
+			// Increment index
+			ArrayIdx_1 := ArrayIdx_1 + 1;
+			ArrayIdx_2 := ArrayIdx_2 + 1;
+		ELSE
+			// Not equal - stop
+			F_CompareAlphaNumericString := FALSE;
+			RETURN;
+		END_IF
+	// Char of string 1 is not alphanumeric, jump to the next char of string 1 
+	ELSIF NOT ASCII_OK_1 AND ASCII_OK_2 THEN
+		ArrayIdx_1 := ArrayIdx_1 + 1;
+
+	// Char of string 2 is not alphanumeric, jump to the next char of string 2 
+	ELSIF ASCII_OK_1 AND NOT ASCII_OK_2 THEN
+		ArrayIdx_2 := ArrayIdx_2 + 1;
+
+	// Char of string 1 and 2 are not alphanumeric, jump to the next char of both strings 
+	ELSE
+		ArrayIdx_1 := ArrayIdx_1 + 1;
+		ArrayIdx_2 := ArrayIdx_2 + 1;
+	END_IF
+END_FOR]]></ST>
+    </Implementation>
+    <ObjectProperties>
+      <XmlArchive>
+        <Data>
+          <o xml:space="preserve" t="UMLStereoTypeContainerObject">
+            <v n="IsType" t="UMLType">BaseArea</v>
+            <v n="Stereotype">""</v>
+            <d n="Stereotypes" t="Hashtable" />
+          </o>
+        </Data>
+        <TypeList>
+          <Type n="Hashtable">System.Collections.Hashtable</Type>
+          <Type n="String">System.String</Type>
+          <Type n="UMLStereoTypeContainerObject">{30250973-b110-4e31-b562-c102e042dca4}</Type>
+          <Type n="UMLType">{0197b136-405a-42ee-bb27-fd08b621d0cf}</Type>
+        </TypeList>
+      </XmlArchive>
+    </ObjectProperties>
+  </POU>
+</TcPlcObject>

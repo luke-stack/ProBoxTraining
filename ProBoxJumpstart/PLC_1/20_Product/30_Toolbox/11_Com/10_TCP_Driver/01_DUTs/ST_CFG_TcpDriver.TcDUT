@@ -1,0 +1,58 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.18">
+  <DUT Name="ST_CFG_TcpDriver" Id="{789c0d66-d4d0-491d-9455-b9ab3aa20993}">
+    <Declaration><![CDATA[TYPE ST_CFG_TcpDriver :
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 404529 $
+ *	Revision date	:	$Date: 2018-04-23 08:21:38 +0200 (Mo., 23 Apr 2018) $
+ *	Last changed by	:	$Author: b7bolm $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/trunk/01_Software/BCF/BCF/JumpStart/30_Toolbox/11_Com/10_TCP_Driver/01_DUTs/ST_CFG_TcpDriver.TcDUT $
+ *
+ *	Purpose			:	Configuration TCP/IP channel.
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+STRUCT
+	ChannelName				: STRING(80); // Name - Only for debugging
+	EnableConnection		: BOOL;	// Enable channel
+	RemoteHost				: STRING(15); // IP address of remote host - Client Mode Only! 
+	LocalHost				: STRING(15); // IP address of local host - Server Mode Only! 
+	RemotePort				: UDINT; // Port of the remote host - Client Mode Only! 
+	LocalPort				: UDINT; // Port to listen on - Server Mode Only! 
+	Server					: BOOL; // Is this connection to be configured as a server?  (Set to False for Client Mode) 
+	ConnectTimeout			: TIME; // Timeout for connection establishment
+	ClientRetryInterval		: TIME:= T#45S; // Interval for CLIENT type connections to be re-attempted - default is 45s, RetryInterval should not be lower than 30s to ensure proper execution
+	ServerRetryInterval		: TIME:= T#1S; // Interval for SERVER type connections to be re-attempted - default is 1s 
+	AcceptPollInterval		: TIME:= T#5S; // Interval for SERVER type connections to poll the port for incoming connection attempts - default is 5s 
+	EnableDebugMsg			: BOOL; // Enables sending debug messages	
+END_STRUCT
+END_TYPE]]></Declaration>
+    <ObjectProperties>
+      <XmlArchive>
+        <Data>
+          <o xml:space="preserve" t="UMLStereoTypeContainerObject">
+            <v n="IsType" t="UMLType">BaseArea</v>
+            <v n="Stereotype">""</v>
+            <d n="Stereotypes" t="Hashtable" />
+          </o>
+        </Data>
+        <TypeList>
+          <Type n="Hashtable">System.Collections.Hashtable</Type>
+          <Type n="String">System.String</Type>
+          <Type n="UMLStereoTypeContainerObject">{30250973-b110-4e31-b562-c102e042dca4}</Type>
+          <Type n="UMLType">{0197b136-405a-42ee-bb27-fd08b621d0cf}</Type>
+        </TypeList>
+      </XmlArchive>
+    </ObjectProperties>
+  </DUT>
+</TcPlcObject>

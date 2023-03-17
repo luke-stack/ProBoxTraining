@@ -1,0 +1,30 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.4">
+  <DUT Name="ST_SluggingAddOn_Config" Id="{607fcba1-7a30-463a-b3af-ff473df46e55}">
+    <Declaration><![CDATA[// configuration data for FB_SluggingAddOn
+TYPE ST_SluggingAddOn_Config:
+(**************************************************************************************
+ *  Application     :   BoxControl Framework
+ *  Revision date   :   $Date: 2021-04-09 08:29:02 +0200 (fre, 09 apr 2021) $
+ *  Author          :   CDC
+ * ------------------------------------------------------------------------------------
+ *  © Swisslog AG
+ *  Swisslog is not liable for any usage of this source code that is not agreed 
+ *  on between Swisslog and the other party. The mandatory legal liability remains 
+ *  unaffected.
+ * ------------------------------------------------------------------------------------
+ *  Revision History: 
+ *
+ *  VERSION DATE         INITIALS     DESCRIPTION
+ *  0.0     DD.MM.YYYY   (name)       (explain customized modifications)
+ *
+ **************************************************************************************)
+STRUCT
+	EnableSyncronousOperation	: BOOL;		// HI = full train will do hand and take over simulaneously
+	TakeTimeout					: TIME	:= T#10S;		// cancel train building if no new TU arrives within this time
+	ControlledZones				: ARRAY[1..FB_SluggingAddOn.MAX_ZONES] OF ST_SluggingAddOn_Zone;	// list of all controlled zones
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

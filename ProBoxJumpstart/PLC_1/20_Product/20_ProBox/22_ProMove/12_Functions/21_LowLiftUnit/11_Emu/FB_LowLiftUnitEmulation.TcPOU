@@ -1,0 +1,254 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <POU Name="FB_LowLiftUnitEmulation" Id="{d5a25b4d-5e8f-495e-b749-8cc54df39792}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK FB_LowLiftUnitEmulation EXTENDS FB_FunctionConvEmulation
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: q8hedls $
+ *	Revision date	:	$Date: $
+ *	Last changed by	:	$Author:  $
+ *	URL				:	$URL:  $
+ *
+ *	Purpose			:	Emulation dummy function wit zone logic.
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				26.04.2019		SHE					LowLiftUnitEmulation
+ *
+ **************************************************************************************)
+VAR_INPUT
+	Config							: ST_CFG_LowLiftUnitEmulation; // emulation config	
+END_VAR 
+
+VAR
+	pFunction						: POINTER TO FB_LowLiftUnit; // Address to function
+	rFunction						: REFERENCE TO FB_LowLiftUnit; // Reference to function
+	fbTransportControl 				: FB_PB_TransportControlEmulation; // Transport control emulation
+	fbEncoder						: FB_PB_Element_Encoder();	
+	fbLowLiftControlEmu 			: FB_LowLiftControlEmulation; // Lift control emulation
+	fbMotorControlLift				: FB_MotorControlEmulation; // Motor control emulation
+	ElementDriveRunning				: BOOL; // Feedback drive is running from element
+	ElementSpeed					: INT; // Feedback speed from element	
+	DebugSensors					: ST_DebugSensors_LowLiftEmulation;
+END_VAR]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[(**************************************************************************************************************
+   Initialization
+***************************************************************************************************************)
+A_Init();
+
+(**************************************************************************************************************
+   Update reference
+***************************************************************************************************************)
+A_UpdateReference();
+
+(**************************************************************************************************************
+   Emulation
+***************************************************************************************************************)
+// If emulation function is initialized
+IF FunctionData.Init THEN
+
+	// Update data of real object
+	M_UpdateRealObjectData();
+	
+	// Handle external Subsystem-Subsystem interfaces
+	A_ExternalSTI();
+	
+	//TODO: Move to Element???
+	fbEncoder(	Run:=FunctionBase.rFunctionInterfaceReal.In.Element.State.DriveRunning OR FunctionBase.rFunctionInterfaceReal.In.Element.State.DriveRunning_34, // Feedback drive is running, 
+				Speed:= ProBoxSystem.EMULATION_SPEED);	//speed [mm/s]
+	
+	// Call transport control 
+	fbTransportControl(
+		Param 					:= M_GetTransportControlParam(mZoneNumber := 1), // Parameter of transport control
+		PrevTransportData 		:= M_GetPreviousTransportData(mZoneNumber := 1), // Previous transport data
+		NextTransportData 		:= M_GetNextTransportData(mZoneNumber := 1), // Next transport data	
+		TransportEnable			:= TRUE, // Transport enable	
+		DriveRunning			:= fbEncoder.Run,		
+		EncoderValue			:= fbEncoder.EncoderValue,
+		ZoneData 				:= ZoneData[1]); // Zone data		
+		
+	// Call Lift control
+	fbLowLiftControlEmu(
+		Config := Config, 
+		DriveRun_Lift := rFunction.HW_Outputs.Drive_Run_Up OR rFunction.HW_Outputs.Drive_Run_Down); // .Drive_Run_UpDown);	
+		
+	// Call motor control lift		
+	fbMotorControlLift(
+		Run_fw:= rFunction.HW_Outputs.Drive_Run_Up,  
+		Run_bw:= rFunction.HW_Outputs.Drive_Run_Down, 
+		CommandSpeed:= 100, 
+		SpeedRatio:= rFunction.ConfigFunction.Zone[1].SpeedRatio);
+					
+	// Overwrite inputs
+	A_OverWriteInputs();
+END_IF]]></ST>
+    </Implementation>
+    <Action Name="A_Init" Id="{fc939e9c-9846-44e9-b2d2-2f42419088fc}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_Init
+ * 	FUNCTION	Initialize emulated dummy function
+ **************************************************************************************)
+
+// If dummy function is not initialized
+IF NOT FunctionData.Init Then
+	// Check that linked dummy function number is valid
+	IF eFunctionNumber > E_FunctionNumber.F_BEGIN_FUNCTION AND
+	   eFunctionNumber < E_FunctionNumber.F_END_FUNCTION THEN   
+		
+		// Check if the real module is initialized
+		IF F_IsFunctionInitialized(eFunctionNumber := eFunctionNumber) THEN
+			// Module is initialized
+			FunctionData.Init:= TRUE;
+			
+			// Send debug message
+			DebugMsg := CONCAT('Initialization done. Element Function: ', FunctionRegistry[eFunctionNumber].FunctionName);
+			fbDebugMsg.M_SendInfoMsg(DebugMsg);
+			
+			// Initialize real module
+			F_InitializeFunction(eFunctionNumber := eFunctionNumber);
+		END_IF
+	END_IF
+END_IF
+]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="A_OverWriteInputs" Id="{d721a7f6-52e4-4985-951a-cf23b0a7f29e}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_OverWriteInputs
+ * 	FUNCTION	Overwrite inputs for emulation
+ **************************************************************************************)
+ZoneData[1].TransportControlData.TransportParam.ZoneLength := FunctionBase.rSettingsFunctionReal.Zone[1].Length[1];
+// Debug sensors or proceed with overwriting inputs
+IF (DebugSensors.EnableSensorDebug) THEN
+	rFunction.HW_Inputs := DebugSensors.HW_Inputs;
+ELSE
+	IF(FunctionBase.rFunctionInterfaceReal.In.Element.State.DriveDirection ) THEN
+		// Overwrite input and adapt logic state high/low
+		rFunction.HW_Inputs.Sensor_Stop_12	:= rFunction.Settings.HW_InputInverted.Sensor_Stop_12 XOR
+												fbTransportControl.M_TU_PresentState(
+												mPosition := FunctionBase.rSettingsFunctionReal.Zone[1].Length[1] - FunctionBase.rSettingsFunctionReal.Zone[1].ZoneEndLengthToSide[2],
+												mIndex => FunctionBase.IndexToRemove[1],
+												mLeadingEdgePos => ZoneData[1].TransportControlData.TU_LeadingEdgePos);
+												
+		rFunction.HW_Inputs.Sensor_Stop_21	:= 	rFunction.HW_Inputs.Sensor_Stop_12;
+													
+	ELSE
+		rFunction.HW_Inputs.Sensor_Stop_21	:= rFunction.Settings.HW_InputInverted.Sensor_Stop_21 XOR
+												fbTransportControl.M_TU_PresentState(
+												mPosition := FunctionBase.rSettingsFunctionReal.Zone[1].Length[1] - FunctionBase.rSettingsFunctionReal.Zone[1].ZoneEndLengthToSide[1],
+												mIndex => FunctionBase.IndexToRemove[1],
+												mLeadingEdgePos => ZoneData[1].TransportControlData.TU_LeadingEdgePos);
+												
+		rFunction.HW_Inputs.Sensor_Stop_12	:= 	rFunction.HW_Inputs.Sensor_Stop_21;
+		
+	END_IF
+				
+	
+	rFunction.HW_Inputs.Sensor_Pos_Down := fbLowLiftControlEmu.Lift_Pos_Down;
+	rFunction.HW_Inputs.Sensor_EndLimit_Down := TRUE;
+	
+	rFunction.HW_Inputs.Sensor_Pos_Up := fbLowLiftControlEmu.Lift_Pos_Up;
+	rFunction.HW_Inputs.Sensor_EndLimit_Up := TRUE;
+	
+	rFunction.HW_Inputs.Signal_MotorUnitOK := fbMotorControlLift.MotorUnitOK;
+							
+	// Overhang Senors emulation, set during transport
+	F_OH_SensorControlEmu(
+			FunctionNumber := rFunction.ConfigFunction.eFunctionNumber,
+			TakeoverActive:= F_PB_GetTransportControlDataRef(rFunction.ConfigFunction.eFunctionNumber,1).eTakeOverState = E_TakeOverState.ACTIVE,
+			HandoverActive:= F_PB_GetTransportControlDataRef(rFunction.ConfigFunction.eFunctionNumber,1).eHandOverState = E_HandOverState.ACTIVE,
+			OH_PositionSide:= 1,
+			OH_sensor=>rFunction.HW_Inputs.Sensor_Overhang_12);
+	
+	F_OH_SensorControlEmu(
+			FunctionNumber := rFunction.ConfigFunction.eFunctionNumber,
+			TakeoverActive:= F_PB_GetTransportControlDataRef(rFunction.ConfigFunction.eFunctionNumber,1).eTakeOverState = E_TakeOverState.ACTIVE,
+			HandoverActive:= F_PB_GetTransportControlDataRef(rFunction.ConfigFunction.eFunctionNumber,1).eHandOverState = E_HandOverState.ACTIVE,
+			OH_PositionSide:= 2,
+			OH_sensor=>rFunction.HW_Inputs.Sensor_Overhang_21);
+END_IF
+]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="A_UpdateReference" Id="{d0fd8594-7e21-4b36-b867-11685c37a034}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_UpdateReference
+ * 	FUNCTION	Update reference to real object
+ **************************************************************************************)
+
+// Check valid function number
+IF eFunctionNumber > E_FunctionNumber.F_BEGIN_FUNCTION AND
+   eFunctionNumber < E_FunctionNumber.F_END_FUNCTION THEN
+
+	// Is reference valid  
+	IF __ISVALIDREF(FunctionRegistry[eFunctionNumber].rFunction) THEN
+		// Build address to reference
+		pFunction := ADR(FunctionRegistry[eFunctionNumber].rFunction);
+
+		// If address is possible
+		IF pFunction <> 0 THEN
+			// Build reference to memory
+			rFunction REF= pFunction^;
+		ELSE
+			// Reinitialize module
+			FunctionData.Init:= FALSE;
+		END_IF
+	ELSE
+		// Reinitialize module
+		FunctionData.Init:= FALSE;
+	END_IF
+END_IF
+		]]></ST>
+      </Implementation>
+    </Action>
+    <LineIds Name="FB_LowLiftUnitEmulation">
+      <LineId Id="228" Count="21" />
+      <LineId Id="324" Count="1" />
+      <LineId Id="323" Count="0" />
+      <LineId Id="322" Count="0" />
+      <LineId Id="264" Count="6" />
+      <LineId Id="326" Count="0" />
+      <LineId Id="272" Count="15" />
+      <LineId Id="71" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_LowLiftUnitEmulation.A_Init">
+      <LineId Id="2" Count="24" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_LowLiftUnitEmulation.A_OverWriteInputs">
+      <LineId Id="30" Count="4" />
+      <LineId Id="118" Count="2" />
+      <LineId Id="36" Count="0" />
+      <LineId Id="57" Count="0" />
+      <LineId Id="37" Count="6" />
+      <LineId Id="101" Count="0" />
+      <LineId Id="44" Count="0" />
+      <LineId Id="88" Count="0" />
+      <LineId Id="92" Count="5" />
+      <LineId Id="91" Count="0" />
+      <LineId Id="89" Count="1" />
+      <LineId Id="47" Count="8" />
+      <LineId Id="21" Count="0" />
+      <LineId Id="103" Count="0" />
+      <LineId Id="105" Count="5" />
+      <LineId Id="117" Count="0" />
+      <LineId Id="111" Count="5" />
+      <LineId Id="102" Count="0" />
+      <LineId Id="121" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_LowLiftUnitEmulation.A_UpdateReference">
+      <LineId Id="2" Count="26" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

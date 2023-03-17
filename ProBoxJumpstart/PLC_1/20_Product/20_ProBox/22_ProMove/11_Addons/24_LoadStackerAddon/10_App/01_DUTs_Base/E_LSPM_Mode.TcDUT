@@ -1,0 +1,19 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.4">
+  <DUT Name="E_LSPM_Mode" Id="{d69fbb75-1a56-4d77-9a77-7324ffa5b985}">
+    <Declaration><![CDATA[{attribute 'qualified_only'}
+{attribute 'strict'}
+// Option for user to set load stacker mode
+TYPE E_LSPM_Mode :
+(
+	//Init,
+	E_FREE,				// Do nothing
+	E_STACKING, 		// Prepare Loadstacker for infeed of empty pallet
+	E_DESTACKING,		// Prepare Loadstacker for outfeed of bottom pallet 
+	E_RECEIVE_STACK, 	// Prepare Loadstacker to receive stack of pallets
+	E_SEND_STACK		// Prepare Loadstacker to send stack of pallets
+);
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

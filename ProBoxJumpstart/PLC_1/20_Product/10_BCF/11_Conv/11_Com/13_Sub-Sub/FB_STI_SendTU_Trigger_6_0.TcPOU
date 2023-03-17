@@ -1,0 +1,107 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.4">
+  <POU Name="FB_STI_SendTU_Trigger_6_0" Id="{b8872174-89ba-46bb-98db-d82b737662d2}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK FB_STI_SendTU_Trigger_6_0
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 404529 $
+ *	Revision date	:	$Date: 2018-04-23 08:21:38 +0200 (Mo., 23 Apr 2018) $
+ *	Last changed by	:	$Author: b7bolm $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/trunk/01_Software/BCF/BCF/JumpStart/20_Product/10_App/11_Com/10_Lib/10_Conv/13_Sub-Sub/FB_STI_SendTU_Trigger_6_0.TcPOU $
+ *
+ *	Purpose			:	Triggers sending TTA over FB_STI_SendReceiveTU_Data to other SubSystem
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ *  VERSION DATE         INITIALS     DESCRIPTION
+ *  0.0     DD.MM.YYYY   (name)       (explain customized modifications)
+ *
+ **************************************************************************************)
+VAR_INPUT
+	TriggerSendTU_Data		: BOOL; // TU-Data will be sent by trigger input (ignores zone occupied)
+	SendTU_DataOccupied		: BOOL; // TU-Data will be sent when zone gets occupied
+	eAssignedFunction		: E_FunctionNumber; // Assigned function number
+	AssignedZone			: INT; // Assigned zone number
+	DeleteTU_Data			: BOOL; // TU-data will be deleted after sending TTA
+END_VAR
+VAR_IN_OUT
+	fbSendReceiveTU_Data	: FB_STI_SendReceiveTU_Data_6_0;
+END_VAR
+VAR
+	Init					: BOOL := FALSE; // Instance is initialized
+	fbDebugMsg				: FB_DebugMsg; // Debug instance
+	DebugMsg				: T_MAXSTRING; // Debug msg
+	State					: INT; // TTA sending state
+	ZoneData 				: ST_ZoneData; // Zone data
+	TU_DataIndex			: DINT; // TU data index
+END_VAR]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[// Get zone data
+ZoneData := F_GetZoneData(eFunctionNumber := eAssignedFunction, ZoneNumber := AssignedZone);
+
+CASE State OF	
+	
+	0: // Init
+		State := 10;
+	
+	
+	10: // Wait for trigger
+		IF TriggerSendTU_Data OR SendTU_DataOccupied AND ZoneData.TransportControlData.Occupied THEN
+			TU_DataIndex := ZoneData.TransportControlData.TU_DataIndex;
+			State := 20;
+		END_IF
+	
+	
+	20: // Send TU-data
+		// TU-data present
+		IF TU_DataIndex <> 0 THEN
+			IF fbSendReceiveTU_Data.M_SendTTA(TU_DataIndex) THEN
+				// Check if TU-data must be deleted
+				IF DeleteTU_Data THEN
+					State := 30;
+				ELSE
+					State := 40;
+				END_IF
+			END_IF
+			
+		// No TU-data to send
+		ELSE
+			State := 40;
+		END_IF
+		
+		
+	30: // Delete TU-data
+		// debug message: '11-000-0000-00-0,  send TU_DataIndex deleted, position = 99-999-9999-99-9,  TU_DataIndex = 5,  TuID = 000012345,  AssignmentID = 999999999'
+		DebugMsg := '';
+		DebugMsg := CONCAT(DebugMsg, F_AddDividerToSisString(SubsystemRegistry.SubsystemName));
+		DebugMsg := CONCAT(DebugMsg, ',  send TU_DataIndex deleted');
+		DebugMsg := CONCAT(DebugMsg, DebugTextBlocks.POSITION);
+		DebugMsg := CONCAT(DebugMsg, F_GetFunctionName(eFunctionNumber:= eAssignedFunction, ZoneNumber:= 0));
+		DebugMsg := CONCAT(DebugMsg, F_CreateTU_DataString(TU_DataIndex:= TU_DataIndex));
+		fbDebugMsg.M_SendInfoMsg(DebugMsg);
+		F_DeleteTU_Data(
+			TU_DataIndex 	:= TU_DataIndex,
+			NoTTC			:= TRUE);
+		
+		State := 40;
+		
+
+	40: // Wait until trigger is reset or zone is free
+		IF NOT TriggerSendTU_Data OR SendTU_DataOccupied AND NOT ZoneData.TransportControlData.Occupied THEN
+			State := 10;
+		END_IF	
+	
+END_CASE
+]]></ST>
+    </Implementation>
+    <LineIds Name="FB_STI_SendTU_Trigger_6_0">
+      <LineId Id="3" Count="55" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

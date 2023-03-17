@@ -1,0 +1,10 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4020.6">
+  <GVL Name="WindowTracking" Id="{92f097b1-2c1c-449e-853b-9092a963582d}" ParameterList="True">
+    <Declaration><![CDATA[{attribute 'qualified_only'}
+VAR_GLOBAL CONSTANT
+	MAX_NUMBER_OF_WINDOWS	: UINT := 2048; // Max number of tracking windows
+	MAX_NUMBER_OF_ZONES		: UINT := MAX_NUMBER_OF_WINDOWS /2; // Max number of zones
+END_VAR]]></Declaration>
+  </GVL>
+</TcPlcObject>

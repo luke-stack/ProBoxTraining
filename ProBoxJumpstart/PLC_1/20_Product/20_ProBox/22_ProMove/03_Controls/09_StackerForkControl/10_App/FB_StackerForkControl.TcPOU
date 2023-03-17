@@ -1,0 +1,258 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <POU Name="FB_StackerForkControl" Id="{20f7188b-4a9b-4d72-a794-36833dc1dda0}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK FB_StackerForkControl
+VAR_INPUT
+	FunctionData			: ST_FunctionData; // Function data
+	ZoneData				: ST_ZoneData;
+	SensorPosIn				: BOOL; // Fork Sensor Position IN
+	SensorPosOut			: BOOL; // Fork Sensor Position Out
+	TimeoutValueFork		: TIME; // Form Motor Drive Timeout Value
+	TimeSafeTorque			: TIME;
+	OrderPos				: E_StackerForkPosition; // Fork Order Position	
+	ManualAutoSwitch		: BOOL;
+	ManualSwitchIn			: BOOL;
+	ManualSwitchOut			: BOOL;	
+	EnableDrive				: BOOL;	//lift not moving
+END_VAR
+
+VAR_OUTPUT
+	DriveIn					: BOOL; // Drive run command - Fork In
+	DriveOut				: BOOL; // Drive run command - Fork Outreached to pallet
+	DriveSafeTorque			: BOOL; // Run motor with safe torque
+	EnableTransport			: BOOL;	// Enable transport		
+END_VAR
+
+VAR_IN_OUT
+	ErrorData 				: ST_ErrorDataSet;
+END_VAR
+
+VAR
+	eState					: E_StackerForkStates;
+	eLastState				: E_StackerForkStates;	
+	fbTimeoutFork			: TON;		
+	fbTimerSafeTorque		: TON;
+END_VAR	]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[F_ResetError(
+	Reset 	  := FALSE,
+	ErrorData := ErrorData);
+
+IF SensorPosIn AND SensorPosOut THEN
+	F_SetError(
+		ErrorType := E_ErrorType.ERROR, 
+		ErrorParam := 'Two position sensors active', 
+		ErrorMsg := E_ErrorConv.INCORRECT_SENSOR_SIGNAL, 
+		ErrorData := ErrorData);
+END_IF
+	
+// Initialise variables	
+DriveIn := FALSE;
+DriveOut := FALSE;
+EnableTransport := FALSE;
+fbTimeoutFork.IN := FALSE;
+fbTimeoutFork.PT := TimeoutValueFork;
+
+CASE eState OF
+(*************************************************************************
+  INIT
+*************************************************************************)	
+	E_StackerForkStates.INIT:
+		
+		eLastState := eState;
+		eState := E_StackerForkStates.IDLE;
+	
+(*************************************************************************
+  Manual
+*************************************************************************)			
+	E_StackerForkStates.MANUAL:
+			IF ManualAutoSwitch THEN
+				eLastState := eState;
+				eState := E_StackerForkStates.INIT;		
+			ELSE
+				_M_ManualMode();
+			END_IF
+			
+(*************************************************************************
+  IDLE
+*************************************************************************)
+	E_StackerForkStates.IDLE:
+		
+		IF NOT ManualAutoSwitch THEN
+				eLastState := eState;
+				eState := E_StackerForkStates.MANUAL;
+				
+		// If function is started and no error	
+		ELSIF FunctionData.OperationState.eState <> E_PositionState.STOPPED AND
+			FunctionData.ErrorData.Error.ErrorType <> E_ErrorType.ERROR AND
+			NOT FunctionData.ErrorData.ZoneErrorPending THEN		  	
+					
+			IF OrderPos = E_StackerForkPosition.IN THEN
+				IF SensorPosIn THEN
+					EnableTransport := TRUE;			
+				ELSIF(EnableDrive AND FunctionData.OperationState.eState = E_PositionState.STARTED) THEN //only start movment if group is started and not stopping				
+					eLastState := eState;
+					eState := E_StackerForkStates.DRIVE_IN;
+				END_IF
+				
+			ELSIF OrderPos = E_StackerForkPosition.OUT THEN
+				IF SensorPosOut THEN
+					EnableTransport := TRUE;			
+				ELSIF(EnableDrive AND FunctionData.OperationState.eState = E_PositionState.STARTED) THEN //only start movment if group is started and not stopping					
+					eLastState := eState;
+					eState := E_StackerForkStates.DRIVE_OUT;
+				END_IF
+			END_IF
+		ELSE
+			eLastState := eState;
+			eState := E_StackerForkStates.Error;		
+		END_IF
+	
+(*************************************************************************
+  DRIVE_IN
+*************************************************************************)
+	E_StackerForkStates.DRIVE_IN:
+	// If function is started or stopping and no error
+		IF (FunctionData.OperationState.eState = E_PositionState.STARTED OR
+			FunctionData.OperationState.eState = E_PositionState.STOPPING) AND
+			FunctionData.ErrorData.Error.ErrorType <> E_ErrorType.ERROR AND
+			NOT FunctionData.ErrorData.ZoneErrorPending THEN
+			// When forks has reach position go to Idle
+			IF SensorPosIn THEN
+				DriveIn := FALSE;				
+				eLastState := eState;
+				eState := E_StackerForkStates.IDLE;
+			ELSE
+				fbTimeoutFork.IN := TRUE;
+				// If time is up
+				IF fbTimeoutFork.Q THEN
+					DriveIn := FALSE;
+					
+					F_SetError(
+						ErrorType := E_ErrorType.ERROR, 
+						ErrorParam := 'Timeout Drive fork In', 
+						ErrorMsg := E_ErrorConv.TIMEOUT_MOVEMENT, 
+						ErrorData := ErrorData);
+						
+					eLastState := eState;
+					eState := E_StackerForkStates.Error;
+				ELSIF EnableDrive THEN
+				// Run Motor to in position
+					DriveIn := TRUE;
+				END_IF		
+			END_IF
+		ELSE
+			eLastState := eState;
+			eState := E_StackerForkStates.Error;				
+		END_IF
+			
+(*************************************************************************
+  DRIVE_OUT
+*************************************************************************)		
+	E_StackerForkStates.DRIVE_OUT:
+	// If function is started or stopping and no error
+		IF (FunctionData.OperationState.eState = E_PositionState.STARTED OR
+			FunctionData.OperationState.eState = E_PositionState.STOPPING) AND
+			FunctionData.ErrorData.Error.ErrorType <> E_ErrorType.ERROR AND
+			NOT FunctionData.ErrorData.ZoneErrorPending THEN
+			// When forks has reach position go to Idle
+			IF SensorPosOut THEN
+				DriveOut := FALSE;
+		
+				eLastState := eState;
+				eState := E_StackerForkStates.IDLE;
+			ELSE
+				fbTimeoutFork.IN := TRUE;
+				// If time is up
+				IF fbTimeoutFork.Q THEN
+					DriveOut := FALSE;
+					
+					F_SetError(
+						ErrorType := E_ErrorType.ERROR, 
+						ErrorParam := 'Timeout Drive fork Out', 
+						ErrorMsg := E_ErrorConv.TIMEOUT_MOVEMENT, 
+						ErrorData := ErrorData);
+						
+					eLastState := eState;
+					eState := E_StackerForkStates.Error;
+				ELSIF EnableDrive THEN
+				// Run Motor to out position
+					DriveOut := TRUE;
+				END_IF	
+			END_IF
+		ELSE
+			eLastState := eState;
+			eState := E_StackerForkStates.Error;				
+		END_IF
+	
+(*************************************************************************
+  Error
+*************************************************************************)	
+	E_StackerForkStates.ERROR:
+		DriveIn := FALSE;
+		DriveOut := FALSE;
+		
+			IF NOT ManualAutoSwitch THEN
+				eLastState := eState;
+				eState := E_StackerForkStates.MANUAL;
+				
+			// Acknowledge request error
+			ELSIF FunctionData.ErrorData.Error.ErrorType <> E_ErrorType.ERROR THEN	
+				eLastState := eState;
+				eState := E_StackerForkStates.INIT;			
+			END_IF		
+		
+(*************************************************************************)		
+END_CASE
+fbTimeoutFork();
+
+fbTimerSafeTorque(IN:= DriveIn OR Driveout, 
+				  PT:= TimeSafeTorque, 
+				  Q=> DriveSafeTorque, );
+
+]]></ST>
+    </Implementation>
+    <Method Name="_M_ManualMode" Id="{6035e364-680e-49d1-b4c0-47b3dc008d18}">
+      <Declaration><![CDATA[METHOD PRIVATE _M_ManualMode : BOOL
+VAR_INPUT
+END_VAR
+VAR_INST
+	PositiveEdgeMan			: R_TRIG;
+	ManualInPos				: BOOL;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+	// If fork sensor in or out goes high, then the motor stops. User has to re push the button again in order to operate the forks  
+
+	PositiveEdgeMan(CLK := SensorPosIn OR SensorPosOut);		
+	IF PositiveEdgeMan.Q THEN 
+		ManualInPos := TRUE;
+	ELSIF NOT ManualSwitchIn AND NOT ManualSwitchOut THEN 
+		ManualInPos := FALSE;				
+	END_IF
+
+		
+	DriveIn := ManualSwitchIn AND NOT ManualInPos;
+	DriveOut := ManualSwitchOut AND NOT ManualInPos;
+	]]></ST>
+      </Implementation>
+    </Method>
+    <LineIds Name="FB_StackerForkControl">
+      <LineId Id="828" Count="175" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_StackerForkControl._M_ManualMode">
+      <LineId Id="24" Count="0" />
+      <LineId Id="23" Count="0" />
+      <LineId Id="18" Count="0" />
+      <LineId Id="17" Count="0" />
+      <LineId Id="9" Count="2" />
+      <LineId Id="13" Count="1" />
+      <LineId Id="50" Count="0" />
+      <LineId Id="41" Count="0" />
+      <LineId Id="16" Count="0" />
+      <LineId Id="5" Count="0" />
+      <LineId Id="22" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

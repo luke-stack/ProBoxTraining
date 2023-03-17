@@ -1,0 +1,31 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.12">
+  <DUT Name="ST_InputsProBoxElementMotor" Id="{03c6e260-0e53-4c8d-ad1f-72cce276cf0c}">
+    <Declaration><![CDATA[TYPE ST_InputsProBoxElementMotor :
+	(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 417092 $
+ *	Revision date	:	$Date: 2018-11-14 12:58:58 +0100 (Wed, 14 Nov 2018) $
+ *	Last changed by	:	$Author: q8aberh $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/ProMove/02_Controls/ProBox/03_Implementation/01_DevelopmentProject/01_Software/ProBox_COE/ProBox_DevProj_v1.0/PLC_1/20_Product/10_App/13_Elements/10_Lib/11_ProBox/11_ElementMotor/01_DUTs/ST_InputsP $
+ *
+ *	Purpose			:	ProBox element - Hardware inputs
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				13.04.2018		PkF					First version of inputs for a element with a motor
+ *
+ **************************************************************************************)
+STRUCT
+	MotorUnitOK		: BOOL; // Motor unit is OK (Frequence inverter/motor protection, mainswitch) 
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

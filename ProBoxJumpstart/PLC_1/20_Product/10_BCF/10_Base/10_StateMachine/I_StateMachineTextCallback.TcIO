@@ -1,0 +1,19 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.4">
+  <Itf Name="I_StateMachineTextCallback" Id="{fb419791-6aad-4197-890c-42a91aafe0ca}">
+    <Declaration><![CDATA[// callback event to retrieve state text
+{attribute 'monitoring' := 'call'}
+INTERFACE PUBLIC I_StateMachineTextCallback
+]]></Declaration>
+    <Method Name="M_GetStateText" Id="{8af6c5f5-5623-44a0-b8a9-c621dd0a1343}">
+      <Declaration><![CDATA[// forwards state text to FB_StateMachine
+METHOD PUBLIC M_GetStateText : A_StateText
+
+VAR_INPUT
+	StateMachine	: POINTER TO FB_StateMachine;	// requesting state machine instance
+	StateNbr		: UINT;		                    // state number which text is requested
+END_VAR
+]]></Declaration>
+    </Method>
+  </Itf>
+</TcPlcObject>

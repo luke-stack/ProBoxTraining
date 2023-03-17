@@ -1,0 +1,17 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <DUT Name="ST_ShuttleLiftData" Id="{290f27dc-89d0-49a1-8ce2-d34345efb24d}">
+    <Declaration><![CDATA[TYPE ST_ShuttleLiftData :
+STRUCT
+	// Input / Output
+	RequestPosValue			: DINT;						// Out: The Lift requested absolute encoder position to go to
+	RequestMove				: BOOL;						// Out: signal that we want to move the lift
+	ActualPosValue			: DINT;						// In: the Lift motion position	
+	Locked					: BOOL;						// In: MPD Lift is in position applied
+	MotionAborted			: BOOL;						// IN: MPD Lift is in positioning aborted
+	DriveParameterIndex		: UINT := 1;				// IN: The driveParameter index to select the motion profile of ST_CFG_MPD_Drive.DriveParameter[x]
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

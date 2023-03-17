@@ -1,0 +1,16 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <DUT Name="E_FastDoorState" Id="{61abd631-1515-4730-b73a-8c1e6e18436f}">
+    <Declaration><![CDATA[{attribute 'qualified_only'}
+{attribute 'strict'}
+TYPE E_FastDoorState :
+(
+	INIT,
+	CLOSED, 
+	OPENING,
+	OPEN		
+);
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

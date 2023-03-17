@@ -1,0 +1,114 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <POU Name="FB_ProBoxSpeedControl" Id="{22152ea5-e4c6-4017-b9c6-3332546a4ee9}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK FB_ProBoxSpeedControl
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 417092 $
+ *	Revision date	:	$Date: 2018-11-14 12:58:58 +0100 (Mi., 14 Nov 2018) $
+ *	Last changed by	:	$Author: q8aberh $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/ProMove/02_Controls/ProBox/03_Implementation/01_DevelopmentProject/01_Software/ProBox_COE/ProBox_DevProj_v1.0/PLC_1/20_Product/10_App/12_E_Functions/11_ProBox/02_Functions/03_SpeedControl/10_App/FB $
+ *
+ *	Purpose			:	Speed control
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				18.04.2018		PkF					Speed control of the conveyor element
+ *
+ **************************************************************************************)
+VAR_INPUT	
+	LowSpeed		: BOOL; // LowSpeed condition ex. a sensor
+	CreepSpeed		: BOOL; // CreepSpeed condition ex. a sensor
+	TransportCtrl	: REFERENCE TO ST_TransportControlData;	// input zone transport control data like ZoneData[ZoneIdx].TransportControlData
+	
+END_VAR
+
+VAR_OUTPUT
+	Speed			: E_ProBoxMotorSpeed;	
+END_VAR
+VAR_TEMP	
+	TakeOverActive	: BOOL;
+	HandOverActive	: BOOL;
+	FastSpeedActive : BOOL;	//Signal from transportcontrol to enter creep speed (active low) ie FALSE = enter creep speed.
+END_VAR
+
+VAR	
+	CreepSpeedSensorTrigg : BOOL; //Sensor Creep speed trigger. Keep creep speed if sensor flickers.
+END_VAR]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[//Sanity check
+IF( NOT __ISVALIDREF(TransportCtrl))THEN
+	Speed := E_ProBoxMotorSpeed.CREEP_SPEED;
+	RETURN;
+END_IF
+
+// when takeover:
+//	-enter creep speed upon an trig signal FROM sensors, IF sensors goes low, the speed shall stay in creep sped
+//  -Enter creep speed when FastSpeedActive is false, if FastSpeedActive goes high, enter normal speed.
+//  -once the creep sensors trigged, the creep speed is set, and if takeover is stopped, on resuming creep speed should be set.
+
+// when handover:
+//  -Enter creep speed when FastSpeedActive is false, if FastSpeedActive goes high, enter normal speed.
+//		Do not enter creep speed on creep speed sensor signals, as these will be high during an handover.
+
+
+IF(TransportCtrl.Occupied OR TransportCtrl.NumberOfPresentTUs=0) THEN
+	CreepSpeedSensorTrigg := FALSE;
+END_IF
+
+Speed := E_ProBoxMotorSpeed.NORMAL;  //default
+
+//Set locals (Support non MFC transport)
+FastSpeedActive := TransportCtrl.FastSpeedActive;
+TakeOverActive	:= TransportCtrl.DriveRunning AND NOT TransportCtrl.Occupied AND TransportCtrl.NumberOfPresentTUs>0;
+HandOverActive	:= TransportCtrl.DriveRunning AND TransportCtrl.Occupied AND TransportCtrl.NumberOfPresentTUs=0;
+ 
+//Set creep speed trigger during takeover
+IF(TakeOverActive AND CreepSpeed) THEN
+	CreepSpeedSensorTrigg := TRUE;
+END_IF
+
+
+
+IF(HandoverActive OR TakeOverActive) THEN
+	IF LowSpeed THEN
+		Speed := E_ProBoxMotorSpeed.LOW_SPEED;
+	ELSIF ((CreepSpeedSensorTrigg AND TakeOverActive) OR (NOT FastSpeedActive AND HandoverActive)) THEN
+		Speed := E_ProBoxMotorSpeed.CREEP_SPEED;	
+	END_IF
+END_IF
+
+]]></ST>
+    </Implementation>
+    <ObjectProperties>
+      <XmlArchive>
+        <Data>
+          <o xml:space="preserve" t="UMLStereoTypeContainerObject">
+            <v n="IsType" t="UMLType">BaseArea</v>
+            <v n="Stereotype">""</v>
+            <d n="Stereotypes" t="Hashtable" />
+          </o>
+        </Data>
+        <TypeList>
+          <Type n="Hashtable">System.Collections.Hashtable</Type>
+          <Type n="String">System.String</Type>
+          <Type n="UMLStereoTypeContainerObject">{30250973-b110-4e31-b562-c102e042dca4}</Type>
+          <Type n="UMLType">{0197b136-405a-42ee-bb27-fd08b621d0cf}</Type>
+        </TypeList>
+      </XmlArchive>
+    </ObjectProperties>
+    <LineIds Name="FB_ProBoxSpeedControl">
+      <LineId Id="3" Count="14" />
+      <LineId Id="29" Count="11" />
+      <LineId Id="97" Count="0" />
+      <LineId Id="41" Count="13" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

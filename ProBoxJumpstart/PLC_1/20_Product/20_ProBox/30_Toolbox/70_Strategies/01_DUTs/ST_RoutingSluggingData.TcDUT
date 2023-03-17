@@ -1,0 +1,13 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <DUT Name="ST_RoutingSluggingData" Id="{0edf78dc-8e93-47b3-8a9d-fc0d091b2668}">
+    <Declaration><![CDATA[TYPE ST_RoutingSluggingData :
+STRUCT
+	FunctionsBehind 		: ARRAY[1..20] OF E_FunctionNumber; // Functions to check before function (back)
+	FunctionsInfront		: ARRAY[1..20] OF E_FunctionNumber; // Functions to check after function (forward)
+	InvalidDestinations		: ARRAY[1..20] OF E_FunctionNumber; // Destinations of pallets behind that should not be considered slugging with
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

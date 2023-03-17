@@ -1,0 +1,59 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.12">
+  <POU Name="FB_ElementComposition" Id="{08c5f049-5850-4424-afc6-df575400f1d6}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK FB_ElementComposition
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 404529 $
+ *	Revision date	:	$Date: 2018-04-23 08:21:38 +0200 (Mo., 23 Apr 2018) $
+ *	Last changed by	:	$Author: b7bolm $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/trunk/01_Software/BCF/BCF/JumpStart/20_Product/10_App/10_Base/10_Lib/10_Conv/FB_ElementComposition.TcPOU $
+ *
+ *	Purpose			:	Main program call.
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+VAR
+	eElementNumber		: E_ElementNumber; // Number of the element 
+	fbDebugMsg			: FB_DebugMsg; // Debug Msg Manager (STACK) 
+	DebugMsg			: T_MAXSTRING; // Debug msg
+	StartTimeMeasurement: T_DCTIME64;	// Get actual time stamp
+END_VAR]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[// Loop trough all elements 
+FOR eElementNumber := E_BEGIN_ELEMENT + 1 TO E_END_ELEMENT - 1 DO
+	// If this element is enabled 
+	IF ElementRegistry[eElementNumber].Enable THEN
+		// If a valid reference is available 
+		IF __ISVALIDREF(ElementRegistry[eElementNumber].rElement) THEN
+			// Start execution time measure
+			StartTimeMeasurement := F_GetActualDcTime64();
+			// Call
+			ElementRegistry[eElementNumber].rElement();
+			
+			F_ExecutionTime(
+				StartTime			:= StartTimeMeasurement,
+				ExecutionTimeSlot 	:= ExecutionTimeTable.Elements[eElementNumber]);
+		ELSE
+			// Invalid reference
+			DebugMsg := CONCAT('F_ElementComposition - Reference not valid, Element index: ', INT_TO_STRING(eElementNumber));
+			fbDebugMsg.M_SendErrorMsg(mMessage := DebugMsg);
+		END_IF
+	END_IF
+END_FOR]]></ST>
+    </Implementation>
+    <LineIds Name="FB_ElementComposition">
+      <LineId Id="3" Count="19" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

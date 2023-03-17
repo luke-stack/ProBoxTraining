@@ -1,0 +1,70 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <POU Name="FB_ElementForkInterface" Id="{05b3492b-544d-4232-bcdb-6b4566b9ba61}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK PUBLIC FB_ElementForkInterface IMPLEMENTS ITF_PB_ElementForkInterface
+
+VAR
+	_ForkStatus			: ST_ForkState;
+	_ForkRequest			: ST_ForkRequest;
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[//_ForkStatus := ForkStatus;
+//ForkRequest := _ForkRequest;]]></ST>
+    </Implementation>
+    <Property Name="P_ForkRequest" Id="{45ae1024-f5b0-46be-88f4-2a37dd8a02e5}">
+      <Declaration><![CDATA[PROPERTY P_ForkRequest : ST_ForkRequest]]></Declaration>
+      <Get Name="Get" Id="{3d4ed188-ef0c-4517-9731-c0bf353a4728}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[P_ForkRequest := _ForkRequest;]]></ST>
+        </Implementation>
+      </Get>
+      <Set Name="Set" Id="{584339eb-4216-462d-a608-19ba6ce28414}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[_ForkRequest := P_ForkRequest;]]></ST>
+        </Implementation>
+      </Set>
+    </Property>
+    <Property Name="P_ForkStatus" Id="{d53712e3-55cc-4e4b-a060-c41d97379972}">
+      <Declaration><![CDATA[PROPERTY P_ForkStatus : ST_ForkState]]></Declaration>
+      <Get Name="Get" Id="{0f0a8fb6-b568-4374-8c11-bacb680e7cb9}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[P_ForkStatus := _ForkStatus;]]></ST>
+        </Implementation>
+      </Get>
+      <Set Name="Set" Id="{ec21fb32-a24f-4f08-9954-955b6b34e82d}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[_ForkStatus := P_ForkStatus;]]></ST>
+        </Implementation>
+      </Set>
+    </Property>
+    <LineIds Name="FB_ElementForkInterface">
+      <LineId Id="9" Count="0" />
+      <LineId Id="45" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ElementForkInterface.P_ForkRequest.Get">
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ElementForkInterface.P_ForkRequest.Set">
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ElementForkInterface.P_ForkStatus.Get">
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ElementForkInterface.P_ForkStatus.Set">
+      <LineId Id="2" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

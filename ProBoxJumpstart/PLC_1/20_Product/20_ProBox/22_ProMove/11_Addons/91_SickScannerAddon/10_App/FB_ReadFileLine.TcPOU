@@ -1,0 +1,194 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <POU Name="FB_ReadFileLine" Id="{ad9dd38c-c5f8-4c7e-8fb1-3f6e7e1308d8}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK FB_ReadFileLine
+VAR_INPUT
+	FilePath		: REFERENCE TO T_MaxString; //Path to config file 'C:\Temp\ScannerConfig.txt';
+	TriggNextLine	: BOOL; //trig read next line
+	Cancel			: BOOL; //stop reading, and close file. 
+	
+END_VAR
+VAR_OUTPUT
+	sLine			: T_MaxString;
+	bBusy			: BOOL;
+	bError			: BOOL;
+	nErrId			: UDINT;
+	FileComplete	: BOOL; //entire file is read and closed.
+	LineCounter		: INT;
+END_VAR
+VAR
+	_fbFileGets 	: FB_FileGets;
+	_fbFileOpen		: FB_FileOpen;
+	_fbFileClose	: FB_FileClose;
+	_bOpenFile		: BOOL;	
+	_bGetFileLine	: BOOL;		
+	_myNetId		: T_AmsNetID;
+	_State			: INT;	
+	_Trigger		: R_TRIG;
+	
+END_VAR
+VAR_TEMP
+	sLength:INT;
+	i:INT;
+	ValidContent:BOOL;
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[
+_Trigger(CLK:=TriggNextLine);
+
+
+CASE _State OF
+	0: //Read file from begining		
+		_bOpenFile:=FALSE;
+		_bGetFileLine:=FALSE;
+		IF(_Trigger.Q AND NOT Cancel AND __ISVALIDREF(FilePath)) THEN
+			_State:=10;
+			_fbFileOpen.sPathName := FilePath;
+			_fbFileClose.bExecute:=FALSE;
+			FileComplete:=FALSE;
+			LineCounter:=0;
+		END_IF			
+	
+	1:	//Continue read file
+		IF(_Trigger.Q AND NOT Cancel) THEN			
+			_State:=10;
+		ELSIF(Cancel) THEN
+			_State:=0;
+		END_IF
+				
+		
+	10:
+		sLine := '';
+		bError := FALSE;
+		nErrId := 0;
+		_bOpenFile:=TRUE;
+		IF(_fbFileOpen.bExecute AND NOT _fbFileOpen.bBusy) THEN
+			IF(_fbFileOpen.bError) THEN
+				_State:=0; //error
+				bError:=TRUE;
+				nErrId:=_fbFileOpen.nErrId;
+			ELSE
+				_State:=20;
+			END_IF	
+		END_IF				
+		
+	20:
+		IF(NOT _fbFileOpen.bExecute) THEN
+			_State:=0;	//cancel	
+		ELSIF(NOT _fbFileGets.bBusy ) THEN
+			_bGetFileLine:=TRUE;
+			_State:=30;
+		END_IF
+	30:		
+		IF(NOT _fbFileGets.bBusy) THEN
+			_bGetFileLine:=FALSE;
+			
+			IF(_fbFileGets.bError) THEN
+				_State:=0;	
+				bError:=TRUE;
+				nErrId:=_fbFileGets.nErrId;
+			ELSE //sucessfully reading line				
+				//format ouput string (remove line feed)
+				sLine := _fbFileGets.sLine;				
+				sLength := Len(sLine);
+				IF(sLength>0) THEN
+					IF(sLine[sLength-1]< 13) THEN
+						sLine[sLength-1]:=0; //remove linefeed
+					END_IF					
+				END_IF								
+				IF(sLine[0] <> 0 AND sLine[0] <> 59 (*';'*) ) THEN
+					ValidContent:=TRUE;
+					//MainConv.fbDebugMsg.M_SendInfoMsg(sLine);
+				END_IF
+			END_IF
+			
+			LineCounter:=LineCounter+1; //increase counter
+			IF(_fbFileGets.bEOF) THEN
+				//MainConv.fbDebugMsg.M_SendInfoMsg('Done reading input file');
+				FileComplete:=TRUE;
+				_fbFileClose.bExecute:=TRUE;
+				_State:=0; //done
+			ELSIF(ValidContent) THEN
+				_State:=1; //wait for new trig to read again.
+			ELSE
+				_State:=20; //start read again without waiting for trig if the row is empty or has ';' sign as first character.
+			END_IF			
+		END_IF
+		
+END_CASE
+
+bBusy := _State>=10;
+
+_fbFileOpen(
+	sNetId			:= _myNetId,	
+	nMode			:= FOPEN_MODETEXT OR FOPEN_MODEREAD,
+	ePath			:= PATH_GENERIC,
+	bExecute		:= _bOpenFile);
+	
+	
+_fbFileGets(	
+		sNetId		:= _myNetId,
+		hFile 		:= _fbFileOpen.hFile,
+		bExecute	:= _bGetFileLine);
+		//Line 		:= _fbFileGets.sLine;
+	
+
+_fbFileClose(
+		sNetId		:= _myNetId,
+		hFile		:= _fbFileOpen.hFile,
+		bExecute	:= NOT _bOpenFile);	
+]]></ST>
+    </Implementation>
+    <LineIds Name="FB_ReadFileLine">
+      <LineId Id="924" Count="0" />
+      <LineId Id="923" Count="0" />
+      <LineId Id="921" Count="1" />
+      <LineId Id="822" Count="2" />
+      <LineId Id="828" Count="1" />
+      <LineId Id="906" Count="0" />
+      <LineId Id="1029" Count="0" />
+      <LineId Id="1031" Count="0" />
+      <LineId Id="938" Count="0" />
+      <LineId Id="940" Count="0" />
+      <LineId Id="905" Count="0" />
+      <LineId Id="910" Count="0" />
+      <LineId Id="830" Count="0" />
+      <LineId Id="908" Count="1" />
+      <LineId Id="914" Count="0" />
+      <LineId Id="913" Count="0" />
+      <LineId Id="907" Count="0" />
+      <LineId Id="928" Count="0" />
+      <LineId Id="903" Count="0" />
+      <LineId Id="831" Count="0" />
+      <LineId Id="953" Count="1" />
+      <LineId Id="994" Count="0" />
+      <LineId Id="832" Count="3" />
+      <LineId Id="934" Count="0" />
+      <LineId Id="933" Count="0" />
+      <LineId Id="836" Count="17" />
+      <LineId Id="935" Count="1" />
+      <LineId Id="854" Count="0" />
+      <LineId Id="942" Count="0" />
+      <LineId Id="856" Count="7" />
+      <LineId Id="959" Count="0" />
+      <LineId Id="864" Count="3" />
+      <LineId Id="946" Count="0" />
+      <LineId Id="868" Count="0" />
+      <LineId Id="947" Count="1" />
+      <LineId Id="1027" Count="0" />
+      <LineId Id="869" Count="0" />
+      <LineId Id="943" Count="1" />
+      <LineId Id="961" Count="1" />
+      <LineId Id="870" Count="1" />
+      <LineId Id="876" Count="1" />
+      <LineId Id="915" Count="0" />
+      <LineId Id="878" Count="3" />
+      <LineId Id="883" Count="9" />
+      <LineId Id="895" Count="0" />
+      <LineId Id="952" Count="0" />
+      <LineId Id="898" Count="3" />
+      <LineId Id="53" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

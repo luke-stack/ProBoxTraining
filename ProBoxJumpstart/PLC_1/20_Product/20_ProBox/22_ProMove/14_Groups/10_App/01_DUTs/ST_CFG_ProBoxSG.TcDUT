@@ -1,0 +1,39 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <DUT Name="ST_CFG_ProBoxSG" Id="{da40e7d6-f46d-478f-af88-4ea19e416046}">
+    <Declaration><![CDATA[TYPE ST_CFG_ProBoxSG:
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 417092 $
+ *	Revision date	:	$Date: 2018-11-14 12:58:58 +0100 (Mi., 14 Nov 2018) $
+ *	Last changed by	:	$Author: q8aberh $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/ProMove/02_Controls/ProBox/03_Implementation/01_DevelopmentProject/01_Software/ProBox_COE/ProBox_DevProj_v1.0/PLC_1/20_Product/10_App/14_Groups/10_Lib/11_ProBox/01_DUTs/ST_CFG_ProBoxSG.TcDUT $
+ *
+ *	Purpose			:	Switching group config structure
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+STRUCT
+	ResetMemberElements			: BOOL; // Enable = Group reset, resets elements as well
+	AutoResetEmergencyCircuit	: BOOL; // Auto reset emergency circuit
+	tStartupDelay				: TIME; // Startup Delay time
+	tForcedStopDelay			: TIME; // Time for the elements to stop their actions
+	tResetPulse					: TIME; // Time to extend the reset pulse	
+	FireAlarmUsed				: BOOL ; // Fire alarm input is connected in this system
+	NumberOfContactors			: INT := 2; // Number of MC ON contactors connected to the SG
+	NumberOfAPs					: INT := 0; // Number of AP cabinets that belongs to the switching group
+	
+	
+END_STRUCT
+END_TYPE]]></Declaration>
+  </DUT>
+</TcPlcObject>

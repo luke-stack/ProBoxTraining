@@ -1,0 +1,85 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.18">
+  <POU Name="F_CountTUsWithDestination" Id="{b6f557a9-6528-4f95-83c5-895885f2cdbb}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION F_CountTUsWithDestination : INT
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 453155 $
+ *	Revision date	:	$Date: 2020-05-28 10:31:40 +0200 (tor, 28 maj 2020) $
+ *	Last changed by	:	$Author: b7muotj $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/tags/R1.12.0/01_Software/BCF/BCF/JumpStart/30_Toolbox/99_Misc/13_Helper/F_CountTUsWithDestination.TcPOU $
+ *
+ *	Purpose			:	Counts present TU's on Function range between BeginCount and EndCount with certain destination
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				27.05.2020		jmu					Added to the BCF
+ *
+ **************************************************************************************)
+VAR_INPUT
+	BeginCount	: E_FunctionNumber; // Function to start the counting of TU's
+	EndCount	: E_FunctionNumber; // Function to stop the counting of TU's
+	Destination: E_FunctionNumber; // Destination of TU's to involve in the count
+END_VAR
+VAR
+	eFunctionNumber: E_FunctionNumber;
+	rFunction: REFERENCE TO FB_FunctionConv;
+	i: INT;
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[F_CountTUsWithDestination := 0;
+
+//Look for the count of present TUs within the range and add found TUs together if the destination matches the desired one
+IF EndCount >= BeginCount 
+	AND BeginCount > F_BEGIN_FUNCTION 
+	AND EndCount < F_END_FUNCTION THEN
+	
+	FOR eFunctionNumber := BeginCount TO EndCount DO
+		
+		IF FunctionRegistry[eFunctionNumber].Enable THEN
+			
+			IF __ISVALIDREF(FunctionRegistry[eFunctionNumber].rFunction) THEN
+				
+				rFunction REF= FunctionRegistry[eFunctionNumber].rFunction;
+				FOR i := 1 TO NUMBER_OF_ZONES_PER_FUNCTION DO
+					
+					IF rFunction.zoneData[i].TransportControlData.TU_DataIndex <> 0 
+						AND TU_DataTable[rFunction.zoneData[i].TransportControlData.TU_DataIndex].Destination[1].eFunctionNumber = Destination THEN
+						
+							F_CountTUsWithDestination:=F_CountTUsWithDestination+1;
+					END_IF
+				END_FOR
+			END_IF
+		END_IF
+	END_FOR
+END_IF]]></ST>
+    </Implementation>
+    <LineIds Name="F_CountTUsWithDestination">
+      <LineId Id="146" Count="0" />
+      <LineId Id="166" Count="0" />
+      <LineId Id="147" Count="1" />
+      <LineId Id="204" Count="2" />
+      <LineId Id="149" Count="0" />
+      <LineId Id="167" Count="0" />
+      <LineId Id="151" Count="0" />
+      <LineId Id="168" Count="0" />
+      <LineId Id="153" Count="0" />
+      <LineId Id="169" Count="0" />
+      <LineId Id="155" Count="0" />
+      <LineId Id="170" Count="0" />
+      <LineId Id="157" Count="0" />
+      <LineId Id="171" Count="0" />
+      <LineId Id="158" Count="0" />
+      <LineId Id="172" Count="0" />
+      <LineId Id="159" Count="5" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

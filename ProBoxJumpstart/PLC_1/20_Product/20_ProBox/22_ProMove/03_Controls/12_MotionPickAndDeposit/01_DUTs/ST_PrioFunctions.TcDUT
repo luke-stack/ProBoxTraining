@@ -1,0 +1,13 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.12">
+  <DUT Name="ST_PrioFunctions" Id="{0aaa9978-0e12-4597-98fb-d8270d3aad2c}">
+    <Declaration><![CDATA[TYPE ST_PrioFunctions :
+STRUCT
+	PickupFunctionNumber	: E_FunctionNumber;
+	DepositFunctionNumber	: E_FunctionNumber;
+	HighestPriority			: BOOL;
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

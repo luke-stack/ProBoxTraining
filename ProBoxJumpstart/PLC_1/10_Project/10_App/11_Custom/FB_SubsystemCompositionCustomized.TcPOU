@@ -1,0 +1,22 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <POU Name="FB_SubsystemCompositionCustomized" Id="{087b3c35-0b3c-449d-90dd-291923d8689d}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK FB_SubsystemCompositionCustomized
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[
+(*
+fbPACcapacityCounter(sNetId:= '172.31.5.66.1.1', // enter ams net id of IPC
+	                 sFileName:='C:\Users\Test2.csv', // enter user file name and path to crate file automatically
+                     LogData01:= F_GetTransportControlData(E_FunctionNumber.F_11_001_0200_01_0,1),
+	                 LogData02:= F_GetTransportControlData(E_FunctionNumber.F_11_001_0203_01_0,1));
+ *)
+
+]]></ST>
+    </Implementation>
+    <LineIds Name="FB_SubsystemCompositionCustomized">
+      <LineId Id="3" Count="7" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

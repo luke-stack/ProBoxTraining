@@ -1,0 +1,956 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.4">
+  <POU Name="FB_TransportControlEmulation" Id="{5e3295de-9c83-4239-860d-c4d0b432e767}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK FB_TransportControlEmulation
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 475083 $
+ *	Revision date	:	$Date: 2021-04-10 12:07:10 +0200 (lör, 10 apr 2021) $
+ *	Last changed by	:	$Author: d7mangc $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/tags/R1.12.0/01_Software/BCF/BCF/JumpStart/20_Product/10_BCF/11_Conv/12_E_Functions/09_Emulation/10_Helper/FB_TransportControlEmulation.TcPOU $
+ *
+ *	Purpose			:	Transport control emulation
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+VAR_INPUT
+	Param 					: ST_TransportControlParam; // Parameter of the transport control
+	PrevTransportData  		: ST_TransportDataEmulation; // Previous transport data
+	NextTransportData		: ST_TransportDataEmulation; // Next transport data
+	TransportEnable			: BOOL; // Transport enable
+	DriveRunning			: BOOL; // Feedback drive is running  -> replace by d/dt(EncoderValue)
+	TurnTU					: BOOL; // TU must be turned
+	EncoderValue			: WORD; // Encoder value [mm]
+END_VAR
+
+VAR_IN_OUT
+	ZoneData				: ST_ZoneDataEmulation; // Zone data
+END_VAR
+
+VAR
+	fbDebugMsg				: FB_DebugMsg; // Debug instance
+	DebugMsg				: T_MAXSTRING; // Debug msg
+	Idx						: INT; // Iterator
+	Done					: BOOL; // Done flag
+	JamError				: BOOL; // Jam error flag
+	TakeError				: BOOL; // Take error flag
+	AddTU_State				: E_TransportControlAddTU_Emulation; // State used for add TU
+	TU_IndexToAdd			: DINT; // TU-data index to add
+	IndexToRemove			: DINT; // Index to remove
+	RemoveTU_State			: E_TransportControlRemoveTU_Emulation; // State uese for remove TU
+	ErrorState				: INT; // Error state to set a specific error
+	fbTrackingLeadingEdge 	: ARRAY [0..NUMBER_OF_TU_PER_FUNCTION] OF FB_DistanceMeter; // TU leading edge position tracking
+	Transition_TU_DataIndex : DINT; // Transition TU-data index at takeover from previous zone to tracking 
+	HandoverIndex           : DINT; // Handover index
+	NumberOfTUs				: INT; // Number of TUs
+	TrackingStartPos        : DINT; // TU leading edge position at the tracking start
+	TransportParam			: ST_TransportParamEmulation; // Transport parameter valid for current transport
+	fbR_TrgTurnTU			: R_TRIG; // Rising edge trigger
+	TU_Turned				: BOOL; // TU is turned
+	SelectedLength			: INT; // Selected length
+	TrackingSetPoint		: DINT; // Set point for tracking
+ 	IncomingTU_LE_Position	: DINT;
+	PreviousTU_Position 	: DINT;
+	PreviousZoneLenght		: DINT;
+END_VAR
+
+VAR CONSTANT
+	DEFAULT_TU_LENGTH		: INT := 600; // Default TU length in [mm]
+	DEFAULT_TU_WIDTH		: INT := 400; // Default TU width in [mm]
+END_VAR]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[(**************************************************************************************************************
+   Initialization
+***************************************************************************************************************)
+A_Init();
+
+(**************************************************************************************************************
+   Set error
+***************************************************************************************************************)
+A_SetError();
+
+(**************************************************************************************************************
+  Add TU 
+***************************************************************************************************************)
+A_AddTU();
+
+(**************************************************************************************************************
+  Remove TU 
+***************************************************************************************************************)
+A_RemoveTU();
+
+(**************************************************************************************************************
+  Update internal transport parameter
+***************************************************************************************************************)
+TransportParam := ZoneData.TransportControlData.TransportParam;
+
+(**************************************************************************************************************
+   Transport state
+***************************************************************************************************************)
+A_TransportState();
+
+(**************************************************************************************************************
+   Takeover state
+***************************************************************************************************************)
+A_TakeOverState();
+
+(**************************************************************************************************************
+   Handover state
+***************************************************************************************************************)
+A_HandOverState();
+
+(**************************************************************************************************************
+   Turn TU
+***************************************************************************************************************)
+A_TurnTU();
+
+(**************************************************************************************************************
+   Position tracking
+***************************************************************************************************************)
+A_PositionTracking();
+]]></ST>
+    </Implementation>
+    <Action Name="A_AddTU" Id="{cad35b2b-88b6-49e5-b667-4aabb1b89393}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_AddTU
+ * 	FUNCTION	Add a physical TU
+ **************************************************************************************) 
+ 
+CASE AddTU_State OF
+(*************************************************************************
+  Idle
+*************************************************************************)	
+	E_TransportControlAddTU_Emulation.IDLE_ADD_TU:
+		// If no TU is on the zone 
+		IF NumberOfTUs = 0 AND NOT DriveRunning THEN
+			// If command to add a TU
+			IF ZoneData.ITC.Commands.AddTU THEN
+				ZoneData.ITC.Commands.AddTU := FALSE;
+				TU_IndexToAdd := ZoneData.ITC.Commands.TU_DataIndexToAdd;
+				AddTU_State := START_ADD_TU;
+			END_IF
+		END_IF
+
+(*************************************************************************
+  Start
+*************************************************************************)		
+	E_TransportControlAddTU_Emulation.START_ADD_TU:
+		IF TU_IndexToAdd > 0 THEN
+			// Check TU length for consistency
+			IF TU_DataTableEmulation[TU_IndexToAdd].DataSet.Dimension.Length = 0 THEN
+				TU_DataTableEmulation[TU_IndexToAdd].DataSet.Dimension.Length := DEFAULT_TU_LENGTH;
+			END_IF
+	
+			// Check TU width for consistency
+			IF TU_DataTableEmulation[TU_IndexToAdd].DataSet.Dimension.Width = 0 THEN
+				TU_DataTableEmulation[TU_IndexToAdd].DataSet.Dimension.Width := DEFAULT_TU_WIDTH;
+			END_IF
+	
+			// Update time stamp
+			TU_DataTableEmulation[TU_IndexToAdd].TimeStamp.InsertDateTime := System.fbSystemTime.TIMESTR;
+			// Set length
+			AddTU_State := BUSY_ADD_TU;
+		ELSE
+			AddTU_State := IDLE_ADD_TU;
+		END_IF
+		
+(*************************************************************************
+  Busy
+*************************************************************************)
+	E_TransportControlAddTU_Emulation.BUSY_ADD_TU:
+		// If no TU is on the zone 
+		IF NumberOfTUs = 0 THEN
+			FOR Idx := 1 TO NUMBER_OF_TU_PER_FUNCTION DO			
+				// Start tracking 
+				IF NOT fbTrackingLeadingEdge[Idx].Run THEN
+					// Determine length
+					IF TU_DataTableEmulation[TU_IndexToAdd].DataSet.LongSideLeading THEN
+						SelectedLength := TU_DataTableEmulation[TU_IndexToAdd].DataSet.Dimension.Width;
+					ELSE
+						SelectedLength := TU_DataTableEmulation[TU_IndexToAdd].DataSet.Dimension.Length;
+					END_IF
+				
+					fbTrackingLeadingEdge[Idx](
+						Run:= TRUE, 
+						EncoderValue:= EncoderValue,
+						SetPoint	:= UINT_TO_DINT(Param.rSettings.Length[1]) + SelectedLength, 
+						PresetDistance:= Param.rSettings.Length[1] - Param.rSettings.ZoneEndLengthToSide[2] + Param.rSettings.StopDelayDistanceFromSide[1],
+						Input_TU_DataIndex := TU_IndexToAdd);
+						AddTU_State := IDLE_ADD_TU;
+					EXIT;
+				END_IF
+			END_FOR			
+		END_IF
+END_CASE]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="A_HandOverState" Id="{cb02cdf0-8d6b-46de-b625-29b33b912664}">
+      <Implementation>
+        <ST><![CDATA[ (**************************************************************************************
+ * 	NAME		A_HandOverState
+ * 	FUNCTION	Handover state
+ **************************************************************************************)
+  
+CASE ZoneData.TransportControlData.eHandOverState OF
+(*************************************************************************
+  Idle
+*************************************************************************)
+	E_HandOverState.IDLE:
+		// Zone is ready to handover
+		IF ZoneData.TransportControlData.Occupied THEN
+			ZoneData.TransportControlData.eHandOverState := E_HandOverState.READY;
+		END_IF
+
+(*************************************************************************
+  Ready
+*************************************************************************)
+	E_HandOverState.READY:
+		// Next zone started takeover
+		IF NextTransportData.rTransportControlData.eTakeOverState = E_TakeOverState.ACTIVE THEN
+			ZoneData.TransportControlData.eHandOverState := E_HandOverState.ACTIVE;
+		ELSIF NOT ZoneData.TransportControlData.Occupied THEN
+			ZoneData.TransportControlData.eHandOverState := E_HandOverState.COMPLETE;
+		END_IF
+
+(*************************************************************************
+  Active
+*************************************************************************)
+	E_HandOverState.ACTIVE:		
+		IF NOT ZoneData.TransportControlData.Occupied THEN
+			ZoneData.TransportControlData.eHandOverState := E_HandOverState.COMPLETE;
+		END_IF;
+		
+(*************************************************************************
+  Complete
+*************************************************************************)
+	E_HandOverState.COMPLETE:
+		// No pending transfer -> change to idle
+		IF NextTransportData.rTransportControlData.eTakeOverState = E_TakeOverState.COMPLETE OR
+		   NextTransportData.rTransportControlData.eTakeOverState = E_TakeOverState.READY OR
+		   NextTransportData.rTransportControlData.eTakeOverState = E_TakeOverState.IDLE OR
+		   NextTransportData.rTransportControlData.eTakeOverState = E_TakeOverState.UNDEFINED THEN
+			ZoneData.TransportControlData.eHandOverState := E_HandOverState.IDLE;
+		END_IF		
+		
+(*************************************************************************
+  State error
+*************************************************************************)
+ELSE
+	// Software error
+	DebugMsg := CONCAT('Emulation: A_HandOverState: Software error: ', Param.rSettings.ZoneName);
+	fbDebugMsg.M_SendInfoMsg(DebugMsg);
+	ZoneData.TransportControlData.eHandOverState := E_HandOverState.IDLE;
+	
+END_CASE]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="A_Init" Id="{ae3ecb82-331d-46bb-aaae-5a8aa1644f9c}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_Init
+ * 	FUNCTION	Initialization
+ **************************************************************************************)
+
+// Initialization 
+IF NOT ZoneData.Init THEN
+	ZoneData.Init := TRUE;
+
+	AddTU_State := IDLE_ADD_TU;
+	RemoveTU_State := IDLE_REMOVE_TU;
+
+	ZoneData.TransportControlData.eTransportState := E_TransportState.IDLE;
+	ZoneData.TransportControlData.eTakeOverState := E_TakeOverState.IDLE;
+	ZoneData.TransportControlData.eHandOverState := E_HandOverState.IDLE;
+
+	FOR Idx := 1 TO NUMBER_OF_TU_PER_FUNCTION DO	
+		fbTrackingLeadingEdge[Idx](Run:= FALSE);
+	END_FOR
+	
+	DebugMsg := CONCAT('Initialization done. TransportControl: ', Param.rSettings.ZoneName);
+	fbDebugMsg.M_SendInfoMsg(DebugMsg);
+END_IF]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="A_MoveTUdata" Id="{5852c1d8-395c-4450-a321-f94a33cf3b2f}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_MoveTUdata
+ * 	FUNCTION	Move TU-data
+ **************************************************************************************)
+
+// If own TU-data index is free
+IF Transition_TU_DataIndex = 0 THEN
+	// Move TU-data index from prvious to own zone
+	Transition_TU_DataIndex := F_MoveTU_DataIndexEmulation(
+									eFunctionNumber := PrevTransportData.eFunctionNumber,
+									mZoneNumber 	:= PrevTransportData.ZoneNumber);
+	// Updata data present status
+	ZoneData.TransportControlData.DataPresent := ZoneData.TransportControlData.TU_DataIndex <> 0;
+ELSE
+	// Send debug message
+	DebugMsg := CONCAT('Emulation: A_MoveTUdata: TU-data index not free: ', Param.rSettings.ZoneName);
+	fbDebugMsg.M_SendInfoMsg(DebugMsg);
+END_IF]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="A_PositionTracking" Id="{1e0140e0-41dd-4fcf-8980-2dfd4b39f5c9}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_PositionTracking
+ * 	FUNCTION	Tracks the TU position within the zone
+ **************************************************************************************)
+
+// Reset Variable 
+NumberOfTUs := 0;
+ 
+FOR Idx := 1 TO NUMBER_OF_TU_PER_FUNCTION DO
+	// Run tracking
+	fbTrackingLeadingEdge[Idx](EncoderValue:= EncoderValue);
+	
+	// Start tracking 
+	IF ZoneData.TransportControlData.eTakeOverState = E_TakeOverState.ACTIVE THEN
+		IF NOT fbTrackingLeadingEdge[Idx].Run AND NOT Done THEN
+			Done := TRUE;
+			
+			// Set current TU position within own zone
+			TrackingStartPos := UINT_TO_DINT(PrevTransportData.rTransportControlData.TU_LeadingEdgePos) - UINT_TO_DINT(PrevTransportData.rTransportControlData.TransportParam.ZoneLength);
+			
+			// Check bounds
+			IF TrackingStartPos < 0 THEN
+				TrackingStartPos := 0;
+			END_IF
+			
+			// Get TU length according transport direction
+			IF TU_DataTableEmulation[Transition_TU_DataIndex].DataSet.LongSideLeading THEN
+				TrackingSetPoint := UINT_TO_DINT(TransportParam.ZoneLength) + TU_DataTableEmulation[Transition_TU_DataIndex].DataSet.Dimension.Width;
+			ELSE
+				TrackingSetPoint := UINT_TO_DINT(TransportParam.ZoneLength) + TU_DataTableEmulation[Transition_TU_DataIndex].DataSet.Dimension.Length;
+			END_IF
+			
+			fbTrackingLeadingEdge[Idx](
+				Run := TRUE, 
+				EncoderValue := EncoderValue,
+				SetPoint := TrackingSetPoint, 
+				PresetDistance := TrackingStartPos,
+				Input_TU_DataIndex := Transition_TU_DataIndex);
+				
+				// Clear index after taking over into tracking 
+				Transition_TU_DataIndex := 0;
+		END_IF
+	END_IF
+	
+	// Reset tracking
+	IF fbTrackingLeadingEdge[Idx].Q THEN
+		fbTrackingLeadingEdge[Idx](Run:= FALSE);
+	END_IF
+	
+	// Count number of TU's
+	IF fbTrackingLeadingEdge[Idx].Run THEN
+		NumberOfTUs := NumberOfTUs + 1;
+	END_IF 
+END_FOR
+
+// Reset done 
+IF ZoneData.TransportControlData.eTakeOverState <> E_TakeOverState.ACTIVE THEN
+	Done := FALSE;
+END_IF
+]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="A_RemoveTU" Id="{7f75bf1a-7c23-4f69-bd7a-53db43324909}">
+      <Implementation>
+        <ST><![CDATA[ (**************************************************************************************
+ * 	NAME		A_RemoveTU
+ * 	FUNCTION	Remove physical TU
+ **************************************************************************************)
+
+CASE RemoveTU_State OF
+(*************************************************************************
+  Idle
+*************************************************************************)	
+	IDLE_REMOVE_TU:
+		// If command to remove a TU
+		IF ZoneData.ITC.Commands.RemoveTU THEN
+			ZoneData.ITC.Commands.RemoveTU := FALSE;
+			IndexToRemove := ZoneData.ITC.Commands.IndexToRemove;
+			RemoveTU_State := START_REMOVE_TU;
+		END_IF
+
+(*************************************************************************
+  Start
+*************************************************************************)		
+	START_REMOVE_TU:
+		IF IndexToRemove > 0 THEN	
+			RemoveTU_State := BUSY_REMOVE_TU;
+		ELSE
+			// Send debug message
+			DebugMsg := CONCAT('TU remove failed, No vaild index: ', Param.rSettings.ZoneName);
+			fbDebugMsg.M_SendInfoMsg(DebugMsg);	
+			RemoveTU_State := IDLE_REMOVE_TU;
+		END_IF
+
+(*************************************************************************
+  Busy
+*************************************************************************)
+	BUSY_REMOVE_TU:
+		(* Check if removing allowed *)
+		IF NOT DriveRunning AND IndexToRemove > 0 THEN
+			// Delete TU-data
+			MEMSET(ADR(TU_DataTableEmulation[fbTrackingLeadingEdge[IndexToRemove].TU_DataIndex]) ,0, SIZEOF(TU_DataTableEmulation[fbTrackingLeadingEdge[IndexToRemove].TU_DataIndex]));
+			// Reset tracking
+			fbTrackingLeadingEdge[IndexToRemove](Run:= FALSE);
+			// Send debug message
+			DebugMsg := CONCAT('TU removed: ', Param.rSettings.ZoneName);
+			fbDebugMsg.M_SendInfoMsg(DebugMsg);			
+			RemoveTU_State := IDLE_REMOVE_TU;
+		END_IF
+END_CASE]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="A_SetError" Id="{065abc02-fe8a-4c48-9982-a403c7686b3c}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_SetError
+ * 	FUNCTION	Set/Reset Error
+ **************************************************************************************)
+ 
+IF ZoneData.ITC.Commands.Error THEN
+	ZoneData.ITC.Commands.Error := FALSE;
+	ErrorState := ZoneData.ITC.Commands.ErrorCode;
+
+	CASE ErrorState OF
+		0: (* Clear Error *)
+			JamError := FALSE;
+			TakeError := FALSE;
+	
+		1: (* Jam *)
+			JamError := TRUE;
+	
+		2: ;(* TU not received *)
+			TakeError := TRUE;
+	
+		3: ;(* ? *)
+	ELSE
+		DebugMsg := CONCAT('Wrong error number. TransportControl: ', Param.rSettings.ZoneName);
+		fbDebugMsg.M_SendInfoMsg(DebugMsg);
+	END_CASE
+END_IF]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="A_TakeOverState" Id="{5842d0b2-31af-4f37-af56-75b9fa221e97}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_TakeOverState
+ * 	FUNCTION	Takeover state
+ **************************************************************************************)
+
+CASE ZoneData.TransportControlData.eTakeOverState OF
+(*************************************************************************
+  Idle
+*************************************************************************)
+	E_TakeOverState.IDLE:
+		// Zone is ready to takeover
+		IF DriveRunning THEN
+			ZoneData.TransportControlData.eTakeOverState := E_TakeOverState.READY;
+		END_IF
+		
+(*************************************************************************
+  Ready
+*************************************************************************)
+	E_TakeOverState.READY:
+		IF NOT DriveRunning THEN
+			ZoneData.TransportControlData.eTakeOverState := E_TakeOverState.IDLE;
+
+		ELSIF PrevTransportData.rTransportControlData.eHandOverState = E_HandOverState.READY THEN
+			// Calculate position of the TU coming from the previous function (zone) relative to this function
+			PreviousTU_Position := UINT_TO_DINT(PrevTransportData.rTransportControlData.TU_LeadingEdgePos);
+			PreviousZoneLenght :=  UINT_TO_DINT(PrevTransportData.rTransportControlData.TransportParam.ZoneLength);	
+			IncomingTU_LE_Position := PreviousTU_Position - PreviousZoneLenght;
+			
+			//If the TU arrived to this function (zone) take the data
+			IF IncomingTU_LE_Position >= 0 THEN
+
+				// Move TU-data from previous zone
+				A_MoveTUdata();		
+				
+				// If TU data are available	
+				IF Transition_TU_DataIndex <> 0 THEN
+					ZoneData.TransportControlData.eTakeOverState := E_TakeOverState.ACTIVE;
+				ELSE
+					// Debug message
+					DebugMsg := CONCAT('Emulation: A_TakeOverState: No TU data index found: ', Param.rSettings.ZoneName);
+					fbDebugMsg.M_SendInfoMsg(DebugMsg);	
+					// Do not accept TU
+					ZoneData.TransportControlData.eTakeOverState := E_TakeOverState.COMPLETE;		
+				END_IF
+			END_IF
+		END_IF
+
+(*************************************************************************
+  Active
+*************************************************************************)
+	E_TakeOverState.ACTIVE:
+		IF PrevTransportData.rTransportControlData.eHandOverState <> E_HandOverState.READY THEN
+			ZoneData.TransportControlData.eTakeOverState := E_TakeOverState.COMPLETE;
+		END_IF
+		
+(*************************************************************************
+  Complete
+*************************************************************************)
+	E_TakeOverState.COMPLETE:
+		// Transfer is finish at prvious zone
+		IF PrevTransportData.rTransportControlData.eHandOverState <> E_HandOverState.ACTIVE AND 
+			PrevTransportData.rTransportControlData.eHandOverState <> E_HandOverState.COMPLETE THEN
+			ZoneData.TransportControlData.eTakeOverState := E_TakeOverState.IDLE;
+		END_IF		
+		
+(*************************************************************************
+  State error
+*************************************************************************)
+ELSE
+	(* Software error *)
+	DebugMsg := CONCAT('Emulation: A_TakeOverState: Software error: ', Param.rSettings.ZoneName);
+	fbDebugMsg.M_SendInfoMsg(DebugMsg);
+	ZoneData.TransportControlData.eTakeOverState := E_TakeOverState.IDLE;
+	
+END_CASE]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="A_TransportState" Id="{63493a18-96d8-4675-aa50-0b8df8cb8beb}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_TransportState
+ * 	FUNCTION	Transport state
+ **************************************************************************************)
+ 
+	
+CASE ZoneData.TransportControlData.eTransportState OF
+(*************************************************************************
+  Idle
+*************************************************************************)
+	E_TransportState.IDLE:
+		Transition_TU_DataIndex := 0;
+		ZoneData.TransportControlData.TU_DataIndex := 0;
+		ZoneData.TransportControlData.DataPresent := FALSE;
+		ZoneData.TransportControlData.Occupied := FALSE;
+		ZoneData.TransportControlData.eTransportState := E_TransportState.FREE;
+		
+(*************************************************************************
+  Free
+*************************************************************************)		
+	E_TransportState.FREE:
+		// If TU is at zone end
+		IF M_TU_PresentState(mPosition := TransportParam.ZoneLength, mIndex => HandoverIndex) THEN
+			ZoneData.TransportControlData.TU_DataIndex := fbTrackingLeadingEdge[HandoverIndex].TU_DataIndex;
+			ZoneData.TransportControlData.DataPresent := ZoneData.TransportControlData.TU_DataIndex <> 0;								   
+			ZoneData.TransportControlData.Occupied := TRUE;
+			ZoneData.TransportControlData.eTransportState := E_TransportState.HANDOVER;
+		END_IF
+	
+(*************************************************************************
+  Handover
+*************************************************************************)		
+	E_TransportState.HANDOVER:
+		// If TU left zone
+		IF NOT fbTrackingLeadingEdge[HandoverIndex].Run THEN
+			// If the TU is not taken over from next position
+			IF ZoneData.TransportControlData.TU_DataIndex <> 0 THEN
+				// Send debug message
+				// example: '11-001-1979-01-9,  emulation TU_DataIndex deleted on handover,  TU_DataIndex = 1979,  Label = 0012345600'
+				DebugMsg:= '';
+				DebugMsg:= CONCAT(DebugMsg, F_AddDividerToSisString(Param.rSettings.ZoneName));
+				DebugMsg:= CONCAT(DebugMsg, ',  emulation TU_DataIndex deleted on handover');
+				DebugMsg:= CONCAT(DebugMsg, F_CreateEmulationTU_DataString(ZoneData.TransportControlData.TU_DataIndex));
+				fbDebugMsg.M_SendErrorMsg(DebugMsg);	
+				// Delete TU-data
+				MEMSET(ADR(TU_DataTableEmulation[ZoneData.TransportControlData.TU_DataIndex]) ,0, SIZEOF(TU_DataTableEmulation[ZoneData.TransportControlData.TU_DataIndex]));
+			END_IF		
+
+			ZoneData.TransportControlData.TU_DataIndex := 0;
+			ZoneData.TransportControlData.DataPresent := FALSE;
+			ZoneData.TransportControlData.Occupied := FALSE;
+			ZoneData.TransportControlData.eTransportState := E_TransportState.FREE;
+		END_IF	
+
+(*************************************************************************
+  State error
+*************************************************************************)
+ELSE
+	// Software error
+	DebugMsg := CONCAT('Emulation: A_TransportState: Software error: ', Param.rSettings.ZoneName);
+	fbDebugMsg.M_SendInfoMsg(DebugMsg);
+	ZoneData.TransportControlData.eHandOverState := E_HandOverState.IDLE;		
+		
+END_CASE
+]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="A_TurnTU" Id="{1a630f4a-195a-4fba-b5d6-c2a36dd18431}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_TurnTU
+ * 	FUNCTION	Waits for trigger to turn TU at handover position
+ **************************************************************************************)
+
+// Turn TU trigger 
+fbR_TrgTurnTU(CLK := TurnTU AND ZoneData.TransportControlData.TU_DataIndex <> 0);
+ 
+// If TU data are available	
+IF ZoneData.TransportControlData.TU_DataIndex <> 0 THEN
+	// If TU must be turned
+	IF fbR_TrgTurnTU.Q THEN
+		TurnTU := NOT M_TurnTU(fbTrackingLeadingEdge[HandoverIndex].Distance);
+	END_IF
+END_IF
+]]></ST>
+      </Implementation>
+    </Action>
+    <Method Name="M_SearchFirstTU" Id="{2c115ffa-6f6a-4d79-bde5-40c75f4b9c1b}">
+      <Declaration><![CDATA[METHOD M_SearchFirstTU : BOOL
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 475083 $
+ *	Revision date	:	$Date: 2021-04-10 12:07:10 +0200 (lör, 10 apr 2021) $
+ *	Last changed by	:	$Author: d7mangc $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/tags/R1.12.0/01_Software/BCF/BCF/JumpStart/20_Product/10_BCF/11_Conv/12_E_Functions/09_Emulation/10_Helper/FB_TransportControlEmulation.TcPOU $
+ *
+ *	Purpose			:	Returns first TU in the emulated function 
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+VAR_OUTPUT
+	mIndex	        : DINT; // TU tracking index
+	mTU_DataIndex   : DINT; // Physical TU-data index
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[// Process all tracking index
+M_SearchFirstTU := FALSE;
+
+FOR Idx := 1 TO NUMBER_OF_TU_PER_FUNCTION DO
+	// If tracking index is active
+	IF fbTrackingLeadingEdge[Idx].Run THEN
+		// Check position and set return values
+		IF fbTrackingLeadingEdge[Idx].TU_DataIndex <> 0 THEN 
+			M_SearchFirstTU := TRUE;
+			mIndex := Idx;
+			mTU_DataIndex := fbTrackingLeadingEdge[Idx].TU_DataIndex;
+			EXIT;
+		END_IF
+	END_IF
+END_FOR
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_TU_PositionCorrection" Id="{3e617295-0771-4873-a4f8-321b994bc3fc}">
+      <Declaration><![CDATA[// corrects the position of all TUs inside the (emulated) zone to ensure a define gap between each TU
+METHOD PUBLIC M_TU_PositionCorrection
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 475083 $
+ *	Revision date	:	$Date: 2021-04-10 12:07:10 +0200 (lör, 10 apr 2021) $
+ *	Last changed by	:	$Author: d7mangc $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/tags/R1.12.0/01_Software/BCF/BCF/JumpStart/20_Product/10_BCF/11_Conv/12_E_Functions/09_Emulation/10_Helper/FB_TransportControlEmulation.TcPOU $
+ *
+ *	Purpose			:	corrects the position of all TUs inside the (emulated) zone
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+VAR_INPUT 
+	GapBetweenTUs			: INT	:= 0;		// desired gap between TUs [mm]
+END_VAR
+
+VAR
+	LeadingEdgePos			: UINT; 			// TU leading edge position of last TU [mm]
+	TU_ToBeHandovered		: INT;				// Index of a TU which is ready to handover
+	RefDistance				: DINT;				// Reference distance 
+	InitReferenceDistance	: BOOL;				// Reference distance bit to initializate RefDistance
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[// Check the Index of a TU which is ready to be handovered 
+FOR Idx := 1 TO NUMBER_OF_TU_PER_FUNCTION DO
+	IF fbTrackingLeadingEdge[Idx].Run THEN
+
+		IF NOT InitReferenceDistance THEN
+			RefDistance := fbTrackingLeadingEdge[Idx].Distance;
+			InitReferenceDistance := TRUE;
+		END_IF
+
+		IF fbTrackingLeadingEdge[Idx].Distance >= RefDistance THEN
+			// Save the index of a TU
+			RefDistance := fbTrackingLeadingEdge[Idx].Distance;
+			TU_ToBeHandovered := Idx;	
+		END_IF
+	END_IF
+END_FOR
+
+LeadingEdgePos := DINT_TO_UINT(fbTrackingLeadingEdge[TU_ToBeHandovered].Distance);
+
+// Process all tracking index
+FOR Idx := 2 TO NUMBER_OF_TU_PER_FUNCTION DO
+
+	IF GapBetweenTUs > 0 THEN
+
+		// If tracking index is active
+		IF fbTrackingLeadingEdge[Idx].Run THEN
+
+			// Short Side Leading active (SSL)
+			IF NOT TU_DataTableEmulation[fbTrackingLeadingEdge[Idx-1].TU_DataIndex].DataSet.LongSideLeading THEN 
+				// Calculate the new position of leading edge for every TU on the belt
+				LeadingEdgePos := LeadingEdgePos - DINT_TO_UINT(TU_DataTableEmulation[fbTrackingLeadingEdge[Idx-1].TU_DataIndex].DataSet.Dimension.Length + GapBetweenTUs);
+
+			// Long Side Leading active (LSL)
+			ELSE
+				// Calculate the new position of leading edge for every TU on the belt
+				LeadingEdgePos := LeadingEdgePos - DINT_TO_UINT(TU_DataTableEmulation[fbTrackingLeadingEdge[Idx-1].TU_DataIndex].DataSet.Dimension.Width + GapBetweenTUs);
+			END_IF
+
+			// Correct TUs position
+			fbTrackingLeadingEdge[Idx].M_SetDistance(NewDistance:= LeadingEdgePos);
+
+		END_IF
+	END_IF
+END_FOR]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_TU_PresentState" Id="{3fc47ac5-d3da-4f3d-9251-071289f1b4c0}">
+      <Declaration><![CDATA[METHOD M_TU_PresentState : BOOL
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 475083 $
+ *	Revision date	:	$Date: 2021-04-10 12:07:10 +0200 (lör, 10 apr 2021) $
+ *	Last changed by	:	$Author: d7mangc $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/tags/R1.12.0/01_Software/BCF/BCF/JumpStart/20_Product/10_BCF/11_Conv/12_E_Functions/09_Emulation/10_Helper/FB_TransportControlEmulation.TcPOU $
+ *
+ *	Purpose			:	Get TU present state at specific position
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+VAR_INPUT
+	mPosition 		: UINT; // Observing position, measured from begin of zone to observing point [mm] 
+END_VAR
+
+VAR_OUTPUT
+	mIndex	        : DINT; // TU tracking index
+	mLeadingEdgePos : UINT; // TU leading edge position [mm]
+	mTU_DataIndex   : DINT; // Physical TU-data index
+END_VAR
+
+VAR
+	PositionEnd		: UINT; // Observing position end, measured from begin of zone
+	DataSet			: ST_DataSetEmulation; // DataSet
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[// Process all tracking index
+FOR Idx := 1 TO NUMBER_OF_TU_PER_FUNCTION DO
+
+	// If tracking index is active
+	IF fbTrackingLeadingEdge[Idx].Run THEN
+
+		// Publish TUs position and index
+		mIndex         := Idx;
+		mLeadingEdgePos:= DINT_TO_UINT(fbTrackingLeadingEdge[Idx].Distance);
+		mTU_DataIndex  := fbTrackingLeadingEdge[Idx].TU_DataIndex;
+
+		// Prepare
+		DataSet:= TU_DataTableEmulation[mTU_DataIndex].DataSet;
+
+		// Check orientation
+		IF DataSet.LongSideLeading THEN
+			PositionEnd:= mPosition + INT_TO_UINT(DataSet.Dimension.Width);
+		ELSE
+			PositionEnd:= mPosition + INT_TO_UINT(DataSet.Dimension.Length);
+		END_IF
+
+		// Check position and set return values
+		IF fbTrackingLeadingEdge[Idx].Distance >= mPosition AND
+			fbTrackingLeadingEdge[Idx].Distance <= PositionEnd THEN
+			M_TU_PresentState := TRUE;
+			RETURN;
+		END_IF
+	END_IF
+END_FOR
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_TurnTU" Id="{13196450-379a-4189-a6ad-4f15e168ad59}">
+      <Declaration><![CDATA[METHOD M_TurnTU : BOOL
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 475083 $
+ *	Revision date	:	$Date: 2021-04-10 12:07:10 +0200 (lör, 10 apr 2021) $
+ *	Last changed by	:	$Author: d7mangc $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/tags/R1.12.0/01_Software/BCF/BCF/JumpStart/20_Product/10_BCF/11_Conv/12_E_Functions/09_Emulation/10_Helper/FB_TransportControlEmulation.TcPOU $
+ *
+ *	Purpose			:	Turns TU at specific position
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+VAR_INPUT
+	mPosition		: DINT;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[M_TurnTU := FALSE;
+
+{warning disable C0371}
+IF __ISVALIDREF(ZoneData) THEN
+	// Process all tracking index
+	FOR Idx := 1 TO NUMBER_OF_TU_PER_FUNCTION DO
+		// If tracking index is active
+		IF fbTrackingLeadingEdge[Idx].Run THEN	
+			// Check orientation
+			IF TU_DataTableEmulation[fbTrackingLeadingEdge[Idx].TU_DataIndex].DataSet.LongSideLeading THEN 
+				// Check position and turn TU
+				IF fbTrackingLeadingEdge[Idx].Distance >= mPosition AND
+				   fbTrackingLeadingEdge[Idx].Distance <= mPosition + INT_TO_UINT(TU_DataTableEmulation[fbTrackingLeadingEdge[Idx].TU_DataIndex].DataSet.Dimension.Width) THEN
+					TU_DataTableEmulation[fbTrackingLeadingEdge[Idx].TU_DataIndex].DataSet.LongSideLeading := FALSE;
+					fbTrackingLeadingEdge[Idx].SetPoint := UINT_TO_DINT(ZoneData.TransportControlData.TransportParam.ZoneLength) +
+														  TU_DataTableEmulation[fbTrackingLeadingEdge[Idx].TU_DataIndex].DataSet.Dimension.Length;
+					M_TurnTU := TRUE;
+					EXIT;
+				END_IF
+			ELSE
+				// Check position and turn TU
+				IF fbTrackingLeadingEdge[Idx].Distance >= mPosition AND
+				   fbTrackingLeadingEdge[Idx].Distance <= mPosition + INT_TO_UINT(TU_DataTableEmulation[fbTrackingLeadingEdge[Idx].TU_DataIndex].DataSet.Dimension.Length) THEN
+					TU_DataTableEmulation[fbTrackingLeadingEdge[Idx].TU_DataIndex].DataSet.LongSideLeading := TRUE;
+					fbTrackingLeadingEdge[Idx].SetPoint := UINT_TO_DINT(ZoneData.TransportControlData.TransportParam.ZoneLength) +
+														  TU_DataTableEmulation[fbTrackingLeadingEdge[Idx].TU_DataIndex].DataSet.Dimension.Width;
+					M_TurnTU := TRUE;
+					EXIT;
+				END_IF
+			END_IF
+		END_IF
+	END_FOR
+END_IF
+{warning restore C0371}		   ]]></ST>
+      </Implementation>
+    </Method>
+    <ObjectProperties>
+      <XmlArchive>
+        <Data>
+          <o xml:space="preserve" t="UMLStereoTypeContainerObject">
+            <v n="IsType" t="UMLType">BaseArea</v>
+            <v n="Stereotype">""</v>
+            <d n="Stereotypes" t="Hashtable" />
+          </o>
+        </Data>
+        <TypeList>
+          <Type n="Hashtable">System.Collections.Hashtable</Type>
+          <Type n="String">System.String</Type>
+          <Type n="UMLStereoTypeContainerObject">{30250973-b110-4e31-b562-c102e042dca4}</Type>
+          <Type n="UMLType">{0197b136-405a-42ee-bb27-fd08b621d0cf}</Type>
+        </TypeList>
+      </XmlArchive>
+    </ObjectProperties>
+    <LineIds Name="FB_TransportControlEmulation">
+      <LineId Id="3" Count="48" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_TransportControlEmulation.A_AddTU">
+      <LineId Id="2" Count="69" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_TransportControlEmulation.A_HandOverState">
+      <LineId Id="2" Count="54" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_TransportControlEmulation.A_Init">
+      <LineId Id="2" Count="21" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_TransportControlEmulation.A_MoveTUdata">
+      <LineId Id="2" Count="16" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_TransportControlEmulation.A_PositionTracking">
+      <LineId Id="2" Count="58" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_TransportControlEmulation.A_RemoveTU">
+      <LineId Id="2" Count="44" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_TransportControlEmulation.A_SetError">
+      <LineId Id="2" Count="24" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_TransportControlEmulation.A_TakeOverState">
+      <LineId Id="2" Count="73" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_TransportControlEmulation.A_TransportState">
+      <LineId Id="2" Count="63" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_TransportControlEmulation.A_TurnTU">
+      <LineId Id="2" Count="14" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_TransportControlEmulation.M_SearchFirstTU">
+      <LineId Id="3" Count="1" />
+      <LineId Id="42" Count="0" />
+      <LineId Id="5" Count="11" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_TransportControlEmulation.M_TU_PositionCorrection">
+      <LineId Id="3" Count="42" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_TransportControlEmulation.M_TU_PresentState">
+      <LineId Id="3" Count="28" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_TransportControlEmulation.M_TurnTU">
+      <LineId Id="3" Count="32" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

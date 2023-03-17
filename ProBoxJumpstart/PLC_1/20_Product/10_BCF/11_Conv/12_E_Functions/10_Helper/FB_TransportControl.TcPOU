@@ -1,0 +1,3442 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <POU Name="FB_TransportControl" Id="{b402116b-65a1-4b4b-bdcc-6610068ed1bb}" SpecialFunc="None">
+    <Declaration><![CDATA[ FUNCTION_BLOCK FB_TransportControl
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 475083 $
+ *	Revision date	:	$Date: 2021-04-10 12:07:10 +0200 (lör, 10 apr 2021) $
+ *	Last changed by	:	$Author: d7mangc $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/tags/R1.12.0/01_Software/BCF/BCF/JumpStart/20_Product/10_BCF/11_Conv/12_E_Functions/10_Helper/FB_TransportControl.TcPOU $
+ *
+ *	Purpose			:	The transport control is responsible for the coordinated
+ *                      physical TU and logical data movement and ensures the relation
+ *                      to the position.
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ *  VERSION DATE         INITIALS     DESCRIPTION
+ *  0.0     DD.MM.YYYY   (name)       (explain customized modifications)
+ *
+ **************************************************************************************)
+VAR_INPUT
+	Param 						: ST_TransportControlParam; // Parameter of the transport control
+	PrevTransportData  			: ST_TransportData; // Previous transport data
+	NextTransportData			: ST_TransportData; // Next transport data
+	TransportEnable				: BOOL; // Transport enable
+	TransportEnableTakeOver 	: BOOL; // Transport enable takeover 
+	TransportEnableHandOver 	: BOOL; // Transport enable handover
+	EnableFastSpeed 			: BOOL; // Enable fast speed
+	ZoneOccupied 				: BOOL; // Input zone occupied
+	DriveRunning				: BOOL; // Feedback drive is running
+	DriveReady					: BOOL := TRUE; // Drive is ready to be started
+	CurrentSpeed				: INT; // Current speed [mm/s]
+	Acceleration    			: INT; // Acceleration [mm/s^2]
+	StoppingDistance			: UINT; // Distance until the TU is stopped [mm]
+	EncoderValue				: UDINT; // Encoder value [mm]
+	MaxEncoderValue				: UDINT; // Max encoder value [mm]
+	SyncTracking				: BOOL; // Trigger to sync tracking leading edge of TU to SyncTrackingPosition
+	SyncTrackingPosition		: DINT; // Sync tracking leading edge position [mm]
+END_VAR
+
+VAR_OUTPUT
+	Outputs						: ST_TransportControl_Outputs; // Module Internal outputs
+END_VAR
+
+VAR_IN_OUT
+	ZoneData					: ST_ZoneData; // Zone data
+	ErrorData 					: ST_ErrorDataSet; // Error data
+END_VAR
+
+VAR
+	fbDebugMsg					: FB_DebugMsg; // Debug instance
+	DebugMsg					: T_MAXSTRING; // Debug message
+	Inputs 						: ST_TransportControl_Inputs; // Module internal inputs
+	Init						: BOOL; // Initialized
+	ZoneOccupiedSignal 			: BOOL; // Internal zone occupied signal 
+	DriveFeedInRun        		: BOOL; // Switch drive on for feed in
+	DriveTakeoverRun        	: BOOL; // Switch drive on for takeover
+	DriveHandoverRun        	: BOOL; // Switch drive on for handover
+	DriveFreeRun            	: BOOL; // Switch drive on for free run
+	DriveClearingRun	    	: BOOL; // Switch drive on for clearing
+	DriveMultiTU_Run	    	: BOOL; // Switch drive on for multiple TU 
+	Transition_TU_DataIndex 	: DINT; // Transition TU-data index at takeover from previous zone to tracking 
+    tZoneFree       			: TIME := T#2S ; // Delay time for zone occupied
+	tZoneOccupied      			: TIME := T#2S; // Delay time for zone occupied	
+	tAutoResetJam        		: TIME := T#2S; // Time delay auto reset jam error
+   	tFreeRun             		: TIME := T#3S; // Time drive free run
+    fbZoneOccupiedFreeTimer 	: FB_Timer; // Delay timer zone occupied free
+    fbZoneOccupiedTimer	    	: FB_Timer; // Delay timer zone occupied
+    fbFreeRunTimer          	: FB_Timer; // Timer drive free run
+	fbAutoResetJamTimer     	: FB_Timer; // Timer auto reset jam error
+	fbMergingServiceRetry		: FB_Timer; // Timer to retry the merging service
+	fbRoutingServiceRetry		: FB_Timer; // Timer to retry the merging service
+	fbTimeoutJam 				: FB_DisplacementMeter; // Timeout jam
+	fbTimeoutTake 				: FB_DisplacementMeter; // Timeout take	
+	fbDelayZoneOccupied			: FB_DisplacementMeter; // Delay zone occupied
+	fbDelayZoneFree		 		: FB_DisplacementMeter; // Delay zone free
+	fbClearing		 			: FB_DisplacementMeter; // Clearing
+	fbDelayStartTakeover  		: FB_DisplacementMeter; // Delay start takeover
+	fbZoneEndLengthClear		: FB_DisplacementMeter; // ZoneEndLenght clear
+	fbTakeoverPlausible         : FB_DisplacementMeter; // Takever distance plausible
+	DelayDistance				: DINT; // Delay distance [mm]
+	TimeoutTakeDistance			: DINT; // Distance until timeout take is triggered [mm]
+	StoppingByAccelaretion  	: INT; // Stopping distance by acceleration
+	TU_WithinBrakingZone    	: BOOL; // The TU is within braking zone
+	fbTrackingLeadingEdge 		: FB_DisplacementMeter; // TU leading edge position	tracking	
+	SubsystemReg				: ST_SubsystemRegistryConv;
+	TransportParam				: ST_TransportParam; // Transport parameter valid for current transport
+	PrevTransportParam			: ST_TransportParam; // Previous transport parameter valid for current transport
+	NextFunctionNumber			: E_FunctionNumber; // Currently assigned next function number
+	EnableShortZoneRestart  	: BOOL; // Enable short zone restart
+	TransportTrspDataReq    	: ST_TransportDataRequest; // TransportState, transport data request
+	TakeOverTrspDataReq     	: ST_TransportDataRequest; // TakeOverState, transport data reques
+	HandOverTrspDataReq     	: ST_TransportDataRequest; // HandOverState, transport data reques
+	InitTrspDataReq         	: ST_TransportDataRequest; // Initial, clear structur
+	SyncTrackingLeadingEdge 	: R_TRIG; // Trigger for sync tracking leading edge
+	ExtSyncTrackingLeadingEdge 	: R_TRIG; // External trigger for sync tracking leading edge
+	fbCascadeDrive				: TON; // Cascade drive switch on
+    fbDelayTakeoverRun          : TON; // Delay timer for drive run signal requested by drive takeover run
+END_VAR
+
+VAR_STAT CONSTANT
+	TIMEOUT_TAKE_FACTOR  	    : INT := 2; // Factor for timeout take setpoint
+	DIST_TO_OCCUPIED			: INT := 200; // Distance before signal occupied (takeover plausibility check) [mm]
+	RECALL_SERVICE_TIMEOUT      : TIME := T#2S; // Recall routing or merging service
+END_VAR]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[(**************************************************************************************************************
+   Input mapping
+***************************************************************************************************************)
+A_InputMapping();
+
+(**************************************************************************************************************
+   Error reset
+***************************************************************************************************************)
+F_ResetError(Reset := FALSE, ErrorData := ErrorData);
+
+(**************************************************************************************************************
+   Initialization
+***************************************************************************************************************)
+A_Init();
+
+// Abort execution of transport control if it is not initialized
+IF NOT Init THEN
+	RETURN;
+END_IF
+
+(**************************************************************************************************************
+   Error reset
+***************************************************************************************************************)
+F_ResetError(Reset := FALSE, ErrorData := ErrorData);
+
+(**************************************************************************************************************
+   Position tracking
+***************************************************************************************************************)
+A_PositionTracking();
+
+(**************************************************************************************************************
+   Transport state
+***************************************************************************************************************)
+A_TransportState();
+
+(**************************************************************************************************************
+   Takeover state
+***************************************************************************************************************)
+A_TakeOverState();                                                                                                                                                                 
+
+(**************************************************************************************************************
+   Handover state
+***************************************************************************************************************)
+A_HandOverState();
+
+(**************************************************************************************************************
+   Brake
+***************************************************************************************************************)
+A_Brake();
+
+(**************************************************************************************************************
+   Jam auto reset
+***************************************************************************************************************)
+A_JamAutoReset();
+
+(**************************************************************************************************************
+   Short zone restart
+***************************************************************************************************************)
+A_ShortZoneRestart();
+
+(**************************************************************************************************************
+   Output mapping
+***************************************************************************************************************)
+A_OutputMapping();
+]]></ST>
+    </Implementation>
+    <Action Name="A_Brake" Id="{8bc977f7-2385-409e-a16c-51264030fcc8}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_Brake
+ * 	FUNCTION	Determines the braking zone
+ **************************************************************************************)
+
+// Calculate stopping by accelaration
+// s = v^2/2a
+IF Acceleration <> 0 THEN
+	StoppingByAccelaretion := (CurrentSpeed * CurrentSpeed) / (2 * Acceleration);
+ELSE
+	StoppingByAccelaretion := 0;
+END_IF
+
+// If the TU is on the way to the occupied position
+IF NOT ZoneData.TransportControlData.Occupied THEN
+	// If the TU is within the zone
+	IF fbTrackingLeadingEdge.Run AND
+	   fbTrackingLeadingEdge.Displacement <= UINT_TO_DINT(TransportParam.ZoneLength) THEN	  
+		IF ZoneData.TransportControlData.FastSpeedActive THEN
+			// TU is over the braking point	
+			IF fbTrackingLeadingEdge.Displacement >= UINT_TO_DINT(TransportParam.ZoneLength)
+			   - TransportParam.ZoneEndLength
+			   + TransportParam.StopDelayDistance
+			   - StoppingDistance
+			   - StoppingByAccelaretion THEN
+				// Set flag TU within braking zone
+				TU_WithinBrakingZone := TRUE;
+			END_IF
+		END_IF
+	END_IF
+
+// If no transport before occupied is active	
+ELSIF ZoneData.TransportControlData.eTransportState <> E_TransportState.TAKEOVER AND
+	ZoneData.TransportControlData.eTransportState <> E_TransportState.FEEDIN AND
+    ZoneData.TransportControlData.eTransportState <> E_TransportState.SIMULTANEOUS THEN
+	TU_WithinBrakingZone := FALSE;
+END_IF
+	]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="A_HandOverState" Id="{17832d94-ca66-48b7-8b6e-06f5c48311dd}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_HandOverState
+ * 	FUNCTION	Handover state
+ **************************************************************************************)
+
+// If the transport is aborted set the interface to idle
+IF ZoneData.TransportControlData.eTransportState = E_TransportState.IDLE OR
+   ZoneData.TransportControlData.eTransportState = E_TransportState.CLEARING THEN
+	ZoneData.TransportControlData.eHandOverState := E_HandOverState.IDLE;
+END_IF
+
+// Restet transport data request
+HandOverTrspDataReq := InitTrspDataReq;
+ 
+CASE ZoneData.TransportControlData.eHandOverState OF
+(*************************************************************************
+  Idle
+*************************************************************************)
+	E_HandOverState.IDLE:
+
+		DriveHandoverRun := FALSE;
+
+		// Reset zone end length clear	
+		fbZoneEndLengthClear(Run := FALSE);
+
+		// Reset jam monitoring
+		IF NOT ZoneData.TransportControlData.Occupied THEN
+			// Reset jam monitoring
+			fbTimeoutJam(Run := FALSE);
+		END_IF
+	
+		// Zone is ready to handover
+		IF Inputs.Enable.Transport AND Inputs.Enable.HandOver AND
+		   Param.rOperationState.eState = E_PositionState.STARTED AND
+		   ErrorData.ErrorType <> E_ErrorType.ERROR THEN
+			// If next zone or function is available
+			IF NextTransportData.eFunctionNumber <> E_FunctionNumber.F_BEGIN_FUNCTION OR
+			   Param.reNextFunctionNumber <> E_FunctionNumber.F_BEGIN_FUNCTION THEN	
+				IF (ZoneData.TransportControlData.eTransportState = E_TransportState.HANDOVER OR
+				   ZoneData.TransportControlData.eTransportState = E_TransportState.MULTIZONE_OCCUPIED OR
+				   ZoneData.TransportControlData.eTransportState = E_TransportState.MULTIZONE_STOP OR
+				   ZoneData.TransportControlData.eTransportState = E_TransportState.MULTI_TU_OCCUPIED OR
+				   (ZoneData.TransportControlData.eTransportState = E_TransportState.MULTI_TU AND
+					ZoneData.TransportControlData.Occupied) OR 
+				     (ZoneData.TransportControlData.eTransportState = E_TransportState.SIMULTANEOUS_OCCUPIED AND
+					  PrevTransportData.rTransportControlData.eHandOverState = E_HandOverState.READY AND
+					  (NOT Param.rSettings.EnableMFC OR TU_DataTable[ZoneData.TransportControlData.TU_DataIndex].DataSet.JobPresent)) OR
+				    ZoneData.TransportControlData.eTransportState = E_TransportState.SIMULTANEOUS_STOP) AND 
+					DriveReady THEN
+					ZoneData.TransportControlData.eHandOverState := E_HandOverState.READY;
+					// Update for this transport valid trasport parameter
+					TransportParam := ZoneData.TransportControlData.TransportParam;				
+				END_IF
+			END_IF		
+		END_IF
+
+(*************************************************************************
+  Ready
+*************************************************************************)
+	E_HandOverState.READY:
+
+		DriveHandoverRun := FALSE;
+
+		// Next position started takeover
+		IF NextTransportData.rTransportControlData.eTakeOverState = E_TakeOverState.ACTIVE THEN
+			DriveHandoverRun := TRUE;
+			ZoneData.TransportControlData.eHandOverState := E_HandOverState.ACTIVE;
+
+		ELSIF NOT Inputs.Enable.Transport OR NOT Inputs.Enable.HandOver OR
+			  Param.rOperationState.eState <> E_PositionState.STARTED OR
+			  ErrorData.ErrorType = E_ErrorType.ERROR OR
+			  (NextTransportData.eFunctionNumber = E_FunctionNumber.F_BEGIN_FUNCTION AND
+			   Param.reNextFunctionNumber = E_FunctionNumber.F_BEGIN_FUNCTION) OR
+			  ZoneData.TransportControlData.eTransportState <> E_TransportState.HANDOVER AND
+		      ZoneData.TransportControlData.eTransportState <> E_TransportState.MULTIZONE_OCCUPIED AND
+			  ZoneData.TransportControlData.eTransportState <> E_TransportState.MULTIZONE AND
+		      ZoneData.TransportControlData.eTransportState <> E_TransportState.MULTIZONE_STOP AND
+			  ZoneData.TransportControlData.eTransportState <> E_TransportState.MULTI_TU_OCCUPIED AND
+			  (ZoneData.TransportControlData.eTransportState <> E_TransportState.MULTI_TU OR NOT
+			   ZoneData.TransportControlData.Occupied) AND
+			   (ZoneData.TransportControlData.eTransportState <> E_TransportState.SIMULTANEOUS_OCCUPIED OR 
+                PrevTransportData.rTransportControlData.eHandOverState <> E_HandOverState.READY OR
+				Param.rSettings.EnableMFC AND NOT TU_DataTable[ZoneData.TransportControlData.TU_DataIndex].DataSet.JobPresent) AND
+			  ZoneData.TransportControlData.eTransportState <> E_TransportState.SIMULTANEOUS AND
+			    ZoneData.TransportControlData.eTransportState <> E_TransportState.SIMULTANEOUS_STOP THEN
+			HandOverTrspDataReq.DeleteNextTransportData := TRUE;   
+			DriveHandoverRun := FALSE;
+			ZoneData.TransportControlData.eHandOverState := E_HandOverState.IDLE;
+		END_IF
+
+(*************************************************************************
+  Active
+*************************************************************************)
+	E_HandOverState.ACTIVE:
+		// Set drive on
+		DriveHandoverRun := TRUE;
+
+		// If the zone is free
+		IF NOT ZoneOccupiedSignal THEN
+			// Run zone end length clearing 
+			fbZoneEndLengthClear(
+				Run 				:= TRUE,
+				EncoderValueInc 	:= EncoderValue,
+				MaxEncoderValueInc 	:= MaxEncoderValue,
+				RateIncPerMM		:= 1,
+				SetPoint 			:= TransportParam.ZoneEndLength);
+		END_IF
+
+		// Stop handover
+		IF NOT Inputs.Enable.Transport OR
+			ErrorData.ErrorType = E_ErrorType.ERROR OR
+			Param.rOperationState.eState = E_PositionState.STOPPED OR
+			ZoneData.TransportControlData.eTransportState = E_TransportState.MULTIZONE_STOP OR
+			ZoneData.TransportControlData.eTransportState = E_TransportState.MULTI_TU_STOP OR 
+			NOT DriveReady THEN
+			DriveHandoverRun := FALSE;
+			ZoneData.TransportControlData.eHandOverState := E_HandOverState.STOP;		
+		
+		// Complete handover if the zone is no longer occupied and the zone end length is clear -> regular completion without MFC
+		ELSIF NOT ZoneData.TransportControlData.Occupied AND fbZoneEndLengthClear.Q THEN
+			fbZoneEndLengthClear(Run := FALSE);
+			DriveHandoverRun := TRUE;
+			ZoneData.TransportControlData.eHandOverState := E_HandOverState.COMPLETE;		
+		
+		// Next position stopped takeover
+		ELSIF NextTransportData.rTransportControlData.eTakeOverState = E_TakeOverState.STOP THEN
+			// Interrupt handover if the zone is occupied 						
+			IF ZoneData.TransportControlData.Occupied THEN
+				DriveHandoverRun := FALSE;
+				ZoneData.TransportControlData.eHandOverState := E_HandOverState.INTERRUPTED;
+			// Oterwise end handover because the TU can no more be stopped on the zone
+            // and the zone is already able to takeover a new TU
+			ELSE
+				fbZoneEndLengthClear(Run := FALSE);
+				DriveHandoverRun := TRUE;
+				ZoneData.TransportControlData.eHandOverState := E_HandOverState.COMPLETE;		
+			END_IF
+			
+		// Next position aborted the takeover or the link is broken
+		ELSIF NextTransportData.rTransportControlData.eTakeOverState = E_TakeOverState.IDLE OR
+			  NextTransportData.rTransportControlData.eTakeOverState = E_TakeOverState.UNDEFINED THEN
+			IF ZoneData.TransportControlData.Occupied THEN
+				IF Param.rSettings.EnableMultipleTU_Transition THEN
+					ZoneData.TransportControlData.NumberOfPresentTUs:= ZoneData.TransportControlData.NumberOfPresentTUs + 1;
+				ELSE
+					ZoneData.TransportControlData.NumberOfPresentTUs:= 1;
+				END_IF
+			END_IF
+			HandOverTrspDataReq.DeleteNextTransportData := TRUE;
+			DriveHandoverRun := FALSE;
+			ZoneData.TransportControlData.eHandOverState := E_HandOverState.IDLE;
+
+		// End handover if next position completed the takeover -> regular end with MFC
+		ELSIF NextTransportData.rTransportControlData.eTakeOverState = E_TakeOverState.COMPLETE THEN
+			IF NOT Param.rSettings.EnableMFC THEN
+				// debug message: '11-001-0095-01-1,  takeover complete before handover complete (multizone?),  occupied = false,  end length = 25'
+				DebugMsg := '';
+				DebugMsg := CONCAT(DebugMsg, F_AddDividerToSisString(Param.rSettings.ZoneName));
+				DebugMsg := CONCAT(DebugMsg, ',  takeover complete before handover complete (multizone?)');
+				DebugMsg := CONCAT(DebugMsg, DebugTextBlocks.OCCUPIED);
+				DebugMsg := CONCAT(DebugMsg, BOOL_TO_STRING(ZoneData.TransportControlData.Occupied));
+				DebugMsg := CONCAT(DebugMsg, DebugTextBlocks.ENDLENGTH);
+				DebugMsg := CONCAT(DebugMsg, DINT_TO_STRING(fbZoneEndLengthClear.SetPoint - fbZoneEndLengthClear.Displacement));
+				fbDebugMsg.M_SendErrorMsg(DebugMsg);
+			END_IF
+
+			HandOverTrspDataReq.DeleteNextTransportData := TRUE;
+			DriveHandoverRun := FALSE;
+			ZoneData.TransportControlData.eHandOverState := E_HandOverState.IDLE;
+
+		// If not multizone transport is active
+		ELSIF ZoneData.TransportControlData.eTransportState <> E_TransportState.MULTIZONE AND
+              NextTransportData.rTransportControlData.eTransportState <> E_TransportState.MULTIZONE_STOP AND
+              NOT Param.rSettings.EnableMFC AND
+			  CurrentSpeed > 0 THEN
+			
+			// Jam monitoring
+			fbTimeoutJam(
+				Run 				:= ZoneOccupiedSignal,
+				EncoderValueInc 	:= EncoderValue,
+				MaxEncoderValueInc 	:= MaxEncoderValue,
+				RateIncPerMM		:= 1,
+				SetPoint			:= Param.rSettings.JamTriggerDistance);
+
+			// If timeout jam			
+			IF fbTimeoutJam.Q THEN
+				// If not short zone restart (A_ShortZoneRestart)			
+				IF NOT EnableShortZoneRestart THEN
+					// Set error
+					F_SetError(	
+						ErrorType	:= E_ErrorType.ERROR,
+						ErrorParam	:= '',
+						ErrorMsg	:= E_ErrorConv.JAM_ERROR,
+						ErrorData	:= ErrorData);
+					
+					fbTimeoutJam(Run := FALSE);
+				END_IF
+
+				// Stop handover
+				DriveHandoverRun := FALSE;
+				ZoneData.TransportControlData.eHandOverState := E_HandOverState.STOP;
+			END_IF				
+		END_IF
+
+(*************************************************************************
+  Stop
+*************************************************************************)
+	E_HandOverState.STOP:
+
+		DriveHandoverRun := FALSE;
+
+		// If the next position aborted the takeover or the link is broken,
+		// cancel the started handover
+		IF NextTransportData.rTransportControlData.eTakeOverState = E_TakeOverState.IDLE OR
+		   NextTransportData.rTransportControlData.eTakeOverState = E_TakeOverState.UNDEFINED THEN
+			HandOverTrspDataReq.DeleteNextTransportData := TRUE;
+			DriveHandoverRun := FALSE;
+			ZoneData.TransportControlData.eHandOverState := E_HandOverState.IDLE;
+
+		// If transport is enabled and position is started
+		ELSIF Inputs.Enable.Transport AND
+		   Param.rOperationState.eState = E_PositionState.STARTED THEN
+			// If no error is pending
+			IF ErrorData.ErrorType <> E_ErrorType.ERROR AND DriveReady THEN
+				// If the transport state the execution allows
+				IF ZoneData.TransportControlData.eTransportState <> E_TransportState.MULTIZONE_STOP AND
+				   ZoneData.TransportControlData.eTransportState <> E_TransportState.MULTI_TU_STOP THEN
+					DriveHandoverRun := TRUE;
+					ZoneData.TransportControlData.eHandOverState := E_HandOverState.ACTIVE;
+				END_IF
+			END_IF
+		END_IF
+
+(*************************************************************************
+  Interrupted
+*************************************************************************)
+	E_HandOverState.INTERRUPTED:
+
+		DriveHandoverRun := FALSE;
+
+		// If the next position aborted the takeover or the link is broken,
+		// cancel the started handover
+		IF NextTransportData.rTransportControlData.eTakeOverState = E_TakeOverState.IDLE OR
+		   NextTransportData.rTransportControlData.eTakeOverState = E_TakeOverState.UNDEFINED THEN
+			HandOverTrspDataReq.DeleteNextTransportData := TRUE;
+			DriveHandoverRun := FALSE;
+			ZoneData.TransportControlData.eHandOverState := E_HandOverState.IDLE;
+
+		// If the next position is active again
+		ELSIF NextTransportData.rTransportControlData.eTakeOverState = E_TakeOverState.ACTIVE THEN
+			DriveHandoverRun := TRUE;
+			ZoneData.TransportControlData.eHandOverState := E_HandOverState.ACTIVE;
+		END_IF
+		
+(*************************************************************************
+  Complete
+*************************************************************************)
+	E_HandOverState.COMPLETE:
+
+		DriveHandoverRun := TRUE;
+
+		// Set drive on
+		DriveHandoverRun := NextTransportData.rTransportControlData.eTakeOverState <> E_TakeOverState.STOP AND
+                            ZoneData.TransportControlData.eTransportState <> E_TransportState.OCCUPIED;
+		
+		// No pending transfer -> change to idle
+		IF NextTransportData.rTransportControlData.eTakeOverState = E_TakeOverState.COMPLETE OR
+		   NextTransportData.rTransportControlData.eTakeOverState = E_TakeOverState.READY OR
+		   NextTransportData.rTransportControlData.eTakeOverState = E_TakeOverState.IDLE OR
+		   NextTransportData.rTransportControlData.eTakeOverState = E_TakeOverState.UNDEFINED THEN
+			HandOverTrspDataReq.DeleteNextTransportData := TRUE;
+			DriveHandoverRun := FALSE;
+			ZoneData.TransportControlData.eHandOverState := E_HandOverState.IDLE;
+		END_IF
+
+(*************************************************************************
+  State error
+*************************************************************************)
+ELSE
+	// Set error
+	F_SetError(	
+		ErrorType	:= E_ErrorType.ERROR,
+		ErrorParam	:= INT_TO_STRING(ZoneData.TransportControlData.eHandOverState),
+		ErrorMsg	:= E_ErrorConv.SOFTWARE_ERROR,
+		ErrorData	:= ErrorData);
+END_CASE]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="A_Init" Id="{dd49f579-06d8-455c-8903-1535dbca12f3}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_Init
+ * 	FUNCTION	Initialize
+ **************************************************************************************)
+
+// When zone is not initialized or invalid inputs are available
+IF NOT ZoneData.Init THEN
+	// Reset internal variables
+	ZoneData.TransportControlData.eTransportState := E_TransportState.IDLE;
+	ZoneData.TransportControlData.eTakeOverState := E_TakeOverState.IDLE;
+	ZoneData.TransportControlData.eHandOverState := E_HandOverState.IDLE;
+	Init := FALSE;
+
+	TransportTrspDataReq := InitTrspDataReq;
+	TakeOverTrspDataReq := InitTrspDataReq;
+	HandOverTrspDataReq := InitTrspDataReq;
+
+	EnableFastSpeed := TRUE;
+	ErrorData.ResetError := TRUE;
+	Outputs.DriveRun   				 := FALSE;
+	Outputs.DriveTakeoverRun		 := FALSE;
+	Outputs.DriveHandoverRun		 := FALSE;
+	Outputs.RequestPrevTransportData := FALSE;
+	Outputs.RequestNextTransportData := FALSE;
+	Outputs.DeletePrevTransportData	 := FALSE;
+	Outputs.DeleteNextTransportData  := FALSE;
+	Outputs.DistanceToZoneEnd		 := 0;
+
+	DriveFeedInRun   := FALSE;
+	DriveTakeoverRun := FALSE; 
+	DriveHandoverRun := FALSE;
+	DriveClearingRun := FALSE; 
+	DriveFreeRun     := FALSE;
+	DriveMultiTU_Run := FALSE;
+
+	fbZoneOccupiedFreeTimer(IN := FALSE);
+	fbZoneOccupiedTimer(IN := FALSE);
+	fbFreeRunTimer(IN := FALSE);
+	fbAutoResetJamTimer(IN := FALSE);
+	fbMergingServiceRetry(IN := FALSE);
+	fbRoutingServiceRetry(IN := FALSE);
+	fbTimeoutJam(Run := FALSE);
+	fbTimeoutTake(Run := FALSE);
+	fbTakeoverPlausible(Run := FALSE);
+	fbDelayZoneOccupied(Run := FALSE);
+	fbDelayZoneFree(Run := FALSE);
+	fbClearing(Run := FALSE);
+	fbDelayStartTakeover(Run := FALSE);
+	fbCascadeDrive(IN := FALSE);
+	fbTrackingLeadingEdge(Run := FALSE);
+	
+// If is not initialized
+ELSIF NOT Init THEN
+	IF ErrorData.ErrorType <> E_ErrorType.NO_ERROR_PENDING THEN
+		// Stop initialization
+		RETURN;
+	END_IF
+	
+	// Set time for zone free
+	IF Param.rSettings.tZoneFree <> T#0S THEN
+		tZoneFree := Param.rSettings.tZoneFree;
+	END_IF
+
+	// Set time for zone occupied
+	IF Param.rSettings.tZoneOccupied <> T#0S THEN
+		tZoneOccupied := Param.rSettings.tZoneOccupied;
+	END_IF
+
+	// Exit init if settings are not valid
+	IF Param.rSettings.Speed <= 0 OR Param.rSettings.SpeedSlow <= 0 OR Param.rSettings.SpeedFast <= 0 THEN
+		// Set cerror
+		F_SetError(	
+			ErrorType	:= E_ErrorType.ERROR,
+			ErrorParam	:= 'negative speeds',
+			ErrorMsg	:= E_ErrorConv.CONFIGURATION_ERROR,
+			ErrorData	:= ErrorData);
+		RETURN;
+	END_IF
+	
+	// debug message: '11-001-0095-01-1,  transport initialisation done'
+	DebugMsg := '';
+	DebugMsg := CONCAT(DebugMsg, F_AddDividerToSisString(Param.rSettings.ZoneName));
+	DebugMsg := CONCAT(DebugMsg, ',  transport initialisation done');
+	fbDebugMsg.M_SendInfoMsg(DebugMsg);
+
+	// done
+	Init := TRUE;
+
+END_IF
+]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="A_InputMapping" Id="{0f804f75-256e-44ea-a1f0-1d0c23f05634}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_InputMapping
+ * 	FUNCTION	Input mapping
+ **************************************************************************************)
+ 
+// Transport enable
+Inputs.Enable.Transport := TransportEnable AND Param.rZoneEnable.Transport;
+Inputs.Enable.TakeOver := TransportEnableTakeOver AND Param.rZoneEnable.TakeOver;
+Inputs.Enable.HandOver := TransportEnableHandOver AND Param.rZoneEnable.HandOver AND Param.rExternalZoneEnable;
+
+// Get Master speed from subsystem
+IF __ISVALIDREF(SubsystemRegistry.rSubsystemInterface) THEN
+	// Subsystem master speed
+	Inputs.MasterSpeed := SubsystemRegistry.rSubsystemInterface.Out.MasterSpeed;
+ELSE	
+	// Default
+	Inputs.MasterSpeed := 100;
+END_IF
+
+// Use own or sensor over addon interface
+M_SelectSensor();]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="A_JamAutoReset" Id="{d301aacc-851d-4bb4-997f-0a21c9463081}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_JamAutoReset
+ * 	FUNCTION	Jam auto reset
+ **************************************************************************************)
+
+// Auto reset jam error if it is enabled and the sensor is free
+IF Param.rSettings.EnableJamAutoReset THEN
+	IF ErrorData.ErrorCode.Conv = E_ErrorConv.JAM_ERROR THEN
+		IF NOT ZoneOccupiedSignal THEN
+			fbAutoResetJamTimer(IN := TRUE, PT := tAutoResetJam);
+			IF fbAutoResetJamTimer.Q THEN
+				fbAutoResetJamTimer(IN := FALSE);
+				ErrorData.ResetError := TRUE;
+			END_IF
+		ELSE
+			fbAutoResetJamTimer(IN := FALSE);
+	        END_IF
+	ELSE
+		fbAutoResetJamTimer(IN := FALSE);
+	END_IF
+END_IF
+]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="A_OutputMapping" Id="{be78205a-8bc0-494c-ad0d-4ea7bd67489b}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_OutputMapping
+ * 	FUNCTION	Process outputs
+ **************************************************************************************)
+
+// Reset output drive run
+Outputs.DriveTakeoverRun := FALSE; 
+Outputs.DriveHandoverRun := FALSE;
+Outputs.DriveRun := FALSE; 
+
+// Set output drive run 
+IF Inputs.Enable.Transport AND ErrorData.ErrorType <> E_ErrorType.ERROR THEN
+	// Set output drive takeover run 
+	// If drive takover run or clearing run
+	IF DriveTakeoverRun OR DriveFeedInRun OR DriveClearingRun THEN
+		Outputs.DriveTakeoverRun := TRUE;
+	END_IF
+
+	// Start drive two zone ahead
+	IF Param.rSettings.EnablePrestart THEN
+		IF NOT ZoneData.TransportControlData.Occupied AND 
+			ZoneData.TransportControlData.eTakeOverState = E_TakeOverState.READY AND
+			PrevTransportData.rTransportControlData.TransportActive THEN
+			Outputs.DriveTakeoverRun := TRUE;
+		END_IF
+	END_IF	
+
+	// Set output drive handover run							
+	// If drive handover run or free run	
+	IF DriveHandoverRun OR DriveFreeRun THEN
+		Outputs.DriveHandoverRun := TRUE;
+	END_IF	
+
+	// If enable ignore next zone state and zone is occupied
+	IF Param.rSettings.EnableIgnoreNextZoneState AND Inputs.Enable.HandOver AND
+	   ZoneData.TransportControlData.Occupied THEN
+		Outputs.DriveHandoverRun := TRUE;	
+	END_IF
+
+	// Set output drive run    
+	IF Outputs.DriveTakeoverRun OR Outputs.DriveHandoverRun OR DriveMultiTU_Run THEN
+	    IF Param.rSettings.EnableMotorControl THEN        
+            IF Outputs.DriveTakeoverRun THEN
+                fbDelayTakeoverRun(IN:=ZoneData.AddOn.Orders.AllowDriveTakeover, PT:=Param.rSettings.tTakeoverMotorStartDelay);
+                Outputs.DriveRun := fbDelayTakeoverRun.Q;
+            ELSIF (Outputs.DriveHandoverRun OR DriveMultiTU_Run) THEN
+                Outputs.DriveRun := ZoneData.AddOn.Orders.AllowDriveHandover;
+            END_IF
+        ELSIF NOT Param.rSettings.EnableMotorControl THEN
+			Outputs.DriveRun := TRUE;
+		END_IF
+    ELSE
+        fbDelayTakeoverRun(IN:= FALSE);
+	END_IF
+END_IF
+
+// Reset fast speed active
+ZoneData.TransportControlData.FastSpeedActive := FALSE;
+
+// Set fast speed active
+IF EnableFastSpeed AND Param.rSettings.EnableFastSpeed THEN
+	// If clearing is active run slow speed because the physical situation is unclear
+	IF DriveClearingRun THEN
+		ZoneData.TransportControlData.FastSpeedActive := FALSE;
+	// If free run is active and the zone is clear
+	ELSIF DriveFreeRun AND NOT DriveHandoverRun THEN
+		ZoneData.TransportControlData.FastSpeedActive := TRUE;
+	// If multi TU is active and handover is not active
+	ELSIF DriveMultiTU_Run AND NOT Outputs.DriveHandoverRun THEN
+		ZoneData.TransportControlData.FastSpeedActive := TRUE;		
+	// If handover ist active follow the speed of the next zone
+	ELSIF Outputs.DriveHandoverRun THEN
+		IF NextTransportData.rTransportControlData.FastSpeedActive THEN
+			ZoneData.TransportControlData.FastSpeedActive := TRUE;
+		END_IF
+	// If takeover is active
+	ELSIF Outputs.DriveTakeoverRun THEN
+		// If the TU is not within braking zone
+		IF NOT TU_WithinBrakingZone THEN
+			ZoneData.TransportControlData.FastSpeedActive := TRUE;
+		// Otherwise the TU is in the braking zone
+		// Follow the speed of the next zone if the transport can contiune
+		ELSIF NextTransportData.rTransportControlData.FastSpeedActive THEN
+			// Check own conditions
+			IF Inputs.Enable.HandOver AND Param.rOperationState.eState = E_PositionState.STARTED THEN
+				IF NOT Param.rSettings.EnableSimultaneousTransport AND NOT ZoneData.AddOn.Orders.EnableSimultaneousTransport THEN
+					// Check conditions of the next zone
+					IF NextTransportData.rTransportControlData.eTakeoverState = E_TakeOverState.READY THEN
+						// If MFC is enable, only with a valid job can be continued				
+						IF NOT Param.rSettings.EnableMFC THEN
+							ZoneData.TransportControlData.FastSpeedActive := TRUE;
+						ELSIF TU_DataTable[ZoneData.TransportControlData.TU_DataIndex].DataSet.JobPresent THEN
+							ZoneData.TransportControlData.FastSpeedActive := TRUE;	
+						END_IF
+					END_IF
+				END_IF
+			END_IF
+		END_IF
+	END_IF
+END_IF	
+
+Outputs.RequestPrevTransportData := TransportTrspDataReq.RequestPrevTransportData OR
+									TakeOverTrspDataReq.RequestPrevTransportData OR
+									HandOverTrspDataReq.RequestPrevTransportData;
+
+Outputs.RequestNextTransportData := TransportTrspDataReq.RequestNextTransportData OR
+									TakeOverTrspDataReq.RequestNextTransportData OR
+									HandOverTrspDataReq.RequestNextTransportData;
+
+Outputs.DeletePrevTransportData := TransportTrspDataReq.DeletePrevTransportData OR
+									TakeOverTrspDataReq.DeletePrevTransportData OR
+									HandOverTrspDataReq.DeletePrevTransportData;
+
+Outputs.DeleteNextTransportData := TransportTrspDataReq.DeleteNextTransportData OR
+									TakeOverTrspDataReq.DeleteNextTransportData OR
+									HandOverTrspDataReq.DeleteNextTransportData;
+
+Outputs.DistanceToZoneEnd := DINT_TO_UINT(TransportParam.ZoneLength - fbTrackingLeadingEdge.Displacement);
+
+ZoneData.TransportControlData.DriveRunning := DriveRunning;
+									  
+ZoneData.TransportControlData.Stopped := Param.rOperationState.eState = E_PositionState.STOPPED OR
+									 	 Param.rOperationState.eState = E_PositionState.STOPPING AND NOT
+									     DriveTakeoverRun AND NOT DriveHandoverRun;
+									   
+ZoneData.TransportControlData.SensorOccupied := ZoneOccupiedSignal;
+
+IF Inputs.Enable.Transport AND ErrorData.ErrorType <> E_ErrorType.ERROR THEN
+	ZoneData.TransportControlData.TransportActive := DriveRunning AND
+													 ZoneData.TransportControlData.NumberOfPresentTUs <> 0;													  
+ELSE
+	ZoneData.TransportControlData.TransportActive := FALSE; 
+END_IF														   
+
+// Movement position, 1 inc/mm
+ZoneData.TransportControlData.MovementPosition := EncoderValue;
+
+// TU tracking leading edge position
+ZoneData.TransportControlData.TU_LeadingEdgePos := fbTrackingLeadingEdge.Displacement;
+									  									   
+// Update Current speed
+ZoneData.TransportControlData.CurrentSpeed  := CurrentSpeed;
+
+									  									   ]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="A_PositionTracking" Id="{2a872687-daae-4b91-b8a5-b6392160b835}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_PositionTracking
+ * 	FUNCTION	Tracks the TU position within the zone
+ **************************************************************************************)
+
+// Run tracking only if single TU transition is active
+// For multiple TU transition is tracking not available because there is more as one TU on the zone     
+IF NOT Param.rSettings.EnableMultipleTU_Transition THEN
+	// Run tracking leading edge
+	fbTrackingLeadingEdge(
+		EncoderValueInc 	:= EncoderValue,
+		MaxEncoderValueInc	:= MaxEncoderValue,
+		RateIncPerMM		:= 1);
+
+	// Trigger sync tracking if zone is occupied	
+	SyncTrackingLeadingEdge(CLK := ZoneOccupiedSignal);
+	
+	// External trigger sync tracking
+	ExtSyncTrackingLeadingEdge(CLK := SyncTracking);
+	 
+	// Sync tracking
+	IF SyncTrackingLeadingEdge.Q AND (DriveTakeoverRun OR DriveFeedInRun) THEN
+		fbTrackingLeadingEdge(Run := FALSE);
+		fbTrackingLeadingEdge(
+			Run					:= TRUE,
+			EncoderValueInc 	:= EncoderValue,
+			MaxEncoderValueInc 	:= MaxEncoderValue,
+			RateIncPerMM		:= 1,
+			SetPoint			:= UINT_TO_DINT(16#FFFF),
+			StartPoint	:= UINT_TO_DINT(TransportParam.ZoneLength) - UINT_TO_DINT(TransportParam.ZoneEndLength));
+
+	// External sync tracking
+	ELSIF ExtSyncTrackingLeadingEdge.Q THEN
+		fbTrackingLeadingEdge(Run := FALSE);
+		fbTrackingLeadingEdge(
+			Run					:= TRUE,
+			EncoderValueInc 	:= EncoderValue,
+			MaxEncoderValueInc 	:= MaxEncoderValue,
+			RateIncPerMM		:= 1,
+			SetPoint			:= UINT_TO_DINT(16#FFFF),
+			StartPoint		:= SyncTrackingPosition);
+			
+	// Reset tracking
+	ELSIF fbTrackingLeadingEdge.Q OR
+    	ZoneData.TransportControlData.eTransportState = E_TransportState.FREE OR
+        ZoneData.TransportControlData.eTransportState = E_TransportState.CLEARING THEN
+		fbTrackingLeadingEdge(Run := FALSE);
+	END_IF
+
+// Reset tracking 
+ELSIF fbTrackingLeadingEdge.Run THEN
+	fbTrackingLeadingEdge(Run := FALSE);
+END_IF
+]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="A_ShortZoneRestart" Id="{46fae7f7-7acc-4943-8824-2601312d8a04}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_ShortZoneRestart
+ * 	FUNCTION	Restart procedure for a short zone
+ **************************************************************************************)
+
+// If procedure is enable 
+IF EnableShortZoneRestart THEN
+	// If the zone is not able to handover the TU (timeout jam)
+	IF fbTimeoutJam.Q THEN
+		// Reset timer
+		fbTimeoutJam(Run := FALSE);
+
+		IF ZoneData.TransportControlData.eTransportState = E_TransportState.HANDOVER THEN
+			IF ZoneData.TransportControlData.eTakeOverState = E_TakeOverState.IDLE THEN
+				IF ZoneData.TransportControlData.eHandOverState = E_HandOverState.STOP THEN
+					// Force multi zone
+					ZoneData.TransportControlData.eTransportState := E_TransportState.MULTIZONE_STOP;		
+					ZoneData.TransportControlData.eTakeOverState := E_TakeOverState.STOP;
+					// Reset error
+					ErrorData.ResetError := TRUE;
+					// Reset enable
+					EnableShortZoneRestart := FALSE;
+				END_IF
+			END_IF
+		END_IF
+	END_IF
+END_IF
+]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="A_TakeOverState" Id="{3ba99b51-9909-435a-8ae7-10d081ab7270}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_TakeOverState
+ * 	FUNCTION	Takeover state
+ **************************************************************************************)
+
+// If the transport is aborted set the interface to idle
+IF ZoneData.TransportControlData.eTransportState = E_TransportState.IDLE OR
+   ZoneData.TransportControlData.eTransportState = E_TransportState.CLEARING THEN
+	DriveTakeoverRun := FALSE; 
+	ZoneData.TransportControlData.eTakeOverState := E_TakeOverState.IDLE;
+END_IF
+
+// Reset transport data request
+TakeOverTrspDataReq := InitTrspDataReq;
+  
+CASE ZoneData.TransportControlData.eTakeOverState OF
+(*************************************************************************
+  Idle
+*************************************************************************)
+	E_TakeOverState.IDLE:
+
+		DriveTakeoverRun := FALSE;
+	
+		// Run delay start takeover
+		fbDelayStartTakeover(
+			EncoderValueInc 	:= EncoderValue,
+			MaxEncoderValueInc 	:= MaxEncoderValue,
+			RateIncPerMM		:= 1);
+		
+		// Start delay takeover if configured and not running already
+		// (at every takeover or only at drive restart)
+		IF Param.rSettings.MinimumTU_Distance > 0 AND NOT fbDelayStartTakeover.Run THEN
+		
+			fbDelayStartTakeover(
+				Run 				:= NOT Outputs.DriveRun OR NOT Param.rSettings.EnableCreateGapOnlyAtRestart,
+				EncoderValueInc 	:= EncoderValue,
+				MaxEncoderValueInc 	:= MaxEncoderValue,
+				RateIncPerMM		:= 1,
+				SetPoint			:= Param.rSettings.MinimumTU_Distance);
+		END_IF
+		
+		// If the zone is internally ready for takeover
+		IF NOT (ErrorData.ErrorType = E_ErrorType.ERROR) AND
+           NOT (ZoneData.TransportControlData.eHandOverState = E_HandOverState.INTERRUPTED) AND
+		   Inputs.Enable.Transport AND Inputs.Enable.TakeOver AND
+	   	   Param.rOperationState.eState = E_PositionState.STARTED AND 
+		   DriveReady THEN
+
+			IF ZoneData.TransportControlData.eTransportState = E_TransportState.TAKEOVER OR
+			   ZoneData.TransportControlData.eTransportState = E_TransportState.FREE_RUN OR
+  			   (ZoneData.TransportControlData.eTransportState = E_TransportState.SIMULTANEOUS_OCCUPIED AND 
+                (NOT Param.rSettings.EnableMFC OR TU_DataTable[ZoneData.TransportControlData.TU_DataIndex].DataSet.JobPresent))OR
+			   ZoneData.TransportControlData.eTransportState = E_TransportState.MULTI_TU THEN
+
+				// If the delay is not started or elapsed then zone is ready for takeover
+				IF NOT fbDelayStartTakeover.Run OR fbDelayStartTakeover.Q THEN
+					ZoneData.TransportControlData.eTakeOverState := E_TakeOverState.READY;
+				ELSE
+					// Set drive on to create minimum TU gap
+					DriveTakeoverRun := TRUE;
+				END_IF
+			END_IF
+		END_IF
+
+(*************************************************************************
+  Ready
+*************************************************************************)
+	E_TakeOverState.READY:
+
+		DriveTakeoverRun := FALSE;
+	
+		IF NOT Inputs.Enable.Transport OR NOT Inputs.Enable.TakeOver OR
+		   (ErrorData.ErrorType = E_ErrorType.ERROR) OR
+		   Param.rOperationState.eState <> E_PositionState.STARTED OR
+		   ZoneData.TransportControlData.eTransportState = E_TransportState.FREE OR
+		   ZoneData.TransportControlData.eTransportState = E_TransportState.OCCUPIED OR
+		   ZoneData.TransportControlData.eTransportState = E_TransportState.MULTI_TU_OCCUPIED OR
+ 		   ZoneData.TransportControlData.eTransportState = E_TransportState.MULTI_TU_STOP OR
+		   (ZoneData.TransportControlData.eTransportState = E_TransportState.SIMULTANEOUS_OCCUPIED AND
+			ZoneData.TransportControlData.eHandOverState = E_HandOverState.IDLE AND  (*BCFD-9921 BCF 1. TransportControl Simultaneous mode not working with MFC*)
+		    Param.rSettings.EnableMFC AND NOT TU_DataTable[ZoneData.TransportControlData.TU_DataIndex].DataSet.JobPresent) OR
+		   ZoneData.TransportControlData.eTransportState = E_TransportState.SIMULTANEOUS_STOP OR
+		   NOT DriveReady THEN
+			DriveTakeoverRun := FALSE; 
+			ZoneData.TransportControlData.eTakeOverState := E_TakeOverState.IDLE;
+
+		// Previous position is ready to handover
+		ELSIF PrevTransportData.rTransportControlData.eHandOverState = E_HandOverState.READY THEN
+			// If transport is with MFC and zone is occupied and not simultaneous transport is enable
+			IF Param.rSettings.EnableMFC AND ZoneOccupiedSignal AND 
+ 				NOT Param.rSettings.EnableSimultaneousTransport AND
+				NOT ZoneData.AddOn.Orders.EnableSimultaneousTransport THEN
+					// Set error
+					F_SetError(	
+						ErrorType	:= E_ErrorType.ERROR,
+						ErrorParam	:= '',
+						ErrorMsg	:= E_ErrorConv.POSITION_OCCUPIED_BEFORE_TAKEOVER,
+						ErrorData	:= ErrorData);
+
+			// Otherwise wait until takeover can be started
+			// (SIMULTANEOUS -> handover is active - TU data index is moved to the next zone)
+            ELSIF ZoneData.TransportControlData.eTransportState = E_TransportState.TAKEOVER OR
+				ZoneData.TransportControlData.eTransportState = E_TransportState.MULTI_TU OR
+				ZoneData.TransportControlData.eTransportState = E_TransportState.SIMULTANEOUS THEN
+				// Update for this transport valid trasport parameter
+				TransportParam := ZoneData.TransportControlData.TransportParam;
+				PrevTransportParam :=  PrevTransportData.rTransportControlData.TransportParam;
+				NextFunctionNumber := NextTransportData.eFunctionNumber;
+
+				// Move tu data and start tracking
+				M_MoveTUdata();
+				M_StartPositionTracking();
+				
+				// Delete TU-data if it is configured
+				IF Param.rSettings.DeleteTU_DataTakeover THEN
+					// debug message: '11-001-0095-01-1,  taken over TU_DataIndex deleted,  TU_DataIndex = 5,  TuID = 000012345,  AssignmentID = 999999999'
+					DebugMsg := '';
+					DebugMsg := CONCAT(DebugMsg, F_AddDividerToSisString(Param.rSettings.ZoneName));
+					DebugMsg := CONCAT(DebugMsg, ',  taken over TU_DataIndex deleted');
+					DebugMsg := CONCAT(DebugMsg, F_CreateTU_DataString(TU_DataIndex:= ZoneData.TransportControlData.TU_DataIndex));
+					fbDebugMsg.M_SendInfoMsg(DebugMsg);
+
+					// If data has been deleted
+					If F_DeleteTU_Data(
+						TU_DataIndex 	:= ZoneData.TransportControlData.TU_DataIndex,
+						NoTTC 			:= FALSE) THEN
+				
+						M_DeleteTU_DataIndex(mSendTUR := FALSE);
+					END_IF
+				END_IF
+				
+				// Reset delay start takeover so that it can be activated for the next takeover
+				fbDelayStartTakeover(Run := FALSE);
+
+				// Start transport
+				fbTimeoutTake(Run := FALSE);
+				fbTakeoverPlausible(Run := FALSE);
+				DriveTakeoverRun := TRUE;
+				ZoneData.TransportControlData.eTakeOverState := E_TakeOverState.ACTIVE;
+			END_IF
+		END_IF
+
+(*************************************************************************
+  Active
+*************************************************************************)
+	E_TakeOverState.ACTIVE:
+		// Set drive on
+		DriveTakeoverRun := TRUE;
+		
+		// Timeout take monitoring
+		IF Param.rSettings.TimeoutTakeDistance <> 0 THEN
+			TimeoutTakeDistance := Param.rSettings.TimeoutTakeDistance;
+		ELSE
+			TimeoutTakeDistance := (UINT_TO_DINT(TransportParam.ZoneLength)
+					   				- TransportParam.ZoneEndLength
+					   				+ TransportParam.StopDelayDistance
+                       				+ PrevTransportParam.ZoneEndLength) * TIMEOUT_TAKE_FACTOR;
+		END_IF			
+		
+		IF TimeoutTakeDistance < 0 THEN
+			TimeoutTakeDistance := 0;
+		END_IF
+		
+		// Run timeout take
+		fbTimeoutTake(
+			Run					:= TRUE, 
+			EncoderValueInc 	:= EncoderValue,
+			MaxEncoderValueInc 	:= MaxEncoderValue,
+			RateIncPerMM		:= 1,
+			SetPoint			:= TimeoutTakeDistance);
+
+		// Takeover plausibility check
+		// Accept TU data only if takeover is long enought that occupied signal is plausible
+		fbTakeoverPlausible(
+			Run					:= TRUE, 
+			EncoderValueInc		:= EncoderValue,
+			MaxEncoderValueInc 	:= MaxEncoderValue,
+			RateIncPerMM		:= 1,
+			SetPoint			:= M_TakeoverPlausibleDistance() );
+			
+		// If transport is without MFC
+		IF NOT Param.rSettings.EnableMFC THEN			
+			// End takeover if not multizone and not multiple TU is enabled and the position is occupied
+			IF NOT Param.rSettings.EnableMultizone AND NOT Param.rSettings.EnableMultipleTU_Transition AND
+			   (ZoneData.TransportControlData.eTransportState = E_TransportState.OCCUPIED OR
+(*BCFD-11486 - TakeOver do not enter COMPLETE when Simultaneous mode is active (MFC disabled)*)
+				ZoneData.TransportControlData.eTransportState = E_TransportState.SIMULTANEOUS_OCCUPIED) THEN				
+				// Check if takeover is plausible, otherwiese clear TU data index
+				IF NOT fbTakeoverPlausible.Q THEN
+					// debug message: '11-001-0095-01-1,  TU_DataIndex of implausible takeover deleted,  TU_DataIndex = 12345,  TuID = 112233,  AssignmentID = 12345678'
+					DebugMsg := '';
+					DebugMsg := CONCAT(DebugMsg, F_AddDividerToSisString(Param.rSettings.ZoneName));
+					DebugMsg := CONCAT(DebugMsg, ',  TU_DataIndex of implausible takeover deleted');
+					DebugMsg := CONCAT(DebugMsg, F_CreateTU_DataString(ZoneData.TransportControlData.TU_DataIndex));
+					fbDebugMsg.M_SendErrorMsg(DebugMsg);
+					M_DeleteTU_DataIndex(mSendTUR := TRUE);
+				END_IF
+
+				fbTimeoutTake(Run := FALSE);
+				fbTakeoverPlausible(Run := FALSE);
+				DriveTakeoverRun := TRUE;
+				ZoneData.TransportControlData.eTakeOverState := E_TakeOverState.COMPLETE;
+
+			// Interrupt takeover if previous position stopped handover
+			ELSIF PrevTransportData.rTransportControlData.eHandOverState = E_HandOverState.STOP OR
+			   PrevTransportData.rTransportControlData.eTransportState = E_TransportState.MULTIZONE_STOP THEN
+				DriveTakeoverRun := FALSE;
+				ZoneData.TransportControlData.eTakeOverState := E_TakeOverState.INTERRUPTED;
+	
+			// Stop takeover from own cause
+			ELSIF NOT Inputs.Enable.Transport OR
+				ErrorData.ErrorType = E_ErrorType.ERROR OR
+				Param.rOperationState.eState = E_PositionState.STOPPED OR
+				ZoneData.TransportControlData.eTransportState = E_TransportState.OCCUPIED OR
+				ZoneData.TransportControlData.eTransportState = E_TransportState.MULTIZONE_OCCUPIED OR
+				ZoneData.TransportControlData.eTransportState = E_TransportState.MULTIZONE_STOP OR 
+				ZoneData.TransportControlData.eTransportState = E_TransportState.MULTI_TU_OCCUPIED OR
+ 				ZoneData.TransportControlData.eTransportState = E_TransportState.MULTI_TU_STOP OR
+				NOT DriveReady THEN
+	
+				// Check if takeover is plausible, otherwise clear TU data index
+				IF NOT fbTakeoverPlausible.Q AND NOT Param.rSettings.EnableMultipleTU_Transition THEN
+					// debug message: '11-001-0095-01-1,  TU_DataIndex of implausible takeover deleted,  TU_DataIndex = 12345,  TuID = 112233,  AssignmentID = 12345678'
+					DebugMsg := '';
+					DebugMsg := CONCAT(DebugMsg, F_AddDividerToSisString(Param.rSettings.ZoneName));
+					DebugMsg := CONCAT(DebugMsg, ',  TU_DataIndex of implausible takeover deleted');
+					DebugMsg := CONCAT(DebugMsg, F_CreateTU_DataString(ZoneData.TransportControlData.TU_DataIndex));
+					fbDebugMsg.M_SendErrorMsg(DebugMsg);
+					M_DeleteTU_DataIndex(mSendTUR := TRUE);
+				END_IF
+				
+				ZoneData.TransportControlData.eTakeOverState := E_TakeOverState.STOP;
+			// Regular takeoover complete if previous position completed handover
+			ELSIF PrevTransportData.rTransportControlData.eHandOverState = E_HandOverState.COMPLETE THEN
+				DriveTakeoverRun := TRUE;
+				ZoneData.TransportControlData.eTakeOverState := E_TakeOverState.COMPLETE;
+
+			// End takeover and clear TU data index if multizone is not active and timeout take	
+			ELSIF ZoneData.TransportControlData.eTransportState <> E_TransportState.MULTIZONE THEN
+				IF fbTimeoutTake.Q THEN
+					fbTimeoutTake(Run := FALSE);
+					fbTakeoverPlausible(Run := FALSE);
+
+					// debug message: '11-001-0095-01-1,  TU_DataIndex of timeouted takeover deleted,  TU_DataIndex = 12345,  TuID = 112233,  AssignmentID = 12345678'
+					DebugMsg := '';
+					DebugMsg := CONCAT(DebugMsg, F_AddDividerToSisString(Param.rSettings.ZoneName));
+					DebugMsg := CONCAT(DebugMsg, ',  TU_DataIndex of timeouted takeover deleted');
+					DebugMsg := CONCAT(DebugMsg, F_CreateTU_DataString(ZoneData.TransportControlData.TU_DataIndex));
+					fbDebugMsg.M_SendErrorMsg(DebugMsg);
+
+					// Process only if multiple TU transition is not active since simultaneous take/handover
+					// and TU data are not handled as in single transport
+					IF NOT Param.rSettings.EnableMultipleTU_Transition THEN
+						M_DeleteTU_DataIndex(mSendTUR := TRUE);
+						ZoneData.TransportControlData.NumberOfPresentTUs := 0;
+						TakeOverTrspDataReq.DeleteNextTransportData := TRUE;
+					END_IF
+
+					DriveTakeoverRun := FALSE;
+					ZoneData.TransportControlData.eTakeOverState := E_TakeOverState.IDLE;					
+				END_IF
+			END_IF
+
+		// Transport is with MFC
+ 		ELSE
+			// Previous position stopped handover
+			IF PrevTransportData.rTransportControlData.eHandOverState = E_HandOverState.STOP THEN
+				DriveTakeoverRun := FALSE;
+				ZoneData.TransportControlData.eTakeOverState := E_TakeOverState.INTERRUPTED;
+	
+			// Position is no longer enabled -> stop takeover
+			ELSIF NOT Inputs.Enable.Transport OR
+				  ErrorData.ErrorType = E_ErrorType.ERROR OR
+				  Param.rOperationState.eState = E_PositionState.STOPPED THEN
+				DriveTakeoverRun := FALSE;
+		    	ZoneData.TransportControlData.eTakeOverState := E_TakeOverState.STOP;
+
+			// If takeover is complete
+			ELSIF ZoneData.TransportControlData.eTransportState = E_TransportState.OCCUPIED OR
+				ZoneData.TransportControlData.eTransportState = E_TransportState.SIMULTANEOUS_OCCUPIED THEN
+				fbTimeoutTake(Run := FALSE);
+				fbTakeoverPlausible(Run := FALSE);
+				DriveTakeoverRun := TRUE;
+				ZoneData.TransportControlData.eTakeOverState := E_TakeOverState.COMPLETE;
+			ELSE
+				// If timeout take
+				IF fbTimeoutTake.Q THEN
+					fbTimeoutTake(Run := FALSE);
+					// Set error
+					F_SetError(	
+						ErrorType	:= E_ErrorType.ERROR,
+						ErrorParam	:= '',
+						ErrorMsg	:= E_ErrorConv.TIMEOUT_TAKEOVER,
+						ErrorData	:= ErrorData);
+						
+					// Stop takeover
+					DriveTakeoverRun := FALSE; 
+					ZoneData.TransportControlData.eTakeOverState := E_TakeOverState.STOP;				
+				END_IF
+			END_IF
+		END_IF
+		
+		// If no next zone or function is available
+		IF NextTransportData.eFunctionNumber = E_FunctionNumber.F_BEGIN_FUNCTION AND
+		   Param.reNextFunctionNumber = E_FunctionNumber.F_BEGIN_FUNCTION THEN
+			// Request next transport data
+			TransportTrspDataReq.RequestNextTransportData := TRUE;
+		END_IF
+			
+(*************************************************************************
+  Stop
+*************************************************************************)
+	E_TakeOverState.STOP:
+
+		DriveTakeoverRun := FALSE; 
+
+		// If the previous position aborted the handover or the link is broken,
+		// cancel the started takeover
+		IF PrevTransportData.rTransportControlData.eHandOverState = E_HandOverState.IDLE OR
+		   PrevTransportData.rTransportControlData.eHandOverState = E_HandOverState.UNDEFINED THEN
+			// debug message: '11-001-0095-01-1,  TU_DataIndex of canceled takeover deleted,  TU_DataIndex = 12345,  TuID = 112233,  AssignmentID = 12345678'
+			DebugMsg := '';
+			DebugMsg := CONCAT(DebugMsg, F_AddDividerToSisString(Param.rSettings.ZoneName));
+			DebugMsg := CONCAT(DebugMsg, ',  TU_DataIndex of canceled takeover deleted');
+			DebugMsg := CONCAT(DebugMsg, F_CreateTU_DataString(ZoneData.TransportControlData.TU_DataIndex));
+			fbDebugMsg.M_SendErrorMsg(DebugMsg);
+	
+//ProBox adoption due to BCFD-10530 - Possible loss of TU data with MFC
+			IF(NOT Param.rSettings.EnableMultipleTU_Transition AND NOT Param.rSettings.EnableMFC) THEN
+				M_DeleteTU_DataIndex(mSendTUR := TRUE);
+	
+				// Update number of present TUs 
+				IF ZoneData.TransportControlData.NumberOfPresentTUs > 0 THEN
+					ZoneData.TransportControlData.NumberOfPresentTUs := ZoneData.TransportControlData.NumberOfPresentTUs - 1;
+				END_IF
+	
+				TakeOverTrspDataReq.DeleteNextTransportData := TRUE;
+			END_IF
+			
+			DriveTakeoverRun := FALSE; 
+			ZoneData.TransportControlData.eTakeOverState := E_TakeOverState.IDLE;
+					
+		// If the position is enabled
+		ELSIF Inputs.Enable.Transport AND
+		   Param.rOperationState.eState = E_PositionState.STARTED THEN
+			// No error is pending
+			IF ErrorData.ErrorType <> E_ErrorType.ERROR THEN
+				IF ZoneData.TransportControlData.eTransportState <> E_TransportState.OCCUPIED AND
+				   ZoneData.TransportControlData.eTransportState <> E_TransportState.MULTIZONE_OCCUPIED AND
+				   ZoneData.TransportControlData.eTransportState <> E_TransportState.MULTIZONE_STOP AND
+				   ZoneData.TransportControlData.eTransportState <> E_TransportState.MULTI_TU_OCCUPIED AND
+ 				   ZoneData.TransportControlData.eTransportState <> E_TransportState.MULTI_TU_STOP AND 
+				   DriveReady THEN
+					DriveTakeoverRun := TRUE; 
+					ZoneData.TransportControlData.eTakeOverState := E_TakeOverState.ACTIVE;
+				END_IF
+			END_IF
+		END_IF
+
+(*************************************************************************
+  Interrupted
+*************************************************************************)
+	E_TakeOverState.INTERRUPTED:
+
+		DriveTakeoverRun := FALSE; 
+
+		// If the stop from the previous position is no longer required
+		IF PrevTransportData.rTransportControlData.eHandOverState <> E_HandOverState.STOP THEN
+           	IF ZoneData.TransportControlData.eTransportState <> E_TransportState.MULTIZONE_STOP THEN
+				DriveTakeoverRun := TRUE; 
+				ZoneData.TransportControlData.eTakeOverState := E_TakeOverState.ACTIVE;
+			ELSE
+				DriveTakeoverRun := FALSE;
+				ZoneData.TransportControlData.eTakeOverState := E_TakeOverState.STOP;
+			END_IF
+		END_IF
+
+(*************************************************************************
+  Complete
+*************************************************************************)
+	E_TakeOverState.COMPLETE:
+		// Set drive on
+		DriveTakeoverRun := TRUE;
+		
+		// Transfer complete at prvious zone
+		IF PrevTransportData.rTransportControlData.eHandOverState <> E_HandOverState.COMPLETE THEN
+			TakeOverTrspDataReq.DeletePrevTransportData := TRUE;
+			DriveTakeoverRun := FALSE;
+			ZoneData.TransportControlData.eTakeOverState := E_TakeOverState.IDLE;
+		END_IF
+
+(*************************************************************************
+  State error
+*************************************************************************)
+ELSE
+	// Set error
+	F_SetError(	
+		ErrorType	:= E_ErrorType.ERROR,
+		ErrorParam	:= INT_TO_STRING(ZoneData.TransportControlData.eTakeOverState),
+		ErrorMsg	:= E_ErrorConv.SOFTWARE_ERROR,
+		ErrorData	:= ErrorData);
+END_CASE
+]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="A_TransportState" Id="{d3af210a-698d-4e72-9fc7-c2ba2843e98b}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_TransportState
+ * 	FUNCTION	Transport state
+ **************************************************************************************)
+
+// Reset transport data request
+TransportTrspDataReq := InitTrspDataReq;
+
+// Enable short zone restart procedure after init and when multi zone is enable (A_ShortZoneRestart)
+IF Param.rSettings.EnableMultizone AND
+   ZoneData.TransportControlData.eTransportState = E_TransportState.IDLE THEN
+	EnableShortZoneRestart := TRUE; 
+// Switch off if zone is free
+ELSIF NOT ZoneData.TransportControlData.Occupied THEN
+	EnableShortZoneRestart := FALSE;
+END_IF
+ 
+CASE ZoneData.TransportControlData.eTransportState OF
+(*************************************************************************
+  Idle
+*************************************************************************)
+	E_TransportState.IDLE:
+		// If transport is without MFC
+		IF NOT Param.rSettings.EnableMFC THEN	
+			// If zone is free
+			IF NOT ZoneOccupiedSignal THEN
+				// delete TU_Data if existing 
+				IF ZoneData.TransportControlData.TU_DataIndex <> 0 THEN
+					// Delete TU-data if it is configured
+					IF Param.rSettings.DeleteTU_DataZoneFree OR Param.rSettings.DeleteTU_DataTakeOver THEN
+						// debug message: '11-001-0095-01-1,  TU_DataIndex of free zone deleted,  TU_DataIndex = 5,  TuID = 000012345,  AssignmentID = 999999999'
+						DebugMsg := '';
+						DebugMsg := CONCAT(DebugMsg, F_AddDividerToSisString(Param.rSettings.ZoneName));
+						DebugMsg := CONCAT(DebugMsg, ',  TU_DataIndex of free zone deleted');
+						DebugMsg := CONCAT(DebugMsg, F_CreateTU_DataString(TU_DataIndex:= ZoneData.TransportControlData.TU_DataIndex));
+						fbDebugMsg.M_SendErrorMsg(DebugMsg);
+						F_DeleteTU_Data(
+							TU_DataIndex 	:= ZoneData.TransportControlData.TU_DataIndex,
+							NoTTC 			:= FALSE);
+							
+						M_DeleteTU_DataIndex(mSendTUR := FALSE);
+						ZoneData.TransportControlData.Occupied := FALSE;
+						ZoneData.TransportControlData.NumberOfPresentTUs := 0;
+					END_IF	
+				END_IF	
+
+				// If function is started				
+				IF Param.rOperationState.eState = E_PositionState.STARTED THEN
+					// Clear free state
+					// Remark: Clearing is required because it was possible that a position was
+					// initiated during a transport
+					M_DeleteTU_DataIndex(mSendTUR := NOT Param.rSettings.DeleteTU_DataZoneFree);
+					ZoneData.TransportControlData.Occupied := FALSE;
+					ZoneData.TransportControlData.NumberOfPresentTUs := 0;
+					ZoneData.TransportControlData.eTransportState := E_TransportState.CLEARING;
+				END_IF
+					
+			// Zone is occupied
+			ELSE
+				ZoneData.TransportControlData.Occupied := TRUE;
+				ZoneData.TransportControlData.NumberOfPresentTUs := 1;
+				IF Param.rSettings.EnableMultipleTU_Transition THEN
+					ZoneData.TransportControlData.eTransportState := E_TransportState.MULTI_TU_OCCUPIED;
+				ELSE
+					ZoneData.TransportControlData.eTransportState := E_TransportState.OCCUPIED;	
+				END_IF
+			END_IF	
+
+		// Transport with MFC
+		ELSE		
+			// If function is started
+			IF Param.rOperationState.eState = E_PositionState.STARTED THEN
+				// If zone is free
+				IF NOT ZoneOccupiedSignal THEN
+					// If an TU data index is present
+					IF ZoneData.TransportControlData.TU_DataIndex <> 0 THEN
+						// Set error
+						F_SetError(	
+							ErrorType	:= E_ErrorType.ERROR,
+							ErrorParam	:= '',
+							ErrorMsg	:= E_ErrorConv.TU_DATA_SET_OCCUPIED_ZONE_FREE,
+							ErrorData	:= ErrorData);
+					ELSE
+						ZoneData.TransportControlData.Occupied := FALSE;
+						ZoneData.TransportControlData.NumberOfPresentTUs := 0;
+						ZoneData.TransportControlData.eTransportState := E_TransportState.CLEARING;
+					END_IF	
+					
+				// Zone is occupied
+				ELSE
+					// If no TU data index is present
+					IF ZoneData.TransportControlData.TU_DataIndex = 0 THEN
+						// Set error
+						F_SetError(	
+							ErrorType	:= E_ErrorType.ERROR,
+							ErrorParam	:= '',
+							ErrorMsg	:= E_ErrorConv.TU_DATA_SET_EMPTY_ZONE_OCCUPIED,
+							ErrorData	:= ErrorData);
+					ELSE
+						ZoneData.TransportControlData.Occupied := TRUE;
+						ZoneData.TransportControlData.NumberOfPresentTUs := 1;
+						ZoneData.TransportControlData.eTransportState := E_TransportState.OCCUPIED;
+					END_IF	
+				END_IF	
+			END_IF
+		END_IF
+
+(*************************************************************************
+  Free Run
+*************************************************************************)
+	E_TransportState.FREE_RUN:
+		// Request previous zone for takeover
+		M_RequestPrev();
+
+		// If function is started
+		IF Param.rOperationState.eState = E_PositionState.STARTED THEN
+			// If transport is enabled
+			IF Inputs.Enable.Transport AND DriveReady THEN
+				// Run free run timer
+				fbFreeRunTimer(IN := TRUE, PT := tFreeRun);
+
+				// Set drive run
+				DriveFreeRun :=  TRUE;
+	
+				// If zone is physically occupied
+				IF ZoneOccupiedSignal THEN
+					fbFreeRunTimer(IN := FALSE);
+					ZoneData.TransportControlData.Occupied := TRUE;
+					ZoneData.TransportControlData.NumberOfPresentTUs := 1;
+					// If multiple TU transition
+					IF NOT Param.rSettings.EnableMFC AND Param.rSettings.EnableMultipleTU_Transition THEN
+						DriveFreeRun := FALSE;
+						ZoneData.TransportControlData.eTransportState := E_TransportState.MULTI_TU_OCCUPIED;
+						
+					ELSIF NOT Param.rSettings.EnableMFC THEN
+						DriveFreeRun := FALSE;
+						ZoneData.TransportControlData.eTransportState := E_TransportState.OCCUPIED;	
+					END_IF
+				END_IF
+				
+				// If previous zone is ready to handover	
+				IF PrevTransportData.rTransportControlData.eHandOverState = E_HandoverState.READY AND Inputs.Enable.TakeOver THEN
+					DriveFreeRun := FALSE;
+					fbFreeRunTimer(IN := FALSE);
+					// If multiple TU transition
+					IF NOT Param.rSettings.EnableMFC AND Param.rSettings.EnableMultipleTU_Transition THEN
+						ZoneData.TransportControlData.eTransportState := E_TransportState.MULTI_TU;	
+					ELSE
+						ZoneData.TransportControlData.eTransportState := E_TransportState.TAKEOVER;
+					END_IF
+				END_IF
+						
+				// If free run time is expired
+				IF fbFreeRunTimer.Q THEN
+					DriveFreeRun := FALSE;
+					fbFreeRunTimer(IN := FALSE);
+					ZoneData.TransportControlData.eTransportState := E_TransportState.FREE;
+				END_IF
+			END_IF
+		ELSE
+			// Reset free run timer
+			fbFreeRunTimer(IN := FALSE);	
+		END_IF
+		
+(*************************************************************************
+  Free
+*************************************************************************)
+	E_TransportState.FREE:
+		// Request previous zone for takeover
+		M_RequestPrev();
+
+		// If function is stopped
+		IF Param.rOperationState.eState = E_PositionState.STOPPED THEN
+			// If drive free run is enable
+			IF Param.rSettings.EnableFreeRun THEN
+				fbZoneOccupiedTimer(IN := FALSE);
+				ZoneData.TransportControlData.eTransportState := E_TransportState.CLEARING;
+			END_IF
+		ELSE
+			// If transport is without MFC
+			IF NOT Param.rSettings.EnableMFC THEN
+				// If zone is occupied
+				IF ZoneOccupiedSignal THEN
+					fbZoneOccupiedTimer(IN := TRUE, PT := tZoneOccupied);
+					IF fbZoneOccupiedTimer.Q THEN
+						fbZoneOccupiedTimer(IN := FALSE);
+						ZoneData.TransportControlData.Occupied := TRUE;
+						ZoneData.TransportControlData.NumberOfPresentTUs := 1;
+						// If multiple TU transition
+						IF Param.rSettings.EnableMultipleTU_Transition THEN
+							ZoneData.TransportControlData.eTransportState := E_TransportState.MULTI_TU_OCCUPIED;
+						ELSE
+							ZoneData.TransportControlData.eTransportState := E_TransportState.OCCUPIED;	
+						END_IF
+					END_IF
+				ELSE
+					fbZoneOccupiedTimer(IN := FALSE);	
+				END_IF
+			END_IF		
+		END_IF
+	
+		// If previous zone or function is available
+		IF PrevTransportData.eFunctionNumber <> E_FunctionNumber.F_BEGIN_FUNCTION OR
+		   Param.rePrevFunctionNumber <> E_FunctionNumber.F_BEGIN_FUNCTION THEN
+			// If transport and takeover is enabled
+			IF Inputs.Enable.Transport AND Inputs.Enable.TakeOver THEN
+				fbZoneOccupiedTimer(IN := FALSE);
+				ZoneData.TransportControlData.eTransportState := E_TransportState.TAKEOVER;
+			END_IF
+		END_IF
+
+(*************************************************************************
+  Takeover
+*************************************************************************)
+	E_TransportState.TAKEOVER:
+		// Request previous zone for takeover
+		M_RequestPrev();
+
+		// If the next zone has changed
+		IF NextTransportData.eFunctionNumber <> NextFunctionNumber THEN
+			// Update for this transport valid trasport parameter
+			TransportParam := ZoneData.TransportControlData.TransportParam;
+			NextFunctionNumber := NextTransportData.eFunctionNumber;
+		END_IF
+
+		// If no previous zone or function is available at all
+		IF PrevTransportData.eFunctionNumber = E_FunctionNumber.F_BEGIN_FUNCTION AND
+		   Param.rePrevFunctionNumber = E_FunctionNumber.F_BEGIN_FUNCTION THEN	
+			fbDelayZoneOccupied(Run := FALSE);
+			fbZoneOccupiedTimer(IN := FALSE);
+			ZoneData.TransportControlData.eTransportState := E_TransportState.FREE;
+		END_IF
+
+		// If function is started
+		IF Param.rOperationState.eState <> E_PositionState.STOPPED THEN
+			// If transport is with MFC
+			IF Param.rSettings.EnableMFC THEN			
+				// If takeover is active
+				IF ZoneData.TransportControlData.eTakeOverState = E_TakeOverState.ACTIVE THEN
+					// If zone is occupied
+					IF ZoneOccupiedSignal THEN
+						DelayDistance := TransportParam.StopDelayDistance - StoppingDistance;
+						
+						IF DelayDistance < 0 THEN
+							DelayDistance := 0;
+						END_IF
+						
+						// Run delay zone occupied
+						fbDelayZoneOccupied(
+							Run					:= TRUE,
+							EncoderValueInc		:= EncoderValue,
+							MaxEncoderValueInc	:= MaxEncoderValue,
+							RateIncPerMM		:= 1,
+							SetPoint			:= DelayDistance);
+
+						IF fbDelayZoneOccupied.Q THEN
+							fbDelayZoneOccupied(Run := FALSE);
+							ZoneData.TransportControlData.Occupied := TRUE;
+							// If simultaneous transport is switched on, start with simultaneous transport,
+							// otherwise stay in the base transport		
+							IF Param.rSettings.EnableSimultaneousTransport OR
+								ZoneData.AddOn.Orders.EnableSimultaneousTransport THEN	
+								ZoneData.TransportControlData.eTransportState := E_TransportState.SIMULTANEOUS_OCCUPIED;								
+							ELSE
+								ZoneData.TransportControlData.eTransportState := E_TransportState.OCCUPIED;
+							END_IF
+						END_IF
+					END_IF
+				END_IF
+	
+			// Transport without MFC
+			ELSE
+				// If takeover is active
+				IF ZoneData.TransportControlData.eTakeOverState = E_TakeOverState.ACTIVE THEN
+					// If multiple TU transition
+					IF Param.rSettings.EnableMultipleTU_Transition THEN
+						ZoneData.TransportControlData.eTransportState := E_TransportState.MULTI_TU;
+
+					// If handover is complete at previous zone
+					ELSIF PrevTransportData.rTransportControlData.eHandOverState = E_HandoverState.COMPLETE THEN
+						fbZoneOccupiedTimer(IN := FALSE);
+						ZoneData.TransportControlData.eTransportState := E_TransportState.FEEDIN;	
+					ELSE
+						// If zone is occupied
+						IF ZoneOccupiedSignal THEN
+							DelayDistance := TransportParam.StopDelayDistance - StoppingDistance;
+						
+							IF DelayDistance < 0 THEN
+								DelayDistance := 0;
+							END_IF
+						
+							// Run delay zone occupied
+							fbDelayZoneOccupied(
+								Run					:= TRUE,
+								EncoderValueInc		:= EncoderValue,
+								MaxEncoderValueInc	:= MaxEncoderValue,
+								RateIncPerMM		:= 1,
+								SetPoint			:= DelayDistance);
+	
+							IF fbDelayZoneOccupied.Q THEN
+								fbDelayZoneOccupied(Run := FALSE);
+								ZoneData.TransportControlData.Occupied := TRUE;
+								
+								// If multizone is enable process multizone, otherwise continue with single transport.
+								// Takeover is canceled although apparently not finished yet. 
+								IF Param.rSettings.EnableMultizone THEN 
+									ZoneData.TransportControlData.eTransportState := E_TransportState.MULTIZONE_OCCUPIED;
+									
+									// If Add TU-data is configured and no TU-data index is existing
+									IF Param.rSettings.AddTU_Data AND ZoneData.TransportControlData.TU_DataIndex = 0 THEN
+										// Insert TU-data
+										ZoneData.TransportControlData.TU_DataIndex := F_InsertTU_Data(
+																							eFunctionNumber := Param.reFunctionNumber,
+																							ZoneNumber 		:= Param.ZoneNumber);
+										// Updata data present status
+										ZoneData.TransportControlData.DataPresent := ZoneData.TransportControlData.TU_DataIndex <> 0;					
+										// If insert TU-data is failed
+										IF ZoneData.TransportControlData.TU_DataIndex = 0 THEN
+											// Set error
+											F_SetError(	
+												ErrorType	:= E_ErrorType.ERROR,
+												ErrorParam	:= '',
+												ErrorMsg	:= E_ErrorConv.NO_FREE_TU_DATA_SET,
+												ErrorData	:= ErrorData);
+										END_IF
+									END_IF
+
+								// If simultaneous transport is switched on, start with simultaneous transport,
+							    // otherwise stay in the base transport		
+								ELSIF Param.rSettings.EnableSimultaneousTransport OR
+									ZoneData.AddOn.Orders.EnableSimultaneousTransport THEN	
+									ZoneData.TransportControlData.eTransportState := E_TransportState.SIMULTANEOUS_OCCUPIED;								
+								ELSE
+									ZoneData.TransportControlData.eTransportState := E_TransportState.OCCUPIED;
+								END_IF
+							END_IF
+						END_IF
+					END_IF
+				ELSE
+					// If zone is occupied
+					IF ZoneOccupiedSignal THEN
+						fbZoneOccupiedTimer(IN := TRUE, PT := tZoneOccupied);
+						IF fbZoneOccupiedTimer.Q THEN
+							fbZoneOccupiedTimer(IN := FALSE);
+							fbDelayZoneOccupied(Run := FALSE);
+							ZoneData.TransportControlData.Occupied := TRUE;
+							ZoneData.TransportControlData.NumberOfPresentTUs := 1;
+
+							// If multiple TU transition
+							IF Param.rSettings.EnableMultipleTU_Transition THEN
+								ZoneData.TransportControlData.eTransportState := E_TransportState.MULTI_TU_OCCUPIED;
+							// If simultaneous transport is switched on, start with simultaneous transport,
+							// otherwise stay in the base transport	
+							ELSIF Param.rSettings.EnableSimultaneousTransport OR
+								ZoneData.AddOn.Orders.EnableSimultaneousTransport THEN	
+								ZoneData.TransportControlData.eTransportState := E_TransportState.SIMULTANEOUS_OCCUPIED;
+							ELSE
+								ZoneData.TransportControlData.eTransportState := E_TransportState.OCCUPIED;	
+							END_IF
+						END_IF
+					ELSE
+						fbZoneOccupiedTimer(IN := FALSE);
+					END_IF	
+				END_IF
+			END_IF
+		END_IF	
+		
+(*************************************************************************
+  Occupied
+*************************************************************************)
+	E_TransportState.OCCUPIED:
+
+		// If not single handover is requested
+		// BCFD-10532 - Transport state is flickering
+		IF Inputs.Enable.TakeOver AND Inputs.Enable.HandOver AND
+			 TU_DataTable[ZoneData.TransportControlData.TU_DataIndex].DataSet.JobPresent (* BCFD-13761 - Possible moving TU without JobPresent forward in simultaneous mode*)	
+			THEN
+			// If simultaneous transport is enable, switch to simultaneous transport
+			IF Param.rSettings.EnableSimultaneousTransport OR
+				ZoneData.AddOn.Orders.EnableSimultaneousTransport THEN
+				ZoneData.TransportControlData.eTransportState := E_TransportState.SIMULTANEOUS_OCCUPIED;
+			END_IF
+		END_IF
+	
+		// Request next zone for handover
+		M_RequestNext();
+
+		// If zone is free without handover and the occupied state needs not to be latched
+		IF NOT ZoneOccupiedSignal AND NOT Param.rSettings.EnableLatchOccupiedState THEN
+			// Run occupied free timer
+			fbZoneOccupiedFreeTimer(IN := TRUE, PT := tZoneFree);
+
+			IF fbZoneOccupiedFreeTimer.Q THEN
+				// If transport is without MFC
+				IF NOT Param.rSettings.EnableMFC THEN
+					// Delete TU-data if it is configured
+					IF Param.rSettings.DeleteTU_DataZoneFree THEN
+						// debug message: '11-001-0095-01-1,  TU_DataIndex of manually freed zone deleted,  TU_DataIndex = 5,  TuID = 000012345,  AssignmentID = 999999999'
+						DebugMsg := '';
+						DebugMsg := CONCAT(DebugMsg, F_AddDividerToSisString(Param.rSettings.ZoneName));
+						DebugMsg := CONCAT(DebugMsg, ',  TU_DataIndex of manually freed zone deleted');
+						DebugMsg := CONCAT(DebugMsg, F_CreateTU_DataString(TU_DataIndex:= ZoneData.TransportControlData.TU_DataIndex));
+						fbDebugMsg.M_SendErrorMsg(DebugMsg);
+						F_DeleteTU_Data(
+						TU_DataIndex	:= ZoneData.TransportControlData.TU_DataIndex,
+						NoTTC 			:= FALSE);
+					END_IF
+					
+					M_DeleteTU_DataIndex(mSendTUR := NOT Param.rSettings.DeleteTU_DataZoneFree);
+					ZoneData.TransportControlData.Occupied := FALSE;
+					ZoneData.TransportControlData.NumberOfPresentTUs := 0;
+					fbZoneOccupiedFreeTimer(IN := FALSE);
+					TransportTrspDataReq.DeleteNextTransportData := TRUE;
+					TU_WithinBrakingZone := FALSE;
+					fbTrackingLeadingEdge(Run := FALSE);
+					DriveClearingRun := TRUE;
+					ZoneData.TransportControlData.eTransportState := E_TransportState.CLEARING;
+
+				// Transport with MFC
+				ELSE
+					// If a TU data index is present
+					IF ZoneData.TransportControlData.TU_DataIndex <> 0 THEN
+						// Set error
+						F_SetError(	
+							ErrorType	:= E_ErrorType.ERROR,
+							ErrorParam	:= '',
+							ErrorMsg	:= E_ErrorConv.TU_DATA_SET_OCCUPIED_ZONE_FREE,
+							ErrorData	:= ErrorData);
+					ELSE
+						ZoneData.TransportControlData.Occupied := FALSE;
+						ZoneData.TransportControlData.NumberOfPresentTUs := 0;
+						fbZoneOccupiedFreeTimer(IN := FALSE);
+						TransportTrspDataReq.DeleteNextTransportData := TRUE;
+						TU_WithinBrakingZone := FALSE;
+						fbTrackingLeadingEdge(Run := FALSE);
+						DriveClearingRun := TRUE;
+						ZoneData.TransportControlData.eTransportState := E_TransportState.CLEARING;
+					END_IF
+				END_IF
+			END_IF
+		ELSE	
+			// Reset occupied free timer
+			fbZoneOccupiedFreeTimer(IN := FALSE);
+
+			// If add TU data is configured and no TU data index is existing
+			IF Param.rSettings.AddTU_Data AND ZoneData.TransportControlData.TU_DataIndex = 0 AND
+				NOT Param.rSettings.EnableMultipleTU_Transition THEN
+				// Insert TU-data
+				ZoneData.TransportControlData.TU_DataIndex := F_InsertTU_Data(
+																	eFunctionNumber := Param.reFunctionNumber,
+																	ZoneNumber 		:= Param.ZoneNumber);
+				// Updata data present status
+				ZoneData.TransportControlData.DataPresent := ZoneData.TransportControlData.TU_DataIndex <> 0;								
+				// If insert TU data is failed
+				IF ZoneData.TransportControlData.TU_DataIndex = 0 THEN
+					// Set error
+					F_SetError(	
+						ErrorType	:= E_ErrorType.ERROR,
+						ErrorParam	:= '',
+						ErrorMsg	:= E_ErrorConv.NO_FREE_TU_DATA_SET,
+						ErrorData	:= ErrorData);
+				END_IF
+			END_IF
+
+			// If material flow control is enabled
+			IF Param.rSettings.EnableMFC THEN
+				// If no TU data index is present
+				IF ZoneData.TransportControlData.TU_DataIndex = 0 THEN
+					// Set error
+					F_SetError(	
+						ErrorType	:= E_ErrorType.ERROR,
+						ErrorParam	:= '',
+						ErrorMsg	:= E_ErrorConv.TU_DATA_SET_EMPTY_ZONE_OCCUPIED,
+						ErrorData	:= ErrorData);
+				END_IF
+			END_IF
+
+			// If next zone or function is available
+			IF NextTransportData.eFunctionNumber <> E_FunctionNumber.F_BEGIN_FUNCTION OR
+			   Param.reNextFunctionNumber <> E_FunctionNumber.F_BEGIN_FUNCTION THEN	
+				// If no error is active
+				IF ErrorData.ErrorCode.Conv = 0 THEN
+					// If transport and handover is enabled
+					IF Inputs.Enable.Transport AND Inputs.Enable.HandOver THEN
+						// If material flow control is enabled
+						IF Param.rSettings.EnableMFC THEN 
+							// If the TU has a destination
+							IF TU_DataTable[ZoneData.TransportControlData.TU_DataIndex].DataSet.JobPresent THEN
+								// Make sure the handover state machine is ready to initiate a new handover
+								// and is not busy with an old handover
+								IF ZoneData.TransportControlData.eHandOverState = E_HandoverState.IDLE THEN
+									ZoneData.TransportControlData.eTransportState := E_TransportState.HANDOVER;
+								END_IF
+							END_IF
+						ELSE
+							// Make sure the handover state machine is ready to initiate a new handover
+							// and is not busy with an old handover
+							IF ZoneData.TransportControlData.eHandOverState = E_HandoverState.IDLE THEN
+								ZoneData.TransportControlData.eTransportState := E_TransportState.HANDOVER;
+							END_IF
+						END_IF
+					END_IF
+				END_IF
+			END_IF
+		END_IF
+		
+(*************************************************************************
+  Handover
+*************************************************************************)
+	E_TransportState.HANDOVER:
+		// Request next zone for handover
+		M_RequestNext();
+
+		// If no next zone or function is available at all
+		IF NextTransportData.eFunctionNumber = E_FunctionNumber.F_BEGIN_FUNCTION AND
+		   Param.reNextFunctionNumber = E_FunctionNumber.F_BEGIN_FUNCTION THEN	
+			fbDelayZoneFree(Run := FALSE);
+			fbZoneOccupiedFreeTimer(IN := FALSE);
+			ZoneData.TransportControlData.eTransportState := E_TransportState.OCCUPIED;
+		END_IF
+
+		// If transport is without MFC
+		IF NOT Param.rSettings.EnableMFC THEN	
+			// If simultaneouss transport is enable and handover is not ongoing
+			IF (Param.rSettings.EnableSimultaneousTransport OR
+                 ZoneData.AddOn.Orders.EnableSimultaneousTransport) AND
+				(ZoneData.TransportControlData.eHandOverState = E_HandOverState.IDLE OR
+				 ZoneData.TransportControlData.eHandOverState = E_HandOverState.READY) AND
+				 PrevTransportData.rTransportControlData.eHandOverState = E_HandOverState.READY THEN
+				// Change to simultaneous stop to start take and handover at the same time
+				ZoneData.TransportControlData.eTransportState := E_TransportState.SIMULTANEOUS_STOP; 
+			END_IF
+	
+			// If the zone is free
+			IF NOT ZoneOccupiedSignal THEN
+				// If handover is active
+				IF ZoneData.TransportControlData.eHandOverState = E_HandOverState.ACTIVE THEN
+					fbZoneOccupiedFreeTimer(IN := FALSE);
+					
+					DelayDistance := TransportParam.ZoneEndLength - StoppingDistance;
+					
+					IF DelayDistance < 0 THEN
+						DelayDistance := 0;
+					END_IF
+					
+					// Run delay zone free 
+					fbDelayZoneFree(
+						Run					:= TRUE,
+						EncoderValueInc		:= EncoderValue,
+						MaxEncoderValueInc	:= MaxEncoderValue,
+						RateIncPerMM		:= 1,
+						SetPoint			:= DelayDistance);
+
+					// Zone is free after handover
+					IF fbDelayZoneFree.Q THEN
+						fbDelayZoneFree(Run := FALSE);
+
+						// Delete TU-data if it is configured
+						IF Param.rSettings.DeleteTU_DataZoneFree THEN
+							// debug message: '11-001-0095-01-1,  TU_DataIndex of handover freed zone deleted,  TU_DataIndex = 5,  TuID = 000012345,  AssignmentID = 999999999'
+							DebugMsg := '';
+							DebugMsg := CONCAT(DebugMsg, F_AddDividerToSisString(Param.rSettings.ZoneName));
+							DebugMsg := CONCAT(DebugMsg, ',  TU_DataIndex of handover freed zone deleted');
+							DebugMsg := CONCAT(DebugMsg, F_CreateTU_DataString(TU_DataIndex:= ZoneData.TransportControlData.TU_DataIndex));
+							fbDebugMsg.M_SendInfoMsg(DebugMsg);
+							F_DeleteTU_Data(
+								TU_DataIndex	:= ZoneData.TransportControlData.TU_DataIndex,
+								NoTTC 			:= FALSE);
+						END_IF
+						
+						M_DeleteTU_DataIndex(mSendTUR := FALSE);
+						ZoneData.TransportControlData.Occupied := FALSE;
+						ZoneData.TransportControlData.NumberOfPresentTUs := 0;
+
+						// If free run is enable
+						IF Param.rSettings.EnableFreeRun THEN
+							DriveFreeRun := TRUE;
+							ZoneData.TransportControlData.eTransportState := E_TransportState.FREE_RUN;
+						ELSE
+							ZoneData.TransportControlData.eTransportState := E_TransportState.FREE;	
+						END_IF
+					END_IF
+
+				// If takeover at the next zone is unexpected early complete the handover does not complete as expected
+				// (this can be the case if multi-zone is not switched on at the next zone).
+				// The handover must be ended irregular
+				ELSIF NextTransportData.rTransportControlData.eTakeOverState = E_TakeOverState.COMPLETE THEN
+					M_DeleteTU_DataIndex(mSendTUR := FALSE);
+					ZoneData.TransportControlData.Occupied := FALSE;
+					ZoneData.TransportControlData.NumberOfPresentTUs := 0;	
+					TransportTrspDataReq.DeleteNextTransportData := TRUE;
+					fbDelayZoneFree(Run := FALSE);
+					fbZoneOccupiedFreeTimer(IN := FALSE);
+					ZoneData.TransportControlData.eTransportState := E_TransportState.CLEARING;
+					
+				// If the occupied state needs not to be latched
+				ELSIF NOT Param.rSettings.EnableLatchOccupiedState THEN					
+					// If the handover is not stopped or interrupted
+					IF ZoneData.TransportControlData.eHandOverState <> E_HandOverState.STOP AND
+					   ZoneData.TransportControlData.eHandOverState <> E_HandOverState.INTERRUPTED THEN 
+						// Run occupied free timer
+						fbZoneOccupiedFreeTimer(IN := TRUE, PT := tZoneFree);
+	
+						// If zone is free without transfer
+						IF fbZoneOccupiedFreeTimer.Q THEN
+							fbZoneOccupiedFreeTimer(IN := FALSE);
+	
+							// Delete TU-data if it is configured
+							IF Param.rSettings.DeleteTU_DataZoneFree THEN
+								// debug message: '11-001-0095-01-1,  TU_DataIndex of transferless freed zone deleted,  TU_DataIndex = 5,  TuID = 000012345,  AssignmentID = 999999999'
+								DebugMsg := '';
+								DebugMsg := CONCAT(DebugMsg, F_AddDividerToSisString(Param.rSettings.ZoneName));
+								DebugMsg := CONCAT(DebugMsg, ',  TU_DataIndex of transferless freed zone deleted');
+								DebugMsg := CONCAT(DebugMsg, F_CreateTU_DataString(TU_DataIndex:= ZoneData.TransportControlData.TU_DataIndex));
+								fbDebugMsg.M_SendErrorMsg(DebugMsg);
+								F_DeleteTU_Data(
+									TU_DataIndex 	:= ZoneData.TransportControlData.TU_DataIndex,
+									NoTTC 			:= FALSE);
+							END_IF
+	
+							M_DeleteTU_DataIndex(mSendTUR := NOT Param.rSettings.DeleteTU_DataZoneFree);
+							ZoneData.TransportControlData.Occupied := FALSE;
+							ZoneData.TransportControlData.NumberOfPresentTUs := 0;	
+							TransportTrspDataReq.DeleteNextTransportData := TRUE;
+							fbDelayZoneFree(Run := FALSE);					
+							ZoneData.TransportControlData.eTransportState := E_TransportState.CLEARING;
+						END_IF	
+					END_IF
+				END_IF
+			ELSE
+				// Reset occupied free timer
+				fbZoneOccupiedFreeTimer(IN := FALSE);
+			END_IF
+
+		// Transport with MFC
+		ELSE
+			// If takeover at next zone is complete
+			// or aborted by timeout take if MFC is not enable
+			IF NextTransportData.rTransportControlData.eTakeOverState = E_TakeOverState.COMPLETE OR
+				ZoneData.TransportControlData.eHandOverState = E_HandOverState.ACTIVE AND
+				NextTransportData.rTransportControlData.eTakeOverState = E_TakeOverState.IDLE THEN
+
+				// If the zone is free
+				IF NOT ZoneOccupiedSignal THEN
+					// If a TU data index is present
+					IF ZoneData.TransportControlData.TU_DataIndex <> 0 THEN
+						// Set error
+						F_SetError(
+							ErrorType	:= E_ErrorType.ERROR,
+							ErrorParam	:= '',
+							ErrorMsg	:= E_ErrorConv.TU_DATA_SET_OCCUPIED_ZONE_FREE,
+							ErrorData	:= ErrorData);
+					ELSE
+						ZoneData.TransportControlData.Occupied := FALSE;
+						ZoneData.TransportControlData.NumberOfPresentTUs := 0;
+
+						// If free run is enable
+						IF Param.rSettings.EnableFreeRun THEN
+							DriveFreeRun := TRUE;
+							ZoneData.TransportControlData.eTransportState := E_TransportState.FREE_RUN;
+						ELSE
+							ZoneData.TransportControlData.eTransportState := E_TransportState.FREE;
+						END_IF
+					END_IF
+
+				// Zone is still occupied
+				ELSE
+					// Set error
+					F_SetError(
+						ErrorType	:= E_ErrorType.ERROR,
+						ErrorParam	:= '',
+						ErrorMsg	:= E_ErrorConv.POSITION_OCCUPIED_AFTER_HANDOVER,
+						ErrorData	:= ErrorData);
+				END_IF
+			END_IF
+		END_IF
+		
+(*************************************************************************
+  Clearing
+*************************************************************************)
+	E_TransportState.CLEARING:
+		// If function is started
+		IF Param.rOperationState.eState = E_PositionState.STARTED AND DriveReady THEN
+			// Set drive on
+			fbCascadeDrive(IN := TRUE, PT := INT_TO_TIME(Param.reFunctionNumber * 5 + Param.ZoneNumber * 5));
+			
+			DriveClearingRun := fbCascadeDrive.Q OR Outputs.DriveRun;
+			
+			// If zone is free
+			IF NOT ZoneOccupiedSignal THEN
+				// Run clearing
+				fbClearing(
+					Run					:= TRUE,
+					EncoderValueInc		:= EncoderValue,
+					MaxEncoderValueInc	:= MaxEncoderValue,
+					RateIncPerMM		:= 1,
+					SetPoint			:= Param.rSettings.ClearingDistance);
+	
+				// If zone is clear
+				IF fbClearing.Q THEN
+					DriveClearingRun := FALSE;
+					fbCascadeDrive(IN := FALSE);
+					fbClearing(Run := FALSE);
+					M_DeleteTU_DataIndex(mSendTUR := FALSE);
+					ZoneData.TransportControlData.Occupied := FALSE;
+					ZoneData.TransportControlData.NumberOfPresentTUs := 0;
+					ZoneData.TransportControlData.eTransportState := E_TransportState.FREE;
+				END_IF
+			ELSE
+				DriveClearingRun := FALSE;
+				fbClearing(Run := FALSE);
+				fbCascadeDrive(IN := FALSE);
+				ZoneData.TransportControlData.Occupied := TRUE;
+				ZoneData.TransportControlData.NumberOfPresentTUs := 1;
+				
+				// If multiple TU transition
+				IF NOT Param.rSettings.EnableMFC AND Param.rSettings.EnableMultipleTU_Transition THEN
+					ZoneData.TransportControlData.eTransportState := E_TransportState.MULTI_TU_OCCUPIED;
+				ELSE
+					ZoneData.TransportControlData.eTransportState := E_TransportState.OCCUPIED;	
+				END_IF			
+			END_IF
+		ELSE
+			DriveClearingRun := FALSE;
+			fbClearing(Run := FALSE);
+			fbCascadeDrive(IN := FALSE);
+			ZoneData.TransportControlData.eTransportState := E_TransportState.IDLE;			
+		END_IF	
+		
+(*************************************************************************
+  Feedin
+*************************************************************************)
+	E_TransportState.FEEDIN:
+		// If the next zone has changed
+		IF NextTransportData.eFunctionNumber <> NextFunctionNumber THEN
+			// Update for this transport valid trasport parameter
+			TransportParam := ZoneData.TransportControlData.TransportParam;
+			NextFunctionNumber := NextTransportData.eFunctionNumber;
+		END_IF
+
+		// Set drive on
+		DriveFeedInRun := TRUE;
+		
+		// Timeout take monitoring
+		IF Param.rSettings.TimeoutTakeDistance <> 0 THEN
+			TimeoutTakeDistance := Param.rSettings.TimeoutTakeDistance;
+		ELSE
+			TimeoutTakeDistance := (UINT_TO_DINT(TransportParam.ZoneLength)
+									- TransportParam.ZoneEndLength
+									+ TransportParam.StopDelayDistance
+									+ PrevTransportParam.ZoneEndLength) * TIMEOUT_TAKE_FACTOR;
+		END_IF			
+		
+		IF TimeoutTakeDistance < 0 THEN
+			TimeoutTakeDistance := 0;
+		END_IF
+		
+		// Run timeout take
+		fbTimeoutTake(
+			Run					:= TRUE,
+			EncoderValueInc		:= EncoderValue,
+			MaxEncoderValueInc	:= MaxEncoderValue,
+			SetPoint			:= TimeoutTakeDistance);
+
+		// Takeover plausibility check
+		// Accept TU data only if takeover is long enought that occupied signal is plausible
+		fbTakeoverPlausible(
+			Run					:= TRUE, 
+			EncoderValueInc		:= EncoderValue,
+			MaxEncoderValueInc 	:= MaxEncoderValue,
+			RateIncPerMM		:= 1,
+			SetPoint			:= M_TakeoverPlausibleDistance() );
+			
+		// If zone is occupied
+		IF ZoneOccupiedSignal THEN
+			DelayDistance := TransportParam.StopDelayDistance - StoppingDistance;
+			
+			IF DelayDistance < 0 THEN
+				DelayDistance := 0;
+			END_IF
+			
+			// Run delay zone occupied
+			fbDelayZoneOccupied(
+				Run					:= TRUE, 
+				EncoderValueInc		:= EncoderValue,
+				MaxEncoderValueInc	:= MaxEncoderValue,
+				RateIncPerMM		:= 1,
+				SetPoint			:= DelayDistance);
+
+			IF fbDelayZoneOccupied.Q THEN
+				// Check if takeover is plausible, otherwiese claer TU data index
+				IF NOT fbTakeoverPlausible.Q AND NOT Param.rSettings.EnableMultipleTU_Transition THEN
+					// debug message: '11-001-0095-01-1,  TU_DataIndex of implausible feedin deleted,  TU_DataIndex = 12345,  TuID = 112233,  AssignmentID = 12345678'
+					DebugMsg := '';
+					DebugMsg := CONCAT(DebugMsg, F_AddDividerToSisString(Param.rSettings.ZoneName));
+					DebugMsg := CONCAT(DebugMsg, ',  TU_DataIndex of implausible feedin deleted');
+					DebugMsg := CONCAT(DebugMsg, F_CreateTU_DataString(ZoneData.TransportControlData.TU_DataIndex));
+					fbDebugMsg.M_SendErrorMsg(DebugMsg);
+					M_DeleteTU_DataIndex(mSendTUR := TRUE);
+				END_IF
+				
+				DriveFeedInRun := FALSE;
+				fbDelayZoneOccupied(Run := FALSE);
+				fbTimeoutTake(Run := FALSE);
+				fbTakeoverPlausible(Run := FALSE);
+				ZoneData.TransportControlData.Occupied := TRUE;
+				ZoneData.TransportControlData.NumberOfPresentTUs := 1;
+
+				// If simultaneous transport is switched on, start with simultaneous transport,
+				// otherwise stay in the base transport	
+				IF Param.rSettings.EnableSimultaneousTransport OR
+					ZoneData.AddOn.Orders.EnableSimultaneousTransport THEN	
+					ZoneData.TransportControlData.eTransportState := E_TransportState.SIMULTANEOUS_OCCUPIED;
+				ELSE
+					ZoneData.TransportControlData.eTransportState := E_TransportState.OCCUPIED;
+				END_IF
+			END_IF
+
+		// If timeout take, clear TU-data index and end feed in
+		ELSIF fbTimeoutTake.Q THEN
+			DriveFeedInRun := FALSE;
+			fbTimeoutTake(Run := FALSE);
+			fbTakeoverPlausible(Run := FALSE);
+			fbDelayZoneOccupied(Run := FALSE);
+			// debug message: '11-001-0095-01-1,  TU_DataIndex deleted due to take timeout,  TU_DataIndex = 12345,  TuID = 112233,  AssignmentID = 12345678'
+			DebugMsg := '';
+			DebugMsg := CONCAT(DebugMsg, F_AddDividerToSisString(Param.rSettings.ZoneName));
+			DebugMsg := CONCAT(DebugMsg, ',  TU_DataIndex deleted due to take timeout');
+			DebugMsg := CONCAT(DebugMsg, F_CreateTU_DataString(ZoneData.TransportControlData.TU_DataIndex));
+			fbDebugMsg.M_SendErrorMsg(DebugMsg);
+			M_DeleteTU_DataIndex(mSendTUR := TRUE);
+			TransportTrspDataReq.DeleteNextTransportData := TRUE;
+			ZoneData.TransportControlData.NumberOfPresentTUs := 0;	
+
+			// If free run is enable
+			IF Param.rSettings.EnableFreeRun THEN
+				DriveFreeRun := TRUE;
+				ZoneData.TransportControlData.eTransportState := E_TransportState.FREE_RUN;
+			ELSE
+				ZoneData.TransportControlData.eTransportState := E_TransportState.FREE;	
+			END_IF
+		END_IF
+
+(*************************************************************************
+  Multizone 
+*************************************************************************)
+	E_TransportState.MULTIZONE:
+		// Switch to handover
+		IF PrevTransportData.rTransportControlData.eHandOverState = E_HandOverState.COMPLETE AND 
+		   ZoneData.TransportControlData.eHandOverState = E_HandOverState.ACTIVE THEN
+			ZoneData.TransportControlData.eTransportState := E_TransportState.HANDOVER;
+
+		// Stop multi zone because of own, prev. or next position request or if handover is aborted
+		ELSIF ZoneData.TransportControlData.eTakeOverState = E_TakeOverState.STOP OR 
+           ZoneData.TransportControlData.eHandOverState = E_HandOverState.STOP OR
+		   ZoneData.TransportControlData.eTakeOverState = E_TakeOverState.INTERRUPTED OR
+		   ZoneData.TransportControlData.eHandOverState = E_HandOverState.INTERRUPTED OR
+		   ZoneData.TransportControlData.eHandOverState = E_HandOverState.IDLE THEN
+			ZoneData.TransportControlData.eTransportState := E_TransportState.MULTIZONE_STOP;
+		END_IF			
+		
+		// If zone is free
+		IF NOT ZoneOccupiedSignal THEN
+			// If handover is active
+			IF ZoneData.TransportControlData.eHandOverState = E_HandOverState.ACTIVE THEN
+				fbZoneOccupiedFreeTimer(IN := FALSE);
+				DelayDistance := TransportParam.ZoneEndLength - StoppingDistance;
+				
+				IF DelayDistance < 0 THEN
+					DelayDistance := 0;
+				END_IF
+				
+				// Run delay zone free
+				fbDelayZoneFree(
+					Run					:= TRUE,
+					EncoderValueInc		:= EncoderValue,
+					MaxEncoderValueInc	:= MaxEncoderValue,
+					RateIncPerMM		:= 1,
+					SetPoint			:= DelayDistance);
+
+				// Zone is free after handover
+				IF fbDelayZoneFree.Q THEN
+					fbDelayZoneFree(Run := FALSE);
+					ZoneData.TransportControlData.Occupied := FALSE;
+
+					// If free run is enable
+					IF Param.rSettings.EnableFreeRun THEN
+						DriveFreeRun := TRUE;
+						ZoneData.TransportControlData.eTransportState := E_TransportState.FREE_RUN;
+					ELSE
+						ZoneData.TransportControlData.eTransportState := E_TransportState.FREE;	
+					END_IF
+				END_IF
+			ELSE
+				fbZoneOccupiedFreeTimer(IN := TRUE, PT := tZoneFree);
+				// Zone is free without transfer
+				IF fbZoneOccupiedFreeTimer.Q THEN
+					fbZoneOccupiedFreeTimer(IN := FALSE);
+
+					// Delete TU-data if it is configured
+					IF Param.rSettings.DeleteTU_DataZoneFree THEN
+						// debug message: '11-001-0095-01-1,  TU_DataIndex of transferless freed zone deleted,  TU_DataIndex = 5,  TuID = 000012345,  AssignmentID = 999999999'
+						DebugMsg := '';
+						DebugMsg := CONCAT(DebugMsg, F_AddDividerToSisString(Param.rSettings.ZoneName));
+						DebugMsg := CONCAT(DebugMsg, ',  TU_DataIndex of transferless freed zone deleted');
+						DebugMsg := CONCAT(DebugMsg, F_CreateTU_DataString(TU_DataIndex:= ZoneData.TransportControlData.TU_DataIndex));
+						fbDebugMsg.M_SendErrorMsg(DebugMsg);
+						F_DeleteTU_Data(
+							TU_DataIndex 	:= ZoneData.TransportControlData.TU_DataIndex,
+							NoTTC 			:= FALSE);
+					END_IF
+
+					M_DeleteTU_DataIndex(mSendTUR := NOT Param.rSettings.DeleteTU_DataZoneFree);
+					ZoneData.TransportControlData.Occupied := FALSE;
+					TransportTrspDataReq.DeleteNextTransportData := TRUE;
+					ZoneData.TransportControlData.NumberOfPresentTUs := 0;
+					DriveClearingRun := TRUE;					
+					ZoneData.TransportControlData.eTransportState := E_TransportState.CLEARING;
+				END_IF	
+			END_IF
+		ELSE
+			// Reset sensor free timer
+			fbZoneOccupiedFreeTimer(IN := FALSE);
+		END_IF
+
+(*************************************************************************
+  Multizone Occupied
+*************************************************************************)
+	E_TransportState.MULTIZONE_OCCUPIED:		
+		// Request next zone for handover
+		M_RequestNext();
+
+		// If next zone is available
+		IF NextTransportData.eFunctionNumber <> E_FunctionNumber.F_BEGIN_FUNCTION THEN
+			// If handover is active
+			IF ZoneData.TransportControlData.eHandOverState = E_HandOverState.ACTIVE THEN
+				ZoneData.TransportControlData.eTransportState := E_TransportState.MULTIZONE;
+			END_IF
+		ELSE
+			// Update for this transport valid trasport parameter
+			TransportParam := ZoneData.TransportControlData.TransportParam;
+		END_IF
+
+		// If the occupied state needs not to be latched
+		IF NOT Param.rSettings.EnableLatchOccupiedState THEN	
+			// If zone is free
+			IF NOT ZoneOccupiedSignal THEN
+				// Run occupied free timer
+				fbZoneOccupiedFreeTimer(IN := TRUE, PT := tZoneFree);
+
+				// Zone is free without transfer
+				IF fbZoneOccupiedFreeTimer.Q THEN
+					fbZoneOccupiedFreeTimer(IN := FALSE);
+	
+					// Delete TU-data if it is configured
+					IF Param.rSettings.DeleteTU_DataZoneFree THEN
+						// debug message: '11-001-0095-01-1,  TU_DataIndex of transferless freed zone deleted,  TU_DataIndex = 5,  TuID = 000012345,  AssignmentID = 999999999'
+						DebugMsg := '';
+						DebugMsg := CONCAT(DebugMsg, F_AddDividerToSisString(Param.rSettings.ZoneName));
+						DebugMsg := CONCAT(DebugMsg, ',  TU_DataIndex of transferless freed zone deleted');
+						DebugMsg := CONCAT(DebugMsg, F_CreateTU_DataString(TU_DataIndex:= ZoneData.TransportControlData.TU_DataIndex));
+						fbDebugMsg.M_SendErrorMsg(DebugMsg);
+						F_DeleteTU_Data(
+							TU_DataIndex 	:= ZoneData.TransportControlData.TU_DataIndex,
+							NoTTC 			:= FALSE);
+					END_IF
+	
+					M_DeleteTU_DataIndex(mSendTUR := NOT Param.rSettings.DeleteTU_DataZoneFree);
+					ZoneData.TransportControlData.Occupied := FALSE;
+					TransportTrspDataReq.DeleteNextTransportData := TRUE;
+					ZoneData.TransportControlData.NumberOfPresentTUs := 0;
+					DriveClearingRun := TRUE;				
+					ZoneData.TransportControlData.eTransportState := E_TransportState.CLEARING;
+				END_IF	
+			ELSE
+				// Reset sensor free timer
+				fbZoneOccupiedFreeTimer(IN := FALSE);
+			END_IF
+		END_IF
+		
+(*************************************************************************
+  Multizone Stop
+*************************************************************************)
+	E_TransportState.MULTIZONE_STOP:
+		// Request next zone for handover
+		M_RequestNext();
+
+		// If zone is free and occupied state needs not be latched
+		IF NOT ZoneOccupiedSignal AND NOT Param.rSettings.EnableLatchOccupiedState THEN
+			// Run occupied free timer
+			fbZoneOccupiedFreeTimer(IN := TRUE, PT := tZoneFree);
+
+			// Zone is free without transfer
+			IF fbZoneOccupiedFreeTimer.Q THEN
+				fbZoneOccupiedFreeTimer(IN := FALSE);
+	
+				// Delete TU-data if it is configured
+				IF Param.rSettings.DeleteTU_DataZoneFree THEN
+					// debug message: '11-001-0095-01-1,  TU_DataIndex of transferless freed zone deleted,  TU_DataIndex = 5,  TuID = 000012345,  AssignmentID = 999999999'
+					DebugMsg := '';
+					DebugMsg := CONCAT(DebugMsg, F_AddDividerToSisString(Param.rSettings.ZoneName));
+					DebugMsg := CONCAT(DebugMsg, ',  TU_DataIndex of transferless freed zone deleted');
+					DebugMsg := CONCAT(DebugMsg, F_CreateTU_DataString(TU_DataIndex:= ZoneData.TransportControlData.TU_DataIndex));
+					fbDebugMsg.M_SendErrorMsg(DebugMsg);
+					F_DeleteTU_Data(
+						TU_DataIndex 	:= ZoneData.TransportControlData.TU_DataIndex,
+						NoTTC 			:= FALSE);
+				END_IF
+	
+				M_DeleteTU_DataIndex(mSendTUR := NOT Param.rSettings.DeleteTU_DataZoneFree);
+				ZoneData.TransportControlData.Occupied := FALSE;
+				ZoneData.TransportControlData.NumberOfPresentTUs := 0;
+				TransportTrspDataReq.DeleteNextTransportData := TRUE;
+				DriveClearingRun := TRUE;				
+				ZoneData.TransportControlData.eTransportState := E_TransportState.CLEARING;
+			END_IF	
+		ELSE
+			// Reset occupied free timer
+			fbZoneOccupiedFreeTimer(IN := FALSE);
+	
+			// If next zone is available
+			IF NextTransportData.eFunctionNumber <> E_FunctionNumber.F_BEGIN_FUNCTION THEN
+				// If function is started
+				IF Param.rOperationState.eState = E_PositionState.STARTED THEN
+					// If transport is enabled
+					IF Inputs.Enable.Transport THEN		
+						// If no error is active
+						IF ErrorData.ErrorType <> E_ErrorType.ERROR THEN
+							// If take and handover is not interrupted and handovert possible
+							IF ZoneData.TransportControlData.eTakeOverState <> E_TakeOverState.INTERRUPTED AND
+							   ZoneData.TransportControlData.eHandOverState <> E_HandOverState.INTERRUPTED AND
+							   ZoneData.TransportControlData.eHandOverState <> E_HandOverState.IDLE THEN
+								// Resume multizone
+								ZoneData.TransportControlData.eTransportState := E_TransportState.MULTIZONE;
+							END_IF
+						END_IF
+					END_IF
+				END_IF		
+			END_IF
+		END_IF
+
+(*************************************************************************
+  Multi TU
+*************************************************************************)
+	E_TransportState.MULTI_TU:
+		// Request prev zone for takeover
+		M_RequestPrev();
+
+		// Request next zone for handover
+		M_RequestNext();
+
+		// Set drive on
+		DriveMultiTU_Run := TRUE;
+		
+		// Stop multi TU
+		IF ZoneData.TransportControlData.eTakeOverState = E_TakeOverState.STOP OR 
+           ZoneData.TransportControlData.eHandOverState = E_HandOverState.STOP OR
+		   ZoneData.TransportControlData.eTakeOverState = E_TakeOverState.INTERRUPTED OR
+		   ZoneData.TransportControlData.eHandOverState = E_HandOverState.INTERRUPTED THEN
+			DriveMultiTU_Run := FALSE;
+			ZoneData.TransportControlData.eTransportState := E_TransportState.MULTI_TU_STOP;
+		END_IF	
+		
+		// If no next zone or function is available
+		IF NextTransportData.eFunctionNumber = E_FunctionNumber.F_BEGIN_FUNCTION AND
+		   Param.reNextFunctionNumber = E_FunctionNumber.F_BEGIN_FUNCTION THEN	
+			// Update for this transport valid trasport parameter
+			TransportParam := ZoneData.TransportControlData.TransportParam;	
+		END_IF
+
+		// If zone is occupied
+		IF ZoneOccupiedSignal THEN
+			// Reset clearing
+			fbClearing(Run := FALSE);
+			// Reset delay zone free
+			fbDelayZoneFree(Run := FALSE);
+
+			// If not status occupied
+			IF NOT ZoneData.TransportControlData.Occupied THEN
+				DelayDistance := TransportParam.StopDelayDistance - StoppingDistance;
+				
+				IF DelayDistance < 0 THEN
+					DelayDistance := 0;
+				END_IF
+				
+				// Run delay zone occupied
+				fbDelayZoneOccupied(
+					Run					:= TRUE,
+					EncoderValueInc		:= EncoderValue,
+					MaxEncoderValueInc	:= MaxEncoderValue,
+					RateIncPerMM		:= 1,
+					SetPoint			:= DelayDistance);
+
+				// Set status occupied	
+				IF fbDelayZoneOccupied.Q THEN
+					DriveMultiTU_Run := FALSE;
+					fbDelayZoneOccupied(RUN := FALSE);
+					fbClearing(Run := FALSE);
+					ZoneData.TransportControlData.Occupied := TRUE;
+					ZoneData.TransportControlData.eTransportState := E_TransportState.MULTI_TU_OCCUPIED;
+				END_IF					
+
+			// Switch to occupied state if handover is not active
+			ELSIF ZoneData.TransportControlData.eHandOverState <> E_HandOverState.ACTIVE THEN
+				DriveMultiTU_Run := FALSE;
+				ZoneData.TransportControlData.eTransportState := E_TransportState.MULTI_TU_OCCUPIED;
+			END_IF
+		
+		// Zone is not occupied	
+		ELSE
+			// Reset delay zone occupied
+			fbDelayZoneOccupied(RUN := FALSE);		
+
+			// If status occupied
+			IF ZoneData.TransportControlData.Occupied THEN
+				// If handover is active
+				IF ZoneData.TransportControlData.eHandOverState = E_HandOverState.ACTIVE THEN
+					DelayDistance := TransportParam.ZoneEndLength - StoppingDistance;
+					
+					IF DelayDistance < 0 THEN
+						DelayDistance := 0;
+					END_IF
+					
+					// Run delay zone free
+					fbDelayZoneFree(
+						Run					:= TRUE,
+						EncoderValueInc		:= EncoderValue,
+						MaxEncoderValueInc	:= MaxEncoderValue,
+						RateIncPerMM		:= 1,
+						SetPoint			:= DelayDistance);
+	
+					// Restet status occupied if zone is free during handover
+					IF fbDelayZoneFree.Q THEN
+						fbDelayZoneFree(Run := FALSE);
+						ZoneData.TransportControlData.Occupied := FALSE;
+					END_IF
+				ELSE
+					// Switch to occupied state if handover is not active
+					DriveMultiTU_Run := FALSE;
+					fbDelayZoneFree(Run := FALSE);
+					ZoneData.TransportControlData.eTransportState := E_TransportState.MULTI_TU_OCCUPIED;
+				END_IF
+	
+			// Status is not occupied
+			ELSE
+				// Reset clearing if takeover is active
+				IF ZoneData.TransportControlData.eTakeOverState = E_TakeOverState.ACTIVE THEN
+					fbClearing(Run := FALSE);	
+				ELSE
+					// Run clearing
+					fbClearing(
+						Run					:= TRUE,
+						EncoderValueInc		:= EncoderValue,
+						MaxEncoderValueInc	:= MaxEncoderValue,
+						RateIncPerMM		:= 1,
+						SetPoint			:= Param.rSettings.ClearingDistance);
+	
+					// Switch to state free if zone is clear
+					IF fbClearing.Q THEN
+						DriveMultiTU_Run := FALSE;
+						fbClearing(Run := FALSE);
+						ZoneData.TransportControlData.NumberOfPresentTUs := 0;
+						ZoneData.TransportControlData.eTransportState := E_TransportState.FREE;
+					END_IF
+				END_IF
+			END_IF
+		END_IF
+
+(*************************************************************************
+  Multi TU Occupied
+*************************************************************************)
+	E_TransportState.MULTI_TU_OCCUPIED:		
+		// Request next zone for handover
+		M_RequestNext();
+
+		// If next zone is available
+		IF NextTransportData.eFunctionNumber <> E_FunctionNumber.F_BEGIN_FUNCTION THEN
+			// If handover is active
+			IF ZoneData.TransportControlData.eHandOverState = E_HandOverState.ACTIVE THEN
+				ZoneData.TransportControlData.eTransportState := E_TransportState.MULTI_TU;
+			END_IF
+		ELSE
+			// Update for this transport valid trasport parameter
+			TransportParam := ZoneData.TransportControlData.TransportParam;
+		END_IF
+
+		// If the occupied state needs not to be latched
+		IF NOT Param.rSettings.EnableLatchOccupiedState THEN		
+			// If zone is free
+			IF NOT ZoneOccupiedSignal THEN
+				// Run occupied free timer
+				fbZoneOccupiedFreeTimer(IN := TRUE, PT := tZoneFree);
+
+				// Zone is free without transfer
+				IF fbZoneOccupiedFreeTimer.Q THEN
+					fbZoneOccupiedFreeTimer(IN := FALSE);
+					ZoneData.TransportControlData.Occupied := FALSE;
+					TransportTrspDataReq.DeleteNextTransportData := TRUE;
+	
+					// Update number of present TUs
+					IF ZoneData.TransportControlData.NumberOfPresentTUs > 0 THEN
+						ZoneData.TransportControlData.NumberOfPresentTUs := ZoneData.TransportControlData.NumberOfPresentTUs -1;	
+					END_IF			
+	
+					ZoneData.TransportControlData.eTransportState := E_TransportState.MULTI_TU;
+				END_IF	
+			ELSE
+				// Reset occupied free timer
+				fbZoneOccupiedFreeTimer(IN := FALSE);
+			END_IF
+		END_IF
+				
+(*************************************************************************
+  Multi TU Stop
+*************************************************************************)
+	E_TransportState.MULTI_TU_STOP:
+		// If function is started
+		IF Param.rOperationState.eState = E_PositionState.STARTED THEN
+			// If transport is enabled
+			IF Inputs.Enable.Transport THEN		
+				// If no error is active
+				IF ErrorData.ErrorType <> E_ErrorType.ERROR THEN
+					// If take and handover is not interrupted
+					IF  ZoneData.TransportControlData.eTakeOverState <> E_TakeOverState.INTERRUPTED AND
+                        ZoneData.TransportControlData.eHandOverState <> E_HandOverState.INTERRUPTED THEN
+						fbZoneOccupiedFreeTimer(IN := FALSE);
+						// Resume to multi TU
+						ZoneData.TransportControlData.eTransportState := E_TransportState.MULTI_TU;
+					END_IF
+				END_IF
+			END_IF
+		END_IF
+		
+(*************************************************************************
+  Simultaneous
+*************************************************************************)
+	E_TransportState.SIMULTANEOUS:
+		// Swich to simultaneous stop if take or handover is stop or interrupted
+		IF ZoneData.TransportControlData.eTakeOverState = E_TakeOverState.STOP OR 
+           ZoneData.TransportControlData.eHandOverState = E_HandOverState.STOP OR
+		   ZoneData.TransportControlData.eTakeOverState = E_TakeOverState.INTERRUPTED OR
+		   ZoneData.TransportControlData.eHandOverState = E_HandOverState.INTERRUPTED THEN
+		    DriveFeedInRun := FALSE;
+			ZoneData.TransportControlData.eTransportState := E_TransportState.SIMULTANEOUS_STOP;
+		END_IF	
+
+		// If zone is physically occupied
+		IF ZoneOccupiedSignal THEN
+			// Reset timeout take
+			fbTimeoutTake(Run := FALSE);
+			// Reset delay zone free
+			fbDelayZoneFree(Run := FALSE);
+
+			// If zone is logically not occupied,
+			// -> move forward until logically occupied 
+			IF NOT ZoneData.TransportControlData.Occupied THEN
+				// Set drive on
+				DriveFeedInRun := TRUE;
+
+				DelayDistance := TransportParam.StopDelayDistance - StoppingDistance;
+				
+				IF DelayDistance < 0 THEN
+					DelayDistance := 0;
+				END_IF
+				
+				// Run delay zone occupied
+				fbDelayZoneOccupied(
+					Run					:= TRUE,
+					EncoderValueInc		:= EncoderValue,
+					MaxEncoderValueInc	:= MaxEncoderValue,
+					RateIncPerMM		:= 1,
+					SetPoint			:= DelayDistance);
+
+				// Set status occupied	
+				IF fbDelayZoneOccupied.Q THEN
+					fbDelayZoneOccupied(RUN := FALSE);
+					fbClearing(Run := FALSE);
+					ZoneData.TransportControlData.Occupied := TRUE;
+				END_IF					
+		
+			// Switch to simultaneous occupied state if handover is not active
+			ELSIF ZoneData.TransportControlData.eHandOverState <> E_HandOverState.ACTIVE THEN 
+				DriveFeedInRun := FALSE;
+				ZoneData.TransportControlData.eTransportState := E_TransportState.SIMULTANEOUS_OCCUPIED;
+			ELSE
+				DriveFeedInRun := FALSE;
+			END_IF			
+			
+		// Zone is physically not occupied	
+		ELSE
+			// Reset delay zone occupied
+			fbDelayZoneOccupied(RUN := FALSE);		
+
+			// If zone is logically occupied
+			IF ZoneData.TransportControlData.Occupied THEN
+				// If handover is active
+				IF ZoneData.TransportControlData.eHandOverState = E_HandOverState.ACTIVE THEN
+					DelayDistance := TransportParam.ZoneEndLength - StoppingDistance;
+                    DriveFeedInRun := TRUE;
+					
+					IF DelayDistance < 0 THEN
+						DelayDistance := 0;
+					END_IF
+					
+					// Run delay zone free
+					fbDelayZoneFree(
+						Run					:= TRUE,
+						EncoderValueInc		:= EncoderValue,
+						MaxEncoderValueInc	:= MaxEncoderValue,
+						RateIncPerMM		:= 1,
+						SetPoint			:= DelayDistance);
+	
+					// Restet status occupied if zone is free during handover
+					IF fbDelayZoneFree.Q THEN
+						fbDelayZoneFree(Run := FALSE);
+						ZoneData.TransportControlData.Occupied := FALSE;
+					END_IF
+				ELSE
+					// Switch to occupied state if handover is not active
+					DriveFeedInRun := FALSE;
+					fbDelayZoneFree(Run := FALSE);
+					ZoneData.TransportControlData.eTransportState := E_TransportState.SIMULTANEOUS_OCCUPIED;
+				END_IF
+	
+			// Zone is logically not occupied -> (Feedin)
+			// adption to BCF 1.13 where this only occure if MFC is disabled
+			ELSIF(NOT Param.rSettings.EnableMFC) THEN
+				// Set drive on
+				DriveFeedInRun := TRUE;
+				
+				// Timeout take monitoring
+				IF Param.rSettings.TimeoutTakeDistance <> 0 THEN
+					TimeoutTakeDistance := Param.rSettings.TimeoutTakeDistance;
+				ELSE
+					TimeoutTakeDistance := (UINT_TO_DINT(TransportParam.ZoneLength)
+											- TransportParam.ZoneEndLength
+											+ TransportParam.StopDelayDistance
+											+ PrevTransportParam.ZoneEndLength) * TIMEOUT_TAKE_FACTOR;
+				END_IF			
+				
+				IF TimeoutTakeDistance < 0 THEN
+					TimeoutTakeDistance := 0;
+				END_IF
+				
+				// Run timeout take
+				fbTimeoutTake(
+					Run					:= TRUE,
+					EncoderValueInc		:= EncoderValue,
+					MaxEncoderValueInc	:= MaxEncoderValue,
+					SetPoint			:= TimeoutTakeDistance);
+							
+				// If timeout take, clear TU-data index and end feed in
+				IF fbTimeoutTake.Q THEN
+					// Debug message: '11-001-0095-01-1,  TU_DataIndex of implausible simultaneously takeover deleted,  TU_DataIndex = 12345,  TuID = 112233,  AssignmentID = 12345678'
+					DebugMsg := '';
+					DebugMsg := CONCAT(DebugMsg, F_AddDividerToSisString(Param.rSettings.ZoneName));
+					DebugMsg := CONCAT(DebugMsg, ',  TU_DataIndex of implausible simultaneously takeover deleted');
+					DebugMsg := CONCAT(DebugMsg, F_CreateTU_DataString(ZoneData.TransportControlData.TU_DataIndex));
+					fbDebugMsg.M_SendErrorMsg(DebugMsg);
+					
+					DriveFeedInRun := FALSE;
+					fbTimeoutTake(Run := FALSE);
+					fbDelayZoneOccupied(Run := FALSE);
+					M_DeleteTU_DataIndex(mSendTUR := TRUE);
+					TransportTrspDataReq.DeleteNextTransportData := TRUE;
+					ZoneData.TransportControlData.NumberOfPresentTUs := 0;	
+	
+					// If free run is enable
+					IF Param.rSettings.EnableFreeRun THEN
+						DriveFreeRun := TRUE;
+						ZoneData.TransportControlData.eTransportState := E_TransportState.FREE_RUN;
+					ELSE
+						ZoneData.TransportControlData.eTransportState := E_TransportState.FREE;	
+					END_IF
+				END_IF
+			END_IF
+		END_IF
+		
+(*************************************************************************
+  Simultaneous Occupied
+*************************************************************************)
+	E_TransportState.SIMULTANEOUS_OCCUPIED:		
+		// If simultaneous transport is disable, switch to basic transport
+		IF NOT Param.rSettings.EnableSimultaneousTransport AND
+			NOT ZoneData.AddOn.Orders.EnableSimultaneousTransport THEN
+			ZoneData.TransportControlData.eTransportState := E_TransportState.OCCUPIED;
+		END_IF
+			
+		// Request prev zone for takeover
+		M_RequestPrev();
+
+		// Request next zone for handover
+		M_RequestNext();
+
+		// If next zone is available
+		IF NextTransportData.eFunctionNumber <> E_FunctionNumber.F_BEGIN_FUNCTION THEN
+			// If handover is active
+			IF ZoneData.TransportControlData.eHandOverState = E_HandOverState.ACTIVE THEN
+				ZoneData.TransportControlData.eTransportState := E_TransportState.SIMULTANEOUS;
+			// Otherwise if only handover is enabled do a single handover
+			ELSIF NOT Inputs.Enable.TakeOver AND Inputs.Enable.HandOver THEN
+				ZoneData.TransportControlData.eTransportState := E_TransportState.HANDOVER;
+			END_IF
+		ELSE
+			// Update for this transport valid trasport parameter
+			TransportParam := ZoneData.TransportControlData.TransportParam;
+
+			// If only handover is enabled do a single handover
+			IF NOT Inputs.Enable.TakeOver AND Inputs.Enable.HandOver THEN
+				ZoneData.TransportControlData.eTransportState := E_TransportState.OCCUPIED;
+			END_IF
+		END_IF
+
+		// If the occupied state needs not to be latched
+		IF NOT Param.rSettings.EnableLatchOccupiedState THEN	
+			// If zone is free
+			IF NOT ZoneOccupiedSignal THEN
+				// Run occupied free timer
+				fbZoneOccupiedFreeTimer(IN := TRUE, PT := tZoneFree);
+
+				// Zone is free without transfer
+				IF fbZoneOccupiedFreeTimer.Q THEN
+					fbZoneOccupiedFreeTimer(IN := FALSE);
+	
+					// If transport is without MFC
+					IF NOT Param.rSettings.EnableMFC THEN
+						// Delete TU-data if it is configured
+						IF Param.rSettings.DeleteTU_DataZoneFree THEN
+							// debug message: '11-001-0095-01-1,  TU_DataIndex of transferless freed zone deleted,  TU_DataIndex = 5,  TuID = 000012345,  AssignmentID = 999999999'
+							DebugMsg := '';
+							DebugMsg := CONCAT(DebugMsg, F_AddDividerToSisString(Param.rSettings.ZoneName));
+							DebugMsg := CONCAT(DebugMsg, ',  TU_DataIndex of transferless freed zone deleted');
+							DebugMsg := CONCAT(DebugMsg, F_CreateTU_DataString(TU_DataIndex:= ZoneData.TransportControlData.TU_DataIndex));
+							fbDebugMsg.M_SendErrorMsg(DebugMsg);
+							F_DeleteTU_Data(
+								TU_DataIndex 	:= ZoneData.TransportControlData.TU_DataIndex,
+								NoTTC 			:= FALSE);
+						END_IF
+		
+						M_DeleteTU_DataIndex(mSendTUR := NOT Param.rSettings.DeleteTU_DataZoneFree);
+						ZoneData.TransportControlData.Occupied := FALSE;
+						TransportTrspDataReq.DeleteNextTransportData := TRUE;
+						ZoneData.TransportControlData.NumberOfPresentTUs := 0;				
+					    DriveClearingRun:= TRUE;
+						ZoneData.TransportControlData.eTransportState := E_TransportState.CLEARING;
+	
+					// Transport with MFC
+					ELSE
+						// If a TU data index is present
+						IF ZoneData.TransportControlData.TU_DataIndex <> 0 THEN
+							// Set error
+							F_SetError(	
+								ErrorType	:= E_ErrorType.ERROR,
+								ErrorParam	:= '',
+								ErrorMsg	:= E_ErrorConv.TU_DATA_SET_OCCUPIED_ZONE_FREE,
+								ErrorData	:= ErrorData);
+						ELSE
+							ZoneData.TransportControlData.Occupied := FALSE;
+							fbZoneOccupiedFreeTimer(IN := FALSE);
+							TransportTrspDataReq.DeleteNextTransportData := TRUE;
+							ZoneData.TransportControlData.NumberOfPresentTUs := 0;
+	
+							// If free run is enable
+							IF Param.rSettings.EnableFreeRun THEN
+								DriveFreeRun := TRUE;
+								ZoneData.TransportControlData.eTransportState := E_TransportState.FREE_RUN;
+							ELSE
+								ZoneData.TransportControlData.eTransportState := E_TransportState.FREE;	
+							END_IF
+						END_IF
+					END_IF
+				END_IF
+			ELSE
+				// Reset occupied free timer
+				fbZoneOccupiedFreeTimer(IN := FALSE);
+		
+				// If add TU data is configured and no TU data index is existing
+				IF Param.rSettings.AddTU_Data AND ZoneData.TransportControlData.TU_DataIndex = 0 AND
+					NOT Param.rSettings.EnableMultipleTU_Transition THEN
+					// Insert TU-data
+					ZoneData.TransportControlData.TU_DataIndex := F_InsertTU_Data(
+																		eFunctionNumber := Param.reFunctionNumber,
+																		ZoneNumber 		:= Param.ZoneNumber);
+					// Updata data present status
+					ZoneData.TransportControlData.DataPresent := ZoneData.TransportControlData.TU_DataIndex <> 0;								
+					// If insert TU data is failed
+					IF ZoneData.TransportControlData.TU_DataIndex = 0 THEN
+						// Set error
+						F_SetError(	
+							ErrorType	:= E_ErrorType.ERROR,
+							ErrorParam	:= '',
+							ErrorMsg	:= E_ErrorConv.NO_FREE_TU_DATA_SET,
+							ErrorData	:= ErrorData);
+					END_IF
+				END_IF
+		
+				// If material flow control is enabled
+				IF Param.rSettings.EnableMFC THEN
+					// If no TU data index is present
+					IF ZoneData.TransportControlData.TU_DataIndex = 0 THEN
+						// If the index is not moved to the next zone
+						IF NextTransportData.rTransportControlData.eTakeOverState <> E_TakeOverState.ACTIVE THEN	
+							// Set error
+							F_SetError(	
+								ErrorType	:= E_ErrorType.ERROR,
+								ErrorParam	:= '',
+								ErrorMsg	:= E_ErrorConv.TU_DATA_SET_EMPTY_ZONE_OCCUPIED,
+								ErrorData	:= ErrorData);
+						END_IF
+					END_IF
+				END_IF
+			END_IF
+		END_IF
+
+(*************************************************************************
+  Simultaneous Stop
+*************************************************************************)
+	E_TransportState.SIMULTANEOUS_STOP:		
+		// Request prev zone for takeover
+		M_RequestPrev();
+
+  		// Request next zone for handover
+		M_RequestNext();
+
+		// If next zone is available
+		IF NextTransportData.eFunctionNumber <> E_FunctionNumber.F_BEGIN_FUNCTION THEN
+			// If function is started
+			IF Param.rOperationState.eState = E_PositionState.STARTED THEN
+				// If transport is enabled
+				IF Inputs.Enable.Transport THEN		
+					// If no error is active
+					IF ErrorData.ErrorType <> E_ErrorType.ERROR THEN
+						// If handover is active
+						IF	ZoneData.TransportControlData.eHandOverState = E_HandOverState.ACTIVE  THEN	
+							// If prev function is ready to handover 	
+							IF PrevTransportData.rTransportControlData.eHandOverState = E_HandOverState.READY  THEN
+								// Resume to simultaneous transport, otherwise do handover
+								ZoneData.TransportControlData.eTransportState := E_TransportState.SIMULTANEOUS;
+							ELSE
+								ZoneData.TransportControlData.eTransportState := E_TransportState.HANDOVER;
+							END_IF
+						END_IF
+					END_IF
+				END_IF
+			END_IF		
+		END_IF
+			
+(*************************************************************************
+  State Error
+*************************************************************************)
+ELSE
+	// Set error
+	F_SetError(	
+		ErrorType	:= E_ErrorType.ERROR,
+		ErrorParam	:= INT_TO_STRING(ZoneData.TransportControlData.eTransportState),
+		ErrorMsg	:= E_ErrorConv.SOFTWARE_ERROR,
+		ErrorData	:= ErrorData);	
+END_CASE
+]]></ST>
+      </Implementation>
+    </Action>
+    <Method Name="M_DeleteTU_DataIndex" Id="{3f8c49b0-f47c-4916-aad5-8038f95e220c}">
+      <Declaration><![CDATA[METHOD PROTECTED M_DeleteTU_DataIndex : BOOL
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 475083 $
+ *	Revision date	:	$Date: 2021-04-10 12:07:10 +0200 (lör, 10 apr 2021) $
+ *	Last changed by	:	$Author: d7mangc $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/tags/R1.12.0/01_Software/BCF/BCF/JumpStart/20_Product/10_BCF/11_Conv/12_E_Functions/10_Helper/FB_TransportControl.TcPOU $
+ *
+ *	Purpose			:	Deletes TU-DataIndex and sends a TUR if requested and send mode selected in the settings allows sending in that case.
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+VAR_INPUT
+	mSendTUR			: BOOL; // Request to send TUR, depends on the setting eTUR_SendAllowedMode if it will be sent
+END_VAR
+VAR
+	mIdx				: INT; //loop variable
+	mDestinationList	: ARRAY [1..Conveyor.NUMBER_OF_DESTINATIONS] OF STRING(Conveyor.POSITION_STRINGLENGTH); //If TUR is to be sent, temp store for destinations for the message building
+	mSendTUR_Allowed	: BOOL; //Result of checking if the sendmode allows sending of the TUR in this particular call
+	mTU_DataIndex		: DINT; //local copy of the dataindex location of the TU data to be sent
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[{warning disable C0371}
+IF __ISVALIDREF(ZoneData) THEN
+	// If a TU-data index is existing 
+	mTU_DataIndex := ZoneData.TransportControlData.TU_DataIndex;
+	
+	IF mTU_DataIndex <> 0 THEN
+		// When TUR should be sent
+		IF mSendTUR THEN
+			//If the TUR was requested to be sent, first check if it should be sent according to the config of the Zone
+			CASE  Param.rSettings.eTUR_SendMode OF
+			E_TUR_SendModes.ALWAYS:
+				mSendTUR_Allowed := TRUE;
+
+			E_TUR_SendModes.DISABLED:
+				mSendTUR_Allowed := FALSE;
+
+			E_TUR_SendModes.DISABLE_ON_UNKNOWN_ASSIGNMENT: 
+				mSendTUR_Allowed := TU_DataTable[mTU_DataIndex].AssignmentID <> Conveyor.ASSIGNMENT_ID_UNKNOWN;
+
+			E_TUR_SendModes.DISABLE_ON_UNKNOWN_TU:
+				mSendTUR_Allowed := TU_DataTable[mTU_DataIndex].TU_ID.ASCII <> Conveyor.TU_ID_UNKNOWN;
+
+			E_TUR_SendModes.DISABLE_ON_UNKNOWN_TU_ASSIGNMENT:
+				mSendTUR_Allowed := 	TU_DataTable[mTU_DataIndex].TU_ID.ASCII <> Conveyor.TU_ID_UNKNOWN
+									AND TU_DataTable[mTU_DataIndex].AssignmentID <> Conveyor.ASSIGNMENT_ID_UNKNOWN;
+			ELSE
+				mSendTUR_Allowed := TRUE;
+			END_CASE
+	 		
+			IF mSendTUR_Allowed THEN
+				
+				// Get all destinations
+				FOR mIdx := 1 TO Conveyor.NUMBER_OF_DESTINATIONS DO
+					IF TU_DataTable[mTU_DataIndex].Destination[mIdx].eFunctionNumber <> E_FunctionNumber.F_BEGIN_FUNCTION THEN
+						mDestinationList[mIdx] := F_ReduceToAlphaNumeric(TU_DataTable[mTU_DataIndex].Destination[mIdx].PositionName);
+					ELSE
+						EXIT;
+					END_IF
+				END_FOR
+				
+				// Send TUR
+				F_ITC_SendTUR(
+					eChannelSrc				:= E_MFCS_Channel.AM,
+					LastPositionName		:= F_ReduceToAlphaNumeric(FunctionRegistry[Param.reFunctionNumber].Zone[Param.ZoneNumber].ZoneName),
+					TU_DataIndex			:= ZoneData.TransportControlData.TU_DataIndex,
+					TU_ID					:= TU_DataTable[mTU_DataIndex].TU_ID.ASCII,
+					TU_Type					:= TU_DataTable[mTU_DataIndex].DataSet.TU_Type,
+					AssignmentID			:= TU_DataTable[mTU_DataIndex].AssignmentID,
+					Length					:= TU_DataTable[mTU_DataIndex].DataSet.Dimension.Length,
+					Width					:= TU_DataTable[mTU_DataIndex].DataSet.Dimension.Width,
+					Height					:= TU_DataTable[mTU_DataIndex].DataSet.Dimension.Height,
+					Weight					:= TU_DataTable[mTU_DataIndex].DataSet.Dimension.Weight,
+					Orientation				:= TU_DataTable[mTU_DataIndex].DataSet.Orientation,
+					TU_Parameter			:= TU_DataTable[mTU_DataIndex].DataSet.TU_Parameter,
+					IO_Data					:= TU_DataTable[mTU_DataIndex].DataSet.IO_Data,
+					LowerLimit				:= TU_DataTable[mTU_DataIndex].DataSet.LowerLimit,
+					UpperLimit				:= TU_DataTable[mTU_DataIndex].DataSet.UpperLimit,
+					Sequence				:= TU_DataTable[mTU_DataIndex].DataSet.Sequence,
+					SubSequence				:= TU_DataTable[mTU_DataIndex].DataSet.SubSequence,
+					SequenceSize			:= TU_DataTable[mTU_DataIndex].DataSet.SequenceSize,
+					GroupID					:= TU_DataTable[mTU_DataIndex].DataSet.GroupID,
+					GroupSize				:= TU_DataTable[mTU_DataIndex].DataSet.GroupSize,
+					DestinationSlot         := TU_DataTable[mTU_DataIndex].DataSet.DestinationSlot,
+					eReturnCode				:= E_ErrorConv.DESTINATION_NOT_REACHABLE,
+					NumberOfDestinations	:= TU_DataTable[mTU_DataIndex].DataSet.NumberOfDest,
+					Destination				:= mDestinationList);
+			END_IF
+		END_IF
+		
+		// Update last TU data index			
+		IF ZoneData.TransportControlData.TU_DataIndex <> 0 THEN
+			ZoneData.TransportControlData.LastTU_DataIndex := ZoneData.TransportControlData.TU_DataIndex;
+		END_IF
+		
+		// Update states
+		ZoneData.TransportControlData.TU_DataIndex := 0;
+		ZoneData.TransportControlData.DataPresent := FALSE;
+		M_DeleteTU_DataIndex := TRUE;
+	END_IF
+ELSE
+	M_DeleteTU_DataIndex := FALSE;
+END_IF
+{warning restore C0371}
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_MoveTUdata" Id="{d17bde12-6418-4bd7-b590-b75b64dfcbf8}">
+      <Declaration><![CDATA[// Moves the TU data index from previous to own zone
+METHOD PROTECTED M_MoveTUdata
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 475083 $
+ *	Revision date	:	$Date: 2021-04-10 12:07:10 +0200 (lör, 10 apr 2021) $
+ *	Last changed by	:	$Author: d7mangc $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/tags/R1.12.0/01_Software/BCF/BCF/JumpStart/20_Product/10_BCF/11_Conv/12_E_Functions/10_Helper/FB_TransportControl.TcPOU $
+ *
+ *	Purpose			:	Moves the TU data index from previous to own zone.
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				29.09.2020		swl					Example
+ *
+ **************************************************************************************)
+VAR
+  mTU_DataIndex          : DINT;
+  mCurrentFunctionNumber : E_FunctionNumber;
+  mCurrentZoneNumber     : INT;
+END_VAR
+
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[{warning disable C0371}
+// If multiple TU transition is aktive
+IF Param.rSettings.EnableMultipleTU_Transition THEN
+	// Move TU data index from previous to own zone
+  	Transition_TU_DataIndex := F_MoveTU_DataIndex(
+									eFunctionNumber := PrevTransportData.eFunctionNumber,
+                                    mZoneNumber     := PrevTransportData.ZoneNumber);
+
+	// Update number of present TUs
+	ZoneData.TransportControlData.NumberOfPresentTUs := ZoneData.TransportControlData.NumberOfPresentTUs + 1;
+
+// Else if own TU data index is free
+ELSIF ZoneData.TransportControlData.TU_DataIndex = 0 THEN
+	// Move TU data index from previous to own zone
+	mTU_DataIndex := F_MoveTU_DataIndex(
+							eFunctionNumber := PrevTransportData.eFunctionNumber,
+							mZoneNumber     := PrevTransportData.ZoneNumber);
+
+	// Update zone data
+	ZoneData.TransportControlData.TU_DataIndex := mTU_DataIndex;
+	ZoneData.TransportControlData.DataPresent := mTU_DataIndex <> 0;
+	ZoneData.TransportControlData.NumberOfPresentTUs := 1;
+
+	// Check if the TU data index is valid - if not, create a debug message
+	IF mTU_DataIndex < 0 OR mTU_DataIndex > Conveyor.NUMBER_OF_TU_DATA THEN
+		// debug message: '11-001-0095-01-1,  TU_DataIndex is out of range,  TU_DataIndex = 5000,  range = 0..1979'
+		DebugMsg:= '';
+		DebugMsg:= CONCAT(DebugMsg, Param.rSettings.ZoneName);
+		DebugMsg:= CONCAT(DebugMsg, ',  TU_DataIndex is out of range');
+		DebugMsg:= CONCAT(DebugMsg, DebugTextBlocks.TU_DATA_INDEX);
+		DebugMsg:= CONCAT(DebugMsg, DINT_TO_STRING(mTU_DataIndex));
+		DebugMsg:= CONCAT(DebugMsg, DebugTextBlocks.RANGE);
+		DebugMsg:= CONCAT(DebugMsg, DINT_TO_STRING(Conveyor.NUMBER_OF_TU_DATA));
+		fbDebugMsg.M_SendErrorMsg(DebugMsg);				  
+		
+	// Else if a valid TU data index is available check whether the index matches the expected position.
+	// If not the TU index is incorrectly linked to multiple positions at the same time.
+	ELSIF mTU_DataIndex <> 0 THEN
+		mCurrentFunctionNumber := TU_Table.TU_DataTable[mTU_DataIndex].CurrentFunctionNumber;
+		mCurrentZoneNumber := TU_Table.TU_DataTable[mTU_DataIndex].CurrentZoneNumber;
+		
+		// If function and zone number is valid
+		IF mCurrentFunctionNumber <> 0 AND mCurrentZoneNumber <> 0 THEN
+			// If current TU position is not previous zone
+			IF mCurrentFunctionNumber <> PrevTransportData.eFunctionNumber OR mCurrentZoneNumber <> PrevTransportData.ZoneNumber THEN
+				// debug message: '11-001-0095-01-1,  incorrectly linked TU_DataIndex to current TU position,  expected = 11-222-3333-44-5,  current = 99-9999-1979-01-9'
+				DebugMsg:= '';
+				DebugMsg:= CONCAT(DebugMsg, Param.rSettings.ZoneName);
+				DebugMsg:= CONCAT(DebugMsg, ',  incorrectly linked TU_DataIndex to current TU position');
+				DebugMsg:= CONCAT(DebugMsg, DebugTextBlocks.EXPECTED);
+				DebugMsg:= CONCAT(DebugMsg, F_GetFunctionName(
+												eFunctionNumber := PrevTransportData.eFunctionNumber,
+												ZoneNumber := PrevTransportData.ZoneNumber));
+				DebugMsg:= CONCAT(DebugMsg, DebugTextBlocks.CURRENT);
+				DebugMsg:= CONCAT(DebugMsg, F_GetFunctionName(
+												eFunctionNumber := mCurrentFunctionNumber,
+												ZoneNumber := mCurrentZoneNumber));
+				DebugMsg:= CONCAT(DebugMsg, F_CreateTU_DataString(mTU_DataIndex));
+				fbDebugMsg.M_SendErrorMsg(DebugMsg);				  
+			END_IF
+		END_IF
+
+		// Update currrent TU position
+		TU_Table.TU_DataTable[mTU_DataIndex].CurrentFunctionNumber := Param.reFunctionNumber;
+		TU_Table.TU_DataTable[mTU_DataIndex].CurrentZoneNumber := Param.ZoneNumber;
+	END_IF
+
+ELSE
+	// Own TU data index is already used
+	mTU_DataIndex := ZoneData.TransportControlData.TU_DataIndex;
+
+	// Set error TU data index is not free
+	F_SetError(
+		ErrorType := E_ErrorType.ERROR,
+		ErrorParam:= CONCAT('TU-DataIndex = ', DINT_TO_STRING(mTU_DataIndex)),
+		ErrorMsg  := E_ErrorConv.TU_DATA_INDEX_NOT_FREE,
+		ErrorData := ErrorData);
+	
+	// debug message: '11-001-0095-01-1,  own TU data index not free,  TU_DataIndex = 12345,  TuID = 112233,  AssignmentID = 12345678'
+	DebugMsg:= '';
+	DebugMsg:= CONCAT(DebugMsg, Param.rSettings.ZoneName);
+	DebugMsg:= CONCAT(DebugMsg, ',  own TU data index not free');
+	DebugMsg:= CONCAT(DebugMsg, F_CreateTU_DataString(mTU_DataIndex));
+	fbDebugMsg.M_SendErrorMsg(DebugMsg);				  
+	
+	// Update number of present TUs
+	ZoneData.TransportControlData.NumberOfPresentTUs := 1;
+END_IF
+{warning restore C0371}]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_RequestNext" Id="{2c37c848-efb9-4442-8d76-2328c143fa92}">
+      <Declaration><![CDATA[// Requests the routing service to retrieve next partner
+METHOD PROTECTED M_RequestNext
+(**************************************************************************************
+ *  Application     :   BoxControl Framework
+ *  Revision date   :   $Date: 2021-04-10 12:07:10 +0200 (lör, 10 apr 2021) $
+ *  Author          :   CDC
+ * ------------------------------------------------------------------------------------
+ *  © Swisslog AG
+ *  Swisslog is not liable for any usage of this source code that is not agreed 
+ *  on between Swisslog and the other party. The mandatory legal liability remains 
+ *  unaffected.
+ * ------------------------------------------------------------------------------------
+ *  Revision History: 
+ *
+ *  VERSION DATE         INITIALS     DESCRIPTION
+ *  0.0     DD.MM.YYYY   (name)       (explain customized modifications)
+ *
+ **************************************************************************************)
+VAR_INPUT
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[{warning disable C0371}
+// If no next zone or function is available
+IF NextTransportData.eFunctionNumber = E_FunctionNumber.F_BEGIN_FUNCTION AND
+   Param.reNextFunctionNumber = E_FunctionNumber.F_BEGIN_FUNCTION THEN	
+	fbRoutingServiceRetry(IN := FALSE);
+	TransportTrspDataReq.RequestNextTransportData := TRUE;
+
+// If the routing update is enable	
+ELSIF Param.rSettings.EnableRoutingUpdate THEN
+	// If the next function ist not fix
+	IF Param.reSetFuncNextFuncNumber = E_FunctionNumber.F_BEGIN_FUNCTION
+	   AND NOT NextTransportData.rTransportControlData.TransportActive THEN
+		// If the transport does not start in a reasonable time, initiate routing update
+		IF ZoneData.TransportControlData.eHandOverState = E_HandOverState.IDLE OR
+		   ZoneData.TransportControlData.eHandOverState = E_HandOverState.READY THEN
+			fbRoutingServiceRetry(IN := TRUE, PT := RECALL_SERVICE_TIMEOUT);
+			IF fbRoutingServiceRetry.Q THEN
+				fbRoutingServiceRetry(IN := FALSE);
+				TransportTrspDataReq.DeleteNextTransportData := TRUE;
+				TransportTrspDataReq.RequestNextTransportData := TRUE;
+			END_IF
+		ELSE
+			fbRoutingServiceRetry(IN := FALSE);
+		END_IF
+	ELSE
+		fbRoutingServiceRetry(IN := FALSE);
+	END_IF
+END_IF
+{warning restore C0371}
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_RequestPrev" Id="{f4486108-8078-4ff0-ae47-01e4ca68e476}">
+      <Declaration><![CDATA[// Requests the merging service to retrieve prev partner
+METHOD PROTECTED M_RequestPrev
+(**************************************************************************************
+ *  Application     :   BoxControl Framework
+ *  Revision date   :   $Date: 2021-04-10 12:07:10 +0200 (lör, 10 apr 2021) $
+ *  Author          :   CDC
+ * ------------------------------------------------------------------------------------
+ *  © Swisslog AG
+ *  Swisslog is not liable for any usage of this source code that is not agreed 
+ *  on between Swisslog and the other party. The mandatory legal liability remains 
+ *  unaffected.
+ * ------------------------------------------------------------------------------------
+ *  Revision History: 
+ *
+ *  VERSION DATE         INITIALS     DESCRIPTION
+ *  0.0     DD.MM.YYYY   (name)       (explain customized modifications)
+ *
+ **************************************************************************************)
+VAR_INPUT
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[{warning disable C0371}
+// If no previous zone or function is available
+IF PrevTransportData.eFunctionNumber = E_FunctionNumber.F_BEGIN_FUNCTION AND
+   Param.rePrevFunctionNumber = E_FunctionNumber.F_BEGIN_FUNCTION THEN	
+	fbMergingServiceRetry(IN := FALSE);
+	TransportTrspDataReq.RequestPrevTransportData := TRUE;
+
+
+// If the previous function ist not fix
+ELSIF Param.reSetFuncPrevFuncNumber = E_FunctionNumber.F_BEGIN_FUNCTION
+   AND NOT PrevTransportData.rTransportControlData.TransportActive THEN
+	// If the transport does not start in a reasonable time, initiate merging update
+	IF ZoneData.TransportControlData.eTakeOverState = E_TakeOverState.IDLE OR
+	   ZoneData.TransportControlData.eTakeOverState = E_TakeOverState.READY THEN
+		fbMergingServiceRetry(IN := TRUE, PT := RECALL_SERVICE_TIMEOUT);
+		IF fbMergingServiceRetry.Q THEN
+			fbMergingServiceRetry(IN := FALSE);
+			TransportTrspDataReq.DeletePrevTransportData := TRUE;
+			TransportTrspDataReq.RequestPrevTransportData := TRUE;
+		END_IF
+	END_IF
+END_IF
+{warning restore C0371}
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_SelectSensor" Id="{6ff5eb84-281c-4ff9-8db2-a56130814bcb}">
+      <Declaration><![CDATA[METHOD M_SelectSensor : BOOL
+(**************************************************************************************
+ *  Application     :   BoxControl Framework
+ *  Revision date   :   $Date: 2021-04-10 12:07:10 +0200 (lör, 10 apr 2021) $
+ *  Author          :   CDC
+ * ------------------------------------------------------------------------------------
+ *  © Swisslog AG
+ *  Swisslog is not liable for any usage of this source code that is not agreed 
+ *  on between Swisslog and the other party. The mandatory legal liability remains 
+ *  unaffected.
+ * ------------------------------------------------------------------------------------
+ *  Revision History: 
+ *
+ *  VERSION DATE         INITIALS     DESCRIPTION
+ *  0.0     DD.MM.YYYY   (name)       (explain customized modifications)
+ *
+ **************************************************************************************)
+VAR_INPUT
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[{warning disable C0371}
+IF ZoneData.AddOn.Orders.UseOwnSensor OR NOT Param.rSettings.EnableAddOnSensor THEN
+    ZoneOccupiedSignal := ZoneOccupied;
+ELSE
+    ZoneOccupiedSignal := ZoneData.AddOn.Orders.AddOnSensor;
+END_IF
+{warning restore C0371}]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_StartPositionTracking" Id="{523fa34d-d115-4843-9676-8b4ef2e97ecc}">
+      <Declaration><![CDATA[// Starts the tracking of the leading edge arriving from prev zone
+METHOD PROTECTED M_StartPositionTracking
+(**************************************************************************************
+ *  Application     :   BoxControl Framework
+ *  Revision date   :   $Date: 2021-04-10 12:07:10 +0200 (lör, 10 apr 2021) $
+ *  Author          :   CDC
+ * ------------------------------------------------------------------------------------
+ *  © Swisslog AG
+ *  Swisslog is not liable for any usage of this source code that is not agreed 
+ *  on between Swisslog and the other party. The mandatory legal liability remains 
+ *  unaffected.
+ * ------------------------------------------------------------------------------------
+ *  Revision History: 
+ *
+ *  VERSION DATE         INITIALS     DESCRIPTION
+ *  0.0     DD.MM.YYYY   (name)       (explain customized modifications)
+ *
+ **************************************************************************************)
+VAR
+	PresetDistance     			: DINT; // Present distance for tracking leading edge
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+// Set preset distance based on available previous position data	
+IF PrevTransportData.rTransportControlData.TU_LeadingEdgePos <> 0 THEN
+	PresetDistance := -(UINT_TO_DINT(PrevTransportParam.ZoneLength) - PrevTransportData.rTransportControlData.TU_LeadingEdgePos);
+ELSE
+	PresetDistance := -(UINT_TO_DINT(PrevTransportParam.ZoneEndLength) - PrevTransportParam.StopDelayDistance);
+END_IF
+
+// Start tracking 
+fbTrackingLeadingEdge(Run := FALSE);
+
+fbTrackingLeadingEdge(Run	:= TRUE,
+		EncoderValueInc 	:= EncoderValue,
+		MaxEncoderValueInc	:= MaxEncoderValue,
+		RateIncPerMM		:= 1,
+		SetPoint			:= UINT_TO_DINT(16#FFFF),
+		StartPoint			:= PresetDistance);
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_TakeoverPlausibleDistance" Id="{e1df1950-bac4-46f8-95d5-eafbd9ea500a}">
+      <Declaration><![CDATA[// Calculates the distance, the TU must at least travel to be considered plausible
+METHOD PROTECTED M_TakeoverPlausibleDistance : DINT
+(**************************************************************************************
+ *  Application     :   BoxControl Framework
+ *  Revision date   :   $Date: 2021-04-10 12:07:10 +0200 (lör, 10 apr 2021) $
+ *  Author          :   CDC
+ * ------------------------------------------------------------------------------------
+ *  © Swisslog AG
+ *  Swisslog is not liable for any usage of this source code that is not agreed 
+ *  on between Swisslog and the other party. The mandatory legal liability remains 
+ *  unaffected.
+ * ------------------------------------------------------------------------------------
+ *  Revision History: 
+ *
+ *  VERSION DATE         INITIALS     DESCRIPTION
+ *  0.0     DD.MM.YYYY   (name)       (explain customized modifications)
+ *
+ **************************************************************************************)
+VAR
+	Temp		: DINT		:= 0;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+// valid value given from config -> use this
+IF Param.rSettings.TakeoverPlausibilityDistance <> 0 THEN
+	M_TakeoverPlausibleDistance := Param.rSettings.TakeoverPlausibilityDistance;
+	RETURN;
+END_IF
+
+// no, calculate it:
+// distance between TU's leading edge to the border of the prev zone 
+Temp:= PrevTransportParam.ZoneEndLength - PrevTransportParam.StopDelayDistance;
+
+// adding the distance from begin of own zone to the sensor
+Temp:= Temp + UINT_TO_DINT(TransportParam.ZoneLength) - TransportParam.ZoneEndLength;
+
+// return reduced value to give space for tolerance
+M_TakeoverPlausibleDistance:= Temp - DIST_TO_OCCUPIED;
+
+]]></ST>
+      </Implementation>
+    </Method>
+    <LineIds Name="FB_TransportControl">
+      <LineId Id="343" Count="63" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_TransportControl.A_Brake">
+      <LineId Id="2" Count="11" />
+      <LineId Id="40" Count="0" />
+      <LineId Id="38" Count="0" />
+      <LineId Id="14" Count="14" />
+      <LineId Id="39" Count="0" />
+      <LineId Id="29" Count="6" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_TransportControl.A_HandOverState">
+      <LineId Id="567" Count="284" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_TransportControl.A_Init">
+      <LineId Id="90" Count="88" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_TransportControl.A_InputMapping">
+      <LineId Id="2" Count="19" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_TransportControl.A_JamAutoReset">
+      <LineId Id="2" Count="20" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_TransportControl.A_OutputMapping">
+      <LineId Id="134" Count="142" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_TransportControl.A_PositionTracking">
+      <LineId Id="2" Count="43" />
+      <LineId Id="55" Count="1" />
+      <LineId Id="48" Count="6" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_TransportControl.A_ShortZoneRestart">
+      <LineId Id="2" Count="26" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_TransportControl.A_TakeOverState">
+      <LineId Id="1574" Count="78" />
+      <LineId Id="1982" Count="0" />
+      <LineId Id="1653" Count="23" />
+      <LineId Id="1680" Count="80" />
+      <LineId Id="1981" Count="0" />
+      <LineId Id="1977" Count="0" />
+      <LineId Id="1761" Count="139" />
+      <LineId Id="1976" Count="0" />
+      <LineId Id="1901" Count="73" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_TransportControl.A_TransportState">
+      <LineId Id="9010" Count="370" />
+      <LineId Id="10567" Count="2" />
+      <LineId Id="9381" Count="0" />
+      <LineId Id="10573" Count="1" />
+      <LineId Id="9382" Count="3" />
+      <LineId Id="10570" Count="0" />
+      <LineId Id="9386" Count="942" />
+      <LineId Id="10572" Count="0" />
+      <LineId Id="10329" Count="78" />
+      <LineId Id="10560" Count="0" />
+      <LineId Id="10564" Count="2" />
+      <LineId Id="10561" Count="0" />
+      <LineId Id="10408" Count="146" />
+      <LineId Id="1" Count="0" />
+      <LineId Id="10571" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_TransportControl.M_DeleteTU_DataIndex">
+      <LineId Id="3" Count="82" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_TransportControl.M_MoveTUdata">
+      <LineId Id="3" Count="87" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_TransportControl.M_RequestNext">
+      <LineId Id="3" Count="5" />
+      <LineId Id="50" Count="0" />
+      <LineId Id="47" Count="0" />
+      <LineId Id="10" Count="4" />
+      <LineId Id="33" Count="0" />
+      <LineId Id="16" Count="6" />
+      <LineId Id="37" Count="1" />
+      <LineId Id="23" Count="0" />
+      <LineId Id="39" Count="1" />
+      <LineId Id="24" Count="0" />
+      <LineId Id="49" Count="0" />
+      <LineId Id="25" Count="0" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_TransportControl.M_RequestPrev">
+      <LineId Id="3" Count="22" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_TransportControl.M_SelectSensor">
+      <LineId Id="31" Count="0" />
+      <LineId Id="3" Count="3" />
+      <LineId Id="2" Count="0" />
+      <LineId Id="32" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_TransportControl.M_StartPositionTracking">
+      <LineId Id="3" Count="16" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_TransportControl.M_TakeoverPlausibleDistance">
+      <LineId Id="3" Count="5" />
+      <LineId Id="10" Count="10" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

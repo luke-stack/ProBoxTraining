@@ -1,0 +1,15 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <DUT Name="ST_ProBoxSafetyOutputsAK" Id="{25bf0d71-cbe9-4b2c-b722-ccff666e2e38}">
+    <Declaration><![CDATA[TYPE ST_ProBoxSafetyOutputsAK:
+STRUCT
+	FeedBackContactor		: ARRAY[1..GVL_PB_SG.NUMBER_OF_CONTACTORS] OF BOOL; //Feed back contactor send to safety
+	ContactorOn             : BOOL; //Send button to safety
+	ContactorOff            : BOOL; //Send button to safety
+	//ResetSafetyNeeded       : BOOL; //Indication I/O output 
+	ErrorAck                : BOOL; //Operator Error acknowledgement sent to safety
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

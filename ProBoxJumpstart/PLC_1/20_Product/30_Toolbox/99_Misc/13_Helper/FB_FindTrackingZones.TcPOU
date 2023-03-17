@@ -1,0 +1,140 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.12">
+  <POU Name="FB_FindTrackingZones" Id="{c067d9ed-dd14-4aaf-88b3-20537030cdfe}" SpecialFunc="None">
+    <Declaration><![CDATA[// Function block searches all available tracking zones in range (Max 5 zones).
+// This function block can be used to get how accurate a tu is positioned in a zone
+FUNCTION_BLOCK FB_FindTrackingZones
+(************************************************************************************** 
+* 	Application 		: BoxControl Framework 
+* 	Revision 			: $Revision: 408723 $ 
+* 	Revision date 		: $Date: 2018-06-27 13:49:08 +0200 (Wed, 27 Jun 2018) $ 
+* 	Last changed by 	: $Author: b7bolm $ 
+* 	URL 				: $URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/21_Projects/BCF_2.0/trunk/BCF/BCF/JumpStart/20_Product/10_App/12_E_Functions/10_Lib/10_Conv/FB_FunctionList.TcPOU $ 
+* ------------------------------------------------------------------------------------ 
+* 	© Swisslog AG 
+* 	Swisslog is not liable for any usage of this source code that is not agreed 
+* 	on between Swisslog and the other party. The mandatory legal liability remains 
+* 	unaffected. 
+* ------------------------------------------------------------------------------------ 
+* 	Revision History: 
+* 
+* 	VERSION 		DATE 			INITIALS 			DESCRIPTION 
+* 	0.1 			30.11.2018 		mbo					First implementation
+* 
+**************************************************************************************)
+VAR_INPUT
+	Execute					: BOOL; // Rising edge triggers new search
+	ObservationPosition		: UDINT; // Observation point [mm]
+	Range					: UDINT; // Observation point +- Range defines area [mm]
+	iWindowTracking			: I_WindowTracking; // Window tracking instance
+END_VAR
+VAR_OUTPUT
+	TrackingZones			: ARRAY[1..MAX_ZONES] OF ST_TrackingZoneInfo; // Found tracking zones
+	ZoneCounter 			: INT; // Found zones
+	Error					: BOOL; // Configuration error
+END_VAR
+VAR
+	Idx 					: INT; // Iterator
+	TrackingZoneIndex		: UINT; // Found tracking zones
+	fbTrig					: R_Trig; // Rising edge detection
+	StartPosition			: UDINT; // Start search position
+	EndPosition 			: UDINT; // End search position
+	PositionDelta 			: DINT; // Delta zo zone begin
+END_VAR
+VAR CONSTANT
+	MAX_ZONES				: INT := 5; // Max zones
+END_VAR]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[
+fbTrig(CLK := Execute);
+
+IF fbTrig.Q THEN
+	// Check inputs
+	IF iWindowTracking = 0 THEN
+		Error := TRUE;
+		RETURN;
+	END_IF
+	
+	// Initialize
+	Error := FALSE;
+	StartPosition := ObservationPosition + Range;
+	EndPosition := ObservationPosition - Range;
+	ZoneCounter := 0;
+	MEMSET(ADR(TrackingZones), 0, SIZEOF(TrackingZones));
+	
+	FOR Idx := 1 TO MAX_ZONES DO
+		
+		TrackingZoneIndex := iWindowTracking.M_GetFirstZoneIndex(
+								mAbsoluteStartPosition := StartPosition,
+								mAbsoluteEndPosition := EndPosition,
+								mOnlyZonesWithTU := FALSE);
+						
+		IF TrackingZoneIndex > 0 THEN
+			ZoneCounter := ZoneCounter + 1;
+			
+			IF ZoneCounter <= MAX_ZONES THEN
+			
+				PositionDelta := iWindowTracking.M_GetDistanceToZoneStart(ObservationPosition, TrackingZoneIndex);
+				
+				TrackingZones[ZoneCounter].ZoneIndex := TrackingZoneIndex;
+				TrackingZones[ZoneCounter].PositionDelta := PositionDelta;
+				TrackingZones[ZoneCounter].ZoneLength := iWindowTracking.P_ZoneTable[TrackingZoneIndex].ZoneLength;
+			
+				// Update next startposition to limit range
+				StartPosition := EndPosition + 1;
+			ELSE
+				EXIT;
+			END_IF
+		// Otherwise no zone found, abort search
+		ELSE
+			EXIT;
+		END_IF
+	END_FOR
+END_IF
+
+
+]]></ST>
+    </Implementation>
+    <LineIds Name="FB_FindTrackingZones">
+      <LineId Id="37" Count="1" />
+      <LineId Id="21" Count="1" />
+      <LineId Id="93" Count="0" />
+      <LineId Id="87" Count="0" />
+      <LineId Id="90" Count="0" />
+      <LineId Id="88" Count="1" />
+      <LineId Id="92" Count="0" />
+      <LineId Id="86" Count="0" />
+      <LineId Id="91" Count="0" />
+      <LineId Id="50" Count="0" />
+      <LineId Id="52" Count="0" />
+      <LineId Id="85" Count="0" />
+      <LineId Id="67" Count="0" />
+      <LineId Id="26" Count="0" />
+      <LineId Id="29" Count="0" />
+      <LineId Id="47" Count="0" />
+      <LineId Id="44" Count="0" />
+      <LineId Id="74" Count="1" />
+      <LineId Id="42" Count="0" />
+      <LineId Id="53" Count="1" />
+      <LineId Id="62" Count="0" />
+      <LineId Id="69" Count="0" />
+      <LineId Id="79" Count="1" />
+      <LineId Id="77" Count="1" />
+      <LineId Id="63" Count="0" />
+      <LineId Id="70" Count="1" />
+      <LineId Id="64" Count="0" />
+      <LineId Id="55" Count="0" />
+      <LineId Id="60" Count="1" />
+      <LineId Id="81" Count="1" />
+      <LineId Id="58" Count="0" />
+      <LineId Id="57" Count="0" />
+      <LineId Id="59" Count="0" />
+      <LineId Id="56" Count="0" />
+      <LineId Id="43" Count="0" />
+      <LineId Id="27" Count="0" />
+      <LineId Id="10" Count="0" />
+      <LineId Id="16" Count="0" />
+      <LineId Id="9" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

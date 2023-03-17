@@ -1,0 +1,1114 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <POU Name="FB_ProBoxElementShuttleForks" Id="{5766907c-81c0-495e-ab3c-a0e52176a14a}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK FB_ProBoxElementShuttleForks EXTENDS FB_ElementMpdBase
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision:  $
+ *	Revision date	:	$Date:  $
+ *	Last changed by	:	$Author:  $
+ *	URL				:	$URL: $
+ *
+ *	Purpose			:	ProBox element with 2 axis and 2 motor HW outputs (drive 1-2 / 3-4).
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	
+ *
+ **************************************************************************************)
+VAR_INPUT
+	Config					: ST_CFG_ProBoxElementShuttleForks; // Configuration 
+	HW_Inputs				: ST_HW_InputsProBoxElementShuttleForks; // HW-Inputs 
+END_VAR
+
+VAR_OUTPUT
+	HW_Outputs				: ST_HW_OutputsProBoxElementShuttleForks; // HW-Outputs 
+END_VAR
+VAR			
+	MPD_Drive_HW_Inputs			: ST_HW_InputsMPD;
+	MPD_Drive_HW_Outputs		: ST_HW_OutputsMPD;
+	j: INT;	
+		
+	_fbMpdLiftMover				: FB_DriveMover; 		//Handlings moving forks via ABB or SEW	
+	_ForkLiftData				: ST_ShuttleForkLift; //Data container for fork Lift
+	_DebugPrint					: BOOL;
+
+END_VAR
+VAR_TEMP	
+	ShuttleFunctionInterface	: ST_FunctionInterface;
+END_VAR
+
+VAR PERSISTENT
+	Settings				: ST_CFG_ProBoxElementShuttleForks; // Settings - activated configuration 
+END_VAR
+
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[(**************************************************************************************************************
+   Input mapping
+***************************************************************************************************************)
+A_InputMapping();
+
+
+(**************************************************************************************************************
+   Initialization
+***************************************************************************************************************)
+A_Init();
+
+
+(**************************************************************************************************************
+   State control
+***************************************************************************************************************)
+_M_StateControl(AdditionalConditionInhibitStopping:=fbMpdControl.CtrlOut.MotionRunning); //InhibitStopping is used to inhibit Element to set Stop state while shuttle car is moving
+
+
+(**************************************************************************************************************
+   Error handler
+***************************************************************************************************************)
+M_MonitorElementErrors();
+
+
+(**************************************************************************************************************
+   Manual control
+***************************************************************************************************************)
+A_ManualControl();
+
+
+(**************************************************************************************************************
+   Handle element functions
+***************************************************************************************************************)
+A_HandleFunctions();
+
+
+// Check for errors
+_M_CheckErrors();
+
+// Entry request control
+M_ProcessEntryRequest(
+				AkEntryPosition		:= Settings.AkEntryPosition,
+				ApEntryPositions 	:= Settings.ApEntryPositions,
+				SgGroupRef			:= Settings.SgGroupRef);
+
+(**************************************************************************************************************
+ Run shuttle controller
+***************************************************************************************************************)
+//Set conveyor brake data
+//fbMpdControl.ConvBrake[1] := HW_Outputs.DriveCV[1].MotorBrake_12;
+//fbMpdControl.ConvBrake[2] := HW_Outputs.DriveCV[2].MotorBrake_12;
+
+fbMpdControl(	MPD_Config			:=MPD_Config,
+				HW_Inputs			:=MPD_Drive_HW_Inputs,
+				ElementData			:=ElementData,			
+				HW_Outputs			=>MPD_Drive_HW_Outputs,
+				FunctionInterface 	=> ShuttleFunctionInterface); // ShuttleFunctionInterface will control element conveyour outputs
+
+
+(**********************************************************************************************************
+//Motion Lift and fork functionality
+***********************************************************************************************************)
+_M_ForkLiftControl();	
+
+
+
+
+(**********************************************************************************************************
+  Conveyor Drive control
+***********************************************************************************************************)
+_M_DriveControl(ShuttleFunctionInterface.Out.FunctionOrders, ElementData);
+
+
+(**************************************************************************************************************
+   Interface handler out
+***************************************************************************************************************)
+M_ITC_ProcessOut();
+
+
+(**************************************************************************************************************
+   Output mapping
+***************************************************************************************************************)
+A_OutputMapping();
+
+]]></ST>
+    </Implementation>
+    <Folder Name="Ctrl_Lift_Fork" Id="{b890ac4d-559b-4078-a262-cce8c8291903}" />
+    <Method Name="_M_CheckDesiredPosition" Id="{8af7e549-1307-4f80-bdfe-7f3697e3ba2d}" FolderPath="Ctrl_Lift_Fork\">
+      <Declaration><![CDATA[METHOD PRIVATE _M_CheckDesiredPosition : BOOL
+VAR_INPUT
+	DesiredPos			: DINT; //the desired shuttle position to check if is within hysterisis boundaries
+END_VAR
+VAR
+	MaxVal,MinVal		: DINT;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+MaxVal := DesiredPos + (5);
+MinVal := DesiredPos - (5);
+
+
+
+
+_M_CheckDesiredPosition := 	(_ForkLiftData.LiftData.ActualPosValue <= MaxVal) AND 
+							(_ForkLiftData.LiftData.ActualPosValue >= MinVal);
+	]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_CheckErrors" Id="{aabd7d53-0537-4fcf-8c67-7781129c07e9}">
+      <Declaration><![CDATA[METHOD PRIVATE _M_CheckErrors : BOOL
+VAR_INPUT
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+F_ResetError(FALSE, ElementData.ErrorData.ErrorDataSet[3]);
+
+SUPER^._M_CheckMpdErrors(HW_Inputs.EndLimit,HW_Inputs.HighTempResDrive,Settings.SgGroupRef, ElementData.ErrorData.ErrorDataSet[3]);
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_CheckVC_Fork_Config" Id="{072fe67a-931e-4001-b233-3a04dc7d2e1e}" FolderPath="Ctrl_Lift_Fork\">
+      <Declaration><![CDATA[//check fork properties in configuration
+//Return: True = success, False = failure
+METHOD PRIVATE _M_CheckVC_Fork_Config : BOOL
+VAR_IN_OUT
+	ErrorData		: ST_ErrorDataSet; //ElementData.ErrorData.ErrorDataSet[3]
+END_VAR
+VAR
+	PosUpper : DINT;
+	PosLower : DINT;
+	i		 : INT;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+_M_CheckVC_Fork_Config := TRUE;
+
+FOR i:=1 TO GVL_MPD.MAXPDs DO
+	IF(Settings.ConvCFG[i].eFunctionNumber <> E_FunctionNumber.F_BEGIN_FUNCTION) THEN
+		//check that ConvCFG[x].PositionConv + ConvCFG[x].DepsitPositionOffset is significant larger (100mm) than  ConvCFG[x].PositionConv + ConvCFG[x].PickupPositionOffset
+		PosUpper := Settings.ConvCFG[i].DepsitPositionOffset;
+		PosLower := Settings.ConvCFG[i].PickupPositionOffset;
+		IF((PosUpper-PosLower) <50) THEN
+			F_SetError(	
+						ErrorType	:= E_ErrorType.ERROR,
+						ErrorParam	:= CONCAT('Fork upper/lower not enought(<50mm) ConvCFG index: ', INT_TO_STRING(i)), //the distance between upper and lower position is not enough
+						ErrorMsg	:= E_ErrorConv.CONFIGURATION_ERROR,
+						ErrorData	:= ErrorData);
+			_M_CheckVC_Fork_Config := FALSE;
+		END_IF	
+			
+
+		//check that ConvCFG[x].ForkStroke is larger than 500;
+		IF(Settings.ConvCFG[i].ForkStroke < 500) THEN
+			F_SetError(	
+						ErrorType	:= E_ErrorType.ERROR,
+						ErrorParam	:= CONCAT('Fork stroke not enought(<500mm) ConvCFG index: ', INT_TO_STRING(i)), //the distance between upper and lower position is not enough
+						ErrorMsg	:= E_ErrorConv.CONFIGURATION_ERROR,
+						ErrorData	:= ErrorData);
+			_M_CheckVC_Fork_Config := FALSE;
+		END_IF
+	END_IF
+END_FOR
+
+
+
+
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_DefineForkProperties" Id="{499b4f73-8208-48dc-b877-6205f06e11af}" FolderPath="Ctrl_Lift_Fork\">
+      <Declaration><![CDATA[//Get fork configuration from settings
+//Return: True = Success, False = Failure
+METHOD PRIVATE _M_DefineForkProperties : BOOL
+VAR_IN_OUT
+	MpdData			: ST_MPD_CV;	
+	ErrorData		: ST_ErrorDataSet; //ElementData.ErrorData.ErrorDataSet[3]
+END_VAR
+VAR
+	PD_Function		: E_FunctionNumber;
+	ConfigIx		: INT;
+	PD_Side			: E_PickupDepositSide;
+	PD_Stroke		: INT;
+	//PdConf			: ST_CFG_PDs;
+	ConfigError		: BOOL:=FALSE;	
+	i : INT;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[IF(MpdData.State = E_MPD_CvStates.E_CV_PICKUP) THEN
+	PD_Function := MpdData.PickupFuncNumber;	
+ELSIF(MpdData.State = E_MPD_CvStates.E_CV_DEPOSIT) THEN
+	PD_Function := MpdData.DepositFuncNumber;		
+ELSE
+	//Error, not correct state. 
+	ConfigError:=TRUE;
+END_IF
+
+//get the index of the PD station in configuration array
+IF(NOT ConfigError) THEN
+	FOR i:=1 TO GVL_MPD.MAXPDs DO
+		IF(Settings.ConvCFG[i].eFunctionNumber = PD_Function ) THEN
+			ConfigIx := i;
+			EXIT;
+		END_IF		
+	END_FOR
+END_IF
+
+//Get side  and fork stroke
+IF(NOT ConfigError) THEN
+	PD_Side := Settings.ConvCFG[ConfigIx].Side;
+	PD_Stroke := Settings.ConvCFG[ConfigIx].ForkStroke;
+END_IF
+
+
+IF(NOT ConfigError) THEN
+	IF(PD_Side = E_PickupDepositSide.LeftSide) THEN
+		_ForkLiftData.ForkData.ForkRequest.OrderFork := E_FunctionForkOrder.E_ORDER_LEFT;
+		_ForkLiftData.ForkData.ForkRequest.ForkStroke := PD_Stroke*-1;
+	ELSIF(PD_Side = E_PickupDepositSide.RightSide) THEN
+		_ForkLiftData.ForkData.ForkRequest.OrderFork := E_FunctionForkOrder.E_ORDER_RIGHT;
+		_ForkLiftData.ForkData.ForkRequest.ForkStroke := PD_Stroke;
+	ELSE	
+		//could not define side-> will cause timeout error
+		ConfigError:=TRUE;
+	END_IF
+END_IF
+
+IF(ConfigError) THEN
+	F_SetError(	
+					ErrorType	:= E_ErrorType.ERROR,
+					ErrorParam	:= 'Could get config parameters(side or stroke length)',
+					ErrorMsg	:= E_ErrorConv.CONFIGURATION_ERROR,
+					ErrorData	:= ErrorData);
+END_IF
+
+
+IF(ConfigError) THEN
+	_ForkLiftData.ForkData.ForkRequest.OrderFork := E_FunctionForkOrder.E_ORDER_UNKNOWN;
+	_ForkLiftData.ForkData.ForkRequest.ForkStroke := 0;
+END_IF
+
+_M_DefineForkProperties := NOT ConfigError;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_DefineLiftProperties" Id="{0fc47710-0b49-4c30-b92b-d9db674ad828}" FolderPath="Ctrl_Lift_Fork\">
+      <Declaration><![CDATA[//Get Lift configuration from settings
+//Return: True = Success, False = Failure
+METHOD PRIVATE _M_DefineLiftProperties : BOOL
+VAR_INPUT
+	ApplyOffset		: BOOL;	
+END_VAR
+VAR_IN_OUT		
+	MpdData			: ST_MPD_CV;	
+	ErrorData		: ST_ErrorDataSet; //ElementData.ErrorData.ErrorDataSet[3]
+END_VAR
+VAR
+	PD_Function		: E_FunctionNumber;
+	ConfigIx		: INT;
+	PD_Side			: E_PickupDepositSide;
+	PD_Stroke		: INT;
+	//PdConf			: ST_CFG_PDs;
+	ConfigError		: BOOL:=FALSE;	
+	i:INT;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[IF(MpdData.State = E_MPD_CvStates.E_CV_PICKUP) THEN
+	PD_Function := MpdData.PickupFuncNumber;	
+ELSIF(MpdData.State = E_MPD_CvStates.E_CV_DEPOSIT) THEN
+	PD_Function := MpdData.DepositFuncNumber;		
+ELSE
+	//Error, not correct state. 
+	ConfigError:=TRUE;
+END_IF
+
+//get the index of the PD station in configuration array
+IF(NOT ConfigError) THEN
+	FOR i:=1 TO GVL_MPD.MAXPDs DO
+		IF(Settings.ConvCFG[i].eFunctionNumber = PD_Function ) THEN
+			ConfigIx := i;
+			EXIT;
+		END_IF		
+	END_FOR
+END_IF
+
+//Get side  and fork stroke
+IF(NOT ConfigError) THEN
+	PD_Side := Settings.ConvCFG[ConfigIx].Side;
+	PD_Stroke := Settings.ConvCFG[ConfigIx].ForkStroke;
+END_IF
+
+
+IF(NOT ConfigError) THEN
+	IF(MpdData.State = E_MPD_CvStates.E_CV_PICKUP) THEN
+		IF(NOT ApplyOffset) THEN
+			_ForkLiftData.LiftData.RequestPosValue := Settings.ForkLift.EncoderHomePosValue + Settings.ConvCFG[ConfigIx].PickupPositionOffset;
+		ELSE
+			_ForkLiftData.LiftData.RequestPosValue := Settings.ForkLift.EncoderHomePosValue + Settings.ConvCFG[ConfigIx].DepsitPositionOffset;
+		END_IF
+	ELSIF(MpdData.State = E_MPD_CvStates.E_CV_DEPOSIT) THEN
+		IF(NOT ApplyOffset) THEN
+			_ForkLiftData.LiftData.RequestPosValue := Settings.ForkLift.EncoderHomePosValue + Settings.ConvCFG[ConfigIx].DepsitPositionOffset;
+		ELSE
+			_ForkLiftData.LiftData.RequestPosValue := Settings.ForkLift.EncoderHomePosValue + Settings.ConvCFG[ConfigIx].PickupPositionOffset;
+		END_IF		
+	END_IF
+END_IF
+
+IF(ConfigError) THEN
+	F_SetError(	
+					ErrorType	:= E_ErrorType.ERROR,
+					ErrorParam	:= 'Could get config parameters(side or stroke length)',
+					ErrorMsg	:= E_ErrorConv.CONFIGURATION_ERROR,
+					ErrorData	:= ErrorData);
+END_IF
+
+
+_M_DefineLiftProperties := NOT ConfigError;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_Emulation" Id="{517c7325-af53-49a8-8be1-8f185502ab12}" FolderPath="Ctrl_Lift_Fork\">
+      <Declaration><![CDATA[METHOD PRIVATE _M_Emulation : BOOL
+VAR_IN_OUT
+	//MotionRunning : BOOL;
+END_VAR
+VAR
+	ErrorPending	: BOOL;
+	LastCyclePos 	: DINT;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[IF(NOT ProBoxSystem.EMULATION_ENABLED) THEN
+	RETURN;
+END_IF
+
+LastCyclePos := _ForkLiftData.LiftData.ActualPosValue;
+ErrorPending := ElementData.ErrorData.FunctionErrorPending OR ElementData.ErrorData.Error.ErrorType = E_ErrorType.ERROR;
+
+//emulate moving...
+//consider speed?? MPD_Config.DriveCFG.DriveParameter[_MPD.DriveParameterIndex].Velocity/(1000/10(*10 ms CycleTime*))
+IF(_ForkLiftData.LiftData.RequestMove AND ErrorPending = FALSE) THEN		
+	IF( _ForkLiftData.LiftData.ActualPosValue < _ForkLiftData.LiftData.RequestPosValue) THEN _ForkLiftData.LiftData.ActualPosValue := _ForkLiftData.LiftData.ActualPosValue+3;	END_IF
+	IF( _ForkLiftData.LiftData.ActualPosValue > _ForkLiftData.LiftData.RequestPosValue) THEN _ForkLiftData.LiftData.ActualPosValue := _ForkLiftData.LiftData.ActualPosValue-3;	END_IF		
+					
+	//check if desired position is within limits
+	_ForkLiftData.LiftData.Locked := _M_CheckDesiredPosition(_ForkLiftData.LiftData.RequestPosValue);	
+END_IF	
+IF(ElementData.OperationState.eMode  = E_PositionMode.MANUAL_MODE) THEN
+	IF(MPD_Drive_HW_Inputs.ManualControl.DriveFwd) THEN		_ForkLiftData.LiftData.ActualPosValue := _ForkLiftData.LiftData.ActualPosValue+3;	END_IF
+	IF(MPD_Drive_HW_Inputs.ManualControl.DriveRev) THEN		_ForkLiftData.LiftData.ActualPosValue := _ForkLiftData.LiftData.ActualPosValue-3;	END_IF
+END_IF
+
+
+//MotionRunning := (_ForkLiftData.ActualPosValue <> LastCyclePos);
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_ForkLiftControl" Id="{4a2b3e94-1dd3-4386-81ed-3287f5a287de}">
+      <Declaration><![CDATA[METHOD PRIVATE _M_ForkLiftControl : BOOL
+VAR_INPUT
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[_M_LiftMover();
+_M_MotionControl();
+_M_Emulation();]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_LiftMover" Id="{8d920ec0-51b2-4348-959e-686d2bc9d94c}" FolderPath="Ctrl_Lift_Fork\">
+      <Declaration><![CDATA[METHOD PRIVATE _M_LiftMover : BOOL
+VAR_INPUT
+END_VAR
+VAR
+	MoviDriveManual		: ST_MoviDriveManual;
+	RequestedPosition	: DINT;
+	
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[//manual control
+MoviDriveManual.DriveFwd := MPD_Drive_HW_Inputs.ManualControl.DriveFwd; //Move lift Up;
+MoviDriveManual.DriveRev := MPD_Drive_HW_Inputs.ManualControl.DriveRev; //Move lift Down;
+MoviDriveManual.EmergencyDrive := MPD_Drive_HW_Inputs.ManualControl.EmergencyDrive;
+
+
+IF( NOT ProBoxSystem.EMULATION_ENABLED) THEN	
+	_fbMpdLiftMover(
+		ErrorPending			:= ElementData.ErrorData.FunctionErrorPending OR ElementData.ErrorData.Error.ErrorType = E_ErrorType.ERROR, 
+		ElementOperationState	:= ElementData.OperationState,
+		DisableEnableDrive		:= NOT _ForkLiftData.LiftData.RequestMove, 
+		DriveCFG				:= Settings.ForkLift.DriveCFG,
+		ManualControl			:= MoviDriveManual,		  
+		DriveInputs				:= HW_Inputs.LiftDriveInputs,		
+		EmgStopAxisTrig 		:= fbMpdControl.EmergencyStop,
+		Done	=> _ForkLiftData.LiftData.Locked, 
+		Aborted	=> _ForkLiftData.LiftData.MotionAborted,
+		ErrorData 				:= ElementData.ErrorData.ErrorDataSet[4]);
+
+	//Request to move Normal operation
+	IF _ForkLiftData.LiftData.RequestMove THEN 
+		_fbMpdLiftMover.M_MoveAbsolute(
+			mPosition		:= _ForkLiftData.LiftData.RequestPosValue, 
+			mVelocity		:= Settings.ForkLift.DriveCFG.DriveParameter[_ForkLiftData.LiftData.DriveParameterIndex].Velocity, 
+			mAcceleration	:= Settings.ForkLift.DriveCFG.DriveParameter[_ForkLiftData.LiftData.DriveParameterIndex].Acceleration, 
+			mDeceleration	:= Settings.ForkLift.DriveCFG.DriveParameter[_ForkLiftData.LiftData.DriveParameterIndex].Deceleration, 
+			mJerk			:= Settings.ForkLift.DriveCFG.DriveParameter[_ForkLiftData.LiftData.DriveParameterIndex].Jerk,
+			ErrorData 		:= ElementData.ErrorData.ErrorDataSet[4]);
+	END_IF
+		
+	_ForkLiftData.LiftData.ActualPosValue := LREAL_TO_DINT( _fbMpdLiftMover.ActPos);
+END_IF	
+	
+
+	]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_MotionControl" Id="{50c3a120-99d6-4af3-b664-df67e2efcc63}" FolderPath="Ctrl_Lift_Fork\">
+      <Declaration><![CDATA[METHOD PRIVATE _M_MotionControl : BOOL
+VAR
+	MpdData		: REFERENCE TO ST_MPD_CV;
+	LastOpState	: INT;	
+	VcMoveDist			: DINT;
+	//OpState: INT;
+END_VAR
+
+VAR_INST
+	//OpState 			: INT;	
+	VcStable			: TON := (PT:=T#200MS);
+	ForkStable 			: TON := (PT:=T#200MS);
+	
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[//Check that fork function is connected...
+IF(_ForkLiftData.ForksInstance = 0) THEN
+	 _ForkLiftData.EnableDrive:=TRUE;  //when forks function not connected, enable drive.		
+	RETURN;
+END_IF
+
+
+//get reference to mpd control data structure
+MpdData REF= fbMpdControl.P_GetMpdData.CV[GVL_MPD.CV_A];
+
+//
+LastOpState := _ForkLiftData.State;
+//-----------------------------------------------------------------
+//Manual control
+//-----------------------------------------------------------------
+_ForkLiftData.ForkData.ForkRequest.ManualControl.Op_Fork_Right 		:= MPD_Drive_HW_Inputs.ManualControl.Conv[GVL_MPD.CV_A].ConvFwd;
+_ForkLiftData.ForkData.ForkRequest.ManualControl.Op_Fork_Left 		:= MPD_Drive_HW_Inputs.ManualControl.Conv[GVL_MPD.CV_A].ConvRev;
+_ForkLiftData.ForkData.ForkRequest.ManualControl.OP_EmergencyDrive 	:= MPD_Drive_HW_Inputs.ManualControl.EmergencyDrive;
+
+
+//-----------------------------------------------------------------
+//auto control
+//-----------------------------------------------------------------
+
+//-----------------------------------------------------------------
+//Get fork function status
+IF(_ForkLiftData.ForksInstance <> 0) THEN			
+		_ForkLiftData.ForkData.ForkStatus := _ForkLiftData.ForksInstance.P_ForkStatus;
+END_IF
+
+VcStable(IN:= _ForkLiftData.LiftData.Locked AND _ForkLiftData.LiftData.RequestMove AND _M_CheckDesiredPosition(_ForkLiftData.LiftData.RequestPosValue));
+ForkStable(IN:= (_ForkLiftData.ForkData.ForkStatus.ForkState = E_FunctionForkState.E_LEFT_COMPLETE AND _ForkLiftData.ForkData.ForkRequest.OrderFork = E_FunctionForkOrder.E_ORDER_LEFT) OR
+				(_ForkLiftData.ForkData.ForkStatus.ForkState = E_FunctionForkState.E_RIGHT_COMPLETE AND _ForkLiftData.ForkData.ForkRequest.OrderFork = E_FunctionForkOrder.E_ORDER_RIGHT) OR
+				(_ForkLiftData.ForkData.ForkStatus.ForkState = E_FunctionForkState.E_CENTER AND _ForkLiftData.ForkData.ForkRequest.OrderFork = E_FunctionForkOrder.E_ORDER_CENTER) ); 
+
+//Set some settings...
+_ForkLiftData.ForkData.ForkRequest.EmergencyStop := fbMpdControl.EmergencyStop;
+_ForkLiftData.ForkData.ForkRequest.CheckPdFree:=FALSE;
+
+CASE _ForkLiftData.State OF
+	
+	0: //Init
+		IF(_M_CheckVC_Fork_Config(ElementData.ErrorData.ErrorDataSet[3])) THEN
+			//init was successfully
+			_ForkLiftData.State:=_ForkLiftData.State+1; //move to next step in state machine				
+		END_IF
+		_ForkLiftData.EnableDrive :=FALSE;
+	
+	1: //Idle
+		_ForkLiftData.ForkData.ForkRequest.OrderFork := E_FunctionForkOrder.E_ORDER_CENTER;
+		_ForkLiftData.ForkData.ForkRequest.ForkStroke := 0;
+		_ForkLiftData.LiftData.RequestMove := FALSE;
+		_ForkLiftData.LiftData.RequestPosValue := Settings.ForkLift.EncoderHomePosValue;
+		_ForkLiftData.EnableDrive :=FALSE;
+		
+		IF(ElementData.ErrorData.ErrorState <> E_ErrorState.ERROR) THEN
+			IF(MpdData.State = E_MPD_CvStates.E_CV_PICKUP) THEN
+				_ForkLiftData.State:= 100;		
+			ELSIF(MpdData.State = E_MPD_CvStates.E_CV_DEPOSIT) THEN
+				_ForkLiftData.State:= 200;
+			END_IF
+		END_IF
+	
+	//----------------------------------------------------------------------------------------------------	
+	//Pickup
+	100:		
+		fbMpdControl.CtrlIn.HoldPosition:=TRUE; //Make sure that MPD control do not move the shuttle car
+		_ForkLiftData.LiftData.DriveParameterIndex := 1; //Fast profile
+		//Move Lift to correct height (Pickup position)
+		IF(_M_DefineLiftProperties(FALSE,MpdData,ElementData.ErrorData.ErrorDataSet[3]) ) THEN
+			_ForkLiftData.LiftData.RequestMove := TRUE;
+			_ForkLiftData.State:=_ForkLiftData.State+1; //move to next step in state machine
+			VcStable(IN:=FALSE);
+		ELSE
+			_ForkLiftData.State:=0;	
+		END_IF
+		
+	101:
+		IF(VcStable.Q) THEN
+			VcStable(IN:=FALSE);			
+			_ForkLiftData.State:=_ForkLiftData.State+1; //move to next step in state machine
+		END_IF				
+					
+		
+	102: //Move Fork out
+		//request fork operation -> cofigured side and fork stroke		
+		IF(NOT _M_DefineForkProperties(MpdData,ElementData.ErrorData.ErrorDataSet[3])) THEN
+			_ForkLiftData.State:=0;
+		ELSE
+			_ForkLiftData.State:=_ForkLiftData.State+1; //move to next step in state machine
+		END_IF	
+		
+	103:	//wait and check fork is out
+		IF(ForkStable.Q) THEN
+			_ForkLiftData.State:=_ForkLiftData.State+1; //move to next step in state machine			
+		END_IF
+		
+	104: // Move VC UP				
+		//Set DriveParameter index (with another speed profile)
+		_ForkLiftData.LiftData.DriveParameterIndex := 2; //Slow profile
+		IF(_M_DefineLiftProperties(TRUE,MpdData,ElementData.ErrorData.ErrorDataSet[3]) ) THEN
+			_ForkLiftData.LiftData.RequestMove := TRUE;
+			_ForkLiftData.State:=_ForkLiftData.State+1; //move to next step in state machine
+			VcStable(IN:=FALSE);
+		END_IF
+		
+	105:	//check VC is moved up
+		IF(VcStable.Q) THEN
+			VcStable(IN:=FALSE);			
+			_ForkLiftData.State:=_ForkLiftData.State+1; //move to next step in state machine
+		END_IF		
+			
+	106: // Move Fork In (to home) 
+		//Enable DriveReady to allow normal transport with transport control
+		_ForkLiftData.EnableDrive :=TRUE;
+		_ForkLiftData.ForkData.ForkRequest.OrderFork := E_FunctionForkOrder.E_ORDER_CENTER;
+		ForkStable(IN:=FALSE);		
+		_ForkLiftData.State:=_ForkLiftData.State+1; //move to next step in state machine
+		
+		
+	107: // check TU in fork home pos		
+		IF(ForkStable.Q) THEN
+			_ForkLiftData.State:=_ForkLiftData.State+1; //move to next step in state machine
+		END_IF		
+		
+	108: // move lift down.
+		_ForkLiftData.LiftData.DriveParameterIndex := 1; //Fast profile
+		_ForkLiftData.LiftData.RequestMove := TRUE;
+		_ForkLiftData.LiftData.RequestPosValue := Settings.ForkLift.EncoderHomePosValue;
+		VcStable(IN:=FALSE);
+		_ForkLiftData.State:=_ForkLiftData.State+1; //move to next step in state machine
+		
+	109: //wait for lift to move down
+		IF(VcStable.Q) THEN
+			VcStable(IN:=FALSE);			
+			_ForkLiftData.State:=_ForkLiftData.State+1; //move to next step in state machine
+		END_IF		
+				
+		
+	110: //done				
+		fbMpdControl.CtrlIn.HoldPosition:=FALSE;
+		IF(MpdData.State <> E_MPD_CvStates.E_CV_PICKUP) THEN			
+			_ForkLiftData.State:=0;
+		END_IF
+		
+		
+	//----------------------------------------------------------------------------------------------------		
+	//Deposit
+	200: // Move lift up
+		fbMpdControl.CtrlIn.HoldPosition:=TRUE; //Make sure that MPD control do not move the shuttle car
+		_ForkLiftData.LiftData.DriveParameterIndex := 1; //Fast profile
+		//Move Lift to correct height (Deposit position)
+		IF(_M_DefineLiftProperties(FALSE,MpdData,ElementData.ErrorData.ErrorDataSet[3]) ) THEN
+			_ForkLiftData.LiftData.RequestMove := TRUE;
+			_ForkLiftData.State:=_ForkLiftData.State+1; //move to next step in state machine
+			VcStable(IN:=FALSE);
+		ELSE
+			_ForkLiftData.State:=0;	
+		END_IF
+		
+	201: //wait for lift
+		IF(VcStable.Q) THEN
+			VcStable(IN:=FALSE);			
+			_ForkLiftData.State:=_ForkLiftData.State+1; //move to next step in state machine
+		END_IF		
+		
+	
+	202: // Move Fork Out and start transport with transportControl
+		//Enable DriveReady to allow normal transport with transport control
+		_ForkLiftData.EnableDrive :=TRUE;
+		_ForkLiftData.ForkData.ForkRequest.CheckPdFree:=TRUE; // enable FB_FunctionFork to check that TS is free
+		//request fork operation
+		IF(NOT _M_DefineForkProperties(MpdData,ElementData.ErrorData.ErrorDataSet[3])) THEN
+			_ForkLiftData.State:=0;
+		ELSE			
+			_ForkLiftData.State:=_ForkLiftData.State+1; //move to next step in state machine
+		END_IF	
+		
+	203: //Check Fork out (left or right) pos
+		IF(ForkStable.Q) THEN
+			_ForkLiftData.State:=_ForkLiftData.State+1; //move to next step in state machine
+		END_IF
+		
+	204: // Move VC down
+		//Set DriveParameter index (with another speed profile)
+		_ForkLiftData.LiftData.DriveParameterIndex := 1; //Fast profile
+		//Move Lift to correct height (Deposit position)
+		IF(_M_DefineLiftProperties(TRUE,MpdData,ElementData.ErrorData.ErrorDataSet[3]) ) THEN
+			_ForkLiftData.LiftData.RequestMove := TRUE;
+			_ForkLiftData.State:=_ForkLiftData.State+1; //move to next step in state machine
+			VcStable(IN:=FALSE);
+		ELSE
+			_ForkLiftData.State:=0;	
+		END_IF
+	
+	205: //check VC is down(pallet resting on rack)
+		IF(VcStable.Q) THEN
+			_ForkLiftData.State:=_ForkLiftData.State+1; //move to next step in state machine
+		END_IF
+	
+	206: // Move Fork in (to Home)
+		_ForkLiftData.ForkData.ForkRequest.OrderFork := E_FunctionForkOrder.E_ORDER_CENTER;
+		ForkStable(IN:=FALSE);
+		_ForkLiftData.State:=_ForkLiftData.State+1; //move to next step in state machine		
+		
+	207: //Check Fork in Home pos
+		IF(ForkStable.Q) THEN
+			_ForkLiftData.State:=_ForkLiftData.State+1; //move to next step in state machine
+		END_IF
+		
+	208: // move lift down.
+		_ForkLiftData.LiftData.DriveParameterIndex := 1; //Fast profile
+		_ForkLiftData.LiftData.RequestMove := TRUE;
+		_ForkLiftData.LiftData.RequestPosValue := Settings.ForkLift.EncoderHomePosValue;
+		VcStable(IN:=FALSE);
+		_ForkLiftData.State:=_ForkLiftData.State+1; //move to next step in state machine
+		
+	209:		
+		//wait for lift to home position
+		IF(VcStable.Q) THEN
+			VcStable(IN:=FALSE);			
+			_ForkLiftData.State:=_ForkLiftData.State+1; //move to next step in state machine
+		END_IF		
+		
+	210:
+		fbMpdControl.CtrlIn.HoldPosition:=FALSE;
+		IF(MpdData.State <> E_MPD_CvStates.E_CV_DEPOSIT) THEN
+			_ForkLiftData.State:=0;			
+		END_IF
+		
+	ELSE
+		F_SetError(
+				ErrorType	:= E_ErrorType.ERROR,
+				ErrorParam	:= 'sequence error',
+				ErrorMsg	:= E_ErrorConv.SOFTWARE_ERROR,
+				ErrorData	:= ElementData.ErrorData.ErrorDataSet[3]);
+		
+END_CASE
+
+//-----------------------------------------------------------------
+IF(_ForkLiftData.State<>LastOpState AND _DebugPrint) THEN
+	fbDebugMsg.M_SendInfoMsg(CONCAT('ForkState: ',TO_STRING(_ForkLiftData.State)));
+END_IF
+
+
+IF(_ForkLiftData.ForksInstance <> 0) THEN
+		_ForkLiftData.ForksInstance.P_ForkRequest := _ForkLiftData.ForkData.ForkRequest;		
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Action Name="A_Init" Id="{031f9fda-5906-4856-b223-80b362849a85}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_Init
+ * 	FUNCTION	Initialize element
+ **************************************************************************************)
+ 
+ IF NOT ElementData.Init AND NOT ElementData.InitRunning THEN
+	// Load function specific configuration to settings
+	Settings := Config;
+	
+	
+	//Set MPD control configurations (Motion Pickup n Deposit)
+	//Since there are diffren types used us an for loop to copy data
+	FOR j := 1 TO  GVL_MPD.MAXPDs DO 
+		MEMCPY(ADR(MPD_Config.ConvCFG[j]),ADR(Settings.ConvCFG[j]),SIZEOF(ST_CFG_PDs));
+		MPD_Config.ConvCFG[j].PickupPositionOffset:=0; // dont forward this config to MPD control (as it is not used for shuttle car)
+		MPD_Config.ConvCFG[j].DepsitPositionOffset:=0; // dont forward this config to MPD control (as it is not used for shuttle car)		
+	END_FOR	
+	
+		
+	MPD_Config.CvCC					:= Settings.CvCC;
+	MPD_Config.DriveCFG				:= Settings.DriveCFG;
+	MPD_Config.EnableIdlePosition	:= Settings.EnableIdlePosition;
+	MPD_Config.EncoderHysterisis	:= Settings.EncoderHysterisis;	
+	MPD_Config.IdlePosition			:= Settings.IdlePosition;
+	MPD_Config.TimeOutMove			:= Settings.TimeOutMove;
+	MPD_Config.MPD_Type				:= E_MotionPD_Type.E_ShuttleCar;
+	
+	//Set element configuration
+	SUPER^.BaseSettings.BrakeTime := Settings.BrakeTime;
+	SUPER^.BaseSettings.ElementSpeed := Settings.ElementSpeed;
+ END_IF
+ 
+SUPER^.A_Init();
+]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="A_InputMapping" Id="{26f0444a-bd11-4934-8a81-b2ee041688c4}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_InputMapping
+ * 	FUNCTION	Input mapping
+ **************************************************************************************)
+ 
+ 
+(**************************************************************************************
+   Map HW Inputs
+***************************************************************************************)
+MPD_Drive_HW_Inputs.Conv[GVL_MPD.CV_A].SensorOverhangLeft 		:= HW_Inputs.Conv.SensorOverhangLeft;
+MPD_Drive_HW_Inputs.Conv[GVL_MPD.CV_A].SensorOverhangRight 		:= HW_Inputs.Conv.SensorOverhangRight;
+
+Inputs.MotorUnitOK 												:= HW_Inputs.MotorUnitOK;
+MPD_Drive_HW_Inputs.DriveInputs									:= HW_Inputs.DriveInputs;
+
+//Set manual control signals to MPD drive from Shuttle car AP.
+MPD_Drive_HW_Inputs.ManualControl.DriveFwd						:= Settings.SgGroupRef.CtrlOut.OpSummary.Conv[GVL_MPD.CV_A].OpDriveCvFwd;
+MPD_Drive_HW_Inputs.ManualControl.DriveRev						:= Settings.SgGroupRef.CtrlOut.OpSummary.Conv[GVL_MPD.CV_A].OpDriveCvRev;
+MPD_Drive_HW_Inputs.ManualControl.EmergencyDrive				:= Settings.SgGroupRef.CtrlOut.OpSummary.OpEmgDrive;
+
+// Run base element input mapping.
+SUPER^.A_InputMapping();
+
+
+
+]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="A_OutputMapping" Id="{6975dc1a-fdd8-44e8-a262-2800c8e9811f}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_OutputMapping
+ * 	FUNCTION	Handles element specific outpus
+ **************************************************************************************)
+
+(**************************************************************************************
+   Map HW Outputs
+***************************************************************************************)
+
+
+HW_Outputs.LiftDrive.DriveOutputs						:=  _fbMpdLiftMover.DriveOutputs;
+HW_Outputs.LiftDrive.EnableDrive						:=  _fbMpdLiftMover.EnableDrive;
+HW_Outputs.LiftDrive.MotionOutputHigh					:=  _fbMpdLiftMover.AxisMotionOutputHigh;
+HW_Outputs.LiftDrive.MotionOutputLow					:=  _fbMpdLiftMover.AxisMotionOutputLow;
+
+
+HW_Outputs.ShuttleDrive.DriveOutputs					:= MPD_Drive_HW_Outputs.DriveOutputs;
+HW_Outputs.ShuttleDrive.EnableDrive						:= MPD_Drive_HW_Outputs.EnableDrive;
+HW_Outputs.ShuttleDrive.MotionOutputHigh				:= MPD_Drive_HW_Outputs.MotionOutputHigh;
+HW_Outputs.ShuttleDrive.MotionOutputLow					:= MPD_Drive_HW_Outputs.MotionOutputLow;
+
+(**************************************************************************************
+   Map element interface
+***************************************************************************************)
+
+ElementData.FunctionOrder.Enable := ElementData.FunctionOrder.Enable AND _ForkLiftData.EnableDrive;
+
+// interface axis 1-2
+SUPER^.A_OutputMapping();
+
+]]></ST>
+      </Implementation>
+    </Action>
+    <Property Name="P_RegisterFuncton" Id="{8a727e1a-fbd5-49dc-97b4-7a13f795e682}" FolderPath="Ctrl_Lift_Fork\">
+      <Declaration><![CDATA[//Property to register an function that shall be used by the Element.
+PROPERTY PUBLIC P_RegisterFuncton : PVOID]]></Declaration>
+      <Get Name="Get" Id="{56bcb1f2-1e28-41b1-b899-d1fdf22ab7fd}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[P_RegisterFuncton := ADR(_ForkLiftData.ForksInstance); 
+]]></ST>
+        </Implementation>
+      </Get>
+      <Set Name="Set" Id="{99d94d0c-847e-4541-b455-ceea9005ae4e}">
+        <Declaration><![CDATA[VAR
+	pFunction					: POINTER TO FB_ElementForkInterface :=0;
+	ITF_ForkInstance			: ITF_PB_ElementForkInterface;
+END_VAR
+VAR CONSTANT	
+	ITF_TypeCheck				: ITF_PB_ElementForkInterface :=0;
+END_VAR]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[
+pFunction := P_RegisterFuncton;
+ITF_ForkInstance := pFunction^;
+IF(ITF_ForkInstance <> 0) THEN			
+	IF(__QUERYINTERFACE(ITF_ForkInstance,ITF_TypeCheck)) THEN
+		_ForkLiftData.ForksInstance := ITF_ForkInstance;		
+		RETURN;		
+	END_IF			
+END_IF
+_ForkLiftData.ForksInstance:=0; //not successfully assigned
+]]></ST>
+        </Implementation>
+      </Set>
+    </Property>
+    <LineIds Name="FB_ProBoxElementShuttleForks">
+      <LineId Id="744" Count="37" />
+      <LineId Id="1136" Count="4" />
+      <LineId Id="792" Count="14" />
+      <LineId Id="983" Count="0" />
+      <LineId Id="930" Count="0" />
+      <LineId Id="932" Count="0" />
+      <LineId Id="929" Count="0" />
+      <LineId Id="1086" Count="0" />
+      <LineId Id="1037" Count="0" />
+      <LineId Id="986" Count="0" />
+      <LineId Id="815" Count="18" />
+      <LineId Id="101" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ProBoxElementShuttleForks._M_CheckDesiredPosition">
+      <LineId Id="32" Count="1" />
+      <LineId Id="31" Count="0" />
+      <LineId Id="34" Count="0" />
+      <LineId Id="36" Count="0" />
+      <LineId Id="23" Count="0" />
+      <LineId Id="8" Count="1" />
+      <LineId Id="14" Count="0" />
+      <LineId Id="10" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ProBoxElementShuttleForks._M_CheckErrors">
+      <LineId Id="15" Count="1" />
+      <LineId Id="21" Count="0" />
+      <LineId Id="37" Count="0" />
+      <LineId Id="33" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ProBoxElementShuttleForks._M_CheckVC_Fork_Config">
+      <LineId Id="7" Count="0" />
+      <LineId Id="5" Count="0" />
+      <LineId Id="21" Count="1" />
+      <LineId Id="55" Count="0" />
+      <LineId Id="39" Count="0" />
+      <LineId Id="30" Count="1" />
+      <LineId Id="23" Count="0" />
+      <LineId Id="32" Count="3" />
+      <LineId Id="24" Count="2" />
+      <LineId Id="56" Count="0" />
+      <LineId Id="40" Count="0" />
+      <LineId Id="37" Count="0" />
+      <LineId Id="41" Count="0" />
+      <LineId Id="44" Count="3" />
+      <LineId Id="42" Count="0" />
+      <LineId Id="50" Count="0" />
+      <LineId Id="43" Count="0" />
+      <LineId Id="38" Count="0" />
+      <LineId Id="20" Count="0" />
+      <LineId Id="13" Count="1" />
+      <LineId Id="12" Count="0" />
+      <LineId Id="16" Count="0" />
+      <LineId Id="15" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ProBoxElementShuttleForks._M_DefineForkProperties">
+      <LineId Id="199" Count="52" />
+      <LineId Id="50" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ProBoxElementShuttleForks._M_DefineLiftProperties">
+      <LineId Id="201" Count="6" />
+      <LineId Id="160" Count="20" />
+      <LineId Id="208" Count="0" />
+      <LineId Id="181" Count="0" />
+      <LineId Id="209" Count="2" />
+      <LineId Id="182" Count="0" />
+      <LineId Id="212" Count="0" />
+      <LineId Id="183" Count="0" />
+      <LineId Id="213" Count="0" />
+      <LineId Id="215" Count="0" />
+      <LineId Id="214" Count="0" />
+      <LineId Id="184" Count="11" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ProBoxElementShuttleForks._M_Emulation">
+      <LineId Id="58" Count="4" />
+      <LineId Id="82" Count="0" />
+      <LineId Id="63" Count="14" />
+      <LineId Id="79" Count="1" />
+      <LineId Id="27" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ProBoxElementShuttleForks._M_ForkLiftControl">
+      <LineId Id="6" Count="1" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ProBoxElementShuttleForks._M_LiftMover">
+      <LineId Id="61" Count="33" />
+      <LineId Id="45" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ProBoxElementShuttleForks._M_MotionControl">
+      <LineId Id="704" Count="35" />
+      <LineId Id="742" Count="14" />
+      <LineId Id="884" Count="1" />
+      <LineId Id="980" Count="0" />
+      <LineId Id="757" Count="8" />
+      <LineId Id="930" Count="0" />
+      <LineId Id="766" Count="0" />
+      <LineId Id="879" Count="0" />
+      <LineId Id="894" Count="0" />
+      <LineId Id="931" Count="0" />
+      <LineId Id="880" Count="0" />
+      <LineId Id="888" Count="0" />
+      <LineId Id="890" Count="0" />
+      <LineId Id="900" Count="1" />
+      <LineId Id="892" Count="1" />
+      <LineId Id="891" Count="0" />
+      <LineId Id="902" Count="0" />
+      <LineId Id="895" Count="0" />
+      <LineId Id="897" Count="2" />
+      <LineId Id="896" Count="0" />
+      <LineId Id="889" Count="0" />
+      <LineId Id="881" Count="0" />
+      <LineId Id="769" Count="4" />
+      <LineId Id="775" Count="10" />
+      <LineId Id="904" Count="3" />
+      <LineId Id="786" Count="0" />
+      <LineId Id="791" Count="7" />
+      <LineId Id="975" Count="0" />
+      <LineId Id="981" Count="0" />
+      <LineId Id="799" Count="11" />
+      <LineId Id="908" Count="1" />
+      <LineId Id="928" Count="1" />
+      <LineId Id="919" Count="1" />
+      <LineId Id="922" Count="2" />
+      <LineId Id="921" Count="0" />
+      <LineId Id="910" Count="0" />
+      <LineId Id="815" Count="0" />
+      <LineId Id="882" Count="0" />
+      <LineId Id="927" Count="0" />
+      <LineId Id="925" Count="1" />
+      <LineId Id="883" Count="0" />
+      <LineId Id="816" Count="3" />
+      <LineId Id="911" Count="0" />
+      <LineId Id="932" Count="8" />
+      <LineId Id="914" Count="0" />
+      <LineId Id="941" Count="0" />
+      <LineId Id="946" Count="0" />
+      <LineId Id="943" Count="2" />
+      <LineId Id="942" Count="0" />
+      <LineId Id="913" Count="0" />
+      <LineId Id="912" Count="0" />
+      <LineId Id="820" Count="0" />
+      <LineId Id="977" Count="0" />
+      <LineId Id="983" Count="0" />
+      <LineId Id="822" Count="4" />
+      <LineId Id="828" Count="9" />
+      <LineId Id="947" Count="7" />
+      <LineId Id="842" Count="17" />
+      <LineId Id="959" Count="3" />
+      <LineId Id="957" Count="0" />
+      <LineId Id="963" Count="0" />
+      <LineId Id="971" Count="0" />
+      <LineId Id="978" Count="0" />
+      <LineId Id="972" Count="2" />
+      <LineId Id="970" Count="0" />
+      <LineId Id="969" Count="0" />
+      <LineId Id="964" Count="0" />
+      <LineId Id="966" Count="2" />
+      <LineId Id="965" Count="0" />
+      <LineId Id="956" Count="0" />
+      <LineId Id="866" Count="0" />
+      <LineId Id="985" Count="3" />
+      <LineId Id="867" Count="11" />
+      <LineId Id="409" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ProBoxElementShuttleForks.A_Init">
+      <LineId Id="52" Count="3" />
+      <LineId Id="94" Count="1" />
+      <LineId Id="103" Count="0" />
+      <LineId Id="97" Count="0" />
+      <LineId Id="117" Count="0" />
+      <LineId Id="128" Count="0" />
+      <LineId Id="118" Count="0" />
+      <LineId Id="148" Count="0" />
+      <LineId Id="145" Count="0" />
+      <LineId Id="160" Count="1" />
+      <LineId Id="163" Count="0" />
+      <LineId Id="137" Count="0" />
+      <LineId Id="150" Count="0" />
+      <LineId Id="147" Count="0" />
+      <LineId Id="121" Count="3" />
+      <LineId Id="126" Count="0" />
+      <LineId Id="119" Count="0" />
+      <LineId Id="127" Count="0" />
+      <LineId Id="115" Count="1" />
+      <LineId Id="100" Count="0" />
+      <LineId Id="98" Count="1" />
+      <LineId Id="93" Count="0" />
+      <LineId Id="45" Count="0" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ProBoxElementShuttleForks.A_InputMapping">
+      <LineId Id="2" Count="8" />
+      <LineId Id="109" Count="1" />
+      <LineId Id="108" Count="0" />
+      <LineId Id="12" Count="0" />
+      <LineId Id="14" Count="0" />
+      <LineId Id="82" Count="0" />
+      <LineId Id="68" Count="0" />
+      <LineId Id="74" Count="1" />
+      <LineId Id="87" Count="0" />
+      <LineId Id="62" Count="0" />
+      <LineId Id="61" Count="0" />
+      <LineId Id="1" Count="0" />
+      <LineId Id="50" Count="0" />
+      <LineId Id="57" Count="0" />
+      <LineId Id="51" Count="0" />
+      <LineId Id="49" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ProBoxElementShuttleForks.A_OutputMapping">
+      <LineId Id="127" Count="7" />
+      <LineId Id="212" Count="1" />
+      <LineId Id="206" Count="0" />
+      <LineId Id="209" Count="2" />
+      <LineId Id="207" Count="0" />
+      <LineId Id="201" Count="0" />
+      <LineId Id="146" Count="1" />
+      <LineId Id="149" Count="1" />
+      <LineId Id="165" Count="3" />
+      <LineId Id="205" Count="0" />
+      <LineId Id="204" Count="0" />
+      <LineId Id="169" Count="2" />
+      <LineId Id="196" Count="0" />
+      <LineId Id="60" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ProBoxElementShuttleForks.P_RegisterFuncton.Get">
+      <LineId Id="2" Count="0" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ProBoxElementShuttleForks.P_RegisterFuncton.Set">
+      <LineId Id="9" Count="0" />
+      <LineId Id="5" Count="0" />
+      <LineId Id="10" Count="0" />
+      <LineId Id="15" Count="0" />
+      <LineId Id="17" Count="0" />
+      <LineId Id="21" Count="0" />
+      <LineId Id="26" Count="0" />
+      <LineId Id="19" Count="0" />
+      <LineId Id="13" Count="0" />
+      <LineId Id="12" Count="0" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

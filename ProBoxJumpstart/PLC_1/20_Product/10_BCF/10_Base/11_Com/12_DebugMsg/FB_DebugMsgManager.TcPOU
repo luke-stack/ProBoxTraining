@@ -1,0 +1,302 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.4">
+  <POU Name="FB_DebugMsgManager" Id="{5dbf3775-b571-4df8-a3e8-eee8f569469b}" SpecialFunc="None">
+    <Declaration><![CDATA[{attribute 'reflection' := ''}
+FUNCTION_BLOCK FB_DebugMsgManager
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 404529 $
+ *	Revision date	:	$Date: 2018-04-23 08:21:38 +0200 (Mo., 23 Apr 2018) $
+ *	Last changed by	:	$Author: b7bolm $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/trunk/01_Software/BCF/BCF/JumpStart/20_Product/10_App/11_Com/10_Lib/FB_DebugMsgManager.TcPOU $
+ *
+ *	Purpose			:	Debug msg manager 
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * VERSION DATE         INITIALS     DESCRIPTION
+ * 0.0     DD.MM.YYYY   (name)       (explain customized modifications)
+ *
+ **************************************************************************************)
+VAR_INPUT
+	Config						: ST_CFG_DebugMsgManager;	// Configuration of debug msg manager
+	//-----------------------------------------------------------------------------------
+	EnableInfos					: BOOL		:= TRUE;		// Enables debug messages for infos
+	EnableWarnings				: BOOL		:= TRUE;		// Enables debug messages for warnings
+	EnableErrors				: BOOL		:= TRUE;		// Enables debug messages for errors
+END_VAR
+ 
+VAR
+	DebugMsg					: T_MaxString; // String to compose the logmessage
+	fbDebugMsg					: FB_DebugMsg; // Object Debug instance
+	fbTCP_Driver				: FB_TCP_Driver; // Instance of a TCP/IP connection handler
+	AddByteMessage				: ARRAY[1 .. MAX_MSG_LENGTH] OF BYTE; // Added byte message
+	ReadByteMessage				: ARRAY[1 .. MAX_MSG_LENGTH] OF BYTE; // Read out message
+	CollectedByteMessage		: ARRAY[1 .. MAX_MSG_LENGTH] OF BYTE; // Collected byte message
+	SendBufferSpace				: ARRAY[1 .. MAX_BUFFER_SPACE] OF BYTE; // Space for send messages
+	fbSendBuffer				: FB_MemRingBuffer; // Send buffer
+	Header						: T_MaxString; // Collected header
+	LastAddedMsg				: T_MaxString; // Debug message last added message
+	LastSentMsg					: T_MaxString; // Debug message last sent
+	WritePointer				: UDINT; // Counter for assembling byte stream
+	NoError						: BOOL; // No error during operation
+	DataReady					: BOOL; // Data ready to send
+	Idx							: INT; // Index for iteration	
+	RecvData					: ARRAY[1..10] OF BYTE; // Receive buffer
+	fbFileHandler				: FB_TraceHandler(); 					// trace file handler
+END_VAR
+
+VAR CONSTANT
+	MAX_MSG_LENGTH				: DINT := 30000; // Maximum byte length of a message
+	MAX_BUFFER_SPACE			: DINT := 30000; // Allocated send buffer space
+	MSG_PER_CYCLE				: INT := 5; // Maximum collected messages
+	DEBUGMESSAGETYPELENGTH 		: INT := 20; // String length debug message type
+END_VAR]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[
+// call file handler
+fbFileHandler();
+
+// Only handle all entries, if a connection is established
+IF fbTCP_Driver.Connected THEN
+	// Check if a message to send is available and the sending channel is free to send
+	IF NOT fbTCP_Driver.SendBusy AND fbSendBuffer.nCount > 0 THEN
+			
+		// Initialize values
+		MEMSET(destAddr := ADR(CollectedByteMessage), 0, SIZEOF(CollectedByteMessage));
+		WritePointer := 0;
+		DataReady := FALSE;
+		(*
+		In order to send efficiently, it will be tried to collect
+		multiple messages to one TCP/IP stream.
+		
+		Generell it will be tried to collect everytime MSG_PER_CYCLE messages.
+		After MSG_PER_CYCLE messages or if the added messages exeeds MAX_MSG_LENGTH, 
+		no more messages will be added.
+		*)
+		FOR Idx := 1 TO MSG_PER_CYCLE DO
+			// If send buffer consists of unsent messages
+			IF fbSendBuffer.nCount > 0 THEN
+				// Clear byte stream
+				MEMSET(destAddr := ADR(ReadByteMessage), 0, SIZEOF(ReadByteMessage));
+				
+				// Read next message out of the buffer (But not remove)
+				fbSendBuffer.A_GetHead(
+					pBuffer := ADR(SendBufferSpace), 
+					cbBuffer := SIZEOF(SendBufferSpace), 
+					pRead := ADR(ReadByteMessage), 
+					cbRead := SIZEOF(ReadByteMessage));
+				
+				// If read out was successfully
+				IF fbSendBuffer.bOk THEN
+					// Append source
+					NoError := F_AssembleByteStream(
+									pSrc := ADR(ReadByteMessage), 
+									SrcLen := fbSendBuffer.cbReturn,
+									pDest := ADR(CollectedByteMessage), 
+									DestLen := SIZEOF(CollectedByteMessage),
+									WritePointer := WritePointer);
+					
+					// if assembling was successful (Maybe the message was to long and therefore not adable
+					IF NoError THEN
+						// As a reason that the message could be assembled, remove from buffer
+						fbSendBuffer.A_RemoveHead(
+							pBuffer := ADR(SendBufferSpace), 
+							cbBuffer := SIZEOF(SendBufferSpace), 
+							pRead := ADR(ReadByteMessage), 
+							cbRead := SIZEOF(ReadByteMessage));
+							
+						// Data assembled
+						DataReady := TRUE;
+					ELSE
+						(*
+						It was not possible to add MSG_PER_CYCLE messages.
+						Already added messages exeeded MAX_MSG_LENGTH
+						*)
+						EXIT;
+					END_IF	
+				ELSE
+					DebugMsg := CONCAT('CRITICAL Buffer read out. ReturnValue:', UDINT_TO_STRING(fbSendBuffer.cbReturn));
+					fbDebugMsg.M_SendErrorMsg(DebugMsg);	
+				END_IF
+			ELSE
+				// No further messages waiting
+				EXIT;
+			END_IF
+		END_FOR
+	
+		// If data needs to be sent
+		IF DataReady THEN
+			// Send command
+			fbTCP_Driver.M_Send(
+				mpSendData	:= ADR(CollectedByteMessage),
+				mSendDataLen:= WritePointer);
+				
+			// Store first 255 characters for debugging
+			F_BlockCopy(
+				pSrc:= ADR(CollectedByteMessage), 
+				LenSrc:= WritePointer, 
+				pDest:= ADR(LastSentMsg), 
+				LenDest:= SIZEOF(LastSentMsg));
+		END_IF
+	END_IF
+END_IF
+
+// Cylic update of TCP/ IP driver
+// Receive is not needed for debug messages, therefore no receive structure is allocated
+// Call is at the end, to gain one cycle of a sending request
+fbTCP_Driver(
+	Config := Config.TCP_Driver, 
+    pReceiveData := ADR(RecvData),
+	ReceiveDataLen := SIZEOF(RecvData));
+
+]]></ST>
+    </Implementation>
+    <Property Name="FileHandler" Id="{22506388-958a-402e-884e-6c9e110ab09f}">
+      <Declaration><![CDATA[// file handler
+{attribute 'monitoring' := 'call'}
+PROPERTY PUBLIC FileHandler : I_TraceHandler]]></Declaration>
+      <Get Name="Get" Id="{c83a7258-f597-48a4-a9de-938f803df320}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[FileHandler:= fbFileHandler;]]></ST>
+        </Implementation>
+      </Get>
+    </Property>
+    <Method Name="M_SendMessage" Id="{959eb6bd-67a4-4a71-9f4d-17d6403d2cdd}">
+      <Declaration><![CDATA[{attribute 'object_name' := 'M_SendMessage'}
+METHOD M_SendMessage : BOOL
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 404529 $
+ *	Revision date	:	$Date: 2018-04-23 08:21:38 +0200 (Mo., 23 Apr 2018) $
+ *	Last changed by	:	$Author: b7bolm $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/trunk/01_Software/BCF/BCF/JumpStart/20_Product/10_App/11_Com/10_Lib/FB_DebugMsgManager.TcPOU $
+ *
+ *	Purpose			:	Send  message
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+VAR_INPUT
+	meMessageType		: E_DebugMsgType;
+	mDebugSource		: STRING(DEBUGSOURCELENGTH);
+	mpMsgData			: PVOID; // Address to the send data storage
+	mMsgDataLen			: UDINT; // Data length which need to be sent
+END_VAR
+
+VAR
+	mString				:STRING(10); // Temp String
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+// forward to file handler
+fbFileHandler.Put(MsgType :=     meMessageType,
+                  Instance:= ADR(mDebugSource),
+                  Text    :=     mpMsgData);
+
+
+// Translate to string
+CASE meMessageType OF
+E_DebugMsgType.INFO:		IF NOT EnableInfos		THEN  M_SendMessage:= FALSE;  RETURN;  END_IF
+E_DebugMsgType.WARNING:		IF NOT EnableWarnings	THEN  M_SendMessage:= FALSE;  RETURN;  END_IF
+E_DebugMsgType.ERROR:		IF NOT EnableErrors		THEN  M_SendMessage:= FALSE;  RETURN;  END_IF
+ELSE						meMessageType:= E_DebugMsgType.ERROR;
+END_CASE
+
+
+// Reset
+MEMSET(destAddr := ADR(AddByteMessage), 0, SIZEOF(AddByteMessage));
+WritePointer := 0;
+
+Header := CONCAT('<', TimeStampString);
+Header := CONCAT(Header, ', ');
+Header := CONCAT(Header, TO_STRING(meMessageType));
+Header := CONCAT(Header, ', System: ');
+Header := CONCAT(Header, INT_TO_STRING(Config.SystemNumber));
+Header := CONCAT(Header, ', ');
+Header := CONCAT(Header, mDebugSource);
+Header := CONCAT(Header, ', ');
+
+// Append header
+F_AssembleByteStream(
+	pSrc := ADR(Header),
+	SrcLen := INT_TO_UDINT(LEN(Header)),
+	pDest := ADR(AddByteMessage), 
+	DestLen := SIZEOF(AddByteMessage),
+	WritePointer := WritePointer);
+
+// Append message
+F_BlockCopy(
+	pSrc := mpMsgData,
+	LenSrc := mMsgDataLen, 
+	pDest := ADR(AddByteMessage) + WritePointer,
+	LenDest := SIZEOF(AddByteMessage) - WritePointer);
+
+// Update pointer
+WritePointer := WritePointer + mMsgDataLen;
+
+// Append end sign + Line feed
+mString := '>$0A';
+
+F_AssembleByteStream(
+	pSrc := ADR(mString), 
+	SrcLen := INT_TO_UDINT(LEN(mString)),
+	pDest := ADR(AddByteMessage), 
+	DestLen := SIZEOF(AddByteMessage),
+	WritePointer := WritePointer);
+
+
+// Add to byte buffer in order to release caller
+fbSendBuffer.A_AddTail(
+	pBuffer := ADR(SendBufferSpace), 
+	cbBuffer := SIZEOF(SendBufferSpace), 
+	pWrite := ADR(AddByteMessage), 
+	cbWrite := WritePointer);
+
+IF NOT fbSendBuffer.bOk THEN
+	// Remove oldest entry
+	fbSendBuffer.A_RemoveHead(
+		pBuffer := ADR(SendBufferSpace), 
+		cbBuffer := SIZEOF(SendBufferSpace), 
+		pRead := ADR(ReadByteMessage), 
+		cbRead := SIZEOF(ReadByteMessage));
+
+	// Add to byte buffer in order to release caller
+	fbSendBuffer.A_AddTail(
+		pBuffer := ADR(SendBufferSpace), 
+		cbBuffer := SIZEOF(SendBufferSpace), 
+		pWrite := ADR(AddByteMessage), 
+		cbWrite := WritePointer);
+END_IF
+
+// Store first 255 characters for debugging
+F_BlockCopy(
+	pSrc:= ADR(AddByteMessage), 
+	LenSrc:= WritePointer, 
+	pDest:= ADR(LastAddedMsg), 
+	LenDest:= SIZEOF(LastAddedMsg));
+	
+// Return result
+M_SendMessage := fbSendBuffer.bOk;
+
+]]></ST>
+      </Implementation>
+    </Method>
+  </POU>
+</TcPlcObject>

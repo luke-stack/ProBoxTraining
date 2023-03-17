@@ -1,0 +1,54 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <DUT Name="ST_HW_InputsSickScanner" Id="{1c4213fd-3584-4fd9-b4b4-7e6b080f392d}">
+    <Declaration><![CDATA[TYPE ST_HW_InputsSickScanner :
+STRUCT
+	//GoodRead		: BOOL; //Good read for CLV690
+	ControlWordIn	: UINT; // Status Message from scanner CLV630-650
+	ConfMessageIn	: ARRAY[0..31] OF BYTE; // Message Byte 5 and forward result from scanner	
+END_STRUCT
+END_TYPE
+
+(*
+Ctrl bits In
+By adding the Ctrl bits In, the PLC can monitor the digital inputs and outputs of the CLV61x Dual Port.
+Here is the assignment for the CLV61x Dual Port.
+Bit Name Meaning
+D0 Device Ready Status of the CLV61x Dual Port
+D1 Reserved
+D2 Good Read * Status of the last read results *
+D3 No Read * Status of the last read results *
+D4 External Output 1 Only available as a bit logical, no hardware output
+D5 External output 2 Only available as a bit logical, no hardware output
+D6 Result 1 Only available as a bit logical, no hardware output
+D7 Result 2 Only available as a bit logical, no hardware output
+D8 - Reserved
+D9 - Reserved
+D10 Sensor 1 Status of dig. input sensor 1.(Hardware dependent, equipment type on request)
+D11 - Reserved
+D12 – Reserved
+D13 – Reserved
+D14 – Reserved
+D15 Toggle Inverted after each read cycle.
+Observe byte order: D0 stands for the least significant bit of Add.+1.
+* The bits are valid if the "Toggle" bit changes.
+*)]]></Declaration>
+    <ObjectProperties>
+      <XmlArchive>
+        <Data>
+          <o xml:space="preserve" t="UMLStereoTypeContainerObject">
+            <v n="IsType" t="UMLType">BaseArea</v>
+            <v n="Stereotype">""</v>
+            <d n="Stereotypes" t="Hashtable" />
+          </o>
+        </Data>
+        <TypeList>
+          <Type n="Hashtable">System.Collections.Hashtable</Type>
+          <Type n="String">System.String</Type>
+          <Type n="UMLStereoTypeContainerObject">{30250973-b110-4e31-b562-c102e042dca4}</Type>
+          <Type n="UMLType">{0197b136-405a-42ee-bb27-fd08b621d0cf}</Type>
+        </TypeList>
+      </XmlArchive>
+    </ObjectProperties>
+  </DUT>
+</TcPlcObject>

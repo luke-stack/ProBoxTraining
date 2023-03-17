@@ -1,0 +1,60 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.12">
+  <POU Name="F_ITC_SendDAR" Id="{db212735-2f82-4ee0-9695-b8b3fe9cf284}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION F_ITC_SendDAR : BOOL
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 404529 $
+ *	Revision date	:	$Date: 2018-04-23 08:21:38 +0200 (Mo., 23 Apr 2018) $
+ *	Last changed by	:	$Author: b7bolm $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/trunk/01_Software/BCF/BCF/JumpStart/20_Product/10_App/11_Com/10_Lib/10_Conv/11_ITC/F_ITC_SendDAR.TcPOU $
+ *
+ *	Purpose			:	Wrap message - DAR
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+VAR_INPUT
+	eChannelSrc			: E_MFCS_Channel;	/// Source communicaton channel	
+	Position			: STRING(Conveyor.POSITION_STRINGLENGTH);// SIS MM-GGG-EEEE-FF-Z
+	Code				: INT; //Request = 0 Off ALL = 1
+	NumberOfSets		: INT; // Number of Sets to be Proccessed in Telegram
+	Set					: ARRAY[E_CM_Index.E_BEGIN_VARIABLE+1..E_CM_Index.E_END_VARIABLE-1] OF ST_CM_Settings;
+	SetOffset			: E_CM_Index; // Set Offset if less than all availble sets are sent
+	eErrorCode			: E_ErrorConv; // Error Code 
+END_VAR
+VAR
+	DAR					: ST_ITC_DAR; //Data Aquisiiton Report Structure 
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[// Map values  	
+DAR.Position		:= Position;
+DAR.Code			:= Code;
+DAR.NumberOfSets 	:= NumberOfSets;
+DAR.Set				:= Set;
+DAR.SetOffset		:= SetOffset;
+DAR.eErrorCode		:= eErrorcode;
+// Forward to ITC	
+F_ITC_SendDAR := fbITC_Manager.M_SendData(
+					meChannel	:= eChannelSrc,
+					mMsgType	:= E_ITC_MsgTypeConv.DATA_ACQUISITION_REPORT,
+					mpData		:= ADR(DAR),
+					mLen		:= SIZEOF(DAR));
+
+]]></ST>
+    </Implementation>
+    <LineIds Name="F_ITC_SendDAR">
+      <LineId Id="3" Count="13" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

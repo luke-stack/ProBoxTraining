@@ -1,0 +1,287 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <POU Name="FB_VizuSIS" Id="{61ed0491-6ca7-4724-ab0b-28a94b94818a}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK FB_VizuSIS
+VAR_INPUT
+	ATQ				: BOOL;
+	RTQ				: BOOL;
+	TTA				: BOOL;
+	TDQ				: BOOL;
+	TTA_Destination	: STRING(NAME_LENGTH) := '10-001-0100-01-1';
+	PositionString	: STRING(NAME_LENGTH) := '10-001-0100-01-1'; // Name of position 11-111-1111-11-1;	
+	ATQ_Dimension	: ST_Dimension :=(Width:=800, Length:=800, Height:=500, Weight:=1200);
+	ATQ_Label		: STRING(Conveyor.LABEL_LENGTH) := 'CREATECODE';
+	TU_ID			: STRING(Conveyor.TU_ID_STRINGLENGTH):= Conveyor.TU_ID_UNKNOWN; // TU-ID
+	AssignmentID	: UDINT := Conveyor.ASSIGNMENT_ID_UNKNOWN;
+	AutoID			: BOOL; //Use TU ID and Assignment ID from TU table for TTA and TDQ
+END_VAR
+VAR_OUTPUT
+	BadPosition		: BOOL;
+END_VAR
+VAR
+	myPos			: STRING(NAME_LENGTH);
+	myTuIndex		: DINT;
+
+	TrigATQ : R_TRIG();
+	TrigRTQ : R_TRIG();
+	TrigTTA : R_TRIG();
+	TrigTDQ : R_TRIG();
+	
+END_VAR
+VAR_TEMP
+	Position : ST_PositionIdent;
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[myPos := F_ReduceToAlphaNumeric(PositionString);
+Position := F_SearchFunctionPosition(Position := myPos);
+BadPosition := Position.eFunctionNumber = E_FunctionNumber.F_BEGIN_FUNCTION;
+IF(BadPosition) THEN
+	RETURN;
+END_IF
+
+
+TrigATQ(CLK:=ATQ);
+TrigRTQ(CLK:=RTQ);
+TrigTTA(CLK:=TTA);
+TrigTDQ(CLK:=TDQ);
+
+IF(TrigATQ.Q) THEN
+	//ATQDimension
+	_M_SendATQ(Position,ATQ_Dimension,ATQ_Label);
+	//F_AddPhysicalTU(Position.eFunctionNumber,Position.ZoneNumber);
+END_IF
+
+IF(TrigRTQ.Q) THEN
+	F_RemovePhysicalTU(Position.eFunctionNumber,Position.ZoneNumber);
+END_IF
+
+IF(TrigTTA.Q) THEN	
+	_M_SendTTA(Position,TTA_Destination,TU_ID,AssignmentID);
+END_IF
+
+IF(TrigTDQ.Q) THEN	
+	_M_SendTDQ(Position);
+END_IF
+]]></ST>
+    </Implementation>
+    <Method Name="_M_GetIDs" Id="{6e39bdf9-8700-4b47-8a91-d0c1a028c8ba}">
+      <Declaration><![CDATA[METHOD PRIVATE _M_GetIDs : BOOL
+VAR_INPUT
+	Position 		: REFERENCE TO ST_PositionIdent;	
+	TU_ID			: REFERENCE TO STRING(Conveyor.TU_ID_STRINGLENGTH); // TU-ID
+	AssigID			: REFERENCE TO UDINT ;
+END_VAR
+
+VAR
+	myTuIndex		: DINT;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[//(Conveyor.TU_ID_STRINGLENGTH):= Conveyor.TU_ID_UNKNOWN;
+//:= Conveyor.ASSIGNMENT_ID_UNKNOWN
+
+IF(THIS^.AutoID) THEN
+	
+	myTuIndex := F_PB_GetTransportControlDataRef(Position.eFunctionNumber,Position.ZoneNumber).TU_DataIndex;
+	IF(myTuIndex>0) THEN
+		AssigID		:= TU_Table.TU_DataTable[myTuIndex].AssignmentID;
+		TU_ID 			:= TU_Table.TU_DataTable[myTuIndex].TU_ID.ASCII;
+	ELSE
+		AssigID 		:= Conveyor.ASSIGNMENT_ID_UNKNOWN;
+		TU_ID		:= Conveyor.TU_ID_UNKNOWN;	
+	END_IF	
+ELSE
+	//use the ID's from the input field of the vizio interface.
+	TU_ID := THIS^.TU_ID;	
+	AssigID := THIS^.AssignmentID;
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_SendATQ" Id="{a4006221-e4c2-44d3-8c94-1c0c3d5307b4}">
+      <Declaration><![CDATA[METHOD PRIVATE _M_SendATQ : BOOL
+VAR_INPUT
+	Position 		: REFERENCE TO ST_PositionIdent;
+	Dimension		: REFERENCE TO ST_Dimension;
+	Label			: REFERENCE TO STRING(Conveyor.LABEL_LENGTH);	
+END_VAR
+VAR
+	myLabel			: STRING(Conveyor.LABEL_LENGTH);
+END_VAR
+VAR_STAT
+	ID		: INT := 1;
+	ATQ		: ST_ITC_ATQ;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+ATQ.Position := F_ReduceToAlphaNumeric(InputString := Position.PositionName);
+
+IF(Label[0]=0) THEN
+
+	myLabel := F_StuffString(
+			InputString 	:= INT_TO_STRING(ID), 
+			StringLength	:= 8, 
+			StuffCharacter 	:= '0',
+			LeftAligned     := FALSE);
+	myLabel := CONCAT('TESTLABEL_',myLabel);
+			
+	ID := ID + 1;
+	IF ID > 9998 THEN
+		ID := 1;
+	END_IF
+ELSE
+	myLabel := Label;
+END_IF		
+
+IF(Dimension.Height=0) THEN Dimension.Height:=200; END_IF
+IF(Dimension.Length=0) THEN Dimension.Length:=200; END_IF
+IF(Dimension.Weight=0) THEN Dimension.Weight:=200; END_IF
+IF(Dimension.Width=0) THEN Dimension.Width:=200; END_IF
+
+ATQ.Height := Dimension.Height;
+ATQ.Length := Dimension.Length;
+ATQ.Weight := Dimension.Weight;
+ATQ.Width := Dimension.Width;
+
+ATQ.LabelPresent := 1;
+ATQ.Label := myLabel;
+
+
+IF(ProBoxSystem.EMULATION_ENABLED) THEN
+	fbITC_ManagerEmulation.M_AddData(
+		meChannelSrc := 0,
+		mMsgType     := E_ITC_MsgTypeConv.E_ADD_TU_REQUEST,
+		mpData		 := ADR(ATQ),
+		mLen 		 := SIZEOF(ATQ));
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_SendTDQ" Id="{f44d007e-257e-42ff-99f6-1061e88daa4d}">
+      <Declaration><![CDATA[METHOD PRIVATE _M_SendTDQ : BOOL
+VAR_INPUT
+	Position 		: REFERENCE TO ST_PositionIdent;	
+	//TU_Id    		: STRING(Conveyor.TU_ID_STRINGLENGTH);
+END_VAR
+VAR	
+	TDQ		: ST_ITC_TDQ;
+	
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+_M_GetIDs(Position,TDQ.TU_ID, TDQ.AssignmentID);
+
+TDQ.Position := F_ReduceToAlphaNumeric(InputString := Position.PositionName);
+
+TDQ.Code :=0;
+TDQ.MsgSequence:=999;
+
+
+_M_SendTDQ:= fbITC_Manager.M_AddData(
+					meChannelSrc := 0,
+					mMsgType     := E_ITC_MsgTypeConv.TASK_DELETE_REQUEST,
+					mpData		 := ADR(TDQ),
+					mLen		 := SIZEOF(TDQ));]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_SendTTA" Id="{5ed76978-c2e8-4fd9-a492-01c533e6bd51}">
+      <Declaration><![CDATA[METHOD PRIVATE _M_SendTTA : BOOL
+VAR_INPUT
+	Position 		: REFERENCE TO ST_PositionIdent;
+	Destination		: REFERENCE TO STRING(NAME_LENGTH);
+	TU_Id    		: STRING(Conveyor.TU_ID_STRINGLENGTH);
+	AssignmentID	: UDINT := Conveyor.ASSIGNMENT_ID_UNKNOWN;
+END_VAR
+VAR
+	TTA		: ST_ITC_TTA;
+	//mName	: STRING[NAME_LENGTH];
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[//mName := F_GetFunctionName(eFunctionNumber:= Position.eFunctionNumber, ZoneNumber:= Position.ZoneNumber);
+TTA.Position := F_ReduceToAlphaNumeric(InputString := Position.PositionName);
+//mName := F_GetFunctionName(eFunctionNumber:= Position.eFunctionNumber, ZoneNumber:= Position.ZoneNumber);
+TTA.Destination[1] := F_ReduceToAlphaNumeric(InputString := Destination);//'11-001-0206-01-1';
+TTA.DestinationSlot:=1;
+TTA.NumberOfDestinations:=1;
+TTA.AssignmentID:=AssignmentID;
+TTA.TU_ID := TU_Id;
+
+_M_GetIDs(Position,TTA.TU_ID, TTA.AssignmentID);
+
+_M_SendTTA:= fbITC_Manager.M_AddData(
+					meChannelSrc := 0,
+					mMsgType     := E_ITC_MsgTypeConv.TRANSPORT_TASK_ASSIGNMENT,
+					mpData		 := ADR(TTA),
+					mLen		 := SIZEOF(TTA));]]></ST>
+      </Implementation>
+    </Method>
+    <LineIds Name="FB_VizuSIS">
+      <LineId Id="274" Count="1" />
+      <LineId Id="296" Count="0" />
+      <LineId Id="299" Count="0" />
+      <LineId Id="301" Count="0" />
+      <LineId Id="298" Count="0" />
+      <LineId Id="276" Count="8" />
+      <LineId Id="306" Count="0" />
+      <LineId Id="285" Count="9" />
+      <LineId Id="302" Count="1" />
+      <LineId Id="308" Count="0" />
+      <LineId Id="305" Count="0" />
+      <LineId Id="19" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_VizuSIS._M_GetIDs">
+      <LineId Id="5" Count="0" />
+      <LineId Id="8" Count="0" />
+      <LineId Id="10" Count="0" />
+      <LineId Id="9" Count="0" />
+      <LineId Id="11" Count="0" />
+      <LineId Id="19" Count="6" />
+      <LineId Id="18" Count="0" />
+      <LineId Id="13" Count="0" />
+      <LineId Id="29" Count="0" />
+      <LineId Id="14" Count="1" />
+      <LineId Id="12" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_VizuSIS._M_SendATQ">
+      <LineId Id="6" Count="1" />
+      <LineId Id="38" Count="0" />
+      <LineId Id="8" Count="0" />
+      <LineId Id="40" Count="0" />
+      <LineId Id="9" Count="4" />
+      <LineId Id="56" Count="1" />
+      <LineId Id="44" Count="0" />
+      <LineId Id="48" Count="1" />
+      <LineId Id="47" Count="0" />
+      <LineId Id="45" Count="1" />
+      <LineId Id="14" Count="0" />
+      <LineId Id="52" Count="0" />
+      <LineId Id="15" Count="0" />
+      <LineId Id="53" Count="2" />
+      <LineId Id="20" Count="4" />
+      <LineId Id="51" Count="0" />
+      <LineId Id="25" Count="1" />
+      <LineId Id="71" Count="0" />
+      <LineId Id="70" Count="0" />
+      <LineId Id="27" Count="4" />
+      <LineId Id="5" Count="0" />
+      <LineId Id="72" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_VizuSIS._M_SendTDQ">
+      <LineId Id="25" Count="0" />
+      <LineId Id="27" Count="0" />
+      <LineId Id="8" Count="1" />
+      <LineId Id="11" Count="8" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_VizuSIS._M_SendTTA">
+      <LineId Id="41" Count="1" />
+      <LineId Id="66" Count="0" />
+      <LineId Id="46" Count="0" />
+      <LineId Id="64" Count="1" />
+      <LineId Id="62" Count="0" />
+      <LineId Id="55" Count="0" />
+      <LineId Id="78" Count="0" />
+      <LineId Id="77" Count="0" />
+      <LineId Id="47" Count="4" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

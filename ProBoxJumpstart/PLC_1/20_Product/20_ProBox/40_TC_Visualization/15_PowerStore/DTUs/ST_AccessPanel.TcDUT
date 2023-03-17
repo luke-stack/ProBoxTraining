@@ -1,0 +1,12 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.4">
+  <DUT Name="ST_AccessPanel" Id="{a4a5c948-79a4-4b5c-810d-e6a1bbaeea3e}">
+    <Declaration><![CDATA[TYPE ST_AccessPanel :
+STRUCT
+	inputs : ST_AccessPanelInputs;
+	outputs : ST_AccessPanelOutputs;
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

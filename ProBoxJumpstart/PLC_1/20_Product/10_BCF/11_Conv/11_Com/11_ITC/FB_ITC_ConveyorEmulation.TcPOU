@@ -1,0 +1,658 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.4">
+  <POU Name="FB_ITC_ConveyorEmulation" Id="{e68bb281-b9b7-4ddf-a240-676d522d293b}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK FB_ITC_ConveyorEmulation IMPLEMENTS ITF_ITC_Emulation
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 404529 $
+ *	Revision date	:	$Date: 2018-04-23 08:21:38 +0200 (Mo., 23 Apr 2018) $
+ *	Last changed by	:	$Author: b7bolm $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/trunk/01_Software/BCF/BCF/JumpStart/20_Product/11_Emu/11_Com/10_Lib/10_Conv/11_ITC/FB_ITC_CoveyorEmulation.TcPOU $
+ *
+ *	Purpose			:	ITC - Message Manager emulation.
+ *						Represents the interface between the application and the 
+ *						communication. Serves as abstract layer to ensure application
+ *						independency.
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+VAR
+	fbDebugMsg			: FB_DebugMsg; // Debug instance
+	DebugMsg			: T_MAXSTRING; // Debug msg
+	TelegramPosition	: ST_PositionIdent; // Position
+	TelegramElement		: E_ElementNumber; // Element
+	TelegramGroup		: E_GroupNumber; // Group
+	TelegramSubsystem	: BOOL; // Telegram for Subsystem
+	TU_DataIndex		: DINT; // TU Data index
+	eMsgType			: E_ITC_MsgTypeConv; // Message type conveyor
+	
+	Data				: ST_ITC_GeneralData; // General data
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[;]]></ST>
+    </Implementation>
+    <Method Name="M_AddData" Id="{04527367-4f9b-45c5-9457-228597731504}">
+      <Declaration><![CDATA[METHOD M_AddData : BOOL
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 404529 $
+ *	Revision date	:	$Date: 2018-04-23 08:21:38 +0200 (Mo., 23 Apr 2018) $
+ *	Last changed by	:	$Author: b7bolm $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/trunk/01_Software/BCF/BCF/JumpStart/20_Product/11_Emu/11_Com/10_Lib/10_Conv/11_ITC/FB_ITC_CoveyorEmulation.TcPOU $
+ *
+ *	Purpose			:	Add data to the emulation system
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+VAR_INPUT
+	meChannelSrc	: E_MFCS_Channel;
+	mMsgType		: INT;
+	mpData			: PVOID;
+	mLen			: UDINT;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+// Translate type to enumeration
+eMsgType := mMsgType;
+
+// Go to corresponding type
+CASE eMsgType OF
+	(****************************************************
+	  No Message type
+	*****************************************************)	
+	E_ITC_MsgTypeConv.NO_MESSAGE_TYPE:
+		;
+		
+	(****************************************************
+	  Add TU request
+	*****************************************************)	
+	E_ITC_MsgTypeConv.E_ADD_TU_REQUEST:
+		// Process
+		M_AddData := M_ProcessATQ(
+						meChannelSrc := meChannelSrc,
+						mpATQ		 := mpData,
+						mLen		 := mLen);
+		
+	(****************************************************
+	  Remove TU request
+	*****************************************************)	
+	E_ITC_MsgTypeConv.E_REMOVE_TU_REQUEST:
+		// Process
+		M_AddData := M_ProcessRTQ(
+						meChannelSrc := meChannelSrc,
+						mpRTQ		 := mpData,
+						mLen		 := mLen);
+	
+	(****************************************************
+	  Error request
+	*****************************************************)	
+	E_ITC_MsgTypeConv.E_ERROR_REQUEST:
+		// Process
+		M_AddData := M_ProcessERQ(
+						meChannelSrc := meChannelSrc,
+						mpERQ		 := mpData,
+						mLen		 := mLen);
+	
+ELSE
+	// Unknown type
+	DebugMsg := 'Unknown message type received';
+	fbDebugMsg.M_SendErrorMsg(mMessage := DebugMsg);		
+END_CASE]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_CallITC_Service" Id="{86106612-def4-4b9b-9851-d5810234a80f}">
+      <Declaration><![CDATA[{attribute 'object_name' := 'M_CallITC_Service'}
+METHOD M_CallITC_Service : BOOL
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_ProcessATQ" Id="{ef70d552-be4b-454a-80ab-d29af67c55f6}">
+      <Declaration><![CDATA[METHOD PRIVATE M_ProcessATQ : BOOL
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 404529 $
+ *	Revision date	:	$Date: 2018-04-23 08:21:38 +0200 (Mo., 23 Apr 2018) $
+ *	Last changed by	:	$Author: b7bolm $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/trunk/01_Software/BCF/BCF/JumpStart/20_Product/11_Emu/11_Com/10_Lib/10_Conv/11_ITC/FB_ITC_CoveyorEmulation.TcPOU $
+ *
+ *	Purpose			:	Add ATQ
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+VAR_INPUT
+	meChannelSrc		: E_MFCS_Channel; // Source communicaton channel
+	mpATQ				: POINTER TO ST_ITC_ATQ; // Pointer to ATQ
+	mLen				: UDINT; // Data length
+END_VAR
+
+VAR
+	mrFunction		: REFERENCE TO FB_BaseObjectEmulation;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+// Search position in registry
+TelegramPosition := F_SearchFunctionPosition(Position := mpATQ^.Position);
+
+// If a position and zone was found
+IF TelegramPosition.eFunctionNumber > E_FunctionNumber.F_BEGIN_FUNCTION AND
+   TelegramPosition.ZoneNumber > 0 THEN
+   
+   // Store reference of this position
+   mrFunction REF= FunctionRegistryEmulation[TelegramPosition.eFunctionNumber].rFunction;
+   
+   // Check the reference from this position is valid
+   IF __ISVALIDREF(mrFunction) THEN
+	   
+		// Get Data index from this position
+		TU_DataIndex := F_GetTU_DataIndexEmulation(
+							eFunctionNumber := TelegramPosition.eFunctionNumber,
+							ZoneNumber		:= TelegramPosition.ZoneNumber);
+		
+		// If no data was found on this position
+		IF TU_DataIndex = 0 THEN
+			// Create a new set
+			TU_DataIndex := F_InsertTU_DataEmulation(
+								eFunctionNumber := TelegramPosition.eFunctionNumber,
+								ZoneNumber 		:= TelegramPosition.ZoneNumber);
+	
+			// If a index could be created
+			IF TU_DataIndex > 0 THEN
+				TU_DataTableEmulation[TU_DataIndex].Label.ASCII := mpATQ^.Label;
+				TU_DataTableEmulation[TU_DataIndex].Label.HashCode := F_CreateHashCode(mpATQ^.Label);
+				TU_DataTableEmulation[TU_DataIndex].DataSet.Dimension.Weight := mpATQ^.Weight;
+				TU_DataTableEmulation[TU_DataIndex].DataSet.Dimension.Length := mpATQ^.Length;
+				TU_DataTableEmulation[TU_DataIndex].DataSet.Dimension.Height := mpATQ^.Height;
+				TU_DataTableEmulation[TU_DataIndex].DataSet.Dimension.Width := mpATQ^.Width;
+				TU_DataTableEmulation[TU_DataIndex].DataSet.LongSideLeading := mpATQ^.LongSideLeading;
+				TU_DataTableEmulation[TU_DataIndex].DataSet.DataPresent := TRUE;
+				
+				// Prepare data
+				Data.TU_DataIndex := TU_DataIndex;
+				Data.ZoneNumber := TelegramPosition.ZoneNumber;
+				
+				M_ProcessToFunction(
+					meFunctionNumber := TelegramPosition.eFunctionNumber,
+					mZoneNumber 	 := TelegramPosition.ZoneNumber,
+					meChannelSrc	 := meChannelSrc,
+					mMsgType		 := E_ITC_MsgTypeConv.E_ADD_TU_REQUEST,
+					mpData			 := ADR(Data),
+					mLen			 := SIZEOF(Data));
+			END_IF
+		
+		// Otherwise overwrite current index
+		ELSIF TU_DataIndex > 0 THEN
+			
+			// Overwrite
+			TU_DataTableEmulation[TU_DataIndex].Label.ASCII := mpATQ^.Label;
+			TU_DataTableEmulation[TU_DataIndex].Label.HashCode := F_CreateHashCode(mpATQ^.Label);
+			TU_DataTableEmulation[TU_DataIndex].DataSet.Dimension.Weight := mpATQ^.Weight;
+			TU_DataTableEmulation[TU_DataIndex].DataSet.Dimension.Length := mpATQ^.Length;
+			TU_DataTableEmulation[TU_DataIndex].DataSet.Dimension.Height := mpATQ^.Height;
+			TU_DataTableEmulation[TU_DataIndex].DataSet.Dimension.Width := mpATQ^.Width;
+			TU_DataTableEmulation[TU_DataIndex].DataSet.LongSideLeading := mpATQ^.LongSideLeading;
+			TU_DataTableEmulation[TU_DataIndex].DataSet.DataPresent := TRUE;
+		END_IF
+		
+		F_ITC_SendATR(
+			eChannelSrc  := meChannelSrc, 
+			PositionName := mpATQ^.Position, 
+			eReturnCode  := E_ErrorConv.NO_ERROR_CODE);
+	END_IF
+
+// Unknown destination received 
+ELSE
+	// debug message: '11-000-0000-00-0,  unknown position addressed,  telegram = ATQ,  Position = 99-999-9999-99-9'
+	DebugMsg:= '';
+	DebugMsg:= CONCAT(DebugMsg, F_AddDividerToSisString(SubsystemRegistry.SubsystemName));
+	DebugMsg:= CONCAT(DebugMsg, ',  unknown position addressed');
+	DebugMsg:= CONCAT(DebugMsg, DebugTextBlocks.TELEGRAM);
+	DebugMsg:= CONCAT(DebugMsg, 'ATQ');
+	DebugMsg:= CONCAT(DebugMsg, DebugTextBlocks.POSITION);
+	DebugMsg:= CONCAT(DebugMsg, F_AddDividerToSisString(Name:= mpATQ^.Position)  );
+	fbDebugMsg.M_SendErrorMsg(mMessage := DebugMsg);
+
+	// Reject telegram
+	F_ITC_SendATR(
+		eChannelSrc  := meChannelSrc, 
+		PositionName := mpATQ^.Position, 
+		eReturnCode  := E_ErrorConv.FUNCTIONNUMBER_UNKNOWN);
+END_IF
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_ProcessERQ" Id="{915e227c-9922-4673-a8fb-934e96eceb41}">
+      <Declaration><![CDATA[METHOD PRIVATE M_ProcessERQ : BOOL
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 404529 $
+ *	Revision date	:	$Date: 2018-04-23 08:21:38 +0200 (Mo., 23 Apr 2018) $
+ *	Last changed by	:	$Author: b7bolm $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/trunk/01_Software/BCF/BCF/JumpStart/20_Product/11_Emu/11_Com/10_Lib/10_Conv/11_ITC/FB_ITC_CoveyorEmulation.TcPOU $
+ *
+ *	Purpose			:	Add ERR
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+VAR_INPUT
+	meChannelSrc		: E_MFCS_Channel; // Source communicaton channel
+	mpERQ				: POINTER TO ST_ITC_ERQ; // Pointer to ERQ
+	mLen				: UDINT; // Data length
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+// Try to find position in registry
+TelegramPosition := F_SearchFunctionPosition(Position := mpERQ^.Position);
+
+// Try to find element in registry
+TelegramElement := F_SearchElementPosition(ElementName := mpERQ^.Position);
+
+// Try to find group in registry
+TelegramGroup := F_SearchGroupNumber(GroupName := mpERQ^.Position);
+
+// Is it for the Subsystem
+TelegramSubsystem := F_EqualSisNames(Name1 := SubsystemRegistry.SubsystemName,
+                                     Name2 := mpERQ^.Position);
+
+// If a position was found
+IF TelegramPosition.eFunctionNumber > E_FunctionNumber.F_BEGIN_FUNCTION THEN
+   
+	M_ProcessToFunction(
+		meFunctionNumber	:= TelegramPosition.eFunctionNumber, 
+		mZoneNumber			:= TelegramPosition.ZoneNumber, 
+		meChannelSrc		:= meChannelSrc, 
+		mMsgType			:= E_ITC_MsgTypeConv.E_ERROR_REQUEST,
+		mpData				:= mpERQ, 
+		mLen				:= mLen);
+
+// If a element was found
+ELSIF TelegramElement > E_ElementNumber.E_BEGIN_ELEMENT THEN
+   
+	M_ProcessToElement(
+		meElementNumber	:= TelegramElement, 
+		meChannelSrc	:= meChannelSrc, 
+		mMsgType		:= E_ITC_MsgTypeConv.E_ERROR_REQUEST,
+		mpData			:= mpERQ, 
+		mLen			:= mLen);
+
+// If a group was found
+ELSIF TelegramGroup > E_GroupNumber.G_BEGIN_GROUP THEN
+   
+	M_ProcessToGroup(
+		meGroupNumber	:= TelegramGroup, 
+		meChannelSrc	:= meChannelSrc, 
+		mMsgType		:= E_ITC_MsgTypeConv.E_ERROR_REQUEST,
+		mpData			:= mpERQ, 
+		mLen			:= mLen);
+		
+// If it was for the Subsystem
+ELSIF TelegramSubsystem THEN
+   
+	M_ProcessToSubsystem(
+		meChannelSrc	:= meChannelSrc, 
+		mMsgType		:= E_ITC_MsgTypeConv.E_ERROR_REQUEST,
+		mpData			:= mpERQ, 
+		mLen			:= mLen);
+   
+ELSE
+	F_ITC_SendERR(
+		eChannelSrc	:= meChannelSrc, 
+		PositionName:= mpERQ^.Position, 
+		Code		:= mpERQ^.Code, 
+		eReturnCode	:= E_ErrorConv.WRONG_VALUE);
+		
+	// Unknown destination received 
+	DebugMsg := CONCAT('M_ProcessERQ, Unknown position in Telegram: ', mpERQ^.Position);
+	fbDebugMsg.M_SendErrorMsg(mMessage := DebugMsg);	
+END_IF
+
+
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_ProcessRTQ" Id="{6ce431e5-e296-4049-9ba5-46003e032fa6}">
+      <Declaration><![CDATA[METHOD PRIVATE M_ProcessRTQ : BOOL
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 404529 $
+ *	Revision date	:	$Date: 2018-04-23 08:21:38 +0200 (Mo., 23 Apr 2018) $
+ *	Last changed by	:	$Author: b7bolm $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/trunk/01_Software/BCF/BCF/JumpStart/20_Product/11_Emu/11_Com/10_Lib/10_Conv/11_ITC/FB_ITC_CoveyorEmulation.TcPOU $
+ *
+ *	Purpose			:	Add RTQ
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+VAR_INPUT
+	meChannelSrc		: E_MFCS_Channel; // Source communicaton channel
+	mpRTQ				: POINTER TO ST_ITC_RTQ; // Pointer to RTQ
+	mLen				: UDINT; // Data length
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+// Search position in registry
+TelegramPosition := F_SearchFunctionPosition(Position := mpRTQ^.Position);
+
+// If a position and zone was found
+IF TelegramPosition.eFunctionNumber > E_FunctionNumber.F_BEGIN_FUNCTION AND
+   TelegramPosition.ZoneNumber > 0 THEN
+   
+	// Prepare data
+	Data.ZoneNumber := TelegramPosition.ZoneNumber;
+	
+	M_ProcessToFunction(
+		meFunctionNumber := TelegramPosition.eFunctionNumber,
+		mZoneNumber 	 := TelegramPosition.ZoneNumber,
+		meChannelSrc	 := meChannelSrc,
+		mMsgType		 := E_ITC_MsgTypeConv.E_REMOVE_TU_REQUEST,
+		mpData			 := ADR(Data),
+		mLen		     := SIZEOF(Data));
+
+ELSE
+	// Position not valid
+	F_ITC_SendRTR(
+		eChannelSrc	:= meChannelSrc, 
+		PositionName:= mpRTQ^.Position, 
+		eReturnCode	:= E_ErrorConv.WRONG_VALUE);
+		
+	// Unknown destination received 
+	DebugMsg := CONCAT('M_ProcessRTQ, Unknown position in Telegram: ', mpRTQ^.Position);
+	fbDebugMsg.M_SendErrorMsg(mMessage := DebugMsg);	
+END_IF
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_ProcessToElement" Id="{140c9a62-fa1d-4ad9-bab9-1a1d21298c0f}">
+      <Declaration><![CDATA[METHOD PRIVATE M_ProcessToElement : BOOL
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 404529 $
+ *	Revision date	:	$Date: 2018-04-23 08:21:38 +0200 (Mo., 23 Apr 2018) $
+ *	Last changed by	:	$Author: b7bolm $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/trunk/01_Software/BCF/BCF/JumpStart/20_Product/11_Emu/11_Com/10_Lib/10_Conv/11_ITC/FB_ITC_CoveyorEmulation.TcPOU $
+ *
+ *	Purpose			:	ITC - Process message to element
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+VAR_INPUT
+	meElementNumber	: E_ElementNumber;
+	meChannelSrc	: E_MFCS_Channel; // Source communicaton channel
+	mMsgType		: INT; // msg type
+	mpData			: PVOID; // data pointer
+	mLen			: UDINT; // Data length
+END_VAR
+
+VAR
+	mrefObject		: REFERENCE TO FB_BaseObjectEmulation; // Reference
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[// Initialize
+M_ProcessToElement := TRUE;
+
+// Check if ElementNumber is valid
+IF meElementNumber > E_ElementNumber.E_BEGIN_ELEMENT AND 
+   meElementNumber < E_ElementNumber.E_END_ELEMENT THEN
+	// Set reference
+	mrefObject REF= ElementRegistryEmulation[meElementNumber].rElement;
+	
+	// Check if reference is valid
+	IF __ISVALIDREF(mrefObject) THEN
+			// Forward message to corresponding object
+		M_ProcessToElement := mrefObject.M_ITC_ProcessMsg(
+								meChannelSrc := meChannelSrc, 
+								mMsgType	 := mMsgType, 
+								mpData		 := mpData,
+								mLen	     := mLen); 
+	END_IF	
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_ProcessToFunction" Id="{cb659da3-f20e-408f-9257-46dddf75e657}">
+      <Declaration><![CDATA[METHOD PRIVATE M_ProcessToFunction : BOOL
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 404529 $
+ *	Revision date	:	$Date: 2018-04-23 08:21:38 +0200 (Mo., 23 Apr 2018) $
+ *	Last changed by	:	$Author: b7bolm $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/trunk/01_Software/BCF/BCF/JumpStart/20_Product/11_Emu/11_Com/10_Lib/10_Conv/11_ITC/FB_ITC_CoveyorEmulation.TcPOU $
+ *
+ *	Purpose			:	ITC - Process message to function
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+VAR_INPUT
+	meFunctionNumber	: E_FunctionNumber; // Function number
+	mZoneNumber			: INT; // Zone number
+	meChannelSrc		: E_MFCS_Channel; // Source communicaton channel
+	mMsgType		: INT; // msg type
+	mpData			: PVOID; // data pointer
+	mLen			: UDINT; // Data length
+END_VAR
+
+VAR
+	mrefObject			: REFERENCE TO FB_BaseObjectEmulation; // Reference
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[// Initialize
+M_ProcessToFunction := TRUE;
+
+// If a valid function was found with a valid zone
+IF 	meFunctionNumber > E_FunctionNumber.F_BEGIN_FUNCTION AND 
+	meFunctionNumber < E_FunctionNumber.F_END_FUNCTION AND 
+	mZoneNumber >= 0 AND mZoneNumber <= NUMBER_OF_ZONES_PER_FUNCTION THEN
+
+	// Set reference 
+	mrefObject REF= FunctionRegistryEmulation[meFunctionNumber].rFunction;
+	
+	// Check if reference is valid
+	IF __ISVALIDREF(mrefObject) THEN
+
+		// Call M_ITC_AddToBuffer
+		M_ProcessToFunction := mrefObject.M_ITC_ProcessMsg(
+								meChannelSrc := meChannelSrc, 
+								mMsgType	 := mMsgType, 
+								mpData		 := mpData,
+								mLen		 := mLen); 
+	END_IF
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_ProcessToGroup" Id="{7037c12c-c3b4-4359-9ec2-d08320d2b553}">
+      <Declaration><![CDATA[METHOD PRIVATE M_ProcessToGroup : BOOL
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 404529 $
+ *	Revision date	:	$Date: 2018-04-23 08:21:38 +0200 (Mo., 23 Apr 2018) $
+ *	Last changed by	:	$Author: b7bolm $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/trunk/01_Software/BCF/BCF/JumpStart/20_Product/11_Emu/11_Com/10_Lib/10_Conv/11_ITC/FB_ITC_CoveyorEmulation.TcPOU $
+ *
+ *	Purpose			:	ITC - Process message to group
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+VAR_INPUT
+	meGroupNumber		: E_GroupNumber; // Groupnumber
+	meChannelSrc		: E_MFCS_Channel; // Source communicaton channel
+	mMsgType		: INT; // msg type
+	mpData			: PVOID; // data pointer
+	mLen			: UDINT; // Data length
+END_VAR
+
+VAR
+	mrefObject			: REFERENCE TO FB_BaseObjectEmulation; // Reference
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[// Initialize
+M_ProcessToGroup := TRUE;
+
+// Check if GroupNumber is valid
+IF meGroupNumber > E_GroupNumber.G_BEGIN_GROUP AND 
+   meGroupNumber < E_GroupNumber.G_END_GROUP THEN
+	// Set reference
+	mrefObject REF= GroupRegistryEmulation[meGroupNumber].rGroup;
+	
+	// Check if reference is valid
+	IF __ISVALIDREF(mrefObject) THEN
+		
+		// Send ITC-message to a specified group
+		M_ProcessToGroup := mrefObject.M_ITC_ProcessMsg(
+								meChannelSrc := meChannelSrc, 
+								mMsgType	 := mMsgType, 
+								mpData		 := mpData,
+								mLen		 := mLen); 	
+	END_IF
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_ProcessToSubsystem" Id="{55f1ccbc-b9f5-4c16-9569-ab2f200c2bd6}">
+      <Declaration><![CDATA[METHOD PRIVATE M_ProcessToSubsystem : BOOL
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 404529 $
+ *	Revision date	:	$Date: 2018-04-23 08:21:38 +0200 (Mo., 23 Apr 2018) $
+ *	Last changed by	:	$Author: b7bolm $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/trunk/01_Software/BCF/BCF/JumpStart/20_Product/11_Emu/11_Com/10_Lib/10_Conv/11_ITC/FB_ITC_CoveyorEmulation.TcPOU $
+ *
+ *	Purpose			:	ITC - Process message to subsystem
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+VAR_INPUT
+	meChannelSrc		: E_MFCS_Channel; // Source communicaton channel
+	mMsgType		: INT; // msg type
+	mpData			: PVOID; // data pointer
+	mLen			: UDINT; // Data length
+END_VAR
+
+VAR
+	mrefObject			: REFERENCE TO FB_BaseObjectEmulation; // Reference
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[// Initialize
+M_ProcessToSubsystem := TRUE;
+
+// Set reference 
+mrefObject REF= SubsystemRegistryEmulation.rSubsystem;
+
+// Check if reference is valid
+IF __ISVALIDREF(mrefObject) THEN
+	// Call M_ITC_AddToBuffer
+	M_ProcessToSubsystem := mrefObject.M_ITC_ProcessMsg(
+								meChannelSrc := meChannelSrc, 
+								mMsgType	 := mMsgType, 
+								mpData		 := mpData,
+								mLen		 := mLen);
+END_IF
+
+]]></ST>
+      </Implementation>
+    </Method>
+    <ObjectProperties>
+      <XmlArchive>
+        <Data>
+          <o xml:space="preserve" t="UMLStereoTypeContainerObject">
+            <v n="IsType" t="UMLType">BaseArea</v>
+            <v n="Stereotype">""</v>
+            <d n="Stereotypes" t="Hashtable" />
+          </o>
+        </Data>
+        <TypeList>
+          <Type n="Hashtable">System.Collections.Hashtable</Type>
+          <Type n="String">System.String</Type>
+          <Type n="UMLStereoTypeContainerObject">{30250973-b110-4e31-b562-c102e042dca4}</Type>
+          <Type n="UMLType">{0197b136-405a-42ee-bb27-fd08b621d0cf}</Type>
+        </TypeList>
+      </XmlArchive>
+    </ObjectProperties>
+  </POU>
+</TcPlcObject>

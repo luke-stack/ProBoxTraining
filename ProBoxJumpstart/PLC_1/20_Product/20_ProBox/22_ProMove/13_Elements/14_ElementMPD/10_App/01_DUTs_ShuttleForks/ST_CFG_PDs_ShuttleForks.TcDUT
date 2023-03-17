@@ -1,0 +1,11 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <DUT Name="ST_CFG_PDs_ShuttleForks" Id="{8279568c-fa3f-4b10-aa7b-1f7fc059a6c7}">
+    <Declaration><![CDATA[//Configuration settings for Pickup and Deposit functions to the shuttle car / Vertical Conveyor
+TYPE ST_CFG_PDs_ShuttleForks EXTENDS ST_CFG_PDs:
+STRUCT	
+	ForkStroke		: INT; //Fork stroke distance [mm] relative value. (positive values only)
+END_STRUCT
+END_TYPE]]></Declaration>
+  </DUT>
+</TcPlcObject>

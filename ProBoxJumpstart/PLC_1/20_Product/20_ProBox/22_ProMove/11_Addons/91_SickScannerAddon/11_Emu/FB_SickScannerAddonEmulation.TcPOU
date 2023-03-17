@@ -1,0 +1,369 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <POU Name="FB_SickScannerAddonEmulation" Id="{4cc6451b-e87e-46a7-8894-c50caaf04a00}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK FB_SickScannerAddonEmulation EXTENDS FB_FunctionConvEmulation
+VAR_INPUT
+	Config							: ST_CFG_SickScannerEmulation;
+END_VAR
+VAR_OUTPUT
+END_VAR
+VAR
+	pFunction						: POINTER TO FB_SickScannerAddon; // Address to function
+	rFunction						: REFERENCE TO FB_SickScannerAddon; // Reference to function	
+		
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[(**************************************************************************************************************
+   Initialization
+***************************************************************************************************************)
+A_Init();
+
+
+(**************************************************************************************************************
+   Update reference
+***************************************************************************************************************)
+A_UpdateReference();
+
+(**************************************************************************************************************
+   Emulation
+***************************************************************************************************************)
+// If emulation function is initialized
+IF FunctionData.Init THEN
+
+	// Update data of real object
+	M_UpdateRealObjectData();
+		
+	// Overwrite inputs	
+	_M_OverWriteInputs();
+END_IF]]></ST>
+    </Implementation>
+    <Method Name="_M_CreateUniqeScannerCode" Id="{7f74fba9-37cf-4752-b786-2543b40f5a39}">
+      <Declaration><![CDATA[METHOD PRIVATE _M_CreateUniqeScannerCode : BOOL
+VAR_INPUT
+	ScannerEmuString				: REFERENCE TO STRING[32];
+	ConfigLabelLength				: INT; //the length of the label to create, config of  Real ScannerAddon
+END_VAR
+VAR
+	tmpStr							: STRING[32];
+END_VAR
+VAR_INST
+	ScannerCNT			:UINT; //uniqe scanner code counter
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+IF( NOT __ISVALIDREF( ScannerEmuString)) THEN RETURN; END_IF
+
+ScannerCNT:=ScannerCNT+1; //update counter so we get an uniqe code each time..
+tmpStr := UINT_TO_STRING(ScannerCNT);			
+IF(ConfigLabelLength<UINT_TO_INT(SIZEOF(ScannerEmuString))) THEN
+	MEMSET(ADR(ScannerEmuString),48(*0*),INT_TO_UDINT(ConfigLabelLength));			
+	MEMCPY(ADR(ScannerEmuString)+INT_TO_DWORD(ConfigLabelLength-LEN(tmpStr)),ADR(tmpStr),INT_TO_UINT(LEN(tmpStr)));
+	MEMSET(ADR(ScannerEmuString)+INT_TO_DWORD(ConfigLabelLength),0,1); //set Null
+	_M_CreateUniqeScannerCode:=TRUE;				
+END_IF		
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_GetFunctionEmuData" Id="{8cdb8195-2dc5-46ca-9144-ac408716b409}">
+      <Declaration><![CDATA[//Get the TU data index from the function that owns the Addon according to the function link of the addon.
+METHOD PRIVATE _M_GetFunctionEmuData : BOOL
+VAR_INPUT
+	ScannerEmuString		:REFERENCE TO STRING[32];	
+END_VAR
+VAR
+	EmuTuTableIx			: DINT;	//index of the emulation TU Table (ConveyorEmulation.TU_DataTableEmulation)	
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+IF __ISVALIDREF(FunctionRegistryEmulation[rFunction.ConfigFunction.FunctionLink.eFunctionNumber].rFunction) THEN
+	FunctionRegistryEmulation[rFunction.ConfigFunction.FunctionLink.eFunctionNumber].rFunction.M_GetTU_PresentState(rFunction.ConfigFunction.FunctionLink.ZoneNumber,100(*mm*),mTU_DataIndex=>EmuTuTableIx);
+		
+	IF(EmuTuTableIx>0) THEN
+		_M_GetFunctionEmuData:= TRUE;
+	END_IF
+	
+	IF(_M_GetFunctionEmuData AND __ISVALIDREF(ScannerEmuString)) THEN		
+		ScannerEmuString := ConveyorEmulation.TU_DataTableEmulation[DINT_TO_INT(EmuTuTableIx)].Label.ASCII;		
+	END_IF
+		
+END_IF	
+		
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_OverWriteInputs" Id="{a9c72b0c-ae10-447b-b719-1e8b9fc73021}">
+      <Declaration><![CDATA[METHOD PRIVATE _M_OverWriteInputs
+VAR_INPUT
+END_VAR
+
+VAR				
+	NrBytes							: INT;
+	ScannerEmuString				: STRING[32];
+	tmpStr							: STRING[32];
+	GoodRead						: BOOL:=TRUE;
+END_VAR
+
+VAR_INST	
+	HeartBeatTmr		:TON :=(PT:=T#1S);
+	EmuState			: INT;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_OverWriteInputs
+ * 	FUNCTION	Overwrite inputs scanner addon for emulation
+ *				Label field in the ATQ messages is used as scanner string.
+ *				If label field in ATQ message is empty, then an uniqe message is generated with the length based on the real scanner addon config settings. 
+ **************************************************************************************)
+
+//toggle heartbit every 1 second
+IF(HeartBeatTmr.Q) THEN
+	rFunction.HW_Inputs.ConfMessageIn[0].2 := NOT rFunction.HW_Inputs.ConfMessageIn[0].2;
+END_IF
+HeartBeatTmr(IN:=NOT HeartBeatTmr.Q);
+//Set Device Ready
+rFunction.HW_Inputs.ControlWordIn.0 := TRUE;
+
+// emulate scanner receive data
+rFunction.HW_Inputs.ConfMessageIn[2] := rFunction.HW_Outputs.ConfMessageOut[2];
+
+// emulate scanner send barcode
+CASE EmuState OF
+	0: //Idle
+		//If function has detected an trig, busy is active
+		IF(rFunction.CtrlOut.Busy)THEN
+			EmuState:=EmuState+1;
+		ELSE
+			//No trig active, reset values to default.
+			ScannerEmuString :='';
+			rFunction.HW_Inputs.ConfMessageIn[3] := 0; //Set number of bytes in message. (ie sring length)			
+			rFunction.HW_Inputs.ConfMessageIn[1] := 0; //Set number of frames (ReceiveCount)
+			rFunction.HW_Inputs.ControlWordIn.2 := FALSE; //Set Good Read to false							
+			MEMSET(ADR(rFunction.HW_Inputs.ConfMessageIn)+5,0,SIZEOF(rFunction.HW_Inputs.ConfMessageIn)-5); //clear barcode
+		END_IF
+	1:
+		//wait for Emulation data to be moved (handed over) from previous funciton
+		IF(_M_GetFunctionEmuData(0)) THEN
+			//Data valid, move to next state
+			EmuState:=EmuState+1;			
+		END_IF 
+	2:	
+		//Get ATQ label		
+		_M_GetFunctionEmuData(ScannerEmuString);
+		NrBytes := LEN(ScannerEmuString);				
+		
+		//Check if label passed by the ATQ command is equal to 'CREATECODE' -> create an unqe label with perfect length 
+		IF(ScannerEmuString = 'CREATECODE') THEN
+			IF(_M_CreateUniqeScannerCode(ScannerEmuString,UINT_TO_INT(Config.CreateLabelLength))) THEN			
+				NrBytes := LEN(ScannerEmuString);
+			END_IF
+		END_IF
+		
+		//Check if label passed by the ATQ command is equal to empty -> send 'NoRead'
+		IF(NrBytes<=0) THEN			
+			ScannerEmuString:='NoRead';
+			NrBytes := LEN(ScannerEmuString);		
+			GoodRead := FALSE;						
+		END_IF
+		//Set number of bytes in message. (ie sring length)
+		rFunction.HW_Inputs.ConfMessageIn[3] := INT_TO_BYTE(NrBytes);
+		//Set number of frames (ReceiveCount)
+		rFunction.HW_Inputs.ConfMessageIn[1] := 1;
+		//copy scanner string to confMessage staring from index 5
+		MemCpy(ADR(rFunction.HW_Inputs.ConfMessageIn[5]),ADR(ScannerEmuString),INT_TO_UDINT(NrBytes));
+		
+		//Set Good Read
+		rFunction.HW_Inputs.ControlWordIn.2 := GoodRead;
+		
+		EmuState:=EmuState+1;	
+	3:
+		IF( NOT rFunction.CtrlOut.Busy) THEN
+			EmuState:=EmuState+1;
+		END_IF
+		
+	4:
+		//Done
+		EmuState:=0;
+		
+		
+END_CASE
+ 
+
+
+
+
+]]></ST>
+      </Implementation>
+    </Method>
+    <Action Name="A_Init" Id="{d36bbdbd-8344-42c8-bea7-3e0ceefc09de}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_Init
+ * 	FUNCTION	Initialize emulated dummy function
+ **************************************************************************************)
+
+// If dummy function is not initialized
+IF NOT FunctionData.Init Then
+	// Check that linked dummy function number is valid
+	IF eFunctionNumber > E_FunctionNumber.F_BEGIN_FUNCTION AND
+	   eFunctionNumber < E_FunctionNumber.F_END_FUNCTION THEN   
+		
+		// Check if the real module is initialized
+		IF F_IsFunctionInitialized(eFunctionNumber := eFunctionNumber) THEN
+			// Module is initialized
+			FunctionData.Init:= TRUE;
+			
+			// Send debug message
+			DebugMsg := CONCAT('Initialization done. Element Function: ', FunctionRegistry[eFunctionNumber].FunctionName);
+			fbDebugMsg.M_SendInfoMsg(DebugMsg);
+			
+			// Initialize real module
+			F_InitializeFunction(eFunctionNumber := eFunctionNumber);
+		END_IF
+	END_IF
+END_IF
+]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="A_UpdateReference" Id="{95458fe2-1475-4dd2-87a9-9c3700eed92b}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_UpdateReference
+ * 	FUNCTION	Update reference to real object
+ **************************************************************************************)
+
+// Check valid function number
+IF eFunctionNumber > E_FunctionNumber.F_BEGIN_FUNCTION AND
+   eFunctionNumber < E_FunctionNumber.F_END_FUNCTION THEN
+
+	// Is reference valid  
+	IF __ISVALIDREF(FunctionRegistry[eFunctionNumber].rFunction) THEN
+		// Build address to reference
+		pFunction := ADR(FunctionRegistry[eFunctionNumber].rFunction);
+
+		// If address is possible
+		IF pFunction <> 0 THEN
+			// Build reference to memory
+			rFunction REF= pFunction^;
+		ELSE
+			// Reinitialize module
+			FunctionData.Init:= FALSE;
+		END_IF
+	ELSE
+		// Reinitialize module
+		FunctionData.Init:= FALSE;
+	END_IF
+END_IF
+		]]></ST>
+      </Implementation>
+    </Action>
+    <LineIds Name="FB_SickScannerAddonEmulation">
+      <LineId Id="20" Count="18" />
+      <LineId Id="43" Count="0" />
+      <LineId Id="45" Count="1" />
+      <LineId Id="9" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_SickScannerAddonEmulation._M_CreateUniqeScannerCode">
+      <LineId Id="24" Count="0" />
+      <LineId Id="23" Count="0" />
+      <LineId Id="22" Count="0" />
+      <LineId Id="9" Count="1" />
+      <LineId Id="12" Count="3" />
+      <LineId Id="21" Count="0" />
+      <LineId Id="16" Count="0" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_SickScannerAddonEmulation._M_GetFunctionEmuData">
+      <LineId Id="14" Count="1" />
+      <LineId Id="67" Count="0" />
+      <LineId Id="78" Count="0" />
+      <LineId Id="82" Count="0" />
+      <LineId Id="81" Count="0" />
+      <LineId Id="84" Count="0" />
+      <LineId Id="83" Count="0" />
+      <LineId Id="77" Count="0" />
+      <LineId Id="90" Count="0" />
+      <LineId Id="80" Count="0" />
+      <LineId Id="76" Count="0" />
+      <LineId Id="42" Count="0" />
+      <LineId Id="36" Count="1" />
+    </LineIds>
+    <LineIds Name="FB_SickScannerAddonEmulation._M_OverWriteInputs">
+      <LineId Id="7" Count="2" />
+      <LineId Id="373" Count="1" />
+      <LineId Id="10" Count="0" />
+      <LineId Id="151" Count="0" />
+      <LineId Id="150" Count="0" />
+      <LineId Id="281" Count="0" />
+      <LineId Id="149" Count="0" />
+      <LineId Id="282" Count="2" />
+      <LineId Id="159" Count="0" />
+      <LineId Id="481" Count="0" />
+      <LineId Id="285" Count="0" />
+      <LineId Id="483" Count="0" />
+      <LineId Id="482" Count="0" />
+      <LineId Id="288" Count="0" />
+      <LineId Id="286" Count="0" />
+      <LineId Id="290" Count="0" />
+      <LineId Id="375" Count="0" />
+      <LineId Id="292" Count="1" />
+      <LineId Id="397" Count="0" />
+      <LineId Id="399" Count="0" />
+      <LineId Id="414" Count="0" />
+      <LineId Id="400" Count="0" />
+      <LineId Id="404" Count="0" />
+      <LineId Id="413" Count="0" />
+      <LineId Id="415" Count="0" />
+      <LineId Id="294" Count="0" />
+      <LineId Id="434" Count="1" />
+      <LineId Id="437" Count="0" />
+      <LineId Id="439" Count="0" />
+      <LineId Id="436" Count="0" />
+      <LineId Id="438" Count="0" />
+      <LineId Id="295" Count="0" />
+      <LineId Id="299" Count="0" />
+      <LineId Id="425" Count="0" />
+      <LineId Id="428" Count="0" />
+      <LineId Id="312" Count="0" />
+      <LineId Id="461" Count="0" />
+      <LineId Id="455" Count="0" />
+      <LineId Id="458" Count="1" />
+      <LineId Id="457" Count="0" />
+      <LineId Id="460" Count="0" />
+      <LineId Id="313" Count="0" />
+      <LineId Id="462" Count="0" />
+      <LineId Id="456" Count="0" />
+      <LineId Id="464" Count="0" />
+      <LineId Id="463" Count="0" />
+      <LineId Id="465" Count="0" />
+      <LineId Id="328" Count="4" />
+      <LineId Id="336" Count="0" />
+      <LineId Id="430" Count="0" />
+      <LineId Id="337" Count="1" />
+      <LineId Id="298" Count="0" />
+      <LineId Id="339" Count="1" />
+      <LineId Id="342" Count="0" />
+      <LineId Id="363" Count="3" />
+      <LineId Id="345" Count="0" />
+      <LineId Id="348" Count="0" />
+      <LineId Id="346" Count="1" />
+      <LineId Id="296" Count="0" />
+      <LineId Id="291" Count="0" />
+      <LineId Id="181" Count="0" />
+      <LineId Id="184" Count="0" />
+      <LineId Id="156" Count="0" />
+      <LineId Id="176" Count="0" />
+      <LineId Id="179" Count="0" />
+      <LineId Id="24" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_SickScannerAddonEmulation.A_Init">
+      <LineId Id="2" Count="24" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_SickScannerAddonEmulation.A_UpdateReference">
+      <LineId Id="2" Count="26" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

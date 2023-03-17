@@ -1,0 +1,12 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <DUT Name="ST_InputsInOutFeed" Id="{b36b2c4f-5582-408b-b2f4-0a40c1e28b3e}">
+    <Declaration><![CDATA[TYPE ST_InputsInOutFeed :
+STRUCT	
+	HW		: ST_HW_InputsInOutFeed;
+	Ctrl	: ST_CtrlInInOutFeed;
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

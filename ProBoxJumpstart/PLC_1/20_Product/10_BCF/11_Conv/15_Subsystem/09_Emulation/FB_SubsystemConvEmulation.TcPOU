@@ -1,0 +1,184 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.12">
+  <POU Name="FB_SubsystemConvEmulation" Id="{53d95db6-ce43-4d66-93f3-9e7cbf5aa108}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK FB_SubsystemConvEmulation EXTENDS FB_BaseObjectEmulation
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 404529 $
+ *	Revision date	:	$Date: 2018-04-23 08:21:38 +0200 (Mo., 23 Apr 2018) $
+ *	Last changed by	:	$Author: b7bolm $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/trunk/01_Software/BCF/BCF/JumpStart/20_Product/11_Emu/15_Subsystem/10_Lib/10_Conv/FB_SubsystemConvEmulation.TcPOU $
+ *
+ *	Purpose			:	Base subsystem - Emulation.
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+VAR
+	SubsystemBase					: ST_SubsystemBaseEmulation;
+END_VAR
+
+VAR PERSISTENT
+	SubsystemData					: ST_SubsystemDataEmulation; // Subsystem data emulation
+END_VAR
+
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[]]></ST>
+    </Implementation>
+    <Method Name="M_ITC_ERQ" Id="{8fb9adcf-19f3-4203-b4d1-e631a8ce2d71}">
+      <Declaration><![CDATA[METHOD PRIVATE M_ITC_ERQ : BOOL
+VAR_INPUT
+	meChannelSrc		: E_MFCS_CHANNEL; // Number of the source 
+	mpData				: PVOID; // Data  pointer 
+	mLen				: UDINT; // Data length
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[// Map data
+F_BlockCopy(
+	pSrc:= mpData, 
+	LenSrc:= mLen, 
+	pDest:= ADR(SubsystemBase.ERQ), 
+	LenDest:= SIZEOF(SubsystemBase.ERQ));		
+
+// Send "Error" request
+SubsystemData.ITC.Commands.Error := SubsystemBase.ERQ.Code = 0;
+SubsystemData.ITC.Commands.ErrorCode := SubsystemBase.ERQ.ErrorCode;
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_ITC_ProcessMsg" Id="{7cafee3f-803a-48b2-8ede-30b0e63a8959}">
+      <Declaration><![CDATA[METHOD M_ITC_ProcessMsg : BOOL
+VAR_INPUT
+	meChannelSrc		: E_MFCS_CHANNEL; // Number of the source 
+	mMsgType			: INT; // Message type
+	mpData				: PVOID; // Data  pointer 
+	mLen				: UDINT; // Data length
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+// Initialize
+M_ITC_ProcessMsg := TRUE;
+
+// Validate inputs
+IF mpData > 0 AND
+   mLen > 0 THEN
+	// Map enum
+	SubsystemBase.eITC_MsgType := mMsgType;
+	
+	// Validate message type
+	CASE SubsystemBase.eITC_MsgType OF
+
+		(*******************************************************************************
+		  No Message
+		********************************************************************************)
+		E_ITC_MsgTypeConv.NO_MESSAGE_TYPE:
+			// Empty message received
+			DebugMsg := 'Empty ITC message received.';
+			fbDebugMsg.M_SendErrorMsg(DebugMsg);
+			
+		(*******************************************************************************
+		  Modify error 
+		********************************************************************************)
+		E_ITC_MsgTypeConv.E_ERROR_REQUEST:
+			M_ITC_ERQ(meChannelSrc := meChannelSrc, mpData := mpData, mLen := mLen);
+
+	ELSE
+		// Unknown ITC message type received
+		DebugMsg := CONCAT('Subsystem emulation unknown ITC Message type: ', INT_TO_STRING(SubsystemBase.eITC_MsgType));
+		fbDebugMsg.M_SendErrorMsg(DebugMsg);
+	END_CASE
+
+END_IF
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_UpdateRealObjectData" Id="{cda9468e-90a2-466a-a85f-8cbe82cf7798}">
+      <Declaration><![CDATA[METHOD M_UpdateRealObjectData
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 404529 $
+ *	Revision date	:	$Date: 2018-04-23 08:21:38 +0200 (Mo., 23 Apr 2018) $
+ *	Last changed by	:	$Author: b7bolm $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/trunk/01_Software/BCF/BCF/JumpStart/20_Product/11_Emu/15_Subsystem/10_Lib/10_Conv/FB_SubsystemConvEmulation.TcPOU $
+ *
+ *	Purpose			:	This methode gets always the current values of the real object
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+IF __ISVALIDREF(SubsystemRegistry.rSubsystemData) THEN
+	SubsystemBase.rSubsystemDataReal REF= SubsystemRegistry.rSubsystemData;
+ELSE
+	SubsystemBase.rSubsystemDataReal REF= SubsystemBase.SubsystemDataEmpty;
+END_IF
+
+IF __ISVALIDREF(SubsystemRegistry.rSubsystemInterface) THEN
+	SubsystemBase.rSubsystemInterfaceReal REF= SubsystemRegistry.rSubsystemInterface;
+ELSE
+	SubsystemBase.rSubsystemInterfaceReal REF= SubsystemBase.SubsystemInterfaceEmpty;
+END_IF
+
+IF __ISVALIDREF(SubsystemRegistry.rSettingsSubsystem) THEN
+	SubsystemBase.rSettingsSubsystemReal REF= SubsystemRegistry.rSettingsSubsystem;
+ELSE
+	SubsystemBase.rSettingsSubsystemReal REF= SubsystemBase.SettingsSubsystemEmpty;
+END_IF
+]]></ST>
+      </Implementation>
+    </Method>
+    <ObjectProperties>
+      <XmlArchive>
+        <Data>
+          <o xml:space="preserve" t="UMLStereoTypeContainerObject">
+            <v n="IsType" t="UMLType">BaseArea</v>
+            <v n="Stereotype">""</v>
+            <d n="Stereotypes" t="Hashtable" />
+          </o>
+        </Data>
+        <TypeList>
+          <Type n="Hashtable">System.Collections.Hashtable</Type>
+          <Type n="String">System.String</Type>
+          <Type n="UMLStereoTypeContainerObject">{30250973-b110-4e31-b562-c102e042dca4}</Type>
+          <Type n="UMLType">{0197b136-405a-42ee-bb27-fd08b621d0cf}</Type>
+        </TypeList>
+      </XmlArchive>
+    </ObjectProperties>
+    <LineIds Name="FB_SubsystemConvEmulation">
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_SubsystemConvEmulation.M_ITC_ERQ">
+      <LineId Id="3" Count="9" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_SubsystemConvEmulation.M_ITC_ProcessMsg">
+      <LineId Id="3" Count="33" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_SubsystemConvEmulation.M_UpdateRealObjectData">
+      <LineId Id="3" Count="17" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

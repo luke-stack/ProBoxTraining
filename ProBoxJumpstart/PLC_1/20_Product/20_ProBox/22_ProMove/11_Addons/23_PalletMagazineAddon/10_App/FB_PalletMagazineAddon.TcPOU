@@ -1,0 +1,338 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <POU Name="FB_PalletMagazineAddon" Id="{14de4483-8d36-42e8-9dd6-a846fbcbefe2}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK FB_PalletMagazineAddon EXTENDS FB_LSPM_Base
+VAR_INPUT
+	Config						: ST_CFG_PalletMagazine; // Configuration
+	HW_Inputs					: ST_HW_InputsPalletMagazine; // Hardware inputs
+	CtrlIn						: ST_CtrlInPalletmagazine;
+END_VAR
+
+VAR_OUTPUT	
+	HW_Outputs					: ST_HW_OutputsPalletMagazine; // Hardware outputs
+	CtrlOut						: ST_LSPM_CtrlOut;
+END_VAR
+
+VAR
+	Inputs						: ST_InputsPalletMagazine; // Function specific inputs
+	Outputs						: ST_OutputsPalletMagazine; // Function specific outputs	
+END_VAR
+
+VAR PERSISTENT
+	Settings					: ST_CFG_PalletMagazine; // Settings - activated configuration 
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[(**************************************************************************************************************
+   Input mapping
+***************************************************************************************************************)
+A_InputMapping();
+
+(**************************************************************************************************************
+   Initialization
+***************************************************************************************************************)
+A_Init();
+
+(**************************************************************************************************************
+  BCF State control
+***************************************************************************************************************)
+A_StateControl();
+
+(**************************************************************************************************************
+   Error handler
+***************************************************************************************************************)
+A_ErrorHandler();
+fbAddOnErrHandler(AddOnSettingsFunction :=SettingsFunction, AddOnFunctionData:=FunctionData);
+
+(**************************************************************************************************************
+   Process AddOns
+***************************************************************************************************************)
+M_ProcessAddOns();
+
+(**********************************************************************************************************
+   Pallet stacker sequence
+***********************************************************************************************************)
+_M_PM_Ctrl();
+(**************************************************************************************************************
+   Interface handler out
+***************************************************************************************************************)
+M_ITC_ProcessOut();
+
+(**************************************************************************************************************
+   Output mapping
+***************************************************************************************************************)
+A_OutputMapping();		]]></ST>
+    </Implementation>
+    <Method Name="_M_FlapControl" Id="{c6f21bf3-51c9-4109-91e3-5356a9f95c0a}">
+      <Declaration><![CDATA[METHOD PROTECTED _M_FlapControl : BOOL
+VAR_INPUT
+	
+END_VAR
+
+VAR_OUTPUT
+	ActulalForkPos			: E_LSPM_ForkPos;	
+	SolenoidForks			: BOOL; // driver to the electrical magnet that holds the flaps in upright position
+	ForksReady				: BOOL;					// Both forks enable transport
+END_VAR
+
+VAR_INST
+	MyForkPos				: E_LSPM_ForkPos;
+	MySolenoidForkState		: BOOL;
+END_VAR
+VAR
+	
+
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+	//simulate sensor at home positoin during init
+	//IF(LS_BaseFunction.States.eState = E_LS_States.INIT AND LS_BaseFunction.OrderPosFork = E_LS_ForkPosition.E_UNKNOWN) THEN
+	IF( BaseFunctionData.States.eState = E_LSPM_States.RESET_FORKS) THEN
+		BaseFunctionData.OrderPosFork := E_LSPM_ForkPos.E_IN;
+		BaseFunctionData.OrderPosLift := E_LSPM_LiftPos.E_LOWER;
+	END_IF
+	
+	//Fork control
+	ForksReady := FALSE;
+	//simulate forks, whait one cycle before setting forks ready.
+	IF(BaseFunctionData.OrderPosFork = MyForkPos) THEN		
+		ForksReady := BaseFunctionData.OrderPosFork <> E_LSPM_ForkPos.E_UNKNOWN;
+	END_IF
+	MyForkPos := BaseFunctionData.OrderPosFork;
+	
+		
+	//Solenoid control
+	IF(BaseFunctionData.OrderPosFork = E_LSPM_ForkPos.E_OUT) THEN
+		MySolenoidForkState := FALSE;
+	ELSIF(BaseFunctionData.OrderPosFork = E_LSPM_ForkPos.E_IN AND BaseFunctionData.OrderPosLift = E_LSPM_LiftPos.E_LOWER) THEN
+		MySolenoidForkState := TRUE;
+	END_IF
+	
+	//Set output
+	ActulalForkPos := MyForkPos;
+	SolenoidForks := MySolenoidForkState;
+
+	]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_PM_Ctrl" Id="{9125dc45-f09f-4f6a-bb4f-7b3f20b0498e}">
+      <Declaration><![CDATA[METHOD PRIVATE _M_PM_Ctrl : BOOL
+VAR_INPUT
+END_VAR
+VAR
+	DummyManual					: ST_LSPM_Inp_ManualControl;	// Dummy manual input structure, only needed since base class requires such		
+	DummyLiftEncoderConfig		: ST_LSPM_LiftEncPos;		// Dummy Encoder configuration, only needed since base class requires such
+	LiftType					: E_LSPM_LiftType;				// Set the actual method to determine the positioning, either encoder or inductive sensors.
+	LoadstackerType				: E_LSPM_MachineType;  			// PalletLoadstacker, Sub palletizer, Pallet magazine	
+		
+	ActualLiftPos				: E_LSPM_LiftPos;
+	ActulalForkPos				: E_LSPM_ForkPos;
+		
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+	//convert Pallet magazine input to LS input
+ 	DummyManual.SwitchManualAuto := TRUE; //base class running in Auto mode 	
+	LiftType 					:= E_LSPM_LiftType.E_INDUCTIVE_SENSORS;
+	LoadstackerType				:= E_LSPM_MachineType.E_PALLET_MAGAZINE;
+
+ 	
+
+	
+
+//Reset errors on load stacker all datasets 1-8
+_M_ResetErrors();
+
+// Request to reset loadstacker state machine
+_M_ResetSequence(Inputs.OpResetSequence);
+	
+//check errors
+_M_CheckErrors(
+	HW_Lift_Input			:= Inputs.Lift, 
+	HW_Manual_Input			:= DummyManual, 
+	HW_LS_Element			:= Inputs.Element, 
+	SettingsLiftType		:= LiftType,
+	SettingsMachineType		:= LoadstackerType,
+	SettingsLiftEncoder		:= DummyLiftEncoderConfig, 
+	SettingsIdleStacking	:= FALSE, 
+	SequenceTimeout			:= Settings.TimeoutValueSeq); 
+
+	
+//Fork-Flaps control
+_M_FlapControl(
+	ActulalForkPos			=> ActulalForkPos,
+	SolenoidForks			=> Outputs.SolenoidForks,
+	ForksReady				=> BaseFunctionData.ForksReady);
+	
+//Lift control
+_M_LiftControl(
+	EnableDrive				:= BaseFunctionData.ForksReady, 
+	LiftEncoderType			:= FALSE, 
+	HW_Lift_Input			:= Inputs.Lift, 
+	HW_Manual_Input			:= DummyManual,	 
+	TimeoutLift				:= Settings.TimeoutValueLift, 
+	LiftEncoderPositions		:= DummyLiftEncoderConfig, 
+	HW_Lift_Output			=> Outputs.Lift,	
+	LiftPos					=> ActualLiftPos,
+	LiftReady				=> BaseFunctionData.LiftReady);
+	
+// Loadstacker state machine
+_M_StateControl(
+	LiftPos					:= ActualLiftPos, 
+	ForkPos					:= ActulalForkPos,
+	EnableTransport			:= TRUE, 
+	UserMode				:= Inputs.CtrlIn.Mode,	
+	SensorOccupied			:= Inputs.Element.SensorOccupied,
+	SensorMagazineFull		:= Inputs.Element.SensorMagazineFull, 
+	LoadstackerAutomode		:= TRUE, //True = Auto
+	SettingsMachineType		:= LoadstackerType,	 
+	SettingsIdleStacking	:= Settings.IdleStacking, 
+	SettingsIdleDeslacking	:= FALSE);
+
+// Set TU data on pallets
+_M_TU_Data_Control(
+	LoadstackerType			:= LoadstackerType, 
+	DestinationFunction		:= Inputs.CtrlIn.DestinationFunction,
+	DestinationZone			:= Inputs.CtrlIn.DestinationZone,
+	DeleteAssignmentData	:= Inputs.CtrlIn.DeleteAssignmentData,
+	TU_Type					:= Inputs.CtrlIn.TU_Type);
+]]></ST>
+      </Implementation>
+    </Method>
+    <Action Name="A_Init" Id="{295da121-3a59-4670-a35f-b98bc150b3f1}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_Init
+ * 	FUNCTION	Initialize function
+ **************************************************************************************)
+ 
+ IF NOT FunctionData.Init AND FunctionData.InitRunning  THEN
+	 // Load function specific configuration to settings
+	Settings := Config;	
+ END_IF
+ 
+SUPER^.A_Init();]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="A_InputMapping" Id="{93f815aa-c4aa-4cca-90d3-4e63b1737c4a}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_InputMapping
+ * 	FUNCTION	Input mapping
+ **************************************************************************************)
+ 
+(**************************************************************************************
+   Hardware Inputs
+***************************************************************************************)
+// Adapt input logic state high/low
+Inputs.Lift.SensorEndlimitDown				:= HW_Inputs.SensorEndlimitDown;
+Inputs.Lift.SensorEndlimitUp				:= HW_Inputs.SensorEndlimitUp;
+Inputs.Lift.SensorPosDown					:= HW_Inputs.SensorPosDown;
+Inputs.Lift.SensorPosDownCS					:= HW_Inputs.SensorPosDown;
+Inputs.Lift.SensorPosMiddleDown				:= HW_Inputs.SensorPosMiddle;
+Inputs.Lift.SensorPosMiddleUp				:= HW_Inputs.SensorPosMiddle;
+Inputs.Lift.SensorPosUp						:= HW_Inputs.SensorPosUp;
+Inputs.Element.SensorMagazineFull			:= HW_Inputs.SensorFull;
+Inputs.Element.SignalMotorUnitOK			:= HW_Inputs.SignalMotorUnitOK;
+Inputs.Element.SensorOccupied				:= HW_Inputs.SensorOccupied;
+
+Inputs.OpResetSequence						:= NOT HW_Inputs.SignalMotorUnitOK; //reset sequence by setting pallet magazine compact starter to manual mode
+
+// User control input mapping
+Inputs.CtrlIn								:= CtrlIn;
+
+
+//run base class inputmapping
+SUPER^.A_InputMapping();]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="A_OutputMapping" Id="{9f485eed-0ef8-409c-91d8-339356f64dfa}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_OutputMapping
+ * 	FUNCTION	Output mapping
+ **************************************************************************************)
+ 
+(**************************************************************************************
+   Hardware outputs
+***************************************************************************************)
+HW_Outputs.LiftDown											:= Outputs.Lift.LiftDown;
+HW_Outputs.LiftUp											:= Outputs.Lift.LiftUp;
+HW_Outputs.SolenoidForks									:= Outputs.SolenoidForks;
+		
+(**************************************************************************************
+   Order outputs (Commands to corresponding element)
+***************************************************************************************)
+MEMSET(ADR(FunctionInterface.Out.FunctionOrders),0,SIZEOF(ST_FunctionOrders));
+FunctionInterface.Out.FunctionOrders.Enable 				:= FunctionData.ErrorData.Error.ErrorType <> E_ErrorType.ERROR;
+
+  
+(**************************************************************************************
+   AddOn outputs
+***************************************************************************************)
+FunctionInterface.Out.AddOnOrders.Enable 					:= FunctionData.ErrorData.Error.ErrorType <> E_ErrorType.ERROR;
+FunctionInterface.Out.AddOnOrders.EnableHandover 			:= BaseFunctionData.EnableHandover;
+FunctionInterface.Out.AddOnOrders.EnableTakeover 			:= BaseFunctionData.EnableTakeover;
+
+
+(**************************************************************************************
+   Status outputs
+***************************************************************************************)
+CtrlOut.StatusReady											:= BaseFunctionData.CtrlOut.StatusReady;
+CtrlOut.PalletLifted										:= BaseFunctionData.CtrlOut.PalletLifted;
+CtrlOut.MagazineFull										:= BaseFunctionData.CtrlOut.MagazineFull;
+CtrlOut.TransportEnabled											:= BaseFunctionData.States.eState = E_LSPM_States.DESTACKING_PALLET_OUT OR 
+															   BaseFunctionData.States.eState = E_LSPM_States.STACKING_PALLET_IN;
+
+
+
+//Inhibit stopping when lift or forks running
+THIS^.InhibitStopping :=  FunctionData.ErrorData.Error.ErrorType <> E_ErrorType.ERROR AND (NOT BaseFunctionData.ForksReady OR NOT BaseFunctionData.LiftReady);]]></ST>
+      </Implementation>
+    </Action>
+    <LineIds Name="FB_PalletMagazineAddon">
+      <LineId Id="119" Count="37" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_PalletMagazineAddon._M_FlapControl">
+      <LineId Id="160" Count="27" />
+      <LineId Id="29" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_PalletMagazineAddon._M_PM_Ctrl">
+      <LineId Id="554" Count="54" />
+      <LineId Id="644" Count="0" />
+      <LineId Id="609" Count="1" />
+      <LineId Id="625" Count="5" />
+      <LineId Id="658" Count="0" />
+      <LineId Id="611" Count="0" />
+      <LineId Id="60" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_PalletMagazineAddon.A_Init">
+      <LineId Id="231" Count="3" />
+      <LineId Id="225" Count="0" />
+      <LineId Id="235" Count="0" />
+      <LineId Id="226" Count="1" />
+      <LineId Id="229" Count="1" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_PalletMagazineAddon.A_InputMapping">
+      <LineId Id="2" Count="7" />
+      <LineId Id="38" Count="9" />
+      <LineId Id="18" Count="0" />
+      <LineId Id="52" Count="0" />
+      <LineId Id="51" Count="0" />
+      <LineId Id="50" Count="0" />
+      <LineId Id="49" Count="0" />
+      <LineId Id="48" Count="0" />
+      <LineId Id="19" Count="0" />
+      <LineId Id="25" Count="0" />
+      <LineId Id="37" Count="0" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_PalletMagazineAddon.A_OutputMapping">
+      <LineId Id="122" Count="38" />
+      <LineId Id="45" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

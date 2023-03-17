@@ -1,0 +1,26 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.12">
+  <DUT Name="ST_ABBDriveCtrlWord" Id="{6b17670e-6613-4330-8ed1-10ae227633c1}">
+    <Declaration><![CDATA[TYPE ST_ABBDriveCtrlWord :
+STRUCT
+	Off_1				: BIT;
+	Off_2				: BIT := TRUE; 
+	Off_3				: BIT := TRUE; 
+	Run					: BIT; 
+	RampOutZero			: BIT := TRUE;
+	RampHold			: BIT := TRUE; 
+	RampInZero			: BIT := TRUE; 
+	Reset				: BIT; 
+	Jogg_1				: BIT;
+	Jogg_2				: BIT;	
+	RemoteCMD			: BIT := TRUE;
+	ExtCTLR_Ext_2		: BIT;
+	Spare_1				: BIT;
+	Spare_2				: BIT;	
+	Spare_3				: BIT;
+	Spare_4				: BIT;	
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

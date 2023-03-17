@@ -1,0 +1,56 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <POU Name="F_ConfigGroup" Id="{02f41455-6941-42ca-b0b8-b285ac25d55f}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION F_ConfigGroup
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[
+
+(********************************* Group 001 *************************************
+ Switching Group 001 
+**********************************************************************************)
+
+fbSG_001.ConfigGroup.GroupName           			:= '10-001-0000-00-0'; 
+fbSG_001.ConfigGroup.eGroupNumber         			:= E_GroupNumber.G_SG_001; 
+fbSG_001.ConfigGroup.eGroupType                    := E_GroupType.SG;
+
+fbSG_001.Config.NumberOfContactors                 := 8;
+fbSG_001.Config.NumberOfAPs						:= 0;
+fbSG_001.Config.AutoResetEmergencyCircuit          := FALSE;
+fbSG_001.Config.ResetMemberElements                := TRUE;
+fbSG_001.Config.tForcedStopDelay					:= T#30S;
+fbSG_001.Config.tStartupDelay						:= T#5S;
+fbSG_001.Config.tResetPulse                        := T#10ms;
+fbSG_001.Config.FireAlarmUsed                      := TRUE;
+
+GroupRegistry[E_GroupNumber.G_SG_001].Enable		:= TRUE;
+GroupRegistry[E_GroupNumber.G_SG_001].eGroupNumber	:= fbSG_001.ConfigGroup.eGroupNumber;
+
+(********************************* Group 002 *************************************
+ Switching Group 002 
+**********************************************************************************)
+
+fbSG_002.ConfigGroup.GroupName           			:= '10-002-0000-00-0'; 
+fbSG_002.ConfigGroup.eGroupNumber         			:= E_GroupNumber.G_SG_002; 
+fbSG_002.ConfigGroup.eGroupType                    := E_GroupType.SG;
+
+fbSG_002.Config.NumberOfContactors                 := 8;
+fbSG_002.Config.NumberOfAPs						:= 0;
+fbSG_002.Config.AutoResetEmergencyCircuit          := FALSE;
+fbSG_002.Config.ResetMemberElements                := TRUE;
+fbSG_002.Config.tForcedStopDelay					:= T#30S;
+fbSG_002.Config.tStartupDelay						:= T#5S;
+fbSG_002.Config.tResetPulse                        := T#10ms;
+fbSG_002.Config.FireAlarmUsed                      := TRUE;
+
+GroupRegistry[E_GroupNumber.G_SG_002].Enable		:= TRUE;
+GroupRegistry[E_GroupNumber.G_SG_002].eGroupNumber	:= fbSG_002.ConfigGroup.eGroupNumber;
+
+]]></ST>
+    </Implementation>
+    <LineIds Name="F_ConfigGroup">
+      <LineId Id="3" Count="41" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

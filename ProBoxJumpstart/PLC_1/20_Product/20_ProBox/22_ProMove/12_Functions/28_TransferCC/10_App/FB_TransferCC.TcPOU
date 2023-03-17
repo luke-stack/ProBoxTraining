@@ -1,0 +1,563 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <POU Name="FB_TransferCC" Id="{437a48fb-27dd-4c45-a473-4da630f04842}" SpecialFunc="None">
+    <Declaration><![CDATA[(**************************************************************************************
+ * 	Application		:	ProBox
+ *	Revision		:	$$
+ *	Revision date	:	$$
+ *	Last changed by	:	$$
+ *	URL				:	$$
+ *
+ *	Purpose			:	Transfer CC.
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ * 
+ **************************************************************************************)
+FUNCTION_BLOCK FB_TransferCC EXTENDS FB_StraightBase;
+
+VAR_INPUT
+	Config					: ST_CFG_TransferCC; // Configuration
+	HW_Inputs		 		: ST_HW_InputsTransferCC; // Hardware inputs
+END_VAR
+
+VAR_OUTPUT
+	Outputs					: ST_OutputsTransferCC; // Function specific outputs
+	HW_Outputs				: ST_HW_OutputsTransferCC; // Hardware outputs
+END_VAR
+
+VAR
+	Inputs					: ST_InputsTransferCC; // Function specific inputs
+	Idx						: INT; // Iterator
+	ZoneIdx					: INT; // Iterator
+	AllZonesStopped         : BOOL;
+	fbTransportControl 		: FB_ProBoxTransportControl; // Transport control for each zone
+END_VAR
+
+VAR PERSISTENT
+	Settings				: ST_CFG_TransferCC; // Settings - activated configuration 	
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[
+(**************************************************************************************************************
+   Input mapping
+***************************************************************************************************************)
+A_InputMapping();
+
+(**************************************************************************************************************
+   Initialization
+***************************************************************************************************************)
+A_Init();
+
+(**************************************************************************************************************
+   External Subsystem transport interface
+***************************************************************************************************************)
+M_ExternalSTI();
+
+(**************************************************************************************************************
+   State control
+***************************************************************************************************************)
+A_StateControl();
+
+(**************************************************************************************************************
+   Error handler
+***************************************************************************************************************)
+A_ErrorHandler();
+
+(**************************************************************************************************************
+   Process AddOns
+***************************************************************************************************************)
+M_ProcessAddOns();
+
+(**************************************************************************************************************
+   Manual control
+***************************************************************************************************************)
+M_ManualControl();
+
+(**********************************************************************************************************
+   Break Control Roller conveyor
+***********************************************************************************************************)
+_M_BreakControl();
+
+(**********************************************************************************************************
+   Sideshift control
+***********************************************************************************************************)
+_M_Sideshift_Control();
+	
+(**********************************************************************************************************
+   Transport control
+***********************************************************************************************************)
+_M_TransportControl();
+
+(**********************************************************************************************************
+   Assign transport data
+***********************************************************************************************************)
+_M_TransportLink();
+
+(**************************************************************************************************************
+   Interface handler out
+***************************************************************************************************************)
+M_ITC_ProcessOut();
+
+(**************************************************************************************************************
+   Output mapping
+***************************************************************************************************************)
+A_OutputMapping();
+]]></ST>
+    </Implementation>
+    <Method Name="_M_BreakControl" Id="{d2c0f57e-24c5-4ec6-8234-a9f68fd1ef6e}">
+      <Declaration><![CDATA[METHOD PRIVATE _M_BreakControl : BOOL
+VAR_INPUT
+END_VAR
+VAR_INST
+	fbBreakTimer			: TOF;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+//Break timer
+				
+IF BaseFunctionData.ZoneOrders[1].Drive_Run OR BaseFunctionData.ZoneOrders[1].Drive_RunRev THEN
+	fbBreakTimer.IN := TRUE;
+ELSE
+	fbBreakTimer.IN := FALSE;
+END_IF
+	
+fbBreakTimer(PT:= Settings.ReleaseBreakTime); // SideShift Break Time
+Outputs.Break := fbBreakTimer.Q; // Release SideShift Break]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_Sideshift_Control" Id="{c3a87663-221e-4623-9f20-460d68609f71}">
+      <Declaration><![CDATA[METHOD PRIVATE _M_Sideshift_Control : BOOL
+VAR_INPUT
+END_VAR
+
+VAR
+	//Temporary variables
+	PreviousZoneData		: ST_ZoneData;
+	ZoneLogicalOccupied		: BOOL;
+END_VAR
+VAR_INST
+	fbTransferMotorControl			: FB_HorizontalControl; // Motor control
+	fbProBoxMotorControlTransfer	: FB_ProBoxMotorControl; // Motor control
+	
+	OrderPos						: E_Positions_HorizontalControl; // Order position
+	HomePos							: E_Positions_HorizontalControl; // Home position
+	MotorDirection					: E_ProBoxMotorDirection; // Assigned motor direction
+	MotorSpeed						: E_ProBoxMotorSpeed; // Assigned motor speed
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[// Graphic view of conveyor - How to configure eAdjacentFunctionNumberSide in Configuration
+
+//		--------   I CHAIN I  --------		
+//		 SIDE 1	   I LEFT  I   SIDE 2	
+//		--------   I SIDE  I  --------
+//				  ----------- 
+//				   SIDESHIFT 
+//				  -----------
+//		--------   I CHAIN I  --------		
+//		 SIDE 3	   I RIGHT I   SIDE 4
+//		--------   I SIDE  I  --------
+
+
+
+IF ZoneData[1].TransportControlData.eHandOverState = E_HandOverState.ACTIVE AND 
+	Outputs.ActualPos = E_Positions_HorizontalControl.UNDEFINED THEN
+		F_SetError(
+			ErrorType 	:= E_ErrorType.ERROR,
+			ErrorParam 	:= 'Transfer not in position during handover',
+			ErrorMsg 	:= E_ErrorConv.INCORRECT_SENSOR_SIGNAL,
+			ErrorData 	:= ZoneData[1].ErrorData.ErrorDataSet[1]); 		
+END_IF
+			
+IF ZoneData[1].TransportControlData.eTakeOverState = E_TakeOverState.ACTIVE AND 
+	Outputs.ActualPos = E_Positions_HorizontalControl.UNDEFINED THEN
+		F_SetError(
+			ErrorType 	:= E_ErrorType.ERROR,
+			ErrorParam 	:= 'Transfer not in position during takeover',
+			ErrorMsg 	:= E_ErrorConv.INCORRECT_SENSOR_SIGNAL,
+			ErrorData 	:= ZoneData[1].ErrorData.ErrorDataSet[1]); 	
+END_IF
+
+//Set an error if an error occur in handover so we prevent turning
+PreviousZoneData := F_GetZoneData(FunctionInterface.In.ePrevFunctionNumber,F_GetNumberOfZones(FunctionInterface.In.ePrevFunctionNumber));
+
+IF PreviousZoneData.TransportControlData.eTransportState = E_TransportState.HANDOVER AND
+	PreviousZoneData.ErrorData.ErrorState = E_ErrorState.ERROR THEN
+		F_SetError(
+			ErrorType 	:= E_ErrorType.ERROR,
+			ErrorParam 	:= 'Handover conv error prevent Transfer movement',
+			ErrorMsg 	:= E_ErrorConv.TRANSFER_ERROR,
+			ErrorData 	:= ZoneData[1].ErrorData.ErrorDataSet[1]); 	
+END_IF
+	
+
+(**********************************************************************************************************
+   Sideshift control
+***********************************************************************************************************)
+// Initialize variables
+OrderPos := E_Positions_HorizontalControl.UNDEFINED; 
+HomePos := E_Positions_HorizontalControl.UNDEFINED; 
+
+ZoneLogicalOccupied := F_PB_IsLogicalOccupied(ZoneData[1].TransportControlData);
+
+// When zone is free
+IF( NOT ZoneLogicalOccupied) THEN
+	// If previous function is avaiable
+	IF FunctionInterface.In.ePrevFunctionNumber <> E_FunctionNumber.F_BEGIN_FUNCTION THEN
+		// If previous function is on side 1 or 2 "Left Position"
+		IF FunctionInterface.In.ePrevFunctionNumber = SettingsFunction.eAdjacentFunctionNumberSide[1] OR 
+			FunctionInterface.In.ePrevFunctionNumber = SettingsFunction.eAdjacentFunctionNumberSide[2] THEN
+			OrderPos := E_Positions_HorizontalControl.LEFT;
+		// If previous function is on side 3 or 4 "Right Position"
+		ELSIF FunctionInterface.In.ePrevFunctionNumber = SettingsFunction.eAdjacentFunctionNumberSide[3] OR
+			FunctionInterface.In.ePrevFunctionNumber = SettingsFunction.eAdjacentFunctionNumberSide[4] THEN
+			OrderPos := E_Positions_HorizontalControl.RIGHT;
+		END_IF 	
+	ELSE
+		// Set homeposition
+		HomePos := Settings.HomePosFree;	
+	END_IF			
+// When zone is occupied
+ELSE (* if ZoneLogicalOccupied*)
+	// If next function is avaiable
+	IF FunctionInterface.In.eNextFunctionNumber <> E_FunctionNumber.F_BEGIN_FUNCTION THEN
+		// If next function is on side 1 or 2 "Left Position"
+		IF FunctionInterface.In.eNextFunctionNumber = SettingsFunction.eAdjacentFunctionNumberSide[1] OR
+			FunctionInterface.In.eNextFunctionNumber = SettingsFunction.eAdjacentFunctionNumberSide[2] THEN
+			OrderPos := E_Positions_HorizontalControl.LEFT;
+
+		// If next function is on side 3 or 4 "Right Position"
+		ELSIF FunctionInterface.In.eNextFunctionNumber = SettingsFunction.eAdjacentFunctionNumberSide[3] OR
+			FunctionInterface.In.eNextFunctionNumber = SettingsFunction.eAdjacentFunctionNumberSide[4] THEN
+			OrderPos := E_Positions_HorizontalControl.RIGHT;
+		END_IF
+	ELSE
+		// Set homeposition
+		HomePos := Settings.HomePosOccupied;
+	END_IF		
+END_IF
+ 
+
+fbTransferMotorControl(
+	Zonedata := ZoneData[1],
+	FunctionData:= FunctionData, // Function data  
+	Sensor_Pos_Left:= Inputs.Sensor_Pos_Left, // Sensor position
+	Sensor_Creep_Left:= Inputs.Sensor_Creep_Left, 
+	Sensor_EndLimit_Left:= Inputs.Sensor_EndLimit_Left, 
+	Sensor_Pos_Right:= Inputs.Sensor_Pos_Right, 
+	Sensor_Creep_Right:= Inputs.Sensor_Creep_Right, 
+	Sensor_EndLimit_Right:= Inputs.Sensor_EndLimit_Right, 
+	Sensor_Overhang_12:= Inputs.Sensor_Overhang_12, 
+	Sensor_Overhang_21:= Inputs.Sensor_Overhang_21, 
+	TimeoutValueTransfer:= Settings.TimeoutValueMotor, 
+	OrderPos:= OrderPos, 
+	HomePos:= HomePos,
+	ErrorData:= ZoneData[1].ErrorData.ErrorDataSet[2],
+	EnableTransport => Outputs.SideShiftEnableTransport,
+	ActualPosition => Outputs.ActualPos);
+
+
+(**********************************************************************************************************
+   Motor control side shift
+***********************************************************************************************************)			  
+
+// Assign motor direction
+IF fbTransferMotorControl.Drive_Run_Left THEN
+	MotorDirection := E_ProBoxMotorDirection.MOTOR_REVERSE;
+ELSIF fbTransferMotorControl.Drive_Run_Right THEN
+	MotorDirection := E_ProBoxMotorDirection.MOTOR_FORWARD;
+END_IF;
+
+// Assign motor speed
+IF fbTransferMotorControl.Drive_CS THEN
+	MotorSpeed := E_ProBoxMotorSpeed.CREEP_SPEED;
+ELSE
+	MotorSpeed := E_ProBoxMotorSpeed.NORMAL;		
+END_IF
+
+fbProBoxMotorControlTransfer(
+				Run 			:= fbTransferMotorControl.Drive_Run_Left OR fbTransferMotorControl.Drive_Run_Right,
+				MotorSpeed 		:= MotorSpeed, 
+				MotorDirection 	:= MotorDirection,
+				MotorStarterOK 	:= Inputs.Signal_MotorUnitOK,
+				ErrorData 		:= ZoneData[1].ErrorData.ErrorDataSet[3],
+				Reverse			=> Outputs.TransferCC_Reverse,
+				Forward			=> Outputs.TransferCC_Forward,
+				CreepSpeed		=> outputs.TransferCC_Creep);
+				
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_TransportControl" Id="{3be38577-966c-4329-8151-c4b0d3058f3b}">
+      <Declaration><![CDATA[METHOD PRIVATE _M_TransportControl : BOOL
+VAR	
+	StopSensorOccupied		: BOOL;	// Assigned occupied sensor	last
+	CreepSensor				: BOOL; // Creep sensor
+	ZoneOccupied			: BOOL; // Zone physical occupied
+	DisableTransport		: BOOL;
+	CtrlInputPbTc			: ST_CtrlInPbTc; //Control input for Probox transportControl
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+// Check direction of the conveyor
+SettingsFunction.FlowDirectionREV := _M_DefineTransportDirection(FunctionData.ErrorData.ErrorDataSet[2]);
+
+
+// Assign sensor occpupied
+_M_Check_HW_SensorInput(
+					Sensor_Stop_12		:= Inputs.Sensor_Stop_12, 
+					Sensor_Stop_21		:= Inputs.Sensor_Stop_21, 
+					Sensor_Slug_12		:= FALSE, 
+					Sensor_Slug_21		:= FALSE,
+					Sensor_Creep_12		:= Inputs.Sensor_Creep_12,
+					Sensor_Creep_21		:= Inputs.Sensor_Creep_21, 
+					FlowDirectionREV	:= SettingsFunction.FlowDirectionREV, 
+					HasSluggingSensor	:= FALSE,
+					ExtRunSynteticSensor:= FALSE, 
+					StopSensorOccupied	=> StopSensorOccupied,					
+					CreepSensor			=> CreepSensor);
+
+
+//Disable transport
+DisableTransport := NOT Outputs.SideShiftEnableTransport OR Outputs.ActualPos = E_Positions_HorizontalControl.UNDEFINED;	
+
+// call Straight transport method of base class
+CtrlInputPbTc.EnableSlugging 	:= FALSE;
+CtrlInputPbTc.SlugSensor		:= FALSE;
+CtrlInputPbTc.SlugSensorExists	:= FALSE;
+CtrlInputPbTc.StopSensor		:= StopSensorOccupied;
+		
+M_StraightTransport(
+				fbTransportControl		:=fbTransportControl,
+				ZoneIx					:= 1, 
+				ExtDisableTakeover		:= DisableTransport, 
+				ExtDisableHandover		:= DisableTransport, 
+				ExtDisableTransport		:= DisableTransport, 
+				CtrlInputPbTc			:= CtrlInputPbTc,
+				CreepHwSensor			:= CreepSensor, 
+				Orientation_Axis		:= E_Axis_Orientation.Element_12);
+
+]]></ST>
+      </Implementation>
+    </Method>
+    <Action Name="A_Init" Id="{60bef6d9-5b83-468f-8d71-2cb8c925579d}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_Init
+ * 	FUNCTION	Initialize function
+ **************************************************************************************)
+ 
+// Update Registry
+M_UpdateRegistry();
+ 
+
+// Init ongoing - Wait until init is released (Sequencial startup)
+IF NOT FunctionData.Init AND FunctionData.InitRunning THEN
+	// When the subsystem is started, 
+	// When its released to initialize
+	IF FunctionData.OperationState.Info.SystemReady AND
+	   SettingsFunction.eFunctionNumber < FunctionData.OperationState.InitRelease.eLimitFunctionNumber THEN
+	   
+	   IF M_InitFunction(FALSE) THEN
+			// Function initialized - and initialization done
+			FunctionData.Init := TRUE;
+			FunctionData.InitRunning := FALSE;
+			
+			// Set reset cmd
+			FunctionData.ErrorData.Error.ResetError := TRUE;
+			
+			DebugMsg := CONCAT('Initialization done. Function: ', ConfigFunction.FunctionName);
+			fbDebugMsg.M_SendInfoMsg(DebugMsg);
+		END_IF
+	END_IF
+(*
+If the function is not initialized,
+clean all values and wait until init is released
+*)
+ELSIF NOT FunctionData.Init THEN
+	// Reset internal variables
+	FunctionData.OperationState := FunctionBase.PositionStateEmpty;
+
+	// Initiate initialization of all zones
+	FOR ZoneIdx := 1 TO SettingsFunction.NumberOfZones DO
+		ZoneData[ZoneIdx].Init := FALSE;
+	END_FOR;
+	
+	// Load function specific configuration to settings
+	Settings := Config;
+	
+	// Reset values and load config
+	M_PreInit();
+	
+	// To start init a valid functionnumber and element link is needed
+	FunctionData.InitRunning := SettingsFunction.eFunctionNumber > 0 AND
+								SettingsFunction.eElementLink > 0;
+																
+END_IF
+
+// Init zones
+IF FunctionData.Init THEN
+	// Set init flag after one cycle
+	FOR ZoneIdx := 1 TO SettingsFunction.NumberOfZones DO
+		// If a zone is not initialized, wait one cycle to finish init
+		IF NOT ZoneData[ZoneIdx].Init THEN
+			IF ZoneData[ZoneIdx].InitRunning THEN
+				ZoneData[ZoneIdx].InitRunning := FALSE;
+				ZoneData[ZoneIdx].Init := TRUE;
+				ZoneData[ZoneIdx].ErrorData.Error.ResetError := TRUE;
+			ELSE	
+				ZoneData[ZoneIdx].InitRunning := TRUE;
+			END_IF
+		END_IF
+	END_FOR;
+END_IF]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="A_InputMapping" Id="{f56b6b0b-23f2-4ad2-a8be-82422c677438}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_InputMapping
+ * 	FUNCTION	Input mapping
+ **************************************************************************************)
+ 
+(**************************************************************************************
+   Hardware Inputs
+***************************************************************************************)
+// Adapt input logic state high/low
+// Since no feeddback singnal from the drive is available the HW output signal for the drive is used at fbTransportControl instead.
+Inputs.Sensor_Stop_12			:= Settings.HW_InputInverted.Sensor_Stop_12 XOR HW_Inputs.Sensor_Stop_12;			
+Inputs.Sensor_Slow_12			:= Settings.HW_InputInverted.Sensor_Slow_12 XOR HW_Inputs.Sensor_Slow_12;			
+Inputs.Sensor_Creep_12			:= Settings.HW_InputInverted.Sensor_Creep_12 XOR HW_Inputs.Sensor_Creep_12;	
+Inputs.Sensor_Overhang_12		:= Settings.HW_InputInverted.Sensor_Overhang_12 XOR HW_Inputs.Sensor_Overhang_12;		
+Inputs.Sensor_Stop_21			:= Settings.HW_InputInverted.Sensor_Stop_21 XOR HW_Inputs.Sensor_Stop_21;
+Inputs.Sensor_Slow_21			:= Settings.HW_InputInverted.Sensor_Slow_21 XOR HW_Inputs.Sensor_Slow_21;
+Inputs.Sensor_Creep_21			:= Settings.HW_InputInverted.Sensor_Creep_21 XOR HW_Inputs.Sensor_Creep_21;
+Inputs.Sensor_Overhang_21		:= Settings.HW_InputInverted.Sensor_Overhang_21 XOR HW_Inputs.Sensor_Overhang_21;
+Inputs.Sensor_Pos_Left			:= Settings.HW_InputInverted.Sensor_Pos_Left XOR HW_Inputs.Sensor_Pos_Left;
+Inputs.Sensor_Creep_Left		:= Settings.HW_InputInverted.Sensor_Creep_Left XOR HW_Inputs.Sensor_Creep_Left;
+Inputs.Sensor_EndLimit_Left		:= Settings.HW_InputInverted.Sensor_EndLimit_Left XOR HW_Inputs.Sensor_EndLimit_Left;
+Inputs.Sensor_Pos_Right			:= Settings.HW_InputInverted.Sensor_Pos_Right XOR HW_Inputs.Sensor_Pos_Right;
+Inputs.Sensor_Creep_Right		:= Settings.HW_InputInverted.Sensor_Creep_Right XOR HW_Inputs.Sensor_Creep_Right;
+Inputs.Sensor_EndLimit_Right	:= Settings.HW_InputInverted.Sensor_EndLimit_Right XOR HW_Inputs.Sensor_EndLimit_Right;
+Inputs.Signal_MotorUnitOK		:= Settings.HW_InputInverted.Signal_MotorUnitOK XOR HW_Inputs.Signal_MotorUnitOK;
+
+
+(**************************************************************************************
+   Element states
+***************************************************************************************)
+// Get status of the corresponding element
+M_GetElementStates(); 
+
+(**************************************************************************************
+   AddOn states
+***************************************************************************************)
+// Get status of all corresponding AddOn functions and store it in FunctionInterface.In.AddOnOrder
+M_GetAddOnOrder();
+
+]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="A_OutputMapping" Id="{988fa383-4c2a-4a0b-94c1-bfa9618773e8}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_OutputMapping
+ * 	FUNCTION	Output mapping
+ **************************************************************************************)
+ 
+(**************************************************************************************
+   Hardware outputs
+***************************************************************************************)
+HW_Outputs.Drive_Run_Left 		:= Outputs.TransferCC_Reverse;
+HW_Outputs.Drive_Run_Right 		:= Outputs.TransferCC_Forward;
+HW_Outputs.Drive_Creep		 	:= Outputs.TransferCC_Creep;
+HW_Outputs.Break		 		:= Outputs.Break;
+(**************************************************************************************
+   Order outputs (Commands to corresponding element)
+***************************************************************************************)
+THIS^.M_OutputMapping(E_Axis_Orientation.Element_12,Ext_Disable:= Outputs.ActualPos = E_Positions_HorizontalControl.UNDEFINED);
+
+
+(**************************************************************************************
+   AddOn outputs
+***************************************************************************************)
+// This function provide no AddOn functionality
+
+
+// ---------------------------------------------------
+//Inhibit stopping for the function when ExtendedRun is driving
+THIS^.InhibitStopping := HW_Outputs.Drive_Run_Left 	OR HW_Outputs.Drive_Run_Right;]]></ST>
+      </Implementation>
+    </Action>
+    <LineIds Name="FB_TransferCC">
+      <LineId Id="2474" Count="34" />
+      <LineId Id="3240" Count="0" />
+      <LineId Id="3242" Count="1" />
+      <LineId Id="3239" Count="0" />
+      <LineId Id="3244" Count="0" />
+      <LineId Id="2509" Count="0" />
+      <LineId Id="3251" Count="1" />
+      <LineId Id="2538" Count="0" />
+      <LineId Id="3253" Count="0" />
+      <LineId Id="2543" Count="3" />
+      <LineId Id="2558" Count="0" />
+      <LineId Id="3291" Count="3" />
+      <LineId Id="2786" Count="0" />
+      <LineId Id="3295" Count="0" />
+      <LineId Id="2787" Count="8" />
+      <LineId Id="834" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_TransferCC._M_BreakControl">
+      <LineId Id="8" Count="1" />
+      <LineId Id="17" Count="0" />
+      <LineId Id="10" Count="6" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_TransferCC._M_Sideshift_Control">
+      <LineId Id="6" Count="9" />
+      <LineId Id="5" Count="0" />
+      <LineId Id="17" Count="95" />
+      <LineId Id="140" Count="0" />
+      <LineId Id="113" Count="26" />
+      <LineId Id="155" Count="2" />
+      <LineId Id="152" Count="0" />
+      <LineId Id="154" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_TransferCC._M_TransportControl">
+      <LineId Id="72" Count="0" />
+      <LineId Id="7" Count="15" />
+      <LineId Id="24" Count="0" />
+      <LineId Id="95" Count="1" />
+      <LineId Id="25" Count="0" />
+      <LineId Id="97" Count="0" />
+      <LineId Id="26" Count="1" />
+      <LineId Id="106" Count="2" />
+      <LineId Id="35" Count="2" />
+      <LineId Id="69" Count="0" />
+      <LineId Id="38" Count="4" />
+      <LineId Id="44" Count="1" />
+      <LineId Id="48" Count="0" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_TransferCC.A_Init">
+      <LineId Id="2" Count="67" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_TransferCC.A_InputMapping">
+      <LineId Id="2" Count="24" />
+      <LineId Id="28" Count="13" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_TransferCC.A_OutputMapping">
+      <LineId Id="2" Count="9" />
+      <LineId Id="13" Count="4" />
+      <LineId Id="53" Count="0" />
+      <LineId Id="43" Count="5" />
+      <LineId Id="54" Count="3" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

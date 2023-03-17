@@ -1,0 +1,126 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.4">
+  <POU Name="FB_SluggingAddOnEmulation" Id="{54d63a56-3d4b-4664-9ec1-c2b25e2608ba}" SpecialFunc="None">
+    <Declaration><![CDATA[/// emulates slugging and deslugging
+FUNCTION_BLOCK PUBLIC FB_SluggingAddOnEmulation EXTENDS FB_FunctionConvEmulation
+(**************************************************************************************
+ *  Application     :   BoxControl Framework
+ *  Revision date   :   $Date: 2021-04-09 08:29:02 +0200 (fre, 09 apr 2021) $
+ *  Author          :   CDC
+ * ------------------------------------------------------------------------------------
+ *  © Swisslog AG
+ *  Swisslog is not liable for any usage of this source code that is not agreed 
+ *  on between Swisslog and the other party. The mandatory legal liability remains 
+ *  unaffected.
+ * ------------------------------------------------------------------------------------
+ *  Revision History: 
+ *
+ *  VERSION DATE         INITIALS     DESCRIPTION
+ *  0.0     DD.MM.YYYY   (name)       (explain customized modifications)
+ *
+ **************************************************************************************)
+VAR_STAT CONSTANT
+END_VAR
+
+VAR
+	pFunction		: POINTER   TO FB_SluggingAddOn; // Address to function
+	rFunction		: REFERENCE TO FB_SluggingAddOn; // Reference to function
+
+	DirectionTexts	: ARRAY[0..2] OF STRING[15] := ['None_Disabled', 'Forward', 'Reverse'];  // Beckhoff Flick: cant be constant
+
+	Loop	: ULINT;
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[Loop:= Loop + 1;
+
+(**************************************************************************************************************
+   Initialization
+***************************************************************************************************************)
+A_Init();
+
+(**************************************************************************************************************
+   Update reference
+***************************************************************************************************************)
+A_UpdateReference();
+
+
+]]></ST>
+    </Implementation>
+    <Action Name="A_Init" Id="{43c3743a-a6ae-41bd-b4f2-3d252b266009}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_Init
+ * 	FUNCTION	Initialize emulated dummy function
+ **************************************************************************************)
+
+// If dummy function is not initialized
+IF NOT FunctionData.Init Then
+
+	// Check that linked dummy function number is valid
+	IF eFunctionNumber > E_FunctionNumber.F_BEGIN_FUNCTION AND
+	   eFunctionNumber < E_FunctionNumber.F_END_FUNCTION THEN   
+		
+		// Check if the real module is initialized
+		IF F_IsFunctionInitialized(eFunctionNumber) THEN
+			// Module is initialized
+			FunctionData.Init:= TRUE;
+			
+			// Send debug message
+			DebugMsg := CONCAT('Initialization done. Element Function: ', FunctionRegistry[eFunctionNumber].FunctionName);
+			fbDebugMsg.M_SendInfoMsg(DebugMsg);
+			
+			// Initialize real module
+			F_InitializeFunction(eFunctionNumber := eFunctionNumber);
+		END_IF
+	END_IF
+END_IF
+]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="A_UpdateReference" Id="{3d974704-fef0-42b4-a8fb-673ddbeeeac4}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_UpdateReference
+ * 	FUNCTION	Update reference to real object
+ **************************************************************************************)
+
+// Check valid function number
+IF eFunctionNumber > E_FunctionNumber.F_BEGIN_FUNCTION AND
+   eFunctionNumber < E_FunctionNumber.F_END_FUNCTION THEN
+
+	// Is reference valid  
+	IF __ISVALIDREF(FunctionRegistry[eFunctionNumber].rFunction) THEN
+		// Build address to reference
+		pFunction := ADR(FunctionRegistry[eFunctionNumber].rFunction);
+
+		// If address is possible
+		IF pFunction <> 0 THEN
+			// Build reference to memory
+			rFunction REF= pFunction^;
+		ELSE
+			// Reinitialize module
+			FunctionData.Init:= FALSE;
+		END_IF
+	ELSE
+		// Reinitialize module
+		FunctionData.Init:= FALSE;
+	END_IF
+END_IF
+		]]></ST>
+      </Implementation>
+    </Action>
+    <LineIds Name="FB_SluggingAddOnEmulation">
+      <LineId Id="3" Count="12" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_SluggingAddOnEmulation.A_Init">
+      <LineId Id="2" Count="25" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_SluggingAddOnEmulation.A_UpdateReference">
+      <LineId Id="2" Count="26" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

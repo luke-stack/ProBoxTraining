@@ -1,0 +1,63 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.12">
+  <POU Name="FB_FunctionComposition" Id="{ff5e5f09-92cb-4b9d-9385-29c4335852b9}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK FB_FunctionComposition
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 404529 $
+ *	Revision date	:	$Date: 2018-04-23 08:21:38 +0200 (Mo., 23 Apr 2018) $
+ *	Last changed by	:	$Author: b7bolm $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/trunk/01_Software/BCF/BCF/JumpStart/20_Product/10_App/10_Base/10_Lib/10_Conv/FB_FunctionComposition.TcPOU $
+ *
+ *	Purpose			:	Function call.
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+VAR
+	eFunctionNumber		: E_FunctionNumber; // Number of the function 
+	fbDebugMsg			: FB_DebugMsg; // Debug Msg Manager (STACK) 
+	DebugMsg			: T_MAXSTRING; // Debug msg
+	StartTimeMeasurement: T_DCTIME64;	// Get actual time stamp
+END_VAR]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[(**************************************************************************************************************
+  Call all emulation functions
+***************************************************************************************************************)
+
+// Loop trough all functions 
+FOR eFunctionNumber := E_FunctionNumber.F_BEGIN_FUNCTION + 1 TO E_FunctionNumber.F_END_FUNCTION - 1 DO
+	// If this function is enabled 
+	IF FunctionRegistry[eFunctionNumber].Enable THEN
+		// If a valid reference is available 
+		IF __ISVALIDREF(FunctionRegistry[eFunctionNumber].rFunction) THEN
+			// Start execution time measure
+			StartTimeMeasurement := F_GetActualDcTime64();
+			// Call
+			FunctionRegistry[eFunctionNumber].rFunction();
+			
+			F_ExecutionTime(
+				StartTime			:= StartTimeMeasurement,
+				ExecutionTimeSlot 	:= ExecutionTimeTable.Functions[eFunctionNumber]);
+		ELSE		
+			// Invalid reference
+			DebugMsg := CONCAT('F_FunctionComposition - Reference not valid, Function index: ', INT_TO_STRING(eFunctionNumber));
+			fbDebugMsg.M_SendErrorMsg(mMessage := DebugMsg);
+		END_IF
+	END_IF
+END_FOR]]></ST>
+    </Implementation>
+    <LineIds Name="FB_FunctionComposition">
+      <LineId Id="3" Count="23" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

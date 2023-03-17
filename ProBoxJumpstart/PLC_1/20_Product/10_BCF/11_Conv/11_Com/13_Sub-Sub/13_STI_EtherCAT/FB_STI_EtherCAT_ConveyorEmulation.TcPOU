@@ -1,0 +1,677 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.18">
+  <POU Name="FB_STI_EtherCAT_ConveyorEmulation" Id="{85b5f755-87bd-4e2f-ab6a-d3c99f8df69a}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK FB_STI_EtherCAT_ConveyorEmulation IMPLEMENTS ITF_SubsystemTransportEmulation
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 355211 $
+ *	Revision date	:	$Date: 2015-09-22 11:14:21 +0200 (Tue, 22 Sep 2015) $
+ *	Last changed by	:	$Author: d7mangc $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/trunk/01_Software/BoxControlFramework/BoxControlFramework/JumpStart/11_Library/10_Application/11_Communication/12_MFCS/11_SIS/10_Base/FB_SIS_BaseDriver.TcPOU $
+ *
+ *	Purpose			:	Subsystem transport interface over EtherCAT: Conveyor emulation
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+VAR_INPUT
+	Config						: ST_CFG_STI_ConveyorEmulation; // Config
+	rSTI_EtherCAT_ConveyorReal	: REFERENCE TO FB_STI_EtherCAT_Conveyor;
+END_VAR
+VAR
+	Init						: BOOL; // Initialize
+	fbDebugMsg					: FB_DebugMsg; // Debug instance
+	fbTCP_Driver				: FB_TCP_Driver;
+	
+	fbWatchdogTimer				: TON; // Monitors watchdog signal
+	fbReinitConnection			: TON; // Timer connection retry
+	fbResend					: TON; // Timer for resending last message
+	fbHeartBeatTimer			: TON; // Timer for generating heart beat of watchdog
+	RecvByte					: ARRAY[1..97] OF BYTE; // Receive as bytes (alignment)
+	SendByte					: ARRAY[1..97] OF BYTE; // Send as bytes (alignment)
+	RecvData					: ST_STI_EtherCAT_ConveyorDataEmulation; // Incoming conveyor data
+	SendData					: ST_STI_EtherCAT_ConveyorDataEmulation; // Outgoing conveyor data
+	LastSendData				: ST_STI_EtherCAT_ConveyorDataEmulation; // Outgoing conveyor data
+	
+	TU_Index					: DINT; // TU Index
+	ExternalTU_DataIndex		: DINT; // Index created based on external TU info
+	RecvCounter					: USINT; // Counts received messages
+	SendCounter					: USINT; // Counts send messages
+	AdjTransportData			: ST_TransportDataEmulation; // Transport data of adjacent function
+	TransportControlData		: ST_TransportControlDataEmulation;
+	TransportData				: ST_TransportDataEmulation;
+
+	LastHandoverTU_DataIndex	: DINT;
+	rTransportData				: REFERENCE TO ST_TransportData;
+	TU_DataAllocated			: BOOL; // Flag, TU-data was allocated
+	TU_DataMoved				: BOOL; // Flag, TU-data was moved
+	FlagWatchdog				: BOOL; // Flag, to save last watchdog state
+	tHeartBeat					: TIME; // Time for generating watchdog heart beat
+END_VAR
+VAR PERSISTENT
+	Settings					: ST_CFG_STI_ConveyorEmulation;
+END_VAR]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[(**************************************************************************************************************
+   Body never called!
+***************************************************************************************************************)
+;]]></ST>
+    </Implementation>
+    <Action Name="A_AllocateDataIndex" Id="{bf9320d6-109b-4b19-9ab5-3c2006e48051}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_AllocateDataIndex
+ * 	FUNCTION	Allocate a data index
+ **************************************************************************************)
+
+ (**************************************************************************************
+   Delete old
+***************************************************************************************)
+// If an old index is still available
+IF ExternalTU_DataIndex <> 0 THEN
+	// Nobody took the index - clear it!
+	MEMSET(ADR(TU_DataTableEmulation[ExternalTU_DataIndex]) , 0, SIZEOF(TU_DataTableEmulation[ExternalTU_DataIndex]));
+	fbDebugMsg.M_SendWarningMsg(mMessage := 'Index unused - Cleared!');
+	
+	// Clear only index
+	ExternalTU_DataIndex := 0;
+END_IF
+ 
+
+ (**************************************************************************************
+   Allocate new index
+***************************************************************************************)
+ // Create a new set
+ExternalTU_DataIndex := F_InsertTU_DataEmulation(
+							eFunctionNumber := Config.eExternalFunctionNumber,
+							ZoneNumber 		:= 0);
+
+// If an index could be created
+IF ExternalTU_DataIndex > 0 THEN
+	TU_DataTableEmulation[ExternalTU_DataIndex].Label.ASCII := RecvData.STI_Emulation.Label;
+	TU_DataTableEmulation[ExternalTU_DataIndex].Label.HashCode := F_CreateHashCode(RecvData.STI_Emulation.Label);
+	TU_DataTableEmulation[ExternalTU_DataIndex].DataSet.Dimension.Weight := RecvData.STI_Emulation.Weight;
+	TU_DataTableEmulation[ExternalTU_DataIndex].DataSet.Dimension.Length := RecvData.STI_Emulation.Length;
+	TU_DataTableEmulation[ExternalTU_DataIndex].DataSet.Dimension.Height := RecvData.STI_Emulation.Height;
+	TU_DataTableEmulation[ExternalTU_DataIndex].DataSet.Dimension.Width := RecvData.STI_Emulation.Width;
+	TU_DataTableEmulation[ExternalTU_DataIndex].DataSet.LongSideLeading := RecvData.STI_Emulation.LongSideLeading;
+	TU_DataTableEmulation[ExternalTU_DataIndex].DataSet.DataPresent := TRUE;
+END_IF
+]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="A_HandOverStates" Id="{578e7eba-bdc3-4c7a-ae35-106b8f1e3ae1}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_HandOverInterface
+ * 	FUNCTION	Handover interface
+ **************************************************************************************)
+
+(**********************************************************************************
+   Allocate data index
+***********************************************************************************)
+IF RecvData.STI_Emulation.eHandOverState = E_HandOverState.READY AND NOT TU_DataAllocated THEN
+	A_AllocateDataIndex();
+	TU_DataAllocated := TRUE;
+	
+ELSIF RecvData.STI_Emulation.eHandOverState <> E_HandOverState.READY THEN
+	TU_DataAllocated := FALSE;
+END_IF
+]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="A_MonitorCommunication" Id="{85a1d294-ef83-4ce5-90d0-7f7fd9969b97}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_MonitorCommunication
+ * 	FUNCTION	Monitors TCP Communication
+ **************************************************************************************)
+
+(**************************************************************************************
+   Watchdog
+***************************************************************************************) 
+fbWatchdogTimer(IN := TRUE, PT := Settings.tWatchdog);
+
+// Watchdog signals
+IF RecvData.STI_Emulation.WatchdogToggle <> FlagWatchdog THEN
+	// Reset timer
+	fbWatchdogTimer(IN := FALSE);
+	FlagWatchdog := RecvData.STI_Emulation.WatchdogToggle;
+END_IF
+
+fbHeartBeatTimer(IN := TRUE, PT := tHeartBeat);
+IF fbHeartBeatTimer.Q THEN
+	fbHeartBeatTimer(IN := FALSE);
+	// Toggle watchdog
+	SendData.STI_Emulation.WatchdogToggle := NOT SendData.STI_Emulation.WatchdogToggle;
+END_IF
+
+(**************************************************************************************
+   Reestablish connection
+***************************************************************************************)
+IF Settings.tRetryConnection <> T#0S THEN
+	// Reestablish connection after a certain time
+	fbReinitConnection(IN := fbWatchdogTimer.Q, PT := Settings.tRetryConnection);
+	
+	// Restart
+	IF fbReinitConnection.Q THEN
+		fbTCP_Driver.M_RestartCom();
+		// Reset
+		fbReinitConnection(IN := FALSE);
+	END_IF
+ELSE
+	// Reset
+	fbReinitConnection(IN := FALSE);
+END_IF
+]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="A_OutputMapping" Id="{27b60de3-34dc-410e-ac10-7468c0c0569c}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_OutputMapping
+ * 	FUNCTION	Map output variables
+ **************************************************************************************)
+ 
+SendData.STI_Emulation.eHandOverState := AdjTransportData.rTransportControlData.eHandOverState;
+SendData.STI_Emulation.eTakeOverState := AdjTransportData.rTransportControlData.eTakeOverState;
+
+SendData.STI_Emulation.TU_LeadingEdgePos := AdjTransportData.rTransportControlData.TU_LeadingEdgePos;
+SendData.STI_Emulation.ZoneLength := AdjTransportData.rTransportControlData.TransportParam.ZoneLength;
+
+// If interface is configured as inbound
+IF Settings.Inbound THEN
+	SendData.STI_Emulation.LongSideLeading := FALSE;
+	SendData.STI_Emulation.Length := 0;
+	SendData.STI_Emulation.Width := 0;
+	SendData.STI_Emulation.Height := 0;
+	SendData.STI_Emulation.Weight := 0;
+	SendData.STI_Emulation.Label := '';
+	
+// Otherwise, outbound (Handover to other..)
+ELSE
+	TU_Index := AdjTransportData.rTransportControlData.TU_DataIndex;
+	
+	IF TU_Index > 0 THEN	
+		SendData.STI_Emulation.LongSideLeading := TU_DataTableEmulation[TU_Index].DataSet.LongSideLeading;
+		SendData.STI_Emulation.Length := TU_DataTableEmulation[TU_Index].DataSet.Dimension.Length;
+		SendData.STI_Emulation.Width := TU_DataTableEmulation[TU_Index].DataSet.Dimension.Width;
+		SendData.STI_Emulation.Height := TU_DataTableEmulation[TU_Index].DataSet.Dimension.Height;
+		SendData.STI_Emulation.Weight := TU_DataTableEmulation[TU_Index].DataSet.Dimension.Weight;
+		SendData.STI_Emulation.Label := TU_DataTableEmulation[TU_Index].Label.ASCII;
+	ELSE
+		SendData.STI_Emulation.LongSideLeading := FALSE;
+		SendData.STI_Emulation.Length := 0;
+		SendData.STI_Emulation.Width := 0;
+		SendData.STI_Emulation.Height := 0;
+		SendData.STI_Emulation.Weight := 0;
+		SendData.STI_Emulation.Label := '';
+	END_IF
+END_IF
+]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="A_OverwriteInputs" Id="{75fa5995-f204-4b77-9d07-73f6c77cdc5a}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_OverwriteInputs
+ * 	FUNCTION	Overwrite hardware inputs of real object
+ **************************************************************************************)
+
+// Is reference valid  
+IF __ISVALIDREF(rSTI_EtherCAT_ConveyorReal) THEN
+	// Overwrite Inputs
+	rSTI_EtherCAT_ConveyorReal.HW_Inputs.DeviceState := EC_DEVICE_STATE_OP;
+	rSTI_EtherCAT_ConveyorReal.HW_Inputs.ExternalDeviceNotInOP := FALSE;
+	rSTI_EtherCAT_ConveyorReal.HW_Inputs.STI := RecvData.STI_Real.STI;
+	
+	// Get Outputs
+	SendData.STI_Real.STI := rSTI_EtherCAT_ConveyorReal.HW_Outputs.STI;
+END_IF
+	]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="A_TakeOverStates" Id="{e97686e5-07a1-4bb2-ab2a-56700abc792b}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_TakeOverInterface
+ * 	FUNCTION	TakeOver interface - Take over from external conveyor
+ **************************************************************************************)
+
+(**********************************************************************************
+   Delete TU Data
+***********************************************************************************)
+// Wait until handover is completed
+IF AdjTransportData.rTransportControlData.eHandOverState = E_HandoverState.COMPLETE AND NOT TU_DataMoved THEN
+	// External conveyor took index over - remove on giving position
+	LastHandoverTU_DataIndex := F_MoveTU_DataIndexEmulation(
+									eFunctionNumber := Settings.AdjFunctionNumber.eFunctionNumber,
+									mZoneNumber 	:= Settings.AdjFunctionNumber.ZoneNumber);
+							
+	IF LastHandoverTU_DataIndex = 0 THEN
+		fbDebugMsg.M_SendErrorMsg('No emulation index moved.');
+	ELSE
+		// Delete index - TU has left the system
+		MEMSET(ADR(TU_DataTableEmulation[LastHandoverTU_DataIndex]), 0, SIZEOF(TU_DataTableEmulation[LastHandoverTU_DataIndex]));
+	END_IF
+
+	TU_DataMoved := TRUE;
+	
+ELSIF AdjTransportData.rTransportControlData.eHandOverState <> E_HandoverState.COMPLETE THEN
+	TU_DataMoved := FALSE;
+END_IF
+]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="A_TCP_Communication" Id="{fd3d510e-bbfc-4c4a-9022-19931a1922c8}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_TCP_Communication
+ * 	FUNCTION	Handles TCP Communication to external interface
+ **************************************************************************************)
+
+ // Call driver
+ fbTCP_Driver(
+	Config 			:= Settings.TCP_Driver,
+	pReceiveData 	:= ADR(RecvByte),
+	ReceiveDataLen 	:= SIZEOF(RecvByte));
+ 
+(**************************************************************************************
+   Receive data
+***************************************************************************************)
+// Check TCP/IP channel for new data
+IF fbTCP_Driver.NewData THEN
+	// Check border counter
+	IF RecvCounter > 254 THEN
+		// Reset
+		RecvCounter := 0;
+	END_IF
+	
+	// Update counter
+	RecvCounter := RecvCounter + 1;
+	
+	// Map values - (alignment to ensure compatibility to other systems)
+	RecvData.STI_Emulation.WatchdogToggle := RecvByte[1].0;
+	RecvData.STI_Emulation.LongSideLeading := RecvByte[1].1;
+	
+	MEMCPY(destAddr := ADR(RecvData.STI_Emulation.eTakeOverState), srcAddr := ADR(RecvByte[3]), n := 2);
+	MEMCPY(destAddr := ADR(RecvData.STI_Emulation.eHandOverState), srcAddr := ADR(RecvByte[5]), n := 2);
+	MEMCPY(destAddr := ADR(RecvData.STI_Emulation.TU_LeadingEdgePos), srcAddr := ADR(RecvByte[7]), n := 2);
+	MEMCPY(destAddr := ADR(RecvData.STI_Emulation.ZoneLength), srcAddr := ADR(RecvByte[9]), n := 2);
+	MEMCPY(destAddr := ADR(RecvData.STI_Emulation.Length), srcAddr := ADR(RecvByte[11]), n := 2);
+	MEMCPY(destAddr := ADR(RecvData.STI_Emulation.Width), srcAddr := ADR(RecvByte[13]), n := 2);
+	MEMCPY(destAddr := ADR(RecvData.STI_Emulation.Height), srcAddr := ADR(RecvByte[15]), n := 2);
+	MEMCPY(destAddr := ADR(RecvData.STI_Emulation.Weight), srcAddr := ADR(RecvByte[17]), n := 4);
+	MEMCPY(destAddr := ADR(RecvData.STI_Emulation.Label), srcAddr := ADR(RecvByte[21]), n := 25);
+	
+	RecvData.STI_Real.STI.Watchdog := RecvByte[47].0;
+	RecvData.STI_Real.STI.FastSpeedActive := RecvByte[47].1;
+	RecvData.STI_Real.STI.TransportActive := RecvByte[47].2;
+	RecvData.STI_Real.STI.Reserve1 := RecvByte[47].3;
+	RecvData.STI_Real.STI.Reserve2 := RecvByte[47].4;
+	RecvData.STI_Real.STI.Reserve3 := RecvByte[47].5;
+	RecvData.STI_Real.STI.Reserve4 := RecvByte[47].6;
+	RecvData.STI_Real.STI.Reserve5 := RecvByte[47].7;
+	MEMCPY(destAddr := ADR(RecvData.STI_Real.STI.TakeOverState), srcAddr := ADR(RecvByte[49]), n := 2);
+	MEMCPY(destAddr := ADR(RecvData.STI_Real.STI.HandOverState), srcAddr := ADR(RecvByte[51]), n := 2);
+	MEMCPY(destAddr := ADR(RecvData.STI_Real.STI.TU_ID), srcAddr := ADR(RecvByte[53]), n := 18);
+	MEMCPY(destAddr := ADR(RecvData.STI_Real.STI.Destination), srcAddr := ADR(RecvByte[71]), n := 12);
+	MEMCPY(destAddr := ADR(RecvData.STI_Real.STI.AssignmentID), srcAddr := ADR(RecvByte[83]), n := 4);
+	RecvData.STI_Real.ExternalDeviceNotInOP := RecvByte[87].0;
+	MEMCPY(destAddr := ADR(RecvData.STI_Real.DeviceState), srcAddr := ADR(RecvByte[89]), n := 2);
+
+	// Data processed
+	fbTCP_Driver.M_DataProcessed();
+END_IF
+
+(**************************************************************************************
+   Send data
+***************************************************************************************)
+// If the connection is established
+IF fbTCP_Driver.Connected THEN
+	// Call message resend timer
+	fbResend(IN := Settings.tResendMsg <> T#0S, PT := Settings.tResendMsg);
+	
+	// If data have changed or resend is requested
+	IF (MEMCMP(
+		pBuf1 := ADR(LastSendData),
+		pBuf2 := ADR(SendData),
+		n	  := SIZEOF(SendData)) <> 0 OR fbResend.Q) AND NOT fbTCP_Driver.SendBusy THEN
+	
+		LastSendData := SendData;
+		
+		// Reset timer
+		fbResend(IN := FALSE);
+		
+		// Map values - (alignment to ensure compatibility to other systems)
+		SendByte[1].0 := SendData.STI_Emulation.WatchdogToggle;
+		SendByte[1].1 := SendData.STI_Emulation.LongSideLeading;
+		MEMCPY(destAddr := ADR(SendByte[3]), srcAddr := ADR(SendData.STI_Emulation.eTakeOverState), n := 2);
+		MEMCPY(destAddr := ADR(SendByte[5]), srcAddr := ADR(SendData.STI_Emulation.eHandOverState), n := 2);
+		MEMCPY(destAddr := ADR(SendByte[7]), srcAddr := ADR(SendData.STI_Emulation.TU_LeadingEdgePos), n := 2);
+		MEMCPY(destAddr := ADR(SendByte[9]), srcAddr := ADR(SendData.STI_Emulation.ZoneLength), n := 2);
+		MEMCPY(destAddr := ADR(SendByte[11]), srcAddr := ADR(SendData.STI_Emulation.Length), n := 2);
+		MEMCPY(destAddr := ADR(SendByte[13]), srcAddr := ADR(SendData.STI_Emulation.Width), n := 2);
+		MEMCPY(destAddr := ADR(SendByte[15]), srcAddr := ADR(SendData.STI_Emulation.Height), n := 2);
+		MEMCPY(destAddr := ADR(SendByte[17]), srcAddr := ADR(SendData.STI_Emulation.Weight), n := 4);
+		MEMCPY(destAddr := ADR(SendByte[21]), srcAddr := ADR(SendData.STI_Emulation.Label), n := 25);
+		
+		SendByte[47].0 := SendData.STI_Real.STI.Watchdog;
+		SendByte[47].1 := SendData.STI_Real.STI.FastSpeedActive;
+		SendByte[47].2 := SendData.STI_Real.STI.TransportActive;
+		SendByte[47].3 := SendData.STI_Real.STI.Reserve1;
+		SendByte[47].4 := SendData.STI_Real.STI.Reserve2;
+		SendByte[47].5 := SendData.STI_Real.STI.Reserve3;
+		SendByte[47].6 := SendData.STI_Real.STI.Reserve4;
+		SendByte[47].7 := SendData.STI_Real.STI.Reserve5;
+		MEMCPY(destAddr := ADR(SendByte[49]), srcAddr := ADR(SendData.STI_Real.STI.TakeOverState), n := 2);
+		MEMCPY(destAddr := ADR(SendByte[51]), srcAddr := ADR(SendData.STI_Real.STI.HandOverState), n := 2);
+		MEMCPY(destAddr := ADR(SendByte[53]), srcAddr := ADR(SendData.STI_Real.STI.TU_ID), n := 18);
+		MEMCPY(destAddr := ADR(SendByte[71]), srcAddr := ADR(SendData.STI_Real.STI.Destination), n := 12);
+		MEMCPY(destAddr := ADR(SendByte[83]), srcAddr := ADR(SendData.STI_Real.STI.AssignmentID), n := 4);
+		SendByte[87].0 := SendData.STI_Real.ExternalDeviceNotInOP;
+		MEMCPY(destAddr := ADR(SendByte[89]), srcAddr := ADR(SendData.STI_Real.DeviceState), n := 2);	
+		
+		// Check border counter
+		IF SendCounter > 254 THEN
+			// Reset
+			SendCounter := 0;
+		END_IF
+			
+		// Update message counter
+		SendCounter := SendCounter + 1;
+	
+		// Forward data to TCP channel
+		fbTCP_Driver.M_Send(
+			mpSendData := ADR(SendByte),
+			mSendDataLen := SIZEOF(SendByte));
+	END_IF
+ELSE
+	// Reset
+	fbResend(IN := FALSE);
+END_IF
+]]></ST>
+      </Implementation>
+    </Action>
+    <Method Name="M_CallInterface" Id="{a7d0d708-d28e-4864-9e14-1bf323498b11}">
+      <Declaration><![CDATA[METHOD M_CallInterface : BOOL
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 355136 $
+ *	Revision date	:	$Date: 2015-09-21 07:38:56 +0200 (Mo, 21 Sep 2015) $
+ *	Last changed by	:	$Author: d7mangc $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/trunk/01_Software/BoxControlFramework/BoxControlFramework/JumpStart/11_Library/10_Application/12_ElementFunctions/10_Functions/FB_TransportControl.TcPOU $
+ *
+ *	Purpose			:	Call main interface
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+(**************************************************************************************
+	Init
+ **************************************************************************************)
+M_Init(mInit := FALSE);
+
+(***********************************************************************************
+Monitor TCP/IP communication
+***********************************************************************************)
+A_MonitorCommunication();
+
+(***********************************************************************************
+TCP/IP communication
+***********************************************************************************)
+A_TCP_Communication();
+
+(**************************************************************************************
+	Transport interface - Handles external conveyor position
+ **************************************************************************************)
+// Get transport data of adjacent function
+AdjTransportData := F_GetAdjacentTransportDataEmulation(
+						eFunctionNumber 		:= Settings.AdjFunctionNumber.eFunctionNumber,
+						eSourceFunctionNumber 	:= Settings.eExternalFunctionNumber);
+						
+IF __ISVALIDREF (AdjTransportData.rTransportControlData) THEN
+	
+	IF Settings.Inbound THEN
+		// Incoming - Handle hand over states (View of own system)
+		//			<---
+		//  TakeOver  |	   HandOver
+		// |-------|  |   |--------|
+		//	 INTERN	  |		EXTERN
+		A_HandOverStates();
+		
+	ELSE
+		// Outgoing - Handle take over states (View of own system)
+		//			--->
+		//  HandOver  |	   TakeOver
+		// |-------|  |   |--------|
+		//	 INTERN	  |		EXTERN
+		A_TakeOverStates();
+	END_IF
+	
+	
+	(**************************************************************************************
+		Overwrite inputs
+	 **************************************************************************************)
+	A_OverwriteInputs();
+	
+	
+	(**************************************************************************************
+		Output mapping
+	 **************************************************************************************)
+	A_OutputMapping();
+
+END_IF
+	]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_GetTransportData" Id="{e59b2e85-514b-4f38-ab81-2703a5dd4c66}">
+      <Declaration><![CDATA[METHOD M_GetTransportData : REFERENCE TO ST_TransportDataEmulation
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 355211 $
+ *	Revision date	:	$Date: 2015-09-22 11:14:21 +0200 (Tue, 22 Sep 2015) $
+ *	Last changed by	:	$Author: d7mangc $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/trunk/01_Software/BoxControlFramework/BoxControlFramework/JumpStart/11_Library/10_Application/11_Communication/12_MFCS/11_SIS/10_Base/FB_SIS_BaseDriver.TcPOU $
+ *
+ *	Purpose			:	Return transport data
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+VAR
+	mSTI_Instance				: ITF_SubsystemTransport; // Instance to compare valid interfaces
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[// Prepare transport control data
+TransportControlData.eHandOverState := RecvData.STI_Emulation.eHandOverState;
+TransportControlData.eTakeOverState := RecvData.STI_Emulation.eTakeOverState;
+TransportControlData.TU_DataIndex := ExternalTU_DataIndex;
+TransportControlData.TU_LeadingEdgePos := RecvData.STI_Emulation.TU_LeadingEdgePos;
+TransportControlData.TransportParam.ZoneLength := RecvData.STI_Emulation.ZoneLength;
+
+MEMSET(ADR(TransportData), 0, SIZEOF(TransportData));
+TransportData.eFunctionNumber := Settings.eExternalFunctionNumber;
+TransportData.rTransportControlData REF= TransportControlData;
+
+IF Settings.eExternalFunctionNumber > E_FunctionNumber.F_BEGIN_EXTERN_FUNCTION AND Settings.eExternalFunctionNumber < E_FunctionNumber.F_END_EXTERN_FUNCTION THEN
+	IF __QUERYINTERFACE(fbSTI_Channels[Settings.eExternalFunctionNumber].Instance, mSTI_Instance) THEN
+		rTransportData REF= fbSTI_Channels[Settings.eExternalFunctionNumber].Instance.M_GetTransportData();
+		TransportData.rRealObjTrspControlData REF= rTransportData.rTransportControlData;
+	END_IF
+END_IF
+
+M_GetTransportData REF= TransportData;
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_Init" Id="{0709f200-33d4-4b69-b0f4-073c1ecfa5fc}">
+      <Declaration><![CDATA[METHOD M_Init : BOOL
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 355211 $
+ *	Revision date	:	$Date: 2015-09-22 11:14:21 +0200 (Tue, 22 Sep 2015) $
+ *	Last changed by	:	$Author: b7bolm $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/trunk/01_Software/BoxControlFramework/BoxControlFramework/JumpStart/11_Library/10_Application/11_Communication/12_MFCS/11_SIS/10_Base/FB_SIS_BaseDriver.TcPOU $
+ *
+ *	Purpose			:	Initialize interface
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+VAR_INPUT
+	mInit			: BOOL; // Force init
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+IF NOT Init THEN
+	
+	Settings := Config;
+	
+	// Set default value if not configured
+	IF Settings.tHeartBeat = T#0S THEN
+		tHeartBeat := T#1S;
+	ELSE
+		tHeartBeat := Settings.tHeartBeat;
+	END_IF
+	
+	Init := TRUE;
+END_IF
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_MoveTU_DataIndex" Id="{ac2bb917-aa71-4b5b-b0fa-392a15517b25}">
+      <Declaration><![CDATA[METHOD M_MoveTU_DataIndex : DINT
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 355211 $
+ *	Revision date	:	$Date: 2015-09-22 11:14:21 +0200 (Tue, 22 Sep 2015) $
+ *	Last changed by	:	$Author: b7bolm $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/trunk/01_Software/BoxControlFramework/BoxControlFramework/JumpStart/11_Library/10_Application/11_Communication/12_MFCS/11_SIS/10_Base/FB_SIS_BaseDriver.TcPOU $
+ *
+ *	Purpose			:	Initialize interface
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[// Return TU Data Index
+M_MoveTU_DataIndex := ExternalTU_DataIndex;
+
+// Clear internally
+ExternalTU_DataIndex := 0;
+]]></ST>
+      </Implementation>
+    </Method>
+    <ObjectProperties>
+      <XmlArchive>
+        <Data>
+          <o xml:space="preserve" t="UMLStereoTypeContainerObject">
+            <v n="IsType" t="UMLType">BaseArea</v>
+            <v n="Stereotype">""</v>
+            <d n="Stereotypes" t="Hashtable" />
+          </o>
+        </Data>
+        <TypeList>
+          <Type n="Hashtable">System.Collections.Hashtable</Type>
+          <Type n="String">System.String</Type>
+          <Type n="UMLStereoTypeContainerObject">{30250973-b110-4e31-b562-c102e042dca4}</Type>
+          <Type n="UMLType">{0197b136-405a-42ee-bb27-fd08b621d0cf}</Type>
+        </TypeList>
+      </XmlArchive>
+    </ObjectProperties>
+    <LineIds Name="FB_STI_EtherCAT_ConveyorEmulation">
+      <LineId Id="3" Count="2" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_STI_EtherCAT_ConveyorEmulation.A_AllocateDataIndex">
+      <LineId Id="2" Count="37" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_STI_EtherCAT_ConveyorEmulation.A_HandOverStates">
+      <LineId Id="2" Count="14" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_STI_EtherCAT_ConveyorEmulation.A_MonitorCommunication">
+      <LineId Id="2" Count="40" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_STI_EtherCAT_ConveyorEmulation.A_OutputMapping">
+      <LineId Id="2" Count="39" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_STI_EtherCAT_ConveyorEmulation.A_OverwriteInputs">
+      <LineId Id="2" Count="14" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_STI_EtherCAT_ConveyorEmulation.A_TakeOverStates">
+      <LineId Id="2" Count="26" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_STI_EtherCAT_ConveyorEmulation.A_TCP_Communication">
+      <LineId Id="2" Count="124" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_STI_EtherCAT_ConveyorEmulation.M_CallInterface">
+      <LineId Id="3" Count="55" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_STI_EtherCAT_ConveyorEmulation.M_GetTransportData">
+      <LineId Id="3" Count="18" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_STI_EtherCAT_ConveyorEmulation.M_Init">
+      <LineId Id="3" Count="13" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_STI_EtherCAT_ConveyorEmulation.M_MoveTU_DataIndex">
+      <LineId Id="3" Count="4" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

@@ -1,0 +1,16 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.12">
+  <Itf Name="I_Encoder" Id="{446028d3-c3aa-4a7a-aaf2-9748a9c42dff}">
+    <Declaration><![CDATA[/// Provide access to encoder data
+INTERFACE I_Encoder EXTENDS __System.IQueryInterface 
+]]></Declaration>
+    <Property Name="P_EncoderData" Id="{980c36ba-f2a7-4485-8a35-4797f3f1a379}">
+      <Declaration><![CDATA[/// Encoder data
+{attribute 'suppress_wrn_C0410'}
+PROPERTY P_EncoderData : REFERENCE TO ST_EncoderData]]></Declaration>
+      <Get Name="Get" Id="{002b460b-d15c-4132-98d2-d670601b024b}">
+        <Declaration><![CDATA[]]></Declaration>
+      </Get>
+    </Property>
+  </Itf>
+</TcPlcObject>

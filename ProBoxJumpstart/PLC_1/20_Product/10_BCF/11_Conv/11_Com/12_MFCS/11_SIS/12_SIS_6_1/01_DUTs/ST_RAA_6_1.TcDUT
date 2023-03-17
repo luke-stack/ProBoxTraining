@@ -1,0 +1,39 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.12">
+  <DUT Name="ST_RAA_6_1" Id="{78eb0b16-08a3-4b6a-8895-f64738b7a81e}">
+    <Declaration><![CDATA[TYPE ST_RAA_6_1 :
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 404529 $
+ *	Revision date	:	$Date: 2018-04-23 08:21:38 +0200 (Mo., 23 Apr 2018) $
+ *	Last changed by	:	$Author: b7bolm $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/trunk/01_Software/BCF/BCF/JumpStart/20_Product/10_App/11_Com/10_Lib/10_Conv/12_MFCS/11_SIS/01_DUTs/11_SIS_6_1/ST_RAA_6_1.TcDUT $
+ *
+ *	Purpose			:	RAA Structure
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				30.10.2015		Kay Röder			Initial implementation according to blueprint from Oct 30th 2015
+ *
+ **************************************************************************************)
+STRUCT
+	Position					: STRING(SIS_6_1.POSITION_STRINGLENGTH); // Position (SIS Adresse des Roboters)
+	CommandDataIndex			: STRING(SIS_6_1.RAA_COMMAND_DATA_INDEX_STRINGLENGTH);
+	CommandPriority				: STRING(SIS_6_1.RAA_COMMAND_PRIORITY_STRINGLENGTH); // Priority Execution yes/no (Implemented as INT for further system extensions)
+	AssignmentID				: STRING(SIS_6_1.ASSIGNMENT_ID_STRINGLENGTH); 
+	GroupID						: STRING(SIS_6_1.GROUP_ID_STRINGLENGTH);
+	LastGroupInSequence			: STRING(SIS_6_1.RAA_LAST_GROUP_IN_SEQUENCE_STRINGLENGTH); 
+	CommandArgsCount			: STRING(SIS_6_1.RAA_COMMAND_ARGS_COUNT_STRINGLENGTH);
+	CommandArgs					: ARRAY [1..SIS_6_1.RAA_NUMBER_OF_COMMAND_ARGS] OF ST_RAA_6_1_CommandArgs;
+	RobotCommand				: ARRAY [1..SIS_6_1.RAA_ROBOT_COMMAND_STRINGLENGTH] OF BYTE; // Robot command as XML 
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

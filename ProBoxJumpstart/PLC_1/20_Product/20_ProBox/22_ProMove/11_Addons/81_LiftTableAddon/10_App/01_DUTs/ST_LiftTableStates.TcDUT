@@ -1,0 +1,12 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <DUT Name="ST_LiftTableStates" Id="{b8de3231-7fd7-42e6-ac7b-6683c6b64277}">
+    <Declaration><![CDATA[TYPE ST_LiftTableStates :
+STRUCT
+	eState		: E_LiftTableState; //State
+	eLastState	: E_LiftTableState; //Last state
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

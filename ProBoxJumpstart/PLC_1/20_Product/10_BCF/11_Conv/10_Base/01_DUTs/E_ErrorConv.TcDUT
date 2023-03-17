@@ -1,0 +1,225 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <DUT Name="E_ErrorConv" Id="{c7744f5a-6ba6-46f7-b143-29ffe513d2d2}">
+    <Declaration><![CDATA[TYPE E_ErrorConv :
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 404529 $
+ *	Revision date	:	$Date: 2018-04-23 08:21:38 +0200 (Mo., 23 Apr 2018) $
+ *	Last changed by	:	$Author: b7bolm $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/trunk/01_Software/BCF/BCF/JumpStart/20_Product/10_App/10_Base/10_Lib/10_Conv/01_DUTs/E_ErrorConv.TcDUT $
+ *
+ *	Purpose			:	Basic conveyor error list. Limited range 0-999.
+ *						All codes have to be set to a value!
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ *************************************************************************************)
+(
+  NO_ERROR_CODE                             := 0000, // No error 
+
+
+  (*-------------------------------------------------------------
+    IPC Hardware / System				
+   -------------------------------------------------------------*)
+  OVER_TEMPEREATURE_CPU                     := 0001, // Temperature limit CPU exceeded 
+  OVER_TEMPEREATURE_MOTHERBOARD             := 0002, // Temperature limit motherboard exceeded 
+  FAN_ERROR_CPU                             := 0003, // Fan speed is zero 
+  CPU_OVERLOAD                              := 0004, // CPU usage limit exceeded
+  IPC_EVENT_FASTSTOP                        := 0005, // FastStop because of an event in the Subsystem status 
+  IPC_EVENT_SOFTSTOP                        := 0006, // SoftStop because of an event in the Subsystem status 
+
+
+  (*-------------------------------------------------------------
+    Communication	        			
+  -------------------------------------------------------------*)
+  CONNECTION_ERROR                          := 0020, // General connection error
+  CONNECTION_ERROR_TO_AM                    := 0021, // Connection error to AM 
+  CONNECTION_ERROR_TO_SPOC                  := 0022, // Connection error to SPOC 
+  CONNECTION_ERROR_TO_EXTERNAL_INTERFACE    := 0023, // Connection error to external interface e.g. MLC 
+  CONNECTION_ERROR_DEVICE                   := 0024, // Connection error to external device e.g. scale, printer
+
+
+  (* -------------------------------------------------------------
+    Communication MFCS					
+  --------------------------------------------------------------*)
+  AM_BUFFER_OVERFLOW                        := 0040, // Communication buffer to AM overflow
+  WRONG_VALUE                               := 0041, // A wrong value in the telegram 
+  DELETE_TU_DATA_NOT_POSSIBLE               := 0042, // Del TU-Data not possible, TU-Data position is empty 
+  JOB_STILL_ACTIVE                          := 0043, // Job was still active during deleting TU 
+  SUBSYSTEMNUMBER_UNKNOWN                   := 0044, // Wrong or inexistent Subsystem number 
+  GROUPNUMBER_UNKNOWN                       := 0045, // Wrong or inexistent group number 
+  ELEMENTNUMBER_UNKNOWN                     := 0046, // Wrong or inexistent element number 
+  FUNCTIONNUMBER_UNKNOWN                    := 0047, // Wrong or inexistent function number 
+  ZONENUMBER_INVALID                        := 0048, // Zone number not valid
+  ROBOT_ITC_CONFIG_INVALID                  := 0049, // Non robot function 
+
+
+  (* -------------------------------------------------------------
+    Fieldbus				
+  --------------------------------------------------------------*)
+  ETHERCAT_MASTER_ERROR                     := 0060, // EtherCAT master error 
+  ETHERCAT_MASTER_TELEGRAM_LOST             := 0061, // EtherCAT master telegrams lost 
+  ETHERCAT_SLAVE_ERROR                      := 0062, // No connection to EtherCAT slave 
+
+
+  (*-------------------------------------------------------------
+    Groups	        			
+   -------------------------------------------------------------*)
+  CONTROL_VOLTAGE                           := 0080, // Control voltage has failed 
+  OVERCURRENT                               := 0081, // Over current 
+  EMERGENCY_STOP                            := 0082, // Emergency stop activated 
+  MAIN_CONTACTOR_OFF                        := 0083, // Main contactor failure 
+  FIRE_ALARM                                := 0084, // Fire alarm 
+  AIR_PRESSURE_LOW                          := 0085, // Air pressure to low 
+  MAINTENANCE                               := 0086, // Maintenance activated 
+  FST_STOP_AFTER_TIMEOUT                    := 0087, // Faststop from a timeout, no SoftStop is possible 
+
+
+  (*-------------------------------------------------------------
+    Fuses	        			
+   -------------------------------------------------------------*)
+  FUSE_FAN_CABINET                          := 0090, // Cabinet Fan Fuse triggered
+  FUSE_24VDC                                := 0091, // 24VDC Fuse triggered
+  FUSE_400VAC                               := 0092, // 400VAC Fuse triggered
+
+
+  (* -------------------------------------------------------------
+     Material Flow 				
+   --------------------------------------------------------------*)
+  TU_ID_WRONG                               := 0100, // TU-ID is wrong 
+  ASSIGNMENT_ID_WRONG                       := 0101, // Assignment ID wrong
+  NO_FREE_TU_DATA_SET                       := 0102, // No free TU-DataSet found 
+  INDEX_MATCH_WITH_POSITION                 := 0103, // TU-DataIndex is allocated to another position 
+  TU_DATA_SET_EMPTY_ZONE_OCCUPIED           := 0104, // TU data set empty, position occupied 
+  TU_DATA_SET_OCCUPIED_ZONE_FREE            := 0105, // TU data set occupied, position free 
+  EMPTY_TU_DATA_SET                         := 0106, // No TU data found in source position 
+  DESTINATION_INVALID                       := 0107, // Destination is invalid, delivery impossible 
+  TU_WRONG_ORIENTATION                      := 0108, // TU wrong orientation, turn TU in right orientation 
+  TU_DATA_INDEX_NOT_FREE                    := 0109, // TU-data index is not free
+  ID_WRONG                                  := 0110, // Neither TU_ID nor Assignement_ID specified
+  WRONG_TU_DATA_INDEX_RECEIVED              := 0111, // Wrong TU data index.
+  ROBOT_TASK_INDEX_WRONG                    := 0112, // Robot task index is wrong 
+  TU_DATA_INDEX_FREE                        := 0113, // TU data index is free
+  DESTINATION_NOT_REACHABLE                 := 0114, // Specified destination not reachable 	
+  TU_DATA_SET_EMPTY_OF_RECEIVING_TU         := 0115, // TU Idx of receiving TU is 0
+  TU_LEFT_SUBSYSTEM                         := 0116, // TU has left subsystem
+
+
+  (* -------------------------------------------------------------
+    Error Timeouts						
+  --------------------------------------------------------------*)
+  TIMEOUT                                   := 0120, // General timeout message
+  TIMEOUT_TAKEOVER                          := 0121, // Timeout during takeover 
+  TIMEOUT_HANDOVER                          := 0122, // Timeout during hadover 
+  TIMEOUT_LIFTING                           := 0123, // Timeout during lifting 
+  TIMEOUT_MOVEMENT                          := 0124, // Timeout during movement
+  TIMEOUT_DEVICE                            := 0125, // Timeout device
+  TIMEOUT_STRATEGY                          := 0126, // Timeout strategy
+  TIMEOUT_COMMUNICATION                     := 0127, // Communication timeout
+
+
+  (* -------------------------------------------------------------
+    Sensors Errors						
+  ---------------------------------------------------------------*)
+  INCORRECT_SENSOR_SIGNAL                   := 0140, // Incorrect signal of the sensors 
+  INCORRECT_ENCODER_VALUE                   := 0141, // Incorrect value of the encoder 
+  LIMIT_SWITCH_ACTIVE                       := 0142, // Limit switch is activated 
+  GAP_CHECK_ACTIVE                          := 0143, // Gap check active
+
+
+  (* -------------------------------------------------------------
+    Profile Control Units Errors 			        
+  --------------------------------------------------------------*)
+  SENSOR_FRONT_DEFECT                       := 0160, // Front transmitter defective 
+  SENSOR_REAR_DEFECT                        := 0161, // Rear transmitter defective 
+  SENSOR_LEFT_DEFECT                        := 0162, // Left transmitter defective 
+  SENSOR_RIGHT_DEFECT                       := 0163, // Right transmitter defective 
+  SENSOR_HEIGHT_DEFECT                      := 0164, // Height transmitter defective 
+  SENSOR_WEIGHT_DEFECT                      := 0165, // Transmitter for weight measurement defective 
+  SENSOR_TUNNEL_DEFECT                      := 0166, // Transmitter to check space for forks defective 
+  SENSOR_RUNNER_DEFECT                      := 0167, // Shelf sensor transmitter defective 
+  SCALE_NOT_READY                           := 0168, // Scale not ready 
+
+
+  (* -------------------------------------------------------------
+    Load-Error 							
+  --------------------------------------------------------------*)
+  JAM_ERROR                                 := 0180, // Jam Detected - Remove TU before restart 
+  POSITION_OCCUPIED_AFTER_HANDOVER          := 0181, // Position occupied after transmission 
+  POSITION_OCCUPIED_BEFORE_TAKEOVER         := 0182, // Position occupied before pickup 
+  POSITION_NOT_CORRECT_OCCUPIED             := 0183, // Position is not correctly occupied 
+  LOAD_CONTROL                              := 0184, // Check load for overhang 
+  POSITION_LANE_FULL                        := 0185, // Position/Lane is full, remove some TU's 
+  TRANSFER_ERROR                            := 0186, // Error during transfer
+  LOAD_TOO_HIGH                             := 0187, // Load is too high
+  LOAD_TOO_HEAVY                            := 0188, // Load is too heavy
+
+
+  (* -------------------------------------------------------------
+    Errors Drives						
+  --------------------------------------------------------------*)
+  DRIVE_ERROR                               := 0200, // Drive error 
+  DRIVE_WARNING                             := 0201, // Drive warning 
+
+
+  (*-------------------------------------------------------------
+    Errors Scanners						
+  --------------------------------------------------------------*)
+  SCANNER_NO_READ                           := 0220, // Scanner could not read the label 
+  SCANNER_CONTINOUS_NO_READ                 := 0221, // Continuous no reading 
+  SCANNER_NO_DATA_RECEIVED                  := 0222, // No data received from scanner 
+  SCANNER_NO_HANDSHAKE                      := 0223, // No handshake signal from scanner received 
+
+
+  (* -------------------------------------------------------------
+    Misc      
+  --------------------------------------------------------------*)
+  INIT_NOT_POSSIBLE                         := 0300, // Initialization was not possible
+  START_NOT_POSSIBLE                        := 0301, // Starting not possible
+  POSITIONING_ERROR                         := 0302, // Positioning error 
+  INCORRECT_POSITION                        := 0303, // Actual position is not correct 
+  BELT_BROKEN                               := 0304, // Belt is broken 
+  DEVICE_ERROR                              := 0305, // Device error
+  DEVICE_OFFLINE                            := 0306, // device is offline e.g. printer, scanner 
+  WATCHDOG_ERROR                            := 0307, // Watchdog error 
+  FILE_SYSTEM_ERROR                         := 0308, // Error during deleting file 
+  DOOR_ERROR                                := 0309, // Maintenance door is open error 
+  WRONG_MODE                                := 0310, // Manual mode is not active for performing manual movement 
+  NOT_SUPPORTED                             := 0311, // Not supported message
+
+
+  (* -------------------------------------------------------------
+    Software errors       
+  --------------------------------------------------------------*)
+  CONFIGURATION_ERROR                       := 0900, // Configuration error 
+  SOFTWARE_ERROR                            := 0901  // General software error 
+);
+END_TYPE]]></Declaration>
+    <ObjectProperties>
+      <XmlArchive>
+        <Data>
+          <o xml:space="preserve" t="UMLStereoTypeContainerObject">
+            <v n="IsType" t="UMLType">BaseArea</v>
+            <v n="Stereotype">""</v>
+            <d n="Stereotypes" t="Hashtable" />
+          </o>
+        </Data>
+        <TypeList>
+          <Type n="Hashtable">System.Collections.Hashtable</Type>
+          <Type n="String">System.String</Type>
+          <Type n="UMLStereoTypeContainerObject">{30250973-b110-4e31-b562-c102e042dca4}</Type>
+          <Type n="UMLType">{0197b136-405a-42ee-bb27-fd08b621d0cf}</Type>
+        </TypeList>
+      </XmlArchive>
+    </ObjectProperties>
+  </DUT>
+</TcPlcObject>

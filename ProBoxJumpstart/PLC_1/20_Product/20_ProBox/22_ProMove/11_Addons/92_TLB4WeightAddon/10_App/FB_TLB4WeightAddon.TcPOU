@@ -1,0 +1,619 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <POU Name="FB_TLB4WeightAddon" Id="{c606c673-b461-49fc-9e67-01d4b7abd593}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK FB_TLB4WeightAddon EXTENDS FB_FunctionConv
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 413724 $
+ *	Revision date	:	$Date: 2018-09-11 15:30:31 +0200 (tis, 11 sep 2018) $
+ *	Last changed by	:	$Author: q8aberh $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/ProMove/02_Controls/ProBox/03_Implementation/01_DevelopmentProject/01_Software/ProBox_COE/ProBox_DevProj_v1.0/PLC_1/20_Product/10_App/12_E_Functions/11_ProBox/92_TLB4WeightAddon/10_App/FB_TLB4Weigh $
+ *
+ *	Purpose			:	TLB4 Ethercat module LAUMAS Elettronica
+ *						
+ *						 
+ *								
+ *						
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				2018-05-30		PkF/RtK				First Version 
+ *
+ **************************************************************************************)
+VAR_INPUT
+	Config					: ST_CFG_TLB4Weight;	
+	HW_Inputs				: ST_HW_InputsTLB4Weight;
+	CtrlIn					: ST_CtrlInTLB4Weight;
+END_VAR
+
+VAR_OUTPUT
+	HW_Outputs				: ST_HW_OutputsTLB4Weight; // Hardware scanner outputs
+END_VAR
+
+VAR
+	Inputs					: ST_InputsTLB4Weight; // Inputs dummy scanner
+	Outputs					: ST_OutputsTLB4Weight; // Scanner outputs
+	fb_AddOnErrHandler			: FB_AddOnErrHandler();
+	WeightStates			: ST_TLB4WeightStates; // Scanner states
+	Weight					: DINT;
+	Trigger					: BOOL;
+	CalibrationStep			:INT:=0;
+
+	CheckEnabled			: BOOL;
+	fbTimerScaleFree		: TON;
+END_VAR
+
+VAR PERSISTENT
+	Settings				: ST_CFG_TLB4Weight; // Settings
+END_VAR]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[(**************************************************************************************************************
+   Input mapping
+***************************************************************************************************************)
+A_InputMapping();
+
+(**************************************************************************************************************
+   Initialization
+***************************************************************************************************************)
+A_Init();
+
+(**************************************************************************************************************
+   State control 
+***************************************************************************************************************)
+A_StateControl();
+
+(**************************************************************************************************************
+   Error handler
+***************************************************************************************************************)
+A_ErrorHandler();
+fb_AddOnErrHandler(AddOnSettingsFunction :=SettingsFunction, AddOnFunctionData:=FunctionData);
+
+(**************************************************************************************************************
+   Scanner states
+***************************************************************************************************************)
+A_States();
+
+(**************************************************************************************************************
+   Interface handler out
+***************************************************************************************************************)
+M_ITC_ProcessOut();
+
+(**************************************************************************************************************
+   Output mapping
+***************************************************************************************************************)
+A_OutputMapping();
+
+]]></ST>
+    </Implementation>
+    <Action Name="A_DataAquisition" Id="{b3f32fe8-762e-4616-a3cf-b5316d2dcd8a}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_DataAquisition 
+ * 	FUNCTION	Call Method for Condition Monitoring 
+ **************************************************************************************)
+ 
+				
+	M_ITC_DataAquisition(	mVariableName				:= 'ScaleRead', 
+								meCM_Index				:= E_CM_Index.CM01,
+								mPosition				:= SettingsFunction.FunctionName,
+								mCurrentValue			:= DWORD_TO_STRING(MainConv.fbGetSystemTime.timeLoDW), 
+								meMode					:= E_CM_Mode.DEFAULT);]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="A_EnableCalibration" Id="{457d291f-0988-42ea-bce3-0fc37ead5d7a}">
+      <Implementation>
+        <ST><![CDATA[CASE CalibrationStep OF
+	0:
+	Outputs.uOutputCommand.Commandregister:=100;
+	IF Inputs.GrossWeight= 0 THEN
+		CalibrationStep:= 	CalibrationStep+1;
+	END_IF
+	1:
+	IF Inputs.GrossWeight>0 THEN
+		Outputs.uExchangeRegister.Exchangeregister:= CtrlIn.SampleWeight;
+		Outputs.uOutputCommand.Commandregister:=103;
+		CalibrationStep:= 	CalibrationStep+1;
+	END_IF
+	2:
+	IF Inputs.GrossWeight = CtrlIn.SampleWeight THEN
+		Outputs.uOutputCommand.Commandregister:=102;
+
+	END_IF
+END_CASE]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="A_Init" Id="{9cd5a931-ac0e-4128-b1e6-dedeb03982f1}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_Init
+ * 	FUNCTION	Initialize function
+ **************************************************************************************)
+
+// Update Registry
+M_UpdateRegistry();
+ 
+// Init ongoing - Wait until init is released (Sequencial startup)
+IF NOT FunctionData.Init AND FunctionData.InitRunning THEN
+	// When the subsystem is started, 
+	// and its released to initialize
+	IF FunctionData.OperationState.Info.SystemReady AND
+	   SettingsFunction.eFunctionNumber < FunctionData.OperationState.InitRelease.eLimitFunctionNumber THEN
+	   
+	   IF M_InitFunction(FALSE) THEN
+			// Function initialized - and initialization done
+			FunctionData.Init := TRUE;
+			FunctionData.InitRunning := FALSE;
+			
+			// Set reset cmd
+			FunctionData.ErrorData.Error.ResetError := TRUE;
+			
+			DebugMsg := CONCAT('Initialization done. Function: ', ConfigFunction.FunctionName);
+			fbDebugMsg.M_SendInfoMsg(DebugMsg);
+		END_IF
+	END_IF
+(*
+If the function is not initialized,
+clean all values and wait until init is released
+*)
+ELSIF NOT FunctionData.Init THEN
+	// Reset internal values
+	WeightStates.eLastState := WeightStates.eState;
+	WeightStates.eState := E_TLB4WeightState.INIT;
+	FunctionData.OperationState := FunctionBase.PositionStateEmpty;
+
+	// Load function specific configuration to settings
+	Settings := Config;
+	
+	// Reset values and load config
+	M_PreInit();
+	
+	// To start init a valid functionnumber and element link is needed
+	FunctionData.InitRunning := SettingsFunction.eFunctionNumber > 0 AND
+								SettingsFunction.eElementLink > 0;
+END_IF
+]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="A_InputMapping" Id="{21e2bf86-420d-4985-8a7a-306802b986a9}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_InputMapping
+ * 	FUNCTION	Input mapping
+ **************************************************************************************)
+  
+(**************************************************************************************
+   Input mapping
+***************************************************************************************)
+Inputs.GrossWeight				:= SHL(BYTE_TO_WORD(HW_Inputs.ByteIn2),8) + BYTE_TO_WORD(HW_Inputs.ByteIn3);
+Inputs.NetWeight				:= SHL(BYTE_TO_WORD(HW_Inputs.ByteIn6),8) + BYTE_TO_WORD(HW_Inputs.ByteIn7);
+Inputs.SetPoint					:= SHL(BYTE_TO_WORD(HW_Inputs.ByteIn10),8) + BYTE_TO_WORD(HW_Inputs.ByteIn11);
+Inputs.StatusRegister			:= SHL(BYTE_TO_WORD(HW_Inputs.ByteIn12),8) + BYTE_TO_WORD(HW_Inputs.ByteIn13);
+Inputs.CellError				:= HW_Inputs.ByteIn13.0;
+Inputs.ADConverterMalfunction	:= HW_Inputs.ByteIn13.1;
+Inputs.MaxWeightExceeded		:= HW_Inputs.ByteIn13.2;
+Inputs.GrossWeightToHigh		:= HW_Inputs.ByteIn13.3;
+Inputs.GrossWeightOutsideRange	:= HW_Inputs.ByteIn13.4;
+Inputs.NetWeightOutsideRange	:= HW_Inputs.ByteIn13.5;
+Inputs.GrossWeightNegative		:= HW_Inputs.ByteIn13.7;
+Inputs.NetWeightNegative		:= HW_Inputs.ByteIn12.0;
+Inputs.PeakWeightNegative		:= HW_Inputs.ByteIn12.1;
+Inputs.NetDisplayMode			:= HW_Inputs.ByteIn12.2;
+Inputs.WeightStable				:= HW_Inputs.ByteIn12.3;
+Inputs.WeightWithinWindow		:= HW_Inputs.ByteIn12.4;
+
+
+
+
+ 
+(**************************************************************************************
+   Element states
+***************************************************************************************)
+// Get status of the corresponding element and store it internally FunctionInterface.In.Element
+M_GetElementStates();
+
+(**************************************************************************************
+   Transport data of corresponding zone
+***************************************************************************************)
+// Get transport state of corresponding conveyor to generate a proper trigger
+Inputs.TransportData := F_GetTransportControlData(
+							eFunctionNumber	:= SettingsFunction.FunctionLink.eFunctionNumber,
+							ZoneNumber 		:= SettingsFunction.FunctionLink.ZoneNumber);
+
+(**************************************************************************************
+   AddOn states
+***************************************************************************************)
+// Get status of all corresponding AddOn functions and store it in FunctionInterface.In.AddOnOrder
+M_GetAddOnOrder();
+
+]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="A_OutputMapping" Id="{11c56277-3083-46ef-9edb-51dbacd382b9}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_OutputMapping
+ * 	FUNCTION	Output mapping
+ **************************************************************************************)
+ Outputs.Weight := Weight;
+ HW_Outputs.ByteOut0:= Outputs.uOutputCommand.ByteOut0;
+ HW_Outputs.ByteOut1:= Outputs.uOutputCommand.ByteOut1;
+ HW_Outputs.ByteOut8:= Outputs.uExchangeRegister.ByteOut8;
+ HW_Outputs.ByteOut9:= Outputs.uExchangeRegister.ByteOut9;
+
+(**************************************************************************************
+   Hardware outputs
+***************************************************************************************)
+
+
+(**************************************************************************************
+   Order outputs (Commands to corresponding element)
+***************************************************************************************)
+// Drive run not needed
+FunctionInterface.Out.FunctionOrders.ReqDriveRun := FALSE;
+
+// Allow element to drive
+FunctionInterface.Out.FunctionOrders.Enable := TRUE;
+FunctionInterface.Out.FunctionOrders.Enable_34 := TRUE;
+  
+(**************************************************************************************
+   AddOn outputs
+***************************************************************************************)
+FunctionInterface.Out.AddOnOrders.Enable := FunctionData.ErrorData.Error.ErrorType <> E_ErrorType.ERROR;
+
+FunctionInterface.Out.AddOnOrders.EnableHandover := NOT CheckEnabled 
+													OR WeightStates.eState = E_TLB4WeightState.IDLE
+													OR WeightStates.eState = E_TLB4WeightState.READY_FOR_TRANSPORT_OUT;
+
+FunctionInterface.Out.AddOnOrders.EnableTakeover :=	Outputs.EnableTakeover;
+
+FunctionInterface.Out.AddOnOrders.DataReady 	 := WeightStates.eState = E_TLB4WeightState.IDLE
+													OR WeightStates.eState = E_TLB4WeightState.READY_FOR_TRANSPORT_OUT;
+]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="A_States" Id="{ad62afd7-abb0-4f36-898f-e24f19a6f263}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_WeightStates
+ * 	FUNCTION	Handles scanner state machine
+ **************************************************************************************)
+
+(**************************************************************************************
+   Error reset
+***************************************************************************************)
+
+// Status error
+F_ResetError(
+	Reset 	  := FALSE,
+	ErrorData := FunctionData.ErrorData.ErrorDataSet[1]);
+	
+// Weight error
+F_ResetError(
+	Reset 	  := FALSE,
+	ErrorData := FunctionData.ErrorData.ErrorDataSet[2]);
+	
+	
+IF Inputs.ADConverterMalfunction OR 
+	Inputs.CellError OR
+	Inputs.GrossWeightOutsideRange OR
+	Inputs.GrossWeightToHigh OR
+	Inputs.MaxWeightExceeded OR
+	Inputs.NetWeightOutsideRange AND 
+		FunctionData.ErrorData.Error.ErrorType <> E_ErrorType.ERROR THEN
+	
+	// Error, no data present
+	F_SetError(
+		ErrorType 	:= E_ErrorType.ERROR,
+		ErrorParam 	:= '',
+		ErrorMsg 	:= E_ErrorConv.SCALE_NOT_READY,
+		ErrorData 	:= FunctionData.ErrorData.ErrorDataSet[1]);
+		
+	// Go to "ERROR"
+	WeightStates.eLastState := WeightStates.eState;
+	WeightStates.eState := E_TLB4WeightState.ERROR;
+	
+END_IF
+
+(**************************************************************************************************************
+   Detect Trigger
+***************************************************************************************************************)
+
+IF Settings.EnableExternalTrigger THEN
+	Trigger := CtrlIn.Trigger;
+	CheckEnabled := TRUE;
+ELSE
+		//check if the destination is to this function and zone, then if takevoer state is active we shall trigg the scanner
+	 IF(F_PB_GetTuDestination(SettingsFunction.FunctionLink.eFunctionNumber,SettingsFunction.FunctionLink.ZoneNumber,1) = SettingsFunction.FunctionLink.eFunctionNumber AND
+		F_PB_GetTransportControlDataRef(SettingsFunction.FunctionLink.eFunctionNumber,SettingsFunction.FunctionLink.ZoneNumber).eTakeOverState = E_TakeOverState.ACTIVE) THEN	
+		CheckEnabled := TRUE;
+		Trigger := TRUE;
+	END_IF
+END_IF
+(**************************************************************************************************************
+   Enable Takeover
+***************************************************************************************************************)
+
+IF DWORD_TO_DINT(Inputs.GrossWeight) >= Settings.MaxDiffFromZero AND 
+	NOT Inputs.TransportData.Occupied AND Inputs.TransportData.NumberOfPresentTUs = 0 THEN
+	Outputs.EnableTakeover := FALSE;
+	fbTimerScaleFree.IN := TRUE;
+ELSE
+	Outputs.EnableTakeover := TRUE;
+	fbTimerScaleFree.IN := FALSE;	
+END_IF
+
+fbTimerScaleFree(PT :=T#10S);
+
+IF fbTimerScaleFree.Q THEN
+	// Error, Scale not ready
+	F_SetError(
+		ErrorType 	:= E_ErrorType.ERROR,
+		ErrorParam 	:= 'Load detected check conv.',
+		ErrorMsg 	:= E_ErrorConv.SCALE_NOT_READY,
+		ErrorData 	:= FunctionData.ErrorData.ErrorDataSet[2]);	
+END_IF
+(**************************************************************************************
+   Scanner states
+***************************************************************************************)
+CASE WeightStates.eState OF
+	(**************************************************************************************
+   		INIT
+	***************************************************************************************)
+	E_TLB4WeightState.INIT:
+	
+		// If no error is pending
+		IF FunctionData.ErrorData.Error.ErrorType <> E_ErrorType.ERROR THEN
+			
+			Weight := 0;
+			CheckEnabled := FALSE;
+			Trigger := FALSE;
+			FunctionInterface.Out.AddOnOrders.DataReady := TRUE;
+			
+			// Change state
+			WeightStates.eLastState := WeightStates.eState;
+			WeightStates.eState := E_TLB4WeightState.IDLE;
+		ELSE
+			// Change state
+			WeightStates.eLastState := WeightStates.eState;
+			WeightStates.eState := E_TLB4WeightState.ERROR;
+		END_IF
+		
+	(**************************************************************************************
+   		IDLE
+	***************************************************************************************)
+	E_TLB4WeightState.IDLE:
+
+		// Function has to be started
+		IF FunctionData.OperationState.eState = E_PositionState.STARTED THEN
+			// Wait for Trigger request
+			IF Trigger THEN
+				
+				IF DWORD_TO_DINT(Inputs.GrossWeight) <= Settings.MaxDiffFromZero OR Inputs.TransportData.NumberOfPresentTUs > 0 THEN
+					// Go to "READ"
+					WeightStates.eLastState := WeightStates.eState;
+					WeightStates.eState := E_TLB4WeightState.READ;
+				ELSIF Inputs.CellError THEN
+					F_SetError(
+						ErrorType 	:= E_ErrorType.ERROR,
+						ErrorParam 	:= 'Error on hardware',
+						ErrorMsg 	:= E_ErrorProduct.SCALE_WEIGHT_CELL_ERROR,
+						ErrorData 	:= FunctionData.ErrorData.ErrorDataSet[2]);
+						
+						// Go to "ERROR"
+						WeightStates.eLastState := WeightStates.eState;
+						WeightStates.eState := E_TLB4WeightState.ERROR;
+				ELSE
+					// Error, Scale not ready
+					F_SetError(
+						ErrorType 	:= E_ErrorType.ERROR,
+						ErrorParam 	:= 'Load detected check conv.',
+						ErrorMsg 	:= E_ErrorConv.SCALE_NOT_READY,
+						ErrorData 	:= FunctionData.ErrorData.ErrorDataSet[2]);
+						
+						// Go to "ERROR"
+						WeightStates.eLastState := WeightStates.eState;
+						WeightStates.eState := E_TLB4WeightState.ERROR;
+				END_IF
+			END_IF
+		END_IF
+
+	(**************************************************************************************
+   		READ
+	***************************************************************************************)
+	E_TLB4WeightState.READ:
+		Trigger := TRUE;
+		// If action on corresponding conveyor was aborted, go back to idle
+		IF(Inputs.TransportData.eTransportState = E_TransportState.FREE
+           OR Inputs.TransportData.eTransportState = E_TransportState.IDLE
+		   OR Inputs.TransportData.eTakeOverState = E_TakeOverState.STOP
+		   OR Inputs.TransportData.eTakeOverState = E_TakeOverState.INTERRUPTED) THEN
+			// Go to "Idle"
+			WeightStates.eLastState := WeightStates.eState;
+			WeightStates.eState := E_TLB4WeightState.IDLE;
+		// New data ready
+		ELSIF Inputs.TransportData.Occupied AND (Inputs.WeightStable OR NOT Settings.WaitForStability) THEN
+			Weight := DWORD_TO_DINT(Inputs.GrossWeight);	
+			IF Inputs.TransportData.TU_DataIndex > 0 THEN			
+				TU_DataTable[Inputs.TransportData.TU_DataIndex].Profile.Weight := Weight * Config.ResultMultiplier;//(Weight * 100);
+			END_IF
+			
+			IF DWORD_TO_DINT(Inputs.GrossWeight) >= Settings.MinWeight AND 
+					DWORD_TO_DINT(Inputs.GrossWeight) <= Settings.MaxWeight AND 
+					NOT Inputs.GrossWeightNegative THEN
+				(*IF Inputs.TransportData.TU_DataIndex > 0 THEN
+					TU_DataTable[Inputs.TransportData.TU_DataIndex].Profile.Weight := Weight;//(Weight * 100);*)
+					WeightStates.eLastState := WeightStates.eState;
+					WeightStates.eState := E_TLB4WeightState.READY_FOR_TRANSPORT_OUT;
+				//END_IF	
+			ELSE
+				
+				IF DWORD_TO_DINT(Inputs.GrossWeight) <= Settings.MinWeight OR Inputs.GrossWeightNegative THEN
+					// Error, no data present
+					F_SetError(
+						ErrorType 	:= E_ErrorType.ERROR,
+						ErrorParam 	:= 'No load detected check conv',
+						ErrorMsg 	:= E_ErrorProduct.SCALE_OVER_UNDER_WEIGHT, 
+						ErrorData 	:= FunctionData.ErrorData.ErrorDataSet[2]);
+				ELSIF DWORD_TO_DINT(Inputs.GrossWeight) >= Settings.MaxWeight THEN
+					Weight := 9999; //Maximum weight, to indicate that hte wheight meassured is not trustworthy!	
+					IF Inputs.TransportData.TU_DataIndex > 0 THEN			
+						TU_DataTable[Inputs.TransportData.TU_DataIndex].Profile.Weight := Weight * Config.ResultMultiplier;//(Weight * 100);
+					END_IF
+					// Error, no data present
+					F_SetError(
+						ErrorType 	:= E_ErrorType.ERROR,
+						ErrorParam 	:= 'Overload detected',
+						ErrorMsg 	:= E_ErrorProduct.SCALE_WEIGHT_CELL_ERROR, 
+						ErrorData 	:= FunctionData.ErrorData.ErrorDataSet[2]);					
+				END_IF	
+				// Go to "ERROR"
+				WeightStates.eLastState := WeightStates.eState;
+				WeightStates.eState := E_TLB4WeightState.ERROR;
+			END_IF
+		END_IF
+		
+	(**************************************************************************************
+   		WAIT_ACK
+	***************************************************************************************)
+	E_TLB4WeightState.READY_FOR_TRANSPORT_OUT:
+		Trigger := FALSE;
+		IF Inputs.TransportData.eTransportState = E_TransportState.FREE THEN
+			WeightStates.eLastState := WeightStates.eState;
+			WeightStates.eState := E_TLB4WeightState.IDLE;		
+			CheckEnabled := FALSE;
+		END_IF
+	
+	(**************************************************************************************
+   		ERROR
+	***************************************************************************************)
+	E_TLB4WeightState.ERROR:
+		Weight := 0;
+		Trigger := FALSE;
+		// Wait until error is reset
+		IF FunctionData.ErrorData.Error.ErrorType <> E_ErrorType.ERROR THEN
+			// Go back to init
+			WeightStates.eLastState := WeightStates.eState;
+			WeightStates.eState := E_TLB4WeightState.INIT;
+		END_IF
+
+	(**************************************************************************************
+   		COMMISSIOING
+	***************************************************************************************)
+	E_TLB4WeightState.COMMISSIOING:
+		A_EnableCalibration();
+ELSE
+	// Programming error
+	DebugMsg := CONCAT(	'Programming error - Invalid scale state: ',	INT_TO_STRING(WeightStates.eState));
+	fbDebugMsg.M_SendErrorMsg(DebugMsg); 
+	;
+END_CASE]]></ST>
+      </Implementation>
+    </Action>
+    <LineIds Name="FB_TLB4WeightAddon">
+      <LineId Id="3" Count="35" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_TLB4WeightAddon.A_DataAquisition">
+      <LineId Id="2" Count="9" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_TLB4WeightAddon.A_EnableCalibration">
+      <LineId Id="1" Count="1" />
+      <LineId Id="4" Count="0" />
+      <LineId Id="6" Count="0" />
+      <LineId Id="8" Count="2" />
+      <LineId Id="20" Count="0" />
+      <LineId Id="12" Count="0" />
+      <LineId Id="14" Count="1" />
+      <LineId Id="21" Count="0" />
+      <LineId Id="17" Count="0" />
+      <LineId Id="22" Count="0" />
+      <LineId Id="19" Count="0" />
+      <LineId Id="16" Count="0" />
+      <LineId Id="7" Count="0" />
+      <LineId Id="3" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_TLB4WeightAddon.A_Init">
+      <LineId Id="2" Count="46" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_TLB4WeightAddon.A_InputMapping">
+      <LineId Id="2" Count="48" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_TLB4WeightAddon.A_OutputMapping">
+      <LineId Id="2" Count="4" />
+      <LineId Id="28" Count="3" />
+      <LineId Id="7" Count="13" />
+      <LineId Id="46" Count="0" />
+      <LineId Id="21" Count="6" />
+      <LineId Id="32" Count="1" />
+      <LineId Id="45" Count="0" />
+      <LineId Id="1" Count="0" />
+      <LineId Id="44" Count="0" />
+      <LineId Id="41" Count="0" />
+      <LineId Id="43" Count="0" />
+      <LineId Id="34" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_TLB4WeightAddon.A_States">
+      <LineId Id="2" Count="7" />
+      <LineId Id="227" Count="0" />
+      <LineId Id="10" Count="39" />
+      <LineId Id="280" Count="2" />
+      <LineId Id="55" Count="0" />
+      <LineId Id="58" Count="1" />
+      <LineId Id="61" Count="0" />
+      <LineId Id="237" Count="1" />
+      <LineId Id="63" Count="0" />
+      <LineId Id="239" Count="0" />
+      <LineId Id="230" Count="0" />
+      <LineId Id="236" Count="0" />
+      <LineId Id="64" Count="0" />
+      <LineId Id="240" Count="0" />
+      <LineId Id="232" Count="1" />
+      <LineId Id="241" Count="0" />
+      <LineId Id="234" Count="0" />
+      <LineId Id="243" Count="0" />
+      <LineId Id="242" Count="0" />
+      <LineId Id="244" Count="0" />
+      <LineId Id="235" Count="0" />
+      <LineId Id="247" Count="4" />
+      <LineId Id="245" Count="0" />
+      <LineId Id="252" Count="0" />
+      <LineId Id="65" Count="14" />
+      <LineId Id="225" Count="0" />
+      <LineId Id="80" Count="45" />
+      <LineId Id="127" Count="10" />
+      <LineId Id="228" Count="1" />
+      <LineId Id="139" Count="2" />
+      <LineId Id="144" Count="1" />
+      <LineId Id="269" Count="0" />
+      <LineId Id="267" Count="1" />
+      <LineId Id="274" Count="0" />
+      <LineId Id="273" Count="0" />
+      <LineId Id="148" Count="2" />
+      <LineId Id="154" Count="1" />
+      <LineId Id="157" Count="2" />
+      <LineId Id="162" Count="0" />
+      <LineId Id="253" Count="1" />
+      <LineId Id="163" Count="5" />
+      <LineId Id="255" Count="0" />
+      <LineId Id="277" Count="2" />
+      <LineId Id="275" Count="0" />
+      <LineId Id="262" Count="4" />
+      <LineId Id="256" Count="0" />
+      <LineId Id="169" Count="16" />
+      <LineId Id="187" Count="4" />
+      <LineId Id="193" Count="1" />
+      <LineId Id="196" Count="5" />
+      <LineId Id="287" Count="0" />
+      <LineId Id="283" Count="3" />
+      <LineId Id="202" Count="6" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

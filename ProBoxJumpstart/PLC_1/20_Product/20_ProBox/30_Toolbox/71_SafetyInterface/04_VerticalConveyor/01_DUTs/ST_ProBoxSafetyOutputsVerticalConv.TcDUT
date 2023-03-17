@@ -1,0 +1,18 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <DUT Name="ST_ProBoxSafetyOutputsVerticalConv" Id="{1a073bf7-4814-450d-be8e-3f3e252d5cc0}">
+    <Declaration><![CDATA[TYPE ST_ProBoxSafetyOutputsVerticalConv :
+STRUCT
+	FeedBackContactor		: ARRAY[1..GVL_PB_SG.NUMBER_OF_CONTACTORS] OF BOOL; //Feed back contactor send to safety
+	ContactorOn             : BOOL; 	//Send sumary of all OP buttons buttonS to safety
+	ContactorOff            : BOOL; 	//Send Sumary of all OP buttons to safety
+	//ResetSafetyNeeded       : BOOL; 	//Indication I/O output 
+	ErrorAck                : BOOL;		//Error acknowledgement sent to safety
+	EmergencyDrive 			: BOOL; 	//Send Summary of all op switches to safety
+	ManAuto					: BOOL;     // Manual drive turn switch. True = Auto
+	EntryRequest			: BOOL;		// Key switch Entry request. Active low, normally high	
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

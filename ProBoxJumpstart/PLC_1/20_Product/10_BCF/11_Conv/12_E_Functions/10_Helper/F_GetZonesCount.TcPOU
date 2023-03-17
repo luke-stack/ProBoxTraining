@@ -1,0 +1,76 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.4">
+  <POU Name="F_GetZonesCount" Id="{470423af-a333-485c-b316-8f2523f1b883}" SpecialFunc="None">
+    <Declaration><![CDATA[// function counts all used zones between this given limits
+FUNCTION PUBLIC F_GetZonesCount : DWORD
+(**************************************************************************************
+ * Application   : BoxControl Framework
+ * Revision date : $Date: 2013-09-23 11:26:06 +0200 (Wed, 23 Sep 2015) $
+ * Author        : CDC
+ * ------------------------------------------------------------------------------------
+ * © Swisslog AG * Swisslog is not liable for any usage of this source code that is not agreed
+ * on between Swisslog and the other party. The mandatory legal liability remains * unaffected.
+ * ------------------------------------------------------------------------------------
+ * Project revision history:
+ *
+ * VERSION DATE         INITIALS     DESCRIPTION
+ * 0.0     DD.MM.YYYY   (name)       (explain customized modifications)
+ *
+ **************************************************************************************)
+
+(************************************************************************************************************)
+VAR_INPUT
+	Start				: E_FunctionNumber				:= 0;	// limit for counting
+	End					: E_FunctionNumber				:= 0;	// limit for counting
+END_VAR
+
+(************************************************************************************************************)
+VAR
+	FctNbr				: E_FunctionNumber				:= 0;
+	StartFct			: E_FunctionNumber				:= 0;
+	EndFct				: E_FunctionNumber				:= 0;
+	Count				: DWORD							:= 0;
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[
+IF Start < E_FunctionNumber.F_BEGIN_FUNCTION THEN
+	Start:= E_FunctionNumber.F_BEGIN_FUNCTION;
+END_IF
+IF Start > E_FunctionNumber.F_END_FUNCTION THEN
+	Start:= E_FunctionNumber.F_END_FUNCTION;
+END_IF
+IF End < E_FunctionNumber.F_BEGIN_FUNCTION THEN
+	End:= E_FunctionNumber.F_BEGIN_FUNCTION;
+END_IF
+IF End > E_FunctionNumber.F_END_FUNCTION THEN
+	End:= E_FunctionNumber.F_END_FUNCTION;
+END_IF
+
+IF Start < End
+THEN
+	StartFct:= Start;
+	EndFct:= End;
+ELSIF  Start > End
+THEN
+	StartFct:= End;
+	EndFct:= Start;
+ELSE
+	StartFct:= End;
+	EndFct:= Start;
+END_IF
+
+Count:= 0;
+FOR FctNbr:= StartFct TO EndFct DO
+	IF FunctionRegistry[FctNbr].Enable THEN
+		IF __ISVALIDREF(FunctionRegistry[FctNbr].rSettingsFunction) THEN
+			Count:= Count + INT_TO_DWORD(FunctionRegistry[FctNbr].rSettingsFunction.NumberOfZones);
+		END_IF
+	END_IF
+END_FOR
+
+F_GetZonesCount:= Count;
+]]></ST>
+    </Implementation>
+  </POU>
+</TcPlcObject>

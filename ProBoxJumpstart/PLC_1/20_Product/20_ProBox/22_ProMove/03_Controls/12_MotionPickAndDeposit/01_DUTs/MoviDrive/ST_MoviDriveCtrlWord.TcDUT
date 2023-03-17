@@ -1,0 +1,19 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.12">
+  <DUT Name="ST_MoviDriveCtrlWord" Id="{9dda6e82-b6dc-40a0-aaa0-ed912ba46ef2}">
+    <Declaration><![CDATA[TYPE ST_MoviDriveCtrlWord :
+STRUCT
+	InverterInhibit		: BIT;
+	EnableAndQuickStop	: BIT; 
+	EnableAndStop		: BIT; 
+	HoldControl			: BIT; 
+	RampSelection		: BIT;
+	ParameterSelection	: BIT; 
+	ResetError			: BIT; 
+	Reserved			: BIT; 
+	Spare				: BYTE;
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

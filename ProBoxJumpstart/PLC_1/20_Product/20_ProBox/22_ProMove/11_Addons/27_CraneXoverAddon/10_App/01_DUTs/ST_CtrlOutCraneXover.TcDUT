@@ -1,0 +1,12 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.12">
+  <DUT Name="ST_CtrlOutCraneXover" Id="{6e34054d-4893-48c6-b0fd-c8b0c833a517}">
+    <Declaration><![CDATA[TYPE ST_CtrlOutCraneXover :
+STRUCT
+	BusyXover				: BOOL; // Busy with handover/takeover to/from crane and lift is down(IF enabled) = safe to run chain to transfer new TU's 
+	TuTakenOver				: BOOL; // True = TU was taken over from crane and are about or waiting for transport	
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

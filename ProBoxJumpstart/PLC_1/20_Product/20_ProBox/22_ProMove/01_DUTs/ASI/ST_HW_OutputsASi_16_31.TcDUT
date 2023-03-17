@@ -1,0 +1,89 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <DUT Name="ST_HW_OutputsASi_16_31" Id="{0ccc7ccb-b36b-4805-bebf-9999f94d8f01}">
+    <Declaration><![CDATA[TYPE ST_HW_OutputsASi_16_31 :
+STRUCT
+	OUT_17_1	: BIT;
+	OUT_17_2	: BIT;
+	OUT_17_3	: BIT;
+	OUT_17_4 	: BIT;
+	
+	OUT_16_1	: BIT;
+	OUT_16_2	: BIT;
+	OUT_16_3	: BIT;
+	OUT_16_4 	: BIT;
+
+	OUT_19_1	: BIT;
+	OUT_19_2	: BIT;
+	OUT_19_3	: BIT;
+	OUT_19_4	: BIT;
+
+	OUT_18_1	: BIT;
+	OUT_18_2	: BIT;
+	OUT_18_3	: BIT;
+	OUT_18_4	: BIT;
+
+	OUT_21_1	: BIT;
+	OUT_21_2	: BIT;
+	OUT_21_3	: BIT;
+	OUT_21_4 	: BIT;
+	
+	OUT_20_1	: BIT;
+	OUT_20_2	: BIT;
+	OUT_20_3	: BIT;
+	OUT_20_4	: BIT;
+
+	OUT_23_1	: BIT;
+	OUT_23_2	: BIT;
+	OUT_23_3	: BIT;
+	OUT_23_4 	: BIT;
+
+	OUT_22_1	: BIT;
+	OUT_22_2	: BIT;
+	OUT_22_3	: BIT;
+	OUT_22_4	: BIT;
+
+	OUT_25_1	: BIT;
+	OUT_25_2	: BIT;
+	OUT_25_3	: BIT;
+	OUT_25_4	: BIT;
+
+	OUT_24_1	: BIT;
+	OUT_24_2	: BIT;
+	OUT_24_3	: BIT;
+	OUT_24_4	: BIT;
+
+	OUT_27_1	: BIT;
+	OUT_27_2	: BIT;
+	OUT_27_3	: BIT;
+	OUT_27_4	: BIT;
+
+	OUT_26_1	: BIT;
+	OUT_26_2	: BIT;
+	OUT_26_3	: BIT;
+	OUT_26_4	: BIT;
+
+	OUT_29_1	: BIT;
+	OUT_29_2	: BIT;
+	OUT_29_3	: BIT;
+	OUT_29_4	: BIT;
+
+	OUT_28_1	: BIT;
+	OUT_28_2	: BIT;
+	OUT_28_3	: BIT;
+	OUT_28_4	: BIT;
+	
+	OUT_31_1	: BIT;
+	OUT_31_2	: BIT;
+	OUT_31_3	: BIT;
+	OUT_31_4	: BIT;
+
+	OUT_30_1	: BIT;
+	OUT_30_2	: BIT;
+	OUT_30_3	: BIT;
+	OUT_30_4	: BIT;
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

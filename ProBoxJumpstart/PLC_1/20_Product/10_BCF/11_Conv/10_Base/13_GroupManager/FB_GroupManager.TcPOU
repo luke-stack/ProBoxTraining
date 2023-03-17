@@ -1,0 +1,519 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.12">
+  <POU Name="FB_GroupManager" Id="{99bab81e-798e-4b24-b8ac-106e09ad495b}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK FB_GroupManager
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 404529 $
+ *	Revision date	:	$Date: 2018-04-23 08:21:38 +0200 (Mo., 23 Apr 2018) $
+ *	Last changed by	:	$Author: b7bolm $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/trunk/01_Software/BCF/BCF/JumpStart/20_Product/10_App/14_Groups/10_Lib/10_Conv/FB_GroupManager.TcPOU $
+ *
+ *	Purpose			:	Group Manager - Administrates group states.
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+VAR_INPUT
+	Config						: ST_CFG_GroupManager; // GroupManager configuration
+END_VAR
+
+VAR
+	Init						: BOOL := FALSE; // Instance is initialized
+	
+	fbDebugMsg					: FB_DebugMsg; // Debug Msg Manager (STACK) 
+	DebugMsg					: T_MAXSTRING; // Debug msg
+	OperationStateEmpty			: ST_PositionState;
+	ElementReferenceTable		: ARRAY [E_BEGIN_ELEMENT..E_END_ELEMENT] OF ST_GroupManagerGroupMember;	// Referencetable - For each element, list the groups it belongs to
+	GroupReferenceTable			: ARRAY [G_BEGIN_GROUP..G_END_GROUP] OF ST_GroupManagerElementMember; // Referencetable -  For each group, list the elements which belong to it *)
+END_VAR]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[(**************************************************************************************************************
+   Group Manager - Body never called!
+***************************************************************************************************************)
+;]]></ST>
+    </Implementation>
+    <Method Name="M_GetGroupCmd" Id="{8460165a-4b2e-44de-a1d1-f3c67348bc60}">
+      <Declaration><![CDATA[METHOD M_GetGroupCmd : ST_PositionState
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 404529 $
+ *	Revision date	:	$Date: 2018-04-23 08:21:38 +0200 (Mo., 23 Apr 2018) $
+ *	Last changed by	:	$Author: b7bolm $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/trunk/01_Software/BCF/BCF/JumpStart/20_Product/10_App/14_Groups/10_Lib/10_Conv/FB_GroupManager.TcPOU $
+ *
+ *	Purpose			:	M_GetGroupCmd
+ *						An element requests its group state with this method. The Group Manager
+ *						checks all groups which are related to this element, prioritize
+ *						all states and returns the valid state to the element.
+ *
+ *						Additionally for all group types 'SG' (SwitchingGroup) the related
+ *						Mode will be verified.
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+VAR_INPUT
+	meElementNumber		: E_ElementNumber; // The number of the element
+END_VAR
+
+VAR
+	meGroupState		: E_PositionState; // enum group state
+	meGroupMode			: E_PositionMode; // group mode
+	meGroupNumber		: E_GroupNumber; // Group number
+	mGroupState			: ST_PositionState; // group state
+	eGroup				: E_GroupNumber; // Group iterator
+	mLastValuesValid	: BOOL; // Last states are valid
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[// Initialize default values
+meGroupState:= E_PositionState.UNKNOWN;
+meGroupMode := E_PositionMode.UNKNOWN_MODE;
+M_GetGroupCmd.eMode := meGroupMode;
+M_GetGroupCmd.eState := meGroupState;
+mLastValuesValid := FALSE;
+
+// If the element number is valid 
+IF (meElementNumber > E_BEGIN_ELEMENT) AND (meElementNumber < E_END_ELEMENT) THEN
+
+	// Go trough all groups 
+	FOR eGroup := G_BEGIN_GROUP + 1 TO G_END_GROUP - 1 DO
+		// Get current group number
+		meGroupNumber := ElementReferenceTable[meElementNumber].eMemberGroup[eGroup];
+		
+		
+		// When the calling element is part of that group
+		IF meGroupNumber > E_GroupNumber.G_BEGIN_GROUP THEN
+			
+			// Make sure the group is initilized, otherwise the reported state is maybe not valid
+			IF F_IsGroupInitialized(eGroup) THEN
+				mGroupState := F_GetGroupOperationState(eGroupNumber := meGroupNumber);
+			ELSE
+				mGroupState := OperationStateEmpty;
+			END_IF
+			
+			(*
+			Search for the highest prioritized state
+			1. Unknown
+			2. Stopped
+			3. Stopping
+			4. Starting
+			5. Started
+			
+			Remark: An element can be part of multiple groups!
+			*)
+			IF mGroupState.eState = E_PositionState.UNKNOWN OR
+               (meGroupState = E_PositionState.UNKNOWN AND mLastValuesValid) THEN
+				
+				meGroupState := E_PositionState.UNKNOWN;
+			
+			ELSIF mGroupState.eState = E_PositionState.STOPPED OR
+                  (meGroupState = E_PositionState.STOPPED AND mLastValuesValid) THEN
+			
+				meGroupState := E_PositionState.STOPPED;
+				
+			ELSIF mGroupState.eState = E_PositionState.STOPPING OR
+                  (meGroupState = E_PositionState.STOPPING AND mLastValuesValid) THEN
+			
+				meGroupState := E_PositionState.STOPPING;
+				
+			ELSIF mGroupState.eState = E_PositionState.STARTING OR
+                  (meGroupState = E_PositionState.STARTING AND mLastValuesValid) THEN
+			
+				meGroupState := E_PositionState.STARTING;
+				
+			ELSIF mGroupState.eState = E_PositionState.STARTED OR
+                  (meGroupState = E_PositionState.STARTED AND mLastValuesValid) THEN
+			
+				meGroupState := E_PositionState.STARTED;
+			ELSE
+				meGroupState := E_PositionState.UNKNOWN;
+			END_IF
+			
+			
+			(*
+			Search for the highest prioritized mode
+			1. Unknown
+			2. OFF
+			3. MANUAL
+			4. SEMI_Auto
+			5. Auto
+			
+			Remark: An element can be part of multiple groups!
+			*)
+			IF (meGroupMode = E_PositionMode.UNKNOWN_MODE AND mLastValuesValid) OR
+			   mGroupState.eMode = E_PositionMode.UNKNOWN_MODE THEN
+
+				meGroupMode := E_PositionMode.UNKNOWN_MODE;
+				
+			ELSIF (meGroupMode = E_PositionMode.OFF_MODE AND mLastValuesValid)OR
+				  mGroupState.eMode = E_PositionMode.OFF_MODE THEN
+			   
+				meGroupMode := E_PositionMode.OFF_MODE;
+					
+			ELSIF (meGroupMode = E_PositionMode.MANUAL_MODE AND mLastValuesValid) OR
+				  mGroupState.eMode = E_PositionMode.MANUAL_MODE THEN
+			   
+				meGroupMode := E_PositionMode.MANUAL_MODE;
+				
+			ELSIF (meGroupMode = E_PositionMode.SEMI_AUTO AND mLastValuesValid) OR
+				  mGroupState.eMode = E_PositionMode.SEMI_AUTO THEN
+			   
+				meGroupMode := E_PositionMode.SEMI_AUTO;
+
+			ELSIF (meGroupMode = E_PositionMode.AUTO_MODE AND mLastValuesValid) OR
+				  mGroupState.eMode = E_PositionMode.AUTO_MODE THEN
+				  
+				meGroupMode := E_PositionMode.AUTO_MODE;
+					
+			// Otherwise the group has an invalid mode
+			ELSE
+				meGroupMode := E_PositionMode.UNKNOWN_MODE;
+			END_IF
+			
+			// States of last group are valid
+			mLastValuesValid := TRUE;
+		END_IF
+	END_FOR
+	
+	//Update output
+	M_GetGroupCmd.eMode 		:= meGroupMode;
+	M_GetGroupCmd.eState		:= meGroupState;
+	M_GetGroupCmd.Info			:= mGroupState.Info;
+	M_GetGroupCmd.InitRelease	:= mGroupState.InitRelease;
+END_IF
+
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_GetGroupMemberState" Id="{8adf0e9e-115c-4af9-b8a6-5d9d311e0edf}">
+      <Declaration><![CDATA[METHOD M_GetGroupMemberState : E_PositionState
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 404529 $
+ *	Revision date	:	$Date: 2018-04-23 08:21:38 +0200 (Mo., 23 Apr 2018) $
+ *	Last changed by	:	$Author: b7bolm $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/trunk/01_Software/BCF/BCF/JumpStart/20_Product/10_App/14_Groups/10_Lib/10_Conv/FB_GroupManager.TcPOU $
+ *
+ *	Purpose			:	M_GetGroupMemberState
+ *						A group requests the state of all appropriate elements. The
+ *						Group Manager check all related elements and returns the summary
+ *						of the states. If not all elements have the same state, an 
+ *						"No state available" message will be returned.
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+VAR_INPUT
+	meGroupNumber 			: E_GroupNumber; // Requesting group number
+END_VAR
+
+VAR
+	meElement				: E_ElementNumber; // Element iterator
+	meLastGroupState		: E_PositionState; // Last group state, used for comparison
+	meElementNumber			: E_ElementNumber; // Store ongoing element localy
+	mFirstStateSaved		: BOOL; // Flag for storing first element state
+	mElementState			: ST_PositionState; // Ongoing element state
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[// Initialize
+M_GetGroupMemberState := E_PositionState.UNKNOWN;
+meLastGroupState := E_PositionState.UNKNOWN;
+mFirstStateSaved := FALSE;
+
+// If the group number is valid
+IF (meGroupNumber > G_BEGIN_GROUP) AND (meGroupNumber < G_END_GROUP) THEN
+
+	// Go trough all elements	
+	FOR meElement := E_BEGIN_ELEMENT + 1 TO E_END_ELEMENT - 1 DO
+		// Store current element number
+		meElementNumber := GroupReferenceTable[meGroupNumber].eMemberElement[meElement];
+	
+		// Only process records which have a valid element ID 
+		IF meElementNumber <> E_BEGIN_ELEMENT THEN
+				// Store internal data locally
+				mElementState := F_GetElementOperationState(eElementNumber := meElementNumber);
+			
+				// If its not the first element
+				IF mFirstStateSaved THEN
+					// compare
+					IF mElementState.eState <> meLastGroupState THEN
+						// Return no unique state was found
+						M_GetGroupMemberState := E_PositionState.UNKNOWN;
+						RETURN;
+					END_IF
+				ELSE
+					//Store 
+					meLastGroupState := mElementState.eState;
+					mFirstStateSaved := TRUE;
+				END_IF
+			END_IF
+	END_FOR
+	
+	// If all members have the same state, return it
+	M_GetGroupMemberState := meLastGroupState;
+END_IF
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_GroupMemberErrorPending" Id="{39d8675f-c988-4823-b8ca-0a2b60cfc2fa}">
+      <Declaration><![CDATA[METHOD M_GroupMemberErrorPending : BOOL
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 404529 $
+ *	Revision date	:	$Date: 2018-04-23 08:21:38 +0200 (Mo., 23 Apr 2018) $
+ *	Last changed by	:	$Author: b7bolm $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/trunk/01_Software/BCF/BCF/JumpStart/20_Product/10_App/14_Groups/10_Lib/10_Conv/FB_GroupManager.TcPOU $
+ *
+ *	Purpose			:	M_GroupMemberErrorPending
+ *						A group requests the error state of all appropriate elements. 
+ *						If one member is found with an error - True is returned.
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+VAR_INPUT
+	meGroupNumber 			: E_GroupNumber; // Requesting group number
+END_VAR
+
+VAR
+	meElement				: E_ElementNumber; // Element iterator
+	meElementNumber			: E_ElementNumber; // Store ongoing element localy
+	mElementErrorData		: ST_ElementErrorStruct; // Ongoing element data
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+// Initialize
+M_GroupMemberErrorPending := FALSE;
+
+// If the group number is valid
+IF (meGroupNumber > G_BEGIN_GROUP) AND (meGroupNumber < G_END_GROUP) THEN
+
+	// Go trough all elements	
+	FOR meElement := E_BEGIN_ELEMENT + 1 TO E_END_ELEMENT - 1 DO
+		// Store current element number
+		meElementNumber := GroupReferenceTable[meGroupNumber].eMemberElement[meElement];
+	
+		// Only process records which have a valid element ID 
+		IF meElementNumber > E_ElementNumber.E_BEGIN_ELEMENT AND
+           meElementNumber <  E_ElementNumber.E_END_ELEMENT THEN
+			// Store internal data locally
+			mElementErrorData := F_GetElementErrorData(eElementNumber := meElementNumber);
+		
+			// Check if the element or one of its functions is in error state
+			IF mElementErrorData.Error.ErrorType = E_ErrorType.ERROR OR
+			   mElementErrorData.FunctionErrorPending THEN
+			   
+				// Return 
+				M_GroupMemberErrorPending := TRUE;
+				EXIT;
+			END_IF
+		END_IF
+	END_FOR
+END_IF
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_Init" Id="{efb0c8f7-9902-49cb-80f7-8122057e8eb6}">
+      <Declaration><![CDATA[METHOD M_Init : BOOL
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 404529 $
+ *	Revision date	:	$Date: 2018-04-23 08:21:38 +0200 (Mo., 23 Apr 2018) $
+ *	Last changed by	:	$Author: b7bolm $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/trunk/01_Software/BCF/BCF/JumpStart/20_Product/10_App/14_Groups/10_Lib/10_Conv/FB_GroupManager.TcPOU $
+ *
+ *	Purpose			:	M_Init
+ *						Initialize GroupManager. 
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+VAR_INPUT
+	mInit				: BOOL; // True = Do init always , False = only if needed 
+END_VAR
+
+VAR
+	eGroup				: E_GroupNumber; // Group iterator
+	eElement			: E_ElementNumber; // Element iterator
+	eGroupElement		: E_ElementNumber; // Element in this group
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[// If instance is not initialized
+// or it has to be reinitialized
+IF NOT Init OR mInit THEN
+	// Populate the GroupTable 
+	// For every group, copy the member elements to the GroupTable 
+	FOR eGroup := G_BEGIN_GROUP TO G_END_GROUP DO
+		FOR eElement := E_BEGIN_ELEMENT TO E_END_ELEMENT DO
+			// Update GroupReferenceTable based on group manager configuration
+			GroupReferenceTable[eGroup].eMemberElement[eElement] := Config.Group[eGroup].eMemberElement[eElement];
+			
+			IF Config.Group[eGroup].eMemberElement[eElement] > E_ElementNumber.E_BEGIN_ELEMENT THEN
+				ElementReferenceTable[Config.Group[eGroup].eMemberElement[eElement]].eMemberGroup[eGroup] := eGroup;
+			ELSE
+				ElementReferenceTable[Config.Group[eGroup].eMemberElement[eElement]].eMemberGroup[eGroup] := E_GroupNumber.G_BEGIN_GROUP;
+			END_IF
+		END_FOR
+	END_FOR
+
+	// Initialization done
+	Init := TRUE;
+	
+	// Return 
+	M_Init := Init;
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_ResetMemberElements" Id="{fdd86e0e-1dad-4a8c-98ef-378b9520c72e}">
+      <Declaration><![CDATA[METHOD M_ResetMemberElements : BOOL
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 404529 $
+ *	Revision date	:	$Date: 2018-04-23 08:21:38 +0200 (Mo., 23 Apr 2018) $
+ *	Last changed by	:	$Author: b7bolm $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/trunk/01_Software/BCF/BCF/JumpStart/20_Product/10_App/14_Groups/10_Lib/10_Conv/FB_GroupManager.TcPOU $
+ *
+ *	Purpose			:	M_ResetMemberElements - Send a reset command to all 
+ *						appropriate elements of a group
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+VAR_INPUT
+	meGroupNumber 			: E_GroupNumber; // Requesting group number
+END_VAR
+
+VAR
+	meElement				: E_ElementNumber; // Element iterator
+	meElementNumber			: E_ElementNumber; // Store ongoing element localy
+	mElementErrorData		: ST_ElementErrorStruct; // Ongoing element data
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+// Initialize
+M_ResetMemberElements := FALSE;
+
+// If the group number is valid
+IF (meGroupNumber > G_BEGIN_GROUP) AND (meGroupNumber < G_END_GROUP) THEN
+
+	// Go trough all elements	
+	FOR meElement := E_BEGIN_ELEMENT + 1 TO E_END_ELEMENT - 1 DO
+		// Store current element number
+		meElementNumber := GroupReferenceTable[meGroupNumber].eMemberElement[meElement];
+		
+		// Only process records which have a valid element ID 
+		IF meElementNumber > E_ElementNumber.E_BEGIN_ELEMENT AND
+           meElementNumber <  E_ElementNumber.E_END_ELEMENT THEN
+			// Store internal data locally
+			mElementErrorData := F_GetElementErrorData(eElementNumber := meElementNumber);
+		
+			// Check if the element or one of its functions is in error state
+			IF mElementErrorData.Error.ErrorType = E_ErrorType.ERROR OR
+			   mElementErrorData.FunctionErrorPending THEN
+				// Send reset command
+				F_ResetElementError(
+					eElementNumber := meElementNumber,
+					ResetMembers := TRUE);
+			END_IF
+		END_IF
+	END_FOR
+END_IF
+
+]]></ST>
+      </Implementation>
+    </Method>
+    <ObjectProperties>
+      <XmlArchive>
+        <Data>
+          <o xml:space="preserve" t="UMLStereoTypeContainerObject">
+            <v n="IsType" t="UMLType">BaseArea</v>
+            <v n="Stereotype">""</v>
+            <d n="Stereotypes" t="Hashtable" />
+          </o>
+        </Data>
+        <TypeList>
+          <Type n="Hashtable">System.Collections.Hashtable</Type>
+          <Type n="String">System.String</Type>
+          <Type n="UMLStereoTypeContainerObject">{30250973-b110-4e31-b562-c102e042dca4}</Type>
+          <Type n="UMLType">{0197b136-405a-42ee-bb27-fd08b621d0cf}</Type>
+        </TypeList>
+      </XmlArchive>
+    </ObjectProperties>
+    <LineIds Name="FB_GroupManager">
+      <LineId Id="3" Count="2" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_GroupManager.M_GetGroupCmd">
+      <LineId Id="3" Count="116" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_GroupManager.M_GetGroupMemberState">
+      <LineId Id="3" Count="36" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_GroupManager.M_GroupMemberErrorPending">
+      <LineId Id="3" Count="28" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_GroupManager.M_Init">
+      <LineId Id="3" Count="22" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_GroupManager.M_ResetMemberElements">
+      <LineId Id="3" Count="29" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

@@ -1,0 +1,26 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <DUT Name="ST_VC_AccessPanelInputs" Id="{06a7f1a0-f2ef-48a7-82ee-94aced008178}">
+    <Declaration><![CDATA[TYPE ST_VC_AccessPanelInputs :
+STRUCT
+	PB_ActivateMainContactor : BOOL; // Pushbutton activate main contactor
+	PB_MainContactorOff : BOOL; // Pushbutton main contactor off
+	PB_AutoOn : BOOL; // Pushbutton activate automatic mode
+	PB_EmergencyStopReset : BOOL; // Pushbutton reset emergency stop
+	PB_ErrorReset : BOOL; // Pushbutton reset error
+	PB_EmergencyStop : BOOL; // Pushbutton Emergency stop
+	SW_Auto : BOOL; // Auto/Man keyswitch
+	PB_VcUp : BOOL; // Lift up vertical conveyor
+	PB_VcDown : BOOL; // Lift down vertical conveyor
+	
+	PB_VcConvLeft : BOOL; // Vertical conveyor Left
+	PB_VcConvRight : BOOL; // Vertical conveyor Right
+ 	
+	SW_EntryRequest : BOOL; // Auto/Entry request switch
+	SW_EmergencyDrive : BOOL; // Emergency drive
+	
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

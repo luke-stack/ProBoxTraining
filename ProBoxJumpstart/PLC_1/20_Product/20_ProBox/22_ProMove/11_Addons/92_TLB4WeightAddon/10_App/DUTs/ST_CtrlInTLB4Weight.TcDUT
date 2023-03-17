@@ -1,0 +1,13 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <DUT Name="ST_CtrlInTLB4Weight" Id="{7c5f8ce3-a94e-4776-9bc5-4e8412ad37a5}">
+    <Declaration><![CDATA[TYPE ST_CtrlInTLB4Weight :
+STRUCT
+	Trigger : BOOL;	// Trigger from customization
+	SampleWeight:WORD;
+
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

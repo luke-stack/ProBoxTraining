@@ -1,0 +1,342 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <POU Name="FB_ProBoxStraightTransport" Id="{5453ccbb-3e12-4149-a7d3-1f2daee47cdb}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK FB_ProBoxStraightTransport EXTENDS FB_StraightBase;
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision:  $
+ *	Revision date	:	$Date:$
+ *	Last changed by	:	$Author:  $
+ *	URL				:	$URL: $
+ *
+ *	Purpose			:	Probox straight transport over 1 or several zones.
+ *
+ *	
+ **************************************************************************************)
+VAR_INPUT
+	Config					: ST_CFG_ProBoxStraightTransport; // Configuration
+	CtrlIn					: ST_CtrlInPbStraightTransport;
+	HW_Inputs		 		: ST_HW_InputsProBoxStraightTransport; // Hardware inputs
+END_VAR
+
+VAR_OUTPUT
+END_VAR
+
+VAR
+	Inputs					: ST_InputsProBoxStraightTransport; // Function specific inputs
+	fbTransportControl 		: ARRAY[1..NUMBER_OF_ZONES_PER_FUNCTION] OF FB_ProBoxTransportControl;	
+	ZoneIdx					: INT; // Iterator
+	fb_ExtendedRun			: FB_ExtendedRun;
+		
+END_VAR
+
+VAR PERSISTENT
+	Settings				: ST_CFG_ProBoxStraightTransport; // Settings - activated configuration 
+END_VAR]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[(**************************************************************************************************************
+   Input mapping
+***************************************************************************************************************)
+A_InputMapping();
+
+(**************************************************************************************************************
+   Initialization
+***************************************************************************************************************)
+A_Init();
+
+(**************************************************************************************************************
+   External Subsystem transport interface
+***************************************************************************************************************)
+M_ExternalSTI();
+
+(**************************************************************************************************************
+   State control
+***************************************************************************************************************)
+A_StateControl();
+
+(**************************************************************************************************************
+   Error handler
+***************************************************************************************************************)
+A_ErrorHandler();
+
+(**************************************************************************************************************
+   Process AddOns
+***************************************************************************************************************)
+M_ProcessAddOns();
+
+(**************************************************************************************************************
+   Manual control
+***************************************************************************************************************)
+M_ManualControl();
+
+	
+(**************************************************************************************************************
+   Extended run
+***************************************************************************************************************)
+fb_ExtendedRun(
+	HostFunction:= SettingsFunction.eFunctionNumber,	
+	HWSensorStop:= Inputs.Sensor_StopExtRun, 
+	Enable:= NOT CtrlIn.HoldExtendedRun, 
+	Config:= Settings.ExtendedRun,	 
+	ErrorData:= ZoneData[Settings.ExtendedRun.FunctionZone].ErrorData.ErrorDataSet[2]);
+
+
+(**************************************************************************************************************
+   Call TransportControl
+***************************************************************************************************************)
+_M_TransportControl();
+
+
+(**********************************************************************************************************
+	   Transport link
+***********************************************************************************************************)
+_M_TransportLink();	
+
+(**************************************************************************************************************
+   Interface handler out
+***************************************************************************************************************)
+M_ITC_ProcessOut();
+
+(**************************************************************************************************************
+   Output mapping
+***************************************************************************************************************)
+A_OutputMapping();	]]></ST>
+    </Implementation>
+    <Method Name="_M_TransportControl" Id="{e733bf47-26e9-46b9-8bb6-41f524fae311}">
+      <Declaration><![CDATA[METHOD PRIVATE _M_TransportControl : BOOL
+VAR
+	SlugSensorOccupied		: BOOL;	// Assigned occupied sensor first
+	StopSensorOccupied		: BOOL;	// Assigned occupied sensor	last
+	CreepSensor				: BOOL; // Creep sensor
+	ZoneOccupied			: BOOL; // Zone physical occupied
+	CtrlInputPbTc			: ST_CtrlInPbTc; //Control input for Probox transportControl
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[//Reset errors
+F_ResetError(FALSE,FunctionData.ErrorData.ErrorDataSet[1]);
+
+// Check transport direction of the conveyor
+SettingsFunction.FlowDirectionREV := _M_DefineTransportDirection(FunctionData.ErrorData.ErrorDataSet[1]);
+
+
+// Assign sensor occpupied
+_M_Check_HW_SensorInput(
+					Sensor_Stop_12		:= Inputs.Sensor_Stop_12, 
+					Sensor_Stop_21		:= Inputs.Sensor_Stop_21, 
+					Sensor_Slug_12		:= Inputs.Sensor_First_12, 
+					Sensor_Slug_21		:= Inputs.Sensor_First_21,
+					Sensor_Creep_12		:= Inputs.Sensor_Creep_12,
+					Sensor_Creep_21		:= Inputs.Sensor_Creep_21, 
+					FlowDirectionREV	:= SettingsFunction.FlowDirectionREV, 
+					HasSluggingSensor	:= Settings.TwoSensorFunction,
+					ExtRunSynteticSensor:= fb_ExtendedRun.ExtRunSynteticSensor, 
+					StopSensorOccupied	=> StopSensorOccupied, 
+					SlugSensorOccupied	=> SlugSensorOccupied,
+					CreepSensor			=> CreepSensor);
+	
+
+// call Straight transport method of base class
+
+CtrlInputPbTc.EnableSlugging 	:= FunctionInterface.In.eNextFunctionNumber = E_FunctionNumber.F_BEGIN_FUNCTION;
+CtrlInputPbTc.SlugSensor		:= SlugSensorOccupied;
+CtrlInputPbTc.SlugSensorExists	:= Settings.TwoSensorFunction;
+CtrlInputPbTc.StopSensor		:= StopSensorOccupied;
+
+FOR ZoneIdx := 1 TO SettingsFunction.NumberOfZones DO
+		
+	M_StraightTransport(
+		fbTransportControl		:=fbTransportControl[ZoneIdx],
+		ZoneIx					:= ZoneIdx, 
+		ExtDisableTakeover		:= FALSE, 
+		ExtDisableHandover		:= fb_ExtendedRun.ExtRunStarted, 
+		ExtDisableTransport		:= FALSE,		
+		CtrlInputPbTc			:= CtrlInputPbTc,
+		CreepHwSensor			:= CreepSensor, 
+		Orientation_Axis		:= Settings.Orientation_Axis_12);
+END_FOR
+]]></ST>
+      </Implementation>
+    </Method>
+    <Action Name="A_Init" Id="{92b7c985-6cfa-48de-81f1-b0681171ca62}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_Init
+ * 	FUNCTION	Initialize function
+ **************************************************************************************)
+ 
+// Update Registry
+M_UpdateRegistry();
+ 
+
+// Init ongoing - Wait until init is released (Sequencial startup)
+IF NOT FunctionData.Init AND FunctionData.InitRunning THEN
+	// When the subsystem is started, 
+	// When its released to initialize
+	IF FunctionData.OperationState.Info.SystemReady AND
+	   SettingsFunction.eFunctionNumber < FunctionData.OperationState.InitRelease.eLimitFunctionNumber THEN
+	   
+	   IF M_InitFunction(FALSE) THEN
+			// Function initialized - and initialization done
+			FunctionData.Init := TRUE;
+			FunctionData.InitRunning := FALSE;
+			
+			// Set reset cmd
+			FunctionData.ErrorData.Error.ResetError := TRUE;
+			
+			DebugMsg := CONCAT('Initialization done. Function: ', ConfigFunction.FunctionName);
+			fbDebugMsg.M_SendInfoMsg(DebugMsg);
+		END_IF
+	END_IF
+(*
+If the function is not initialized,
+clean all values and wait until init is released
+*)
+ELSIF NOT FunctionData.Init THEN
+	// Reset internal variables
+	FunctionData.OperationState := FunctionBase.PositionStateEmpty;
+
+	// Initiate initialization of all zones
+	FOR ZoneIdx := 1 TO SettingsFunction.NumberOfZones DO
+		ZoneData[ZoneIdx].Init := FALSE;
+	END_FOR;
+	
+	// Load function specific configuration to settings
+	Settings := Config;
+	
+	// Reset values and load config
+	M_PreInit();
+	
+	// To start init a valid functionnumber and element link is needed
+	FunctionData.InitRunning := SettingsFunction.eFunctionNumber > 0 AND
+								SettingsFunction.eElementLink > 0;
+								
+	fb_ExtendedRun.P_OverrideNextUnDef:=TRUE; //For straight transport this could be enabled.
+END_IF
+
+// Init zones
+IF FunctionData.Init THEN
+	// Set init flag after one cycle
+	FOR ZoneIdx := 1 TO SettingsFunction.NumberOfZones DO
+		// If a zone is not initialized, wait one cycle to finish init
+		IF NOT ZoneData[ZoneIdx].Init THEN
+			IF ZoneData[ZoneIdx].InitRunning THEN
+				ZoneData[ZoneIdx].InitRunning := FALSE;
+				ZoneData[ZoneIdx].Init := TRUE;
+				ZoneData[ZoneIdx].ErrorData.Error.ResetError := TRUE;
+			ELSE	
+				ZoneData[ZoneIdx].InitRunning := TRUE;
+			END_IF
+		END_IF
+	END_FOR;
+END_IF]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="A_InputMapping" Id="{bed63b5e-5540-4402-9139-ec73253d9b31}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_InputMapping
+ * 	FUNCTION	Input mapping
+ **************************************************************************************)
+ 
+(**************************************************************************************
+   Hardware Inputs
+***************************************************************************************)
+// Adapt input logic state high/low
+Inputs.Sensor_Stop_12		:= Settings.HW_InputInverted.Sensor_Stop_12 XOR HW_Inputs.Sensor_Stop_12;
+Inputs.Sensor_First_12		:= Settings.HW_InputInverted.Sensor_First_12 XOR HW_Inputs.Sensor_First_12;
+Inputs.Sensor_Slow_12		:= Settings.HW_InputInverted.Sensor_Slow_12 XOR HW_Inputs.Sensor_Slow_12;
+Inputs.Sensor_Creep_12		:= Settings.HW_InputInverted.Sensor_Creep_12 XOR HW_Inputs.Sensor_Creep_12;
+Inputs.Sensor_Stop_21		:= Settings.HW_InputInverted.Sensor_Stop_21 XOR HW_Inputs.Sensor_Stop_21;
+Inputs.Sensor_First_21		:= Settings.HW_InputInverted.Sensor_First_21 XOR HW_Inputs.Sensor_First_21;
+Inputs.Sensor_Slow_21 		:= Settings.HW_InputInverted.Sensor_Slow_21 XOR HW_Inputs.Sensor_Slow_21;
+Inputs.Sensor_Creep_21		:= Settings.HW_InputInverted.Sensor_Creep_21 XOR HW_Inputs.Sensor_Creep_21;
+Inputs.Sensor_StopExtRun	:= Settings.HW_InputInverted.Sensor_StopExtRun XOR HW_Inputs.Sensor_StopExtRun;
+
+(**************************************************************************************
+   Element states
+***************************************************************************************)
+// Get status of the corresponding element
+M_GetElementStates(); 
+
+(**************************************************************************************
+   AddOn states
+***************************************************************************************)
+// Get status of all corresponding AddOn functions and store it in FunctionInterface.In.AddOnOrder
+M_GetAddOnOrder();
+
+]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="A_OutputMapping" Id="{a5eb8932-4fe1-4255-bb7d-bb889e991546}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_OutputMapping
+ * 	FUNCTION	Output mapping
+ **************************************************************************************)
+ 
+(**************************************************************************************
+   Order outputs (Commands to corresponding element)
+***************************************************************************************)
+THIS^.M_OutputMapping(Settings.Orientation_Axis_12,FALSE);
+
+(**************************************************************************************************************
+   Extended run
+***************************************************************************************************************)
+
+fb_ExtendedRun.M_SetProBoxFunctionOrder(FunctionOrders:= FunctionInterface.Out.FunctionOrders);
+// ---------------------------------------------------
+//Inhibit stopping for the function when ExtendedRun is driving
+THIS^.InhibitStopping := fb_ExtendedRun.ExtRunStarted;]]></ST>
+      </Implementation>
+    </Action>
+    <LineIds Name="FB_ProBoxStraightTransport">
+      <LineId Id="2430" Count="33" />
+      <LineId Id="2556" Count="0" />
+      <LineId Id="2563" Count="0" />
+      <LineId Id="2566" Count="8" />
+      <LineId Id="2565" Count="0" />
+      <LineId Id="2564" Count="0" />
+      <LineId Id="2465" Count="2" />
+      <LineId Id="2523" Count="0" />
+      <LineId Id="2606" Count="4" />
+      <LineId Id="2605" Count="0" />
+      <LineId Id="2510" Count="8" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ProBoxStraightTransport._M_TransportControl">
+      <LineId Id="77" Count="1" />
+      <LineId Id="6" Count="21" />
+      <LineId Id="88" Count="0" />
+      <LineId Id="87" Count="0" />
+      <LineId Id="89" Count="2" />
+      <LineId Id="28" Count="1" />
+      <LineId Id="36" Count="1" />
+      <LineId Id="69" Count="0" />
+      <LineId Id="38" Count="3" />
+      <LineId Id="92" Count="0" />
+      <LineId Id="44" Count="1" />
+      <LineId Id="48" Count="0" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ProBoxStraightTransport.A_Init">
+      <LineId Id="2" Count="49" />
+      <LineId Id="69" Count="1" />
+      <LineId Id="52" Count="16" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ProBoxStraightTransport.A_InputMapping">
+      <LineId Id="2" Count="30" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ProBoxStraightTransport.A_OutputMapping">
+      <LineId Id="2" Count="3" />
+      <LineId Id="10" Count="0" />
+      <LineId Id="12" Count="2" />
+      <LineId Id="51" Count="4" />
+      <LineId Id="72" Count="0" />
+      <LineId Id="69" Count="2" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

@@ -1,0 +1,12 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <DUT Name="ST_CtrlInMovableStop" Id="{694c60dd-e96f-4bbd-8c56-32ecfdfad9e8}">
+    <Declaration><![CDATA[TYPE ST_CtrlInMovableStop :
+STRUCT
+	ExternalTrigger			: BOOL;
+	
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

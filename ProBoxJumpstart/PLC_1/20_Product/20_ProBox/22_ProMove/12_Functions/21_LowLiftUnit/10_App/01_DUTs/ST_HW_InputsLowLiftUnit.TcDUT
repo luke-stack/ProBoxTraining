@@ -1,0 +1,64 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.12">
+  <DUT Name="ST_HW_InputsLowLiftUnit" Id="{38272da6-f22d-458b-9fba-7ceb5a127223}">
+    <Declaration><![CDATA[TYPE ST_HW_InputsLowLiftUnit :
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 417092 $
+ *	Revision date	:	$Date: 2018-11-14 12:58:58 +0100 (Mi., 14 Nov 2018) $
+ *	Last changed by	:	$Author: q8aberh $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/ProMove/02_Controls/ProBox/03_Implementation/01_DevelopmentProject/01_Software/ProBox_COE/ProBox_DevProj_v1.0/PLC_1/20_Product/10_App/12_E_Functions/11_ProBox/21_LowLiftUnit/10_App/01_DUTs/ST_HW_In $
+ *
+ *	Purpose			:	HW inputs of the dummy function
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)	
+STRUCT
+	Sensor_Stop_12			: BOOL; // Sensor stop axis 1-2 forward
+	Sensor_Slow_12			: BOOL; // Sensor low speed axis 1-2 forward
+	Sensor_Creep_12			: BOOL; // Sensor creep speed axis 1-2 forward
+	Sensor_Overhang_12		: BOOL; // Sensor overhang axis 1-2 forward	
+	Sensor_Stop_21			: BOOL; // Sensor stop axis 1-2 reverse
+	Sensor_Slow_21			: BOOL; // Sensor slow speed axis 1-2 reverse
+	Sensor_Creep_21			: BOOL; // Sensor creep speed axis 1-2 reverse
+	Sensor_Overhang_21		: BOOL; // Sensor overhang axis 1-2 reverse	
+	Sensor_Pos_Down			: BOOL; // Sensor position lift down
+	Sensor_Creep_Down		: BOOL; // Sensor creep speed lift down
+	Sensor_EndLimit_Down	: BOOL; // Sensor end limit lift down	
+	Sensor_Pos_Up			: BOOL; // Sensor position lift up
+	Sensor_Creep_Up			: BOOL; // Sensor creep speed lift up	
+	Sensor_EndLimit_Up		: BOOL; // Sensor end limit lift up
+	Signal_MotorUnitOK		: BOOL; // Signal motor unit OK	
+	Signal_HighTempLift		: BOOL; // Signal high temperature lift motor
+	Button_ResetLightgrid	: BOOL; // Button reset lightgrid
+END_STRUCT
+END_TYPE
+]]></Declaration>
+    <ObjectProperties>
+      <XmlArchive>
+        <Data>
+          <o xml:space="preserve" t="UMLStereoTypeContainerObject">
+            <v n="IsType" t="UMLType">BaseArea</v>
+            <v n="Stereotype">""</v>
+            <d n="Stereotypes" t="Hashtable" />
+          </o>
+        </Data>
+        <TypeList>
+          <Type n="Hashtable">System.Collections.Hashtable</Type>
+          <Type n="String">System.String</Type>
+          <Type n="UMLStereoTypeContainerObject">{30250973-b110-4e31-b562-c102e042dca4}</Type>
+          <Type n="UMLType">{0197b136-405a-42ee-bb27-fd08b621d0cf}</Type>
+        </TypeList>
+      </XmlArchive>
+    </ObjectProperties>
+  </DUT>
+</TcPlcObject>

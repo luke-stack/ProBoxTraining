@@ -1,0 +1,58 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.4">
+  <GVL Name="DebugTextBlocks" Id="{ec0f1a15-0b6c-4c48-a56a-35a5e8833c60}">
+    <Declaration><![CDATA[(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 475016 $
+ *	Revision date	:	$Date: 2021-04-09 08:29:02 +0200 (fre, 09 apr 2021) $
+ *	Last changed by	:	$Author: d7mangc $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/tags/R1.12.0/01_Software/BCF/BCF/JumpStart/20_Product/10_BCF/10_Base/11_Com/12_DebugMsg/00_GVLs/DebugTextBlocks.TcGVL $
+ *
+ *	Purpose			:	Common text blocks for debug messages
+ *                      to ensure that uniform text is used in all messages and can be searched for and filtered more easily
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * VERSION DATE         INITIALS     DESCRIPTION
+ * 0.0     DD.MM.YYYY   (name)       (explain customized modifications)
+ *
+ **************************************************************************************)
+
+{attribute 'strict'}
+{attribute 'qualified_only'}                 //          1         2         3
+VAR_GLOBAL CONSTANT                          // 123456789012345678901234567890
+	ASSIGNMENTID		: STRING[19]		:= ',  AssignmentID = ';
+	CURRENT				: STRING[15]		:= ',  current = ';
+	DESTINATION			: STRING[19]		:= ',  destination = ';
+	DRIVE				: STRING[15]		:= ',  drive = ';
+	ENDLENGTH			: STRING[19]		:= ',  end length = ';
+	EXPECTED			: STRING[15]		:= ',  expected = ';
+	FREE				: STRING[11]		:= ',  free = ';
+	FOLDER				: STRING[15]		:= ',  folder = ';
+	FUNCTIONNBR			: STRING[15]		:= ',  function = ';
+	LABEL				: STRING[11]		:= ',  label = ';
+	LENGTH				: STRING[15]		:= ',  length = ' ;
+	MISSED				: STRING[15]		:= ',  missed = ';
+	OCCUPIED			: STRING[15]		:= ',  occupied = ';
+	ORIGIN				: STRING[15]		:= ',  origin = ';
+	POSITION			: STRING[15]		:= ',  position = ';
+	RANGE				: STRING[15]		:= ',  range = 0..';
+	SPEED				: STRING[11]		:= ',  speed = ';
+	STOPDELAY 			: STRING[19]		:= ',  stopp delay = ';
+	TELEGRAM			: STRING[15]		:= ',  telegram = ';
+	TIMEOUT				: STRING[15]		:= ',  timeout = ';
+	TOTAL				: STRING[15]		:= ',  total = ';
+	TU_DATA_INDEX		: STRING[19]		:= ',  TU_DataIndex = ';
+	TUID				: STRING[15]		:= ',  TuID = ';
+	USAGE				: STRING[11]		:= ',  usage = ';
+	USED				: STRING[11]		:= ',  used = ';
+	ZONENBR				: STRING[11]		:= ',  zone = ';
+END_VAR
+]]></Declaration>
+  </GVL>
+</TcPlcObject>

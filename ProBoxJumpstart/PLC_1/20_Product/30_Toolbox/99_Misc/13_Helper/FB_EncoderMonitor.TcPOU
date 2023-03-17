@@ -1,0 +1,118 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.18">
+  <POU Name="FB_EncoderMonitor" Id="{aca517ad-49d7-4058-9c6d-fed2eb671d71}" SpecialFunc="None">
+    <Declaration><![CDATA[/// This function block checks that the encoder steps are valid.
+/// Could be used to detect if encoder does not follow a drive. (e.g. detached encoder)
+FUNCTION_BLOCK FB_EncoderMonitor
+(************************************************************************************** 
+* 	Application 		: BoxControl Framework 
+* 	Revision 			: $Revision: 408723 $ 
+* 	Revision date 		: $Date: 2018-06-27 13:49:08 +0200 (Wed, 27 Jun 2018) $ 
+* 	Last changed by 	: $Author: b7bolm $ 
+* 	URL 				: $URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/21_Projects/BCF_2.0/trunk/BCF/BCF/JumpStart/20_Product/10_App/12_E_Functions/10_Lib/10_Conv/FB_FunctionList.TcPOU $ 
+* ------------------------------------------------------------------------------------ 
+* 	© Swisslog AG 
+* 	Swisslog is not liable for any usage of this source code that is not agreed 
+* 	on between Swisslog and the other party. The mandatory legal liability remains 
+* 	unaffected. 
+* ------------------------------------------------------------------------------------ 
+* 	Revision History: 
+* 
+* 	VERSION 		DATE 			INITIALS 			DESCRIPTION 
+* 	0.1 			22.08.2018 		ale					First implementation
+*	0.2				21.09.2018		mbo					Moved and adjusted for standard
+* 
+**************************************************************************************)
+VAR_INPUT
+	DriveRunning			: BOOL; // Drive is running (Rising edge resets error)
+	EncoderValue			: UDINT; // Encoder values [increment]
+	MinValueChange			: UDINT; // Minimum value change expected if drive is running
+	DelayMonitoringTime		: TIME; // Time after the value change is expected
+	MaxEncoderValue			: UDINT; // Max value of input "EncoderValue" Remark: Used to detect overflow, needs to be less than DINT size [increment]
+	FailureThreshold		: INT; // Amount of detected failure values before an error is raised
+END_VAR
+VAR_OUTPUT
+	Active					: BOOL; // Monitoring active
+	EncoderError			: BOOL; // Encoder issue
+END_VAR
+VAR
+	fbDelayMonitoring		: TON; // Delay encoder monitoring (e.g. ramp up)
+	fbRunTrig				: R_Trig; // Rising edge detection
+	DeltaEncoderValue		: DINT; // Delta encoder value 
+	LastEncoderValue		: UDINT; // Last encoder value [increment]
+	LastMinValueChange		: UDINT; // Last minimum value change expected
+	FailureCounter			: INT; // Detected encoder error in a serie
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[fbRunTrig(CLK := DriveRunning );
+
+// Reset error
+IF fbRunTrig.Q THEN
+	EncoderError := FALSE;
+	FailureCounter := 0;
+END_IF
+
+// Restart delay monitoring
+IF fbRunTrig.Q OR MinValueChange <> LastMinValueChange THEN
+	fbDelayMonitoring(IN := FALSE);	
+END_IF
+
+fbDelayMonitoring(IN := NOT EncoderError AND DriveRunning, PT := DelayMonitoringTime);
+
+// Create internal encoder to make movement independent from encoder overflow
+DeltaEncoderValue := UDINT_TO_DINT(EncoderValue) - UDINT_TO_DINT(LastEncoderValue);
+
+IF ABS(DeltaEncoderValue) > UDINT_TO_DINT(MaxEncoderValue/2) THEN
+	// Correction with + 1 is to include the 0 in MaxEncoderValue
+	IF DeltaEncoderValue < 0 THEN
+		DeltaEncoderValue := DeltaEncoderValue + UDINT_TO_DINT(MaxEncoderValue) + 1;
+	ELSE
+		DeltaEncoderValue := UDINT_TO_DINT(EncoderValue) - (UDINT_TO_DINT(LastEncoderValue) + UDINT_TO_DINT(MaxEncoderValue)) - 1;
+	END_IF
+END_IF
+
+LastEncoderValue := EncoderValue;
+
+IF fbDelayMonitoring.Q THEN
+	//Check if minimum delta step is greather than MinValueChange
+	IF ABS(DeltaEncoderValue) >= UDINT_TO_DINT(ABS(MinValueChange)) THEN
+		// Encoder works fine
+		FailureCounter := 0;
+		
+	// Encoder issue found
+	ELSE
+		IF FailureCounter >= FailureThreshold THEN 
+			EncoderError := TRUE;
+		ELSE
+			FailureCounter := FailureCounter + 1;
+		END_IF
+	END_IF
+END_IF
+
+LastMinValueChange := MinValueChange;
+Active := fbDelayMonitoring.Q;]]></ST>
+    </Implementation>
+    <LineIds Name="FB_EncoderMonitor">
+      <LineId Id="4" Count="0" />
+      <LineId Id="139" Count="0" />
+      <LineId Id="5" Count="2" />
+      <LineId Id="84" Count="0" />
+      <LineId Id="9" Count="0" />
+      <LineId Id="140" Count="0" />
+      <LineId Id="132" Count="0" />
+      <LineId Id="131" Count="0" />
+      <LineId Id="133" Count="1" />
+      <LineId Id="10" Count="21" />
+      <LineId Id="83" Count="0" />
+      <LineId Id="32" Count="1" />
+      <LineId Id="78" Count="0" />
+      <LineId Id="34" Count="0" />
+      <LineId Id="80" Count="2" />
+      <LineId Id="35" Count="1" />
+      <LineId Id="138" Count="0" />
+      <LineId Id="37" Count="0" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

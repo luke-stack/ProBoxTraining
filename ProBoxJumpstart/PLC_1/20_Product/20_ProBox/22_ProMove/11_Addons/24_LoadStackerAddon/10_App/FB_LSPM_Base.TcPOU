@@ -1,0 +1,2116 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <POU Name="FB_LSPM_Base" Id="{5478128c-2eec-41e4-bdfc-948ab59d3814}" SpecialFunc="None">
+    <Declaration><![CDATA[// LSPM, Load stacker and Pallet Magazine base class
+FUNCTION_BLOCK FB_LSPM_Base EXTENDS FB_FunctionConv
+VAR		
+	BaseFunctionData			: ST_LSPM_Base;	
+	fbAddOnErrHandler			: FB_AddOnErrHandler;	
+END_VAR
+VAR_TEMP
+	ZoneIdx						: INT; // Iterator
+END_VAR
+
+VAR PERSISTENT
+	_SavedTUData				: ST_TU_Data; //Backed up TU data	
+END_VAR]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[// do not call baseclass	]]></ST>
+    </Implementation>
+    <Method Name="_M_CheckErrors" Id="{b740138b-16c1-4651-afb4-578e20d6a125}">
+      <Declaration><![CDATA[METHOD PROTECTED _M_CheckErrors : BOOL
+VAR_INPUT
+	HW_Lift_Input				: ST_LSPM_Inp_LiftSensors;
+	HW_Manual_Input				: ST_LSPM_Inp_ManualControl;
+	HW_LS_Element				: ST_LSPM_Inp_Element;
+	
+	SettingsLiftType			: E_LSPM_LiftType;
+	SettingsMachineType			: E_LSPM_MachineType;
+	SettingsLiftEncoder			: ST_LSPM_LiftEncPos;
+	//(former IdleLiftPallet)
+	SettingsIdleStacking  		: BOOL; //TRUE= the pallet will be lifted off the conveyor to optimize stacking
+	SequenceTimeout				: TIME := T#30S; 
+	
+	
+END_VAR
+
+VAR_INST
+	fbSeqTimer					: FB_Timer; //Timer to count allowed time that the sequence should take
+END_VAR
+
+ ]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+(*
+ErrorDataSet index:
+1:	Timeout movement
+2:	Endlimit down / Endlimit up / Motor started OK
+3:	SwitchManualAuto
+4:	Sequence error
+5:	Configuration errors
+6:	Somthing detected in empty pallet magazine
+7:	Request sent to send in pallets when pallet magazine is full		
+8:	fbLiftControl error in movement lift
+	fbLeftMotorizedForkControl error in left movement	
+	fbLeftMotorizedForkControl error in right movement
+*)
+
+
+
+
+//If the sequence takes longer time than defined count up.	
+fbSeqTimer(
+	PT := (SequenceTimeout),
+	IN := ( 
+			BaseFunctionData.States.eState <> E_LSPM_States.INIT AND 
+			BaseFunctionData.States.eState <> E_LSPM_States.READY AND
+			BaseFunctionData.States.eState <> E_LSPM_States.ERROR AND
+			BaseFunctionData.States.eState <> E_LSPM_States.IDLE_STACKED AND
+			BaseFunctionData.States.eState <> E_LSPM_States.STACK_FULL AND 
+			BaseFunctionData.States.eState <> E_LSPM_States.COM_MODE AND
+			BaseFunctionData.States.eState <> E_LSPM_States.DESTACKING_PALLET_OUT AND (*PB-6469 - PalletMagazine and LS should not set time out error while waiting for pallet to move	*)
+			BaseFunctionData.States.eState <> E_LSPM_States.STACKING_PALLET_IN AND (*   -||- *)
+			HW_Manual_Input.SwitchManualAuto AND
+			FunctionData.ErrorData.Error.ErrorType <> E_ErrorType.ERROR AND
+			FunctionInterface.In.Element.OperationState.eState <> E_PositionState.STOPPED));
+
+		
+//If seqence has taken too long set an error. 			
+IF fbSeqTimer.Q THEN
+	F_SetError(
+		ErrorType 	:= E_ErrorType.ERROR, 
+		ErrorParam 	:= 'Timeout Sequence', 
+		ErrorMsg 	:= E_ErrorConv.TIMEOUT_MOVEMENT, 
+		ErrorData 	:= FunctionData.ErrorData.ErrorDataSet[1]);	 
+END_IF
+
+//If the NC endlimit sensor is not high set an error
+IF NOT HW_Lift_Input.SensorEndlimitDown THEN
+	F_SetError(
+		ErrorType 	:= E_ErrorType.ERROR, 
+		ErrorParam 	:= 'End limit sensor down reached', 
+		ErrorMsg 	:= E_ErrorConv.LIMIT_SWITCH_ACTIVE, 
+		ErrorData 	:= FunctionData.ErrorData.ErrorDataSet[2]);	 
+END_IF 	
+
+//If the NC endlimit sensor is not high set an error
+IF NOT HW_Lift_Input.SensorEndlimitUp THEN
+	F_SetError(
+		ErrorType 	:= E_ErrorType.ERROR, 
+		ErrorParam 	:= 'End limit sensor up reached', 
+		ErrorMsg 	:= E_ErrorConv.LIMIT_SWITCH_ACTIVE, 
+		ErrorData 	:= FunctionData.ErrorData.ErrorDataSet[2]);	 
+END_IF 	
+
+//If in manual mode, display the information
+IF NOT HW_Manual_Input.SwitchManualAuto THEN
+	F_SetError(
+		ErrorType 	:= E_ErrorType.INFO, 
+		ErrorParam 	:= 'Manual Auto Switch in Manual mode', 
+		ErrorMsg 	:= E_ErrorConv.MAINTENANCE, 
+		ErrorData 	:= FunctionData.ErrorData.ErrorDataSet[3]);	 
+END_IF 	
+
+//If the motorunit is not ok set an error
+IF NOT HW_LS_Element.SignalMotorUnitOK THEN
+	F_SetError(
+		ErrorType 	:= E_ErrorType.ERROR, 
+		ErrorParam 	:= 'Motor started OK - Not OK', 
+		ErrorMsg 	:= E_ErrorConv.DRIVE_ERROR, 
+		ErrorData 	:= FunctionData.ErrorData.ErrorDataSet[2]);	 
+END_IF 
+
+(*
+IF SettingsIdleStacking THEN
+	F_SetError(
+		ErrorType 	:= E_ErrorType.ERROR, 
+		ErrorParam 	:= 'IdleLiftPallet not allowed with Motorized Forks', 
+		ErrorMsg 	:= E_ErrorConv.CONFIGURATION_ERROR, 
+		ErrorData 	:= FunctionData.ErrorData.ErrorDataSet[5]);
+END_IF*)
+
+
+
+IF(SettingsLiftType = E_LSPM_LiftType.E_UNKNOWN) THEN
+	F_SetError(
+		ErrorType 	:= E_ErrorType.ERROR, 
+		ErrorParam 	:= 'E_LS_LiftType not defined', 
+		ErrorMsg 	:= E_ErrorConv.CONFIGURATION_ERROR, 
+		ErrorData 	:= FunctionData.ErrorData.ErrorDataSet[5]);
+END_IF
+
+IF(SettingsMachineType = E_LSPM_MachineType.E_UNKNOWN) THEN
+	F_SetError(
+		ErrorType 	:= E_ErrorType.ERROR, 
+		ErrorParam 	:= 'E_LS_MachineType not defined', 
+		ErrorMsg 	:= E_ErrorConv.CONFIGURATION_ERROR, 
+		ErrorData 	:= FunctionData.ErrorData.ErrorDataSet[5]);
+END_IF
+
+IF(SettingsMachineType = E_LSPM_MachineType.E_PALLET_STACKER AND SettingsLiftType <> E_LSPM_LiftType.E_ENCODER) THEN
+	F_SetError(
+		ErrorType 	:= E_ErrorType.ERROR, 
+		ErrorParam 	:= 'PalletStacker must be of Encoder type', 
+		ErrorMsg 	:= E_ErrorConv.CONFIGURATION_ERROR, 
+		ErrorData 	:= FunctionData.ErrorData.ErrorDataSet[5]);
+END_IF
+
+IF(SettingsLiftType = E_LSPM_LiftType.E_ENCODER) THEN
+	
+	IF( SettingsLiftEncoder.Lower >= SettingsLiftEncoder.Middle OR
+		SettingsLiftEncoder.Lower >= SettingsLiftEncoder.Upper OR
+		SettingsLiftEncoder.Middle>= SettingsLiftEncoder.Upper OR
+		SettingsLiftEncoder.Lower + SettingsLiftEncoder.Tolerance >= SettingsLiftEncoder.Middle - SettingsLiftEncoder.Tolerance OR
+		SettingsLiftEncoder.Middle + SettingsLiftEncoder.Tolerance >= SettingsLiftEncoder.Upper - SettingsLiftEncoder.Tolerance OR
+		SettingsLiftEncoder.CsWindow <= SettingsLiftEncoder.Tolerance) THEN
+		F_SetError(
+			ErrorType 	:= E_ErrorType.ERROR, 
+			ErrorParam 	:= 'Encoder configuration not correct', 
+			ErrorMsg 	:= E_ErrorConv.CONFIGURATION_ERROR, 
+			ErrorData 	:= FunctionData.ErrorData.ErrorDataSet[5]);
+	END_IF
+END_IF
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_ForkControl" Id="{beb0f5c6-ecfb-4790-9aa5-17238058fbe1}">
+      <Declaration><![CDATA[METHOD PROTECTED _M_ForkControl : BOOL
+VAR_INPUT
+	EnableDrive				: BOOL; //Enable signal ie inhibit movement while Lift running	
+	HW_LeftFork_Input		: ST_LSPM_Inp_ForkSensors;
+	HW_RightFork_Input		: ST_LSPM_Inp_ForkSensors;
+	HW_Manual_Input			: ST_LSPM_Inp_ManualControl;	
+	TimeoutValueFork		: TIME;
+	TimeSafeTorque			: TIME;
+END_VAR
+
+VAR_OUTPUT
+	Left_HW_Fork_Output		: ST_LSPM_Outp_Fork;	// Fork drive request output 
+	Right_HW_Fork_Output	: ST_LSPM_Outp_Fork;	// Fork drive request output
+	ForkPos 				: E_LSPM_ForkPos;	// The actual Left and Right fork position
+	ForksReady				: BOOL;					// Both forks enable transport
+END_VAR
+
+VAR_INST
+	fbLeftMotorizedForkControl	: FB_StackerForkControl; // Used for left fork motor
+	fbRightMotorizedForkControl	: FB_StackerForkControl; // Used for right fork motor
+END_VAR
+VAR
+	ForkOrderPos	: E_StackerForkPosition; // Fork Order Position	
+	
+	ForkRightReady	: BOOL; 
+	ForkLeftReady 	: BOOL;
+	ForkSafeTorque	: BOOL;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+
+	// convert to fork order type (E_LoadstackerForkPosition)
+	IF(BaseFunctionData.OrderPosFork = E_LSPM_ForkPos.E_IN) THEN 
+		ForkOrderPos :=  E_StackerForkPosition.IN;
+	ELSIF(BaseFunctionData.OrderPosFork = E_LSPM_ForkPos.E_OUT) THEN 
+		ForkOrderPos :=  E_StackerForkPosition.OUT;
+	ELSE		 
+		ForkOrderPos :=  E_StackerForkPosition.UNDEFINED;
+	END_IF
+
+	// Motorized Fork Control handles left fork in/out motor
+	fbLeftMotorizedForkControl(
+		EnableDrive		:= EnableDrive,
+		FunctionData		:= FunctionData, 
+		ZoneData			:= F_GetZoneData(ConfigFunction.FunctionLink.eFunctionNumber, ConfigFunction.FunctionLink.ZoneNumber), 
+		SensorPosIn			:= HW_LeftFork_Input.ForksIn, 
+		SensorPosOut		:= HW_LeftFork_Input.ForksOut, 
+		TimeoutValueFork	:= TimeoutValueFork,
+		TimeSafeTorque		:= TimeSafeTorque,
+		OrderPos			:= ForkOrderPos, 
+		ErrorData			:= FunctionData.ErrorData.ErrorDataSet[8],
+		ManualAutoSwitch	:= HW_Manual_Input.SwitchManualAuto, 
+		ManualSwitchIn		:= HW_Manual_Input.SwitchDriveLeftForkIn, 
+		ManualSwitchOut		:= HW_Manual_Input.SwitchDriveLeftForkOut, 					
+		DriveIn				=> Left_HW_Fork_Output.MoveIn, 
+		DriveOut			=> Left_HW_Fork_Output.MoveOut,
+		DriveSafeTorque		=> ForkSafeTorque,
+		EnableTransport		=> ForkLeftReady);
+		
+		//Set Safe Torque in / out
+		Left_HW_Fork_Output.TorqueIn  := ForkSafeTorque AND Left_HW_Fork_Output.MoveIn;
+		Left_HW_Fork_Output.TorqueOut := ForkSafeTorque AND Left_HW_Fork_Output.MoveOut;
+	
+	
+			
+	// Motorized Fork Control handles right fork in/out motor
+	fbRightMotorizedForkControl(
+		EnableDrive		:= EnableDrive,			
+		FunctionData		:= FunctionData, 
+		ZoneData			:= F_GetZoneData(ConfigFunction.FunctionLink.eFunctionNumber, ConfigFunction.FunctionLink.ZoneNumber), 
+		SensorPosIn			:= HW_RightFork_Input.ForksIn, 
+		SensorPosOut		:= HW_RightFork_Input.ForksOut, 
+		TimeoutValueFork	:= TimeoutValueFork, 
+		TimeSafeTorque		:= TimeSafeTorque,	
+		OrderPos			:= ForkOrderPos, 
+		ErrorData			:= FunctionData.ErrorData.ErrorDataSet[8],
+		ManualAutoSwitch	:= HW_Manual_Input.SwitchManualAuto, 
+		ManualSwitchIn		:= HW_Manual_Input.SwitchDriveRightForkIn, 
+		ManualSwitchOut		:= HW_Manual_Input.SwitchDriveRightForkOut, 			
+		DriveIn				=> Right_HW_Fork_Output.MoveIn, 
+		DriveOut			=> Right_HW_Fork_Output.MoveOut,
+		DriveSafeTorque		=> ForkSafeTorque,	
+		EnableTransport		=> ForkRightReady);
+		
+	//Set Safe Torque in / out
+	Right_HW_Fork_Output.TorqueIn  := ForkSafeTorque AND Right_HW_Fork_Output.MoveIn;
+	Right_HW_Fork_Output.TorqueOut := ForkSafeTorque AND Right_HW_Fork_Output.MoveOut;
+	
+	
+	//Summary of left/right fork
+	ForksReady := ForkRightReady AND ForkLeftReady;
+	
+	// set internal Fork position that summarize both left and right fork state
+	IF( HW_LeftFork_Input.ForksIn AND HW_RightFork_Input.ForksIn) THEN
+		ForkPos := E_LSPM_ForkPos.E_In;
+	ELSIF( HW_LeftFork_Input.ForksOut AND HW_RightFork_Input.ForksOut) THEN
+		ForkPos := E_LSPM_ForkPos.E_Out;
+	ELSE
+		ForkPos := E_LSPM_ForkPos.E_Unknown;
+	END_IF
+
+	
+	]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_LiftControl" Id="{ad5d86f7-2682-4ef5-91e4-a3084bff10d1}">
+      <Declaration><![CDATA[METHOD PROTECTED _M_LiftControl : BOOL
+VAR_INPUT
+	EnableDrive				: BOOL; //Enable signal ie inhibit movement while forks running
+	LiftEncoderType			: BOOL; //lift with encoder is enabled
+	HW_Lift_Input			: ST_LSPM_Inp_LiftSensors;
+	HW_Manual_Input			: ST_LSPM_Inp_ManualControl;	
+	TimeoutLift				: TIME;
+	LiftEncoderPositions	: ST_LSPM_LiftEncPos;
+END_VAR
+VAR_OUTPUT
+	HW_Lift_Output			: ST_LSPM_Outp_Lift;	// Lift drive request output
+	LiftPos 				: E_LSPM_LiftPos;	// The actual lift position
+	LiftReady				: BOOL;					// Lift enable transport
+END_VAR
+
+VAR_INST
+	fbLiftControl			: FB_StackerLiftControl;				
+END_VAR
+
+VAR	
+	SensorInputs			: ST_StackerLiftSensorInp;		// Lift sensor inputs
+	ManualInputs			: ST_StackerLiftManualInp;
+	OrderPosLift			: E_StackerLiftPositions; 	// Order position lift
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+	//convert data structure types
+	SensorInputs.EncoderValue			:= HW_Lift_Input.EncoderValue;
+	SensorInputs.SensorPosDown 			:= HW_Lift_Input.SensorPosDown;
+	SensorInputs.SensorPosDownCS 		:= HW_Lift_Input.SensorPosDownCS;
+	SensorInputs.SensorPosMiddleDown 	:= HW_Lift_Input.SensorPosMiddleDown;
+	SensorInputs.SensorPosMiddleUp 		:= HW_Lift_Input.SensorPosMiddleUp;
+	SensorInputs.SensorPosUp 			:= HW_Lift_Input.SensorPosUp;
+	
+	ManualInputs.SwitchDriveDown		:= HW_Manual_Input.SwitchDriveDown;
+	ManualInputs.SwitchDriveUp			:= HW_Manual_Input.SwitchDriveUp;
+	ManualInputs.SwitchManualAuto		:= HW_Manual_Input.SwitchManualAuto;
+	
+	IF(BaseFunctionData.OrderPosLift = E_LSPM_LiftPos.E_LOWER) THEN
+		OrderPosLift := E_StackerLiftPositions.DOWN;
+	ELSIF(BaseFunctionData.OrderPosLift = E_LSPM_LiftPos.E_MIDDLE) THEN
+		OrderPosLift := E_StackerLiftPositions.MIDDLE;
+	ELSIF(BaseFunctionData.OrderPosLift = E_LSPM_LiftPos.E_UPPER) THEN
+		OrderPosLift := E_StackerLiftPositions.UP;
+	ELSE		
+		OrderPosLift := E_StackerLiftPositions.UNDEFINED;
+	END_IF
+		
+	
+
+//FB liftcontrol handles all movement up/down with encoder or with sensors
+fbLiftControl(
+	FunctionData		:= FunctionData, 
+	ZoneData			:= F_GetZoneData(ConfigFunction.FunctionLink.eFunctionNumber, ConfigFunction.FunctionLink.ZoneNumber), 
+	EnableDrive			:= EnableDrive,								//ForksNotMoving
+	OrderPos			:= OrderPosLift,            				
+	LiftEncoderType		:= LiftEncoderType, 						//True=Encoder, False=Sensors 
+	SensorInputs		:= SensorInputs,           				
+	ManualInputs		:= ManualInputs,         				
+	EncoderSettings		:= LiftEncoderPositions,       				
+	TimeoutValueLift	:= TimeoutLift,             				
+	DriveUp				=> HW_Lift_Output.LiftUp, 					//Move lift up 
+	DriveDown			=> HW_Lift_Output.LiftDown, 				//Move lift down
+	DriveCS				=> HW_Lift_Output.LiftCS, 					//Move lift creep speed		
+	EnableTransport		=> LiftReady,								//The lift have finished it's movement	
+	ErrorData			:= FunctionData.ErrorData.ErrorDataSet[8]); // Error data	
+
+	
+	//Convert Data type
+	
+	CASE fbLiftControl.ActualPosition OF
+		E_StackerLiftPositions.DOWN:
+			LiftPos	:= E_LSPM_LiftPos.E_LOWER;
+		E_StackerLiftPositions.MIDDLE:
+			LiftPos	:= E_LSPM_LiftPos.E_MIDDLE;
+		E_StackerLiftPositions.UP:
+			LiftPos	:= E_LSPM_LiftPos.E_UPPER;
+		ELSE			
+			LiftPos	:= E_LSPM_LiftPos.E_UNDEFINED;		
+	END_CASE
+	
+	]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_OverideManualDrive" Id="{329c0f9b-26f3-46b6-b05b-223c4a91733a}">
+      <Declaration><![CDATA[//Make possible to drive element regardless of other functions or addons not allowing so
+//intended to be used in manual mode 
+METHOD PROTECTED _M_OverideManualDrive : BOOL
+VAR_INPUT
+	Override 					: BOOL;
+END_VAR
+
+VAR
+	pMyElement					: POINTER TO FB_ProBoxElementBase; // Address to function	
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+
+//Sanity check, check reference to own elementData
+IF ( NOT __ISVALIDREF(ElementRegistry[SettingsFunction.eElementLink].rElement)) THEN
+	RETURN;
+END_IF
+
+pMyElement := ADR(ElementRegistry[SettingsFunction.eElementLink].rElement);
+pMyElement^.P_OverrideManualDrive := Override;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_PresetEncoder" Id="{c2604230-073d-4a70-b42b-55a69798d356}">
+      <Declaration><![CDATA[METHOD PROTECTED _M_PresetEncoder : BOOL
+VAR_INPUT
+	NetId			: T_AmsNetId := '192.31.3.1.2.1'; 	//NetId of EtherCAT Master
+	SlaveAddr		: UINT := 1030; 					//Port Number of EtherCAT Slave
+	Index			: WORD := 16#6003; 					//CoE Object Index
+	OpKeySwitch		: BOOL;							// operator key switch trigging an SDO write
+	PresetValue		: UDINT;
+END_VAR
+
+VAR_INST
+	fbSdoWrite      : FB_EcCoESdoWrite;
+	OpSwitchTmr		: TON := (PT:=T#3S);
+	SdoState		: INT;	
+END_VAR
+
+VAR
+	InternalTrigger : BOOL;
+	ErrType			:E_ErrorType;
+	ErrParam		:STRING(system.ERROR_PARAM_STRINGLENGTH); 
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+
+CASE SdoState OF
+	0:	//Check that op key switch is not stiched to TRUE, we need an positive edge to continue
+		OpSwitchTmr(IN:=FALSE); 
+		IF(OpKeySwitch=FALSE) THEN
+			SdoState:=SdoState+1;
+		END_IF
+		
+	1:	//wait for an positive edge on the operator key switch
+		OpSwitchTmr(IN:=OpKeySwitch);
+		IF(NOT fbSdoWrite.bBusy AND OpSwitchTmr.Q) THEN
+			SdoState:=SdoState+1;
+		END_IF
+	2: //Trigg writing
+		InternalTrigger:=TRUE;
+		SdoState:=SdoState+1;
+	3:  //wait for writing to complete
+		IF(NOT fbSdoWrite.bBusy) THEN
+			SdoState:=SdoState+1;		
+		END_IF
+	4:  //writing complete
+		IF(fbSdoWrite.bError) THEN
+			ErrType := E_ErrorType.ERROR;
+			ErrParam:= 'Preset Encoder FAILED';
+			F_SetError(
+						ErrorType 	:= E_ErrorType.ERROR, 
+						ErrorParam 	:= 'Preset Encoder FAILED', 
+						ErrorMsg 	:= E_ErrorConv.MAINTENANCE, 
+						ErrorData 	:= FunctionData.ErrorData.ErrorDataSet[3]);	 
+			
+			fbFormatString(sFormat := 'Error while resetting pulseencoder (slaveddr %d), (ecode %d)', arg1 := F_UINT(SlaveAddr), arg2 := F_UDINT(fbSdoWrite.nErrId));
+			fbDebugMsg.M_SendErrorMsg(fbFormatString.sOut);
+		ELSE
+			ErrType 	:= E_ErrorType.INFO;
+			ErrParam	:= 'Preset Encoder success';
+			
+			(*F_SetError(
+						ErrorType 	:= E_ErrorType.INFO, 
+						ErrorParam 	:= 'Preset Encoder success', 
+						ErrorMsg 	:= E_ErrorConv.MAINTENANCE, 
+						ErrorData 	:= FunctionData.ErrorData.ErrorDataSet[3]);*)
+						
+			fbDebugMsg.M_SendErrorMsg('Preset encoder successfully');			
+		END_IF
+		
+		//send FSR, since the ErrorType INFO or Error already being active, we need to send FSR telegram in order for it to be present in SynQ / Logging & Statistics 		
+		F_ITC_SendFSR(
+					eChannelSrc		:= 0, 
+					FunctionName	:= F_ReduceToAlphaNumeric(SettingsFunction.FunctionName),
+					PrevFunctionNo	:= '',
+					NextFunctionNo	:= '',
+					eState			:= FunctionData.OperationState.eState,
+					Enabled			:= FunctionInterface.In.FunctionEnable,
+					TransportState	:= E_TransportState.UNDEFINED,
+					TakeOverState	:= E_TakeOverState.UNDEFINED,
+					HandOverState	:= E_HandOverState.UNDEFINED,
+					TU_ID			:= '',
+					TU_Type			:= 0,
+					AssignmentID	:= 0,
+					LoadInformation	:= 0,
+					Destination		:= '0',
+					eErrorState		:= E_ErrorState.OPERATIONAL,
+					eErrorCode		:= E_ErrorConv.MAINTENANCE,
+					eErrorType		:= ErrType,
+					ErrorInformation:= ErrParam,
+					Variable		:= ITC.FunctionITC.Variable,
+					eReturnCode		:= E_ErrorConv.NO_ERROR_CODE);	
+		
+		SdoState:=SdoState+1;
+		
+	ELSE		
+		SdoState:=0;	
+END_CASE
+
+	fbSdoWrite(
+		sNetId 		:= NetId,
+		nSlaveAddr 	:= SlaveAddr,
+		nSubIndex	:= 0, (* Subindex of CoE Object *)
+		nIndex		:= Index,
+		pSrcBuf     := ADR(PresetValue),
+        cbBufLen    := SIZEOF(PresetValue),
+		bExecute	:= InternalTrigger,
+		tTimeout	:= DEFAULT_ADS_TIMEOUT);
+		 
+		
+	OpSwitchTmr();]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_ResetErrors" Id="{8e6728f3-9904-4c03-9921-fcb093dfecc2}">
+      <Declaration><![CDATA[METHOD PROTECTED _M_ResetErrors : BOOL
+VAR_INPUT
+END_VAR
+
+VAR
+	i:INT;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+
+FOR i:= 1 TO NUMBER_OF_ERROR_SETS DO
+	F_ResetError(Reset := FALSE,	ErrorData := FunctionData.ErrorData.ErrorDataSet[i]);
+END_FOR]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_ResetSequence" Id="{a10b78a8-f5a2-4f6e-9ce4-2bdc413563f9}">
+      <Declaration><![CDATA[METHOD PROTECTED _M_ResetSequence : BOOL
+VAR_INPUT
+	ResetSequence : BOOL;
+END_VAR
+VAR
+	Initialize : BOOL;
+END_VAR
+VAR_INST
+	ButtonPressTmr	: TON :=(PT:= T#10S); //Reset Sequence Timer
+	TrigFSR	: R_TRIG;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+// Init, When the subsystem is started
+(*IF( NOT FunctionData.Init AND FunctionData.InitRunning) THEN
+	Initialize :=TRUE;	
+END_IF*)
+
+// Init, when operator presses button for 3 seconds
+ButtonPressTmr(IN:=ResetSequence);
+
+TrigFSR(CLK:= ButtonPressTmr.Q OR Initialize);
+
+//reset sequence
+IF(TrigFSR.Q) THEN	
+	BaseFunctionData.ResetSequence := TRUE;
+END_IF
+
+
+//Reset... display the information in Synq
+IF(TrigFSR.Q) THEN
+	
+	F_ITC_SendFSR(
+					eChannelSrc		:= 0, 
+					FunctionName	:= F_ReduceToAlphaNumeric(SettingsFunction.FunctionName),
+					PrevFunctionNo	:= '',
+					NextFunctionNo	:= '',
+					eState			:= FunctionData.OperationState.eState,
+					Enabled			:= FunctionInterface.In.FunctionEnable,
+					TransportState	:= E_TransportState.UNDEFINED,
+					TakeOverState	:= E_TakeOverState.UNDEFINED,
+					HandOverState	:= E_HandOverState.UNDEFINED,
+					TU_ID			:= '',
+					TU_Type			:= 0,
+					AssignmentID	:= 0,
+					LoadInformation	:= 0,
+					Destination		:= '0',
+					eErrorState		:= E_ErrorState.OPERATIONAL,
+					eErrorCode		:= E_ErrorConv.MAINTENANCE,
+					eErrorType		:= E_ErrorType.INFO,
+					ErrorInformation:= 'Stacker sequence reset',
+					Variable		:= ITC.FunctionITC.Variable,
+					eReturnCode		:= E_ErrorConv.NO_ERROR_CODE);		 
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_StateControl" Id="{744a7151-def9-426f-8122-87b08e81f2ca}">
+      <Declaration><![CDATA[METHOD PROTECTED _M_StateControl : BOOL
+VAR_INPUT
+	LiftPos 					: E_LSPM_LiftPos;	// The actual Lift position
+	ForkPos 					: E_LSPM_ForkPos;	// The actual Left and Right fork position			
+	UserMode					: E_LSPM_Mode;
+	EnableTransport				: BOOL; 			// Enable signal to move on (chaning state)	
+	SensorOccupied				: BOOL; 			// TU present hardware sensor occupied	 
+	SensorMagazineFull			: BOOL; 			// Sensor checking magazine full.
+	LoadstackerAutomode			: BOOL;				// Loadstacker auto mode (manual button on Compact starter) True = Auto, false = Manual
+	SettingsMachineType			: E_LSPM_MachineType; // type of stacker, ie palletmagazine or loadstacker with forks
+	//Settings
+	SettingsIdleStacking  		: BOOL; 			// TRUE= the pallet will be lifted off the conveyor to optimize stacking 
+	SettingsIdleDeslacking		: BOOL; 			// New setting TRUE= the pallet will be ready for destacking
+END_VAR
+
+VAR_INST
+	PalletMagazineEmpty			: BOOL;
+	PalletMagazineFull			: BOOL; 
+	ComMode						: BOOL; 			// Commisinoning mode, during debug or commissinioning this can be used to test functionality
+	LastCycleState				: E_LSPM_States;
+	RequestedUserMode			: E_LSPM_Mode;
+	SettleCnt					: TON():=(PT:= T#1S);	// Settle timer, when activated, request from user is valid.
+END_VAR                     	
+VAR 
+	TU_DataIndex				: DINT;
+	TransportData				: REFERENCE TO ST_TransportControlData;	
+	LiftReady					: BOOL; // The lift have finished it's movement
+	ForksReady					: BOOL; // The forks have finished it's movement
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[// Get transportdata reference(only for reading)
+TransportData REF= F_PB_GetTransportControlDataRef(ConfigFunction.FunctionLink.eFunctionNumber, ConfigFunction.FunctionLink.ZoneNumber);
+IF(NOT __ISVALIDREF(TransportData)) THEN
+	F_SetError(
+		ErrorType 	:= E_ErrorType.ERROR, 
+		ErrorParam 	:= 'Addon mapping incorrect', 
+		ErrorMsg 	:= E_ErrorConv.CONFIGURATION_ERROR, 
+		ErrorData 	:= FunctionData.ErrorData.ErrorDataSet[5]);
+		
+		RETURN;
+END_IF
+// If another request is sent to send in pallets when pallet magazine is full raise an error
+IF (RequestedUserMode = E_LSPM_Mode.E_STACKING OR
+	RequestedUserMode = E_LSPM_Mode.E_RECEIVE_STACK) AND
+	PalletMagazineFull THEN
+		 F_SetError(
+			ErrorType 	:= E_ErrorType.ERROR, 
+			ErrorParam 	:= 'Pallet magazine already full', 
+			ErrorMsg 	:= E_ErrorConv.JAM_ERROR, 
+			ErrorData 	:= FunctionData.ErrorData.ErrorDataSet[6]);
+END_IF
+// Set local ready signals
+LiftReady		:= BaseFunctionData.LiftReady;
+ForksReady		:= BaseFunctionData.ForksReady;
+// Reset sequence
+IF(BaseFunctionData.ResetSequence) THEN
+	BaseFunctionData.States.eLastState 	:= BaseFunctionData.States.eState;
+	BaseFunctionData.States.eState 		:= E_LSPM_States.INIT;
+	RequestedUserMode					:= E_LSPM_Mode.E_FREE;
+	BaseFunctionData.ResetSequence		:= FALSE;
+END_IF
+// Init control output signals
+MEMSET(ADR(BaseFunctionData.CtrlOut),0,SIZEOF(ST_LSPM_CtrlOut));
+
+CASE BaseFunctionData.States.eState OF
+{region "Generall states"}
+(******************************************************************************
+INIT
+********************************************************************************)
+	E_LSPM_States.INIT:
+		BaseFunctionData.EnableTakeover	:= FALSE;
+		BaseFunctionData.EnableHandover	:= FALSE;
+		PalletMagazineEmpty				:= FALSE;
+		PalletMagazineFull				:= FALSE;
+		// If no error is pending and the element is started start sequence
+		IF(FunctionData.ErrorData.Error.ErrorType <> E_ErrorType.ERROR AND NOT ComMode) THEN
+			IF(FunctionInterface.In.Element.OperationState.eState = E_PositionState.STARTED) THEN
+				BaseFunctionData.States.eLastState := BaseFunctionData.States.eState;
+				BaseFunctionData.States.eState := E_LSPM_States.RESET_FORKS;
+			END_IF
+		ELSIF ComMode THEN
+			BaseFunctionData.States.eLastState := BaseFunctionData.States.eState;
+			BaseFunctionData.States.eState 	:= E_LSPM_States.COM_MODE;
+		ELSE
+			BaseFunctionData.States.eLastState := BaseFunctionData.States.eState;
+			BaseFunctionData.States.eState 	:= E_LSPM_States.ERROR;
+		END_IF
+
+(******************************************************************************
+COMMISSIONING MODE
+********************************************************************************)
+	E_LSPM_States.COM_MODE:
+		// In commisioning mode one can play around with the lift and forks by setting LS_Output.OrderPosLift / LS_Output.OrderPosFork to check if motion is correct.	
+		// BaseFunctionData.OrderPosLift
+		// BaseFunctionData.OrderPosFork
+		IF NOT ComMode THEN
+			BaseFunctionData.States.eLastState := BaseFunctionData.States.eState;
+			BaseFunctionData.States.eState 	:= E_LSPM_States.INIT;
+		END_IF
+		
+
+(******************************************************************************
+RESET FORKS
+********************************************************************************)
+	E_LSPM_States.RESET_FORKS:
+		BaseFunctionData.EnableTakeover	:= FALSE;
+		BaseFunctionData.EnableHandover	:= FALSE;
+		PalletMagazineEmpty				:= FALSE;
+		RequestedUserMode				:= E_LSPM_Mode.E_FREE;
+		// Go to next state when forks has been reseted
+		IF(LiftReady AND ForksReady AND LiftPos = E_LSPM_LiftPos.E_LOWER AND ForkPos = E_LSPM_ForkPos.E_In) THEN
+				BaseFunctionData.States.eLastState := BaseFunctionData.States.eState;
+				BaseFunctionData.States.eState 	:= E_LSPM_States.START_POSITION;
+		// Unknown Lift pos check if one sensor is covered
+		ELSIF(NOT LiftReady AND LiftPos = E_LSPM_LiftPos.E_LOWER AND BaseFunctionData.OrderPosLift = E_LSPM_LiftPos.E_UNDEFINED) THEN
+				BaseFunctionData.OrderPosLift := E_LSPM_LiftPos.E_LOWER;
+		ELSIF(NOT LiftReady AND LiftPos = E_LSPM_LiftPos.E_MIDDLE 
+			  AND(*Inputs.SensorPosMiddleUp AND*) BaseFunctionData.OrderPosLift = E_LSPM_LiftPos.E_UNDEFINED) THEN
+				BaseFunctionData.OrderPosLift := E_LSPM_LiftPos.E_MIDDLE;
+		ELSIF(NOT LiftReady AND LiftPos <> E_LSPM_LiftPos.E_UPPER AND BaseFunctionData.OrderPosLift = E_LSPM_LiftPos.E_UNDEFINED) THEN
+				BaseFunctionData.OrderPosLift := E_LSPM_LiftPos.E_UPPER;
+		// Unknown Fork pos check if one sensor is covered
+		ELSIF(NOT ForksReady AND ForkPos = E_LSPM_ForkPos.E_Out AND BaseFunctionData.OrderPosFork = E_LSPM_ForkPos.E_UNKNOWN) THEN
+				BaseFunctionData.OrderPosFork := E_LSPM_ForkPos.E_OUT;
+		ELSIF(NOT ForksReady AND ForkPos = E_LSPM_ForkPos.E_In AND BaseFunctionData.OrderPosFork = E_LSPM_ForkPos.E_UNKNOWN) THEN
+				BaseFunctionData.OrderPosFork := E_LSPM_ForkPos.E_In;
+		// Known lift pos
+		ELSIF(LiftReady AND ForksReady AND LiftPos = E_LSPM_LiftPos.E_UPPER AND ForkPos = E_LSPM_ForkPos.E_In 
+			  AND BaseFunctionData.OrderPosLift <> E_LSPM_LiftPos.E_MIDDLE) THEN
+				BaseFunctionData.OrderPosLift := E_LSPM_LiftPos.E_MIDDLE;
+		ELSIF(LiftReady AND ForksReady AND (NOT SensorOccupied OR ForkPos = E_LSPM_ForkPos.E_In) 
+			  AND LiftPos = E_LSPM_LiftPos.E_MIDDLE AND BaseFunctionData.OrderPosLift <> E_LSPM_LiftPos.E_LOWER 
+			  AND BaseFunctionData.OrderPosFork <> E_LSPM_ForkPos.E_UNKNOWN) THEN
+				BaseFunctionData.OrderPosLift := E_LSPM_LiftPos.E_LOWER;
+		// Known fork pos
+		ELSIF(LiftReady AND ForksReady AND SensorOccupied AND LiftPos = E_LSPM_LiftPos.E_MIDDLE 
+			  AND BaseFunctionData.OrderPosFork <> E_LSPM_ForkPos.E_IN) THEN
+				BaseFunctionData.OrderPosFork := E_LSPM_ForkPos.E_IN;	 
+		ELSIF(LiftReady AND ForksReady AND LiftPos = E_LSPM_LiftPos.E_LOWER 
+			  AND BaseFunctionData.OrderPosFork <> E_LSPM_ForkPos.E_IN) THEN
+				BaseFunctionData.OrderPosFork := E_LSPM_ForkPos.E_IN;		
+		// Error handling				 						  	 
+		ELSIF FunctionData.ErrorData.Error.ErrorType = E_ErrorType.ERROR THEN
+				BaseFunctionData.States.eLastState := BaseFunctionData.States.eState;
+				BaseFunctionData.States.eState 	:= E_LSPM_States.ERROR;
+		(*ELSE 
+				F_SetError(
+					ErrorType 	:= E_ErrorType.ERROR, 
+					ErrorParam 	:= 'Startposition not found move magazine manually', 
+					ErrorMsg 	:= E_ErrorConv.CONFIGURATION_ERROR, 
+					ErrorData 	:= FunctionData.ErrorData.ErrorDataSet[5]);	*)
+		END_IF
+
+(******************************************************************************
+START POSITION
+********************************************************************************)	
+	E_LSPM_States.START_POSITION:
+		BaseFunctionData.EnableTakeover 			:= FALSE;
+		BaseFunctionData.EnableHandover 			:= FALSE;		
+		PalletMagazineEmpty 						:= FALSE;		
+		FunctionInterface.Out.AddOnOrders.DataReady := TRUE;
+		// The pallet magazine is full and we are in the correct position go to Stack Full	 
+		IF(FunctionData.ErrorData.Error.ErrorType <> E_ErrorType.ERROR AND SensorMagazineFull AND LiftReady AND ForksReady) THEN							 
+			BaseFunctionData.States.eLastState := BaseFunctionData.States.eState;
+			BaseFunctionData.States.eState 	:= E_LSPM_States.STACK_FULL;
+		// We are in the correct position go to ready				 
+		ELSIF(FunctionData.ErrorData.Error.ErrorType <> E_ErrorType.ERROR AND LiftReady AND ForksReady) THEN
+			BaseFunctionData.States.eLastState := BaseFunctionData.States.eState;
+			BaseFunctionData.States.eState 	:= E_LSPM_States.READY;
+		ELSIF FunctionData.ErrorData.Error.ErrorType = E_ErrorType.ERROR THEN
+			BaseFunctionData.States.eLastState := BaseFunctionData.States.eState;
+			BaseFunctionData.States.eState 	:= E_LSPM_States.ERROR;
+		END_IF
+			 
+(******************************************************************************
+STACK FULL
+********************************************************************************)				  
+	E_LSPM_States.STACK_FULL:
+		BaseFunctionData.EnableTakeover 			:= FALSE;
+		BaseFunctionData.EnableHandover				:= FALSE;
+		PalletMagazineEmpty 						:= FALSE;		
+		FunctionInterface.Out.AddOnOrders.DataReady	:= FALSE;
+		PalletMagazineFull							:= TRUE;		
+		
+		RequestedUserMode := UserMode; // Copy user requested mode
+		// Only allowed to to destack or send out stack otherwise the pallet stack will be to high
+		IF(FunctionData.ErrorData.Error.ErrorType <> E_ErrorType.ERROR AND LiftReady AND ForksReady 
+		   AND (RequestedUserMode = E_LSPM_Mode.E_DESTACKING OR RequestedUserMode = E_LSPM_Mode.E_SEND_STACK)) THEN
+				PalletMagazineFull := FALSE;
+				BaseFunctionData.States.eLastState := BaseFunctionData.States.eState;
+				BaseFunctionData.States.eState 	:= E_LSPM_States.DESTACKING_START;
+		ELSIF((SettingsIdleStacking AND TransportData.Occupied AND RequestedUserMode = E_LSPM_Mode.E_FREE) 
+			  AND FunctionData.ErrorData.Error.ErrorType <> E_ErrorType.ERROR AND LiftReady AND ForksReady) THEN
+				BaseFunctionData.States.eLastState := BaseFunctionData.States.eState;
+				BaseFunctionData.States.eState := E_LSPM_States.IDLE_STACKING;				  	
+		END_IF
+			 
+(******************************************************************************
+READY
+********************************************************************************)	
+	E_LSPM_States.READY:
+		BaseFunctionData.EnableTakeover 			:= FALSE;
+		BaseFunctionData.EnableHandover				:= FALSE;
+		PalletMagazineEmpty 						:= FALSE;		
+		FunctionInterface.Out.AddOnOrders.DataReady := TRUE;		
+			 
+		IF(LiftReady AND ForksReady AND FunctionData.ErrorData.Error.ErrorType <> E_ErrorType.ERROR) THEN
+			BaseFunctionData.CtrlOut.StatusReady:=TRUE; // Set Status ready some time before start new sequence. (to allow user to set valid UserMode)
+
+			IF(NOT SettleCnt.Q) THEN
+				RequestedUserMode := E_LSPM_Mode.E_FREE;
+			ELSE 
+				RequestedUserMode := UserMode; // Copy user requested mode
+				// If request is sent to destack or send out the stack and we have an pallet start destack seq	 
+				IF((TransportData.Occupied AND SensorOccupied 
+				   AND (RequestedUserMode = E_LSPM_Mode.E_DESTACKING OR RequestedUserMode = E_LSPM_Mode.E_SEND_STACK))) THEN
+						BaseFunctionData.States.eLastState := BaseFunctionData.States.eState;
+						BaseFunctionData.States.eState 	:= E_LSPM_States.DESTACKING_START; 
+				// If request is sent to move in pallets to pallet magazine 
+				// Or if IdleLiftPallet is active lift bottom pallet with stack sequence	
+				ELSIF((NOT SensorMagazineFull 
+					  AND (RequestedUserMode = E_LSPM_Mode.E_STACKING OR RequestedUserMode = E_LSPM_Mode.E_RECEIVE_STACK))) THEN
+						BaseFunctionData.States.eLastState := BaseFunctionData.States.eState;
+						BaseFunctionData.States.eState 	:= E_LSPM_States.STACKING_START; 
+				ELSIF(SettingsIdleStacking AND TransportData.Occupied AND RequestedUserMode = E_LSPM_Mode.E_FREE) THEN
+						BaseFunctionData.States.eLastState := BaseFunctionData.States.eState;
+						BaseFunctionData.States.eState := E_LSPM_States.IDLE_STACKING;
+				END_IF
+			END_IF	
+		// Not ready.	 
+		ELSE
+			BaseFunctionData.States.eLastState := BaseFunctionData.States.eState;
+			BaseFunctionData.States.eState := E_LSPM_States.START_POSITION;
+		END_IF
+			 
+(******************************************************************************
+ERROR
+********************************************************************************)			
+	E_LSPM_States.ERROR:
+		BaseFunctionData.EnableTakeover := FALSE;
+		BaseFunctionData.EnableHandover	:= FALSE;
+		PalletMagazineEmpty 			:= FALSE;		
+		// Wait until error is reseted
+		IF FunctionData.ErrorData.Error.ErrorType <> E_ErrorType.ERROR THEN
+			BaseFunctionData.States.eLastState := BaseFunctionData.States.eState;
+			BaseFunctionData.States.eState 	:= E_LSPM_States.INIT;
+		ELSIF ComMode THEN
+			BaseFunctionData.States.eLastState := BaseFunctionData.States.eState;
+			BaseFunctionData.States.eState 	:= E_LSPM_States.COM_MODE;			 
+		END_IF	 
+{endregion}
+
+(******************************************************************************
+DESTACKING START
+********************************************************************************)
+{region "Destacking states"}
+	E_LSPM_States.DESTACKING_START:
+		BaseFunctionData.EnableTakeover 			:= FALSE;
+		BaseFunctionData.EnableHandover				:= FALSE;
+		FunctionInterface.Out.AddOnOrders.DataReady := FALSE;
+		PalletMagazineFull 							:= FALSE;	
+		// When destacking a single pallet run complete sequence
+		IF(LiftReady AND ForksReady AND ForkPos = E_LSPM_ForkPos.E_In 
+		   AND LiftPos = E_LSPM_LiftPos.E_LOWER AND RequestedUserMode = E_LSPM_Mode.E_DESTACKING) THEN
+			//LS_BaseFunction.OrderPosLift := E_LS_LiftPosition.E_MIDDLE;
+			BaseFunctionData.States.eLastState := BaseFunctionData.States.eState;
+			BaseFunctionData.States.eState 	:= E_LSPM_States.DESTACKING_MOVE_MIDDLE; //DESTACKING_ENGAGE_FORKS;
+		// When sending out entire stack jump over unecessary states
+		ELSIF(LiftReady AND ForksReady AND RequestedUserMode = E_LSPM_Mode.E_SEND_STACK AND ForkPos = E_LSPM_ForkPos.E_In) THEN
+			BaseFunctionData.OrderPosLift := E_LSPM_LiftPos.E_LOWER;			
+			BaseFunctionData.States.eLastState := BaseFunctionData.States.eState;
+			BaseFunctionData.States.eState 	:= E_LSPM_States.DESTACKING_SEND_STACK;
+		END_IF
+
+(******************************************************************************
+DESTACKING MOVE TO MIDDLE -> Order Lift in middle position, forks in. (Destacking /send out bottom pallet)
+********************************************************************************)
+E_LSPM_States.DESTACKING_MOVE_MIDDLE:
+	BaseFunctionData.EnableTakeover 			:= FALSE;
+	BaseFunctionData.EnableHandover				:= FALSE;
+	FunctionInterface.Out.AddOnOrders.DataReady := FALSE;
+	
+	IF LiftReady AND ForksReady AND EnableTransport AND ForkPos = E_LSPM_ForkPos.E_In THEN
+		BaseFunctionData.OrderPosLift := E_LSPM_LiftPos.E_MIDDLE;		
+		BaseFunctionData.States.eLastState := BaseFunctionData.States.eState;
+		BaseFunctionData.States.eState 	:= E_LSPM_States.DESTACKING_ENGAGE_FORKS;
+	END_IF
+		
+(******************************************************************************
+DESTACKING ENGAGE FORKS -> Order Lift in middle position and Order Forks to outer position (Destacking /send out bottom pallet)
+********************************************************************************)
+	E_LSPM_States.DESTACKING_ENGAGE_FORKS:
+		BaseFunctionData.EnableTakeover 			:= FALSE;
+		BaseFunctionData.EnableHandover				:= FALSE;
+		FunctionInterface.Out.AddOnOrders.DataReady := FALSE;	
+		// When we are in middle position -> Order forks out  
+		IF(SensorOccupied AND LiftReady AND ForksReady AND EnableTransport AND LiftPos = E_LSPM_LiftPos.E_MIDDLE) THEN
+			IF ForkPos = E_LSPM_ForkPos.E_Out THEN 							
+				BaseFunctionData.States.eLastState := BaseFunctionData.States.eState;
+				BaseFunctionData.States.eState 	:= E_LSPM_States.DESTACKING_LIFT;
+			// Move out forks to lift pallet from the pallet below
+			ELSE
+				BaseFunctionData.OrderPosFork := E_LSPM_ForkPos.E_OUT;
+			END_IF
+		END_IF
+		//Escape sequence if PalletStackerCtrl does not set EnableTransport due to an error with gap sensor
+		//Operator must enter manual mode and move forks to out position
+		IF(NOT LoadstackerAutomode AND BaseFunctionData.OpRecover.OpControlRequired AND ForkPos = E_LSPM_ForkPos.E_OUT) THEN
+			BaseFunctionData.OrderPosFork := E_LSPM_ForkPos.E_OUT;
+			BaseFunctionData.OpRecover.OpControlCorrected:=TRUE;			
+		END_IF 
+
+(******************************************************************************
+DESTACKING LIFT -Order Lift Up (with forks out)
+********************************************************************************)
+	E_LSPM_States.DESTACKING_LIFT:
+		BaseFunctionData.EnableTakeover 			:= FALSE;
+		BaseFunctionData.EnableHandover				:= FALSE;
+		FunctionInterface.Out.AddOnOrders.DataReady := FALSE;	
+		// Forks are now in second pallet lift to top position	 
+		IF(LiftReady AND ForksReady AND LiftPos = E_LSPM_LiftPos.E_MIDDLE AND ForkPos = E_LSPM_ForkPos.E_Out) THEN 
+ 			BaseFunctionData.OrderPosLift := E_LSPM_LiftPos.E_UPPER;
+			BaseFunctionData.States.eLastState := BaseFunctionData.States.eState;
+			BaseFunctionData.States.eState := E_LSPM_States.DESTACKING_SEND_PALLET;
+		END_IF
+			 
+(******************************************************************************
+DESTACKING SEND PALLET and DESTACKING_SEND_STACK -send Stack or single pallet
+********************************************************************************)
+	E_LSPM_States.DESTACKING_SEND_PALLET, E_LSPM_States.DESTACKING_SEND_STACK:	
+		BaseFunctionData.EnableTakeover 			:= FALSE;
+		BaseFunctionData.EnableHandover				:= FALSE;
+		FunctionInterface.Out.AddOnOrders.DataReady := FALSE;	
+		// Destacking single pallet now ok to send out bottom pallet
+		IF(LiftReady AND ForksReady AND LiftPos = E_LSPM_LiftPos.E_UPPER AND RequestedUserMode = E_LSPM_Mode.E_DESTACKING) THEN 
+			BaseFunctionData.EnableHandover	:= TRUE;	
+			BaseFunctionData.States.eLastState := BaseFunctionData.States.eState;
+			BaseFunctionData.States.eState := E_LSPM_States.DESTACKING_PALLET_OUT;
+		// Send out entire stack now ok to send out entire stack (of pallet magazine with folding flaps, we need to be in lower possition to really know that flaps are safe
+		ELSIF(LiftReady AND ForksReady AND RequestedUserMode = E_LSPM_Mode.E_SEND_STACK AND LiftPos = E_LSPM_LiftPos.E_LOWER 
+			  AND ForkPos = E_LSPM_ForkPos.E_In) THEN
+				BaseFunctionData.EnableHandover	:= TRUE;
+				BaseFunctionData.States.eLastState := BaseFunctionData.States.eState;
+				BaseFunctionData.States.eState := E_LSPM_States.DESTACKING_PALLET_OUT;
+		END_IF
+			 
+(******************************************************************************
+DESTACKING PALLET OUT, Wait for pallet to leave Load Stacker machine -> Order Lifts Down
+********************************************************************************)
+	E_LSPM_States.DESTACKING_PALLET_OUT:	
+		// Pallet has now left pallet magazine ok to lift down
+		IF(LiftReady AND ForksReady AND NOT SensorOccupied AND NOT TransportData.Occupied 
+		   AND TransportData.eHandOverState <> E_HandOverState.ACTIVE) THEN
+			// Magazine full sensor still active despite complete stack is sent.
+			IF(SensorMagazineFull AND RequestedUserMode = E_LSPM_Mode.E_SEND_STACK)THEN
+				F_SetError(ErrorType 	:= E_ErrorType.ERROR,
+						   ErrorParam 	:= 'Pallet Magazine Full sensor still active',
+						   ErrorMsg 	:= E_ErrorConv.NO_FREE_TU_DATA_SET,
+						   ErrorData 	:= FunctionData.ErrorData.ErrorDataSet[7]);	 
+			ELSE
+				BaseFunctionData.OrderPosLift := E_LSPM_LiftPos.E_LOWER;
+				BaseFunctionData.States.eLastState := BaseFunctionData.States.eState;
+				BaseFunctionData.States.eState	 	:= E_LSPM_States.DESTACKING_DONE;
+			END_IF
+		END_IF
+
+(******************************************************************************
+DESTACKING DONE, wait for lift to move down. Order forks in.
+				Check if LS is empty or not
+********************************************************************************)
+	E_LSPM_States.DESTACKING_DONE:
+		BaseFunctionData.EnableTakeover 			:= FALSE;
+		BaseFunctionData.EnableHandover				:= FALSE;
+		FunctionInterface.Out.AddOnOrders.DataReady := FALSE;	
+
+		IF(LiftReady AND ForksReady AND LiftPos = E_LSPM_LiftPos.E_LOWER) THEN
+			BaseFunctionData.OrderPosFork := E_LSPM_ForkPos.E_IN;	
+		END_IF
+		// Destacking no additional pallet found. Or stack have been sent out
+		IF(LiftReady AND ForksReady AND LiftPos = E_LSPM_LiftPos.E_LOWER AND NOT SensorOccupied AND NOT TransportData.Occupied) THEN					
+			BaseFunctionData.States.eLastState := BaseFunctionData.States.eState;
+			BaseFunctionData.States.eState 	:= E_LSPM_States.DESTACKING_COMPLETE;
+		// Destacking an additional pallet found 	
+		ELSIF(LiftReady AND ForksReady AND LiftPos = E_LSPM_LiftPos.E_LOWER AND SensorOccupied AND NOT TransportData.Occupied) THEN 
+			BaseFunctionData.States.eLastState := BaseFunctionData.States.eState;
+			BaseFunctionData.States.eState 	:= E_LSPM_States.DESTACKING_ADD_PALLET;
+		END_IF		
+
+(******************************************************************************
+DESTACKING ADD PALLET, Set logical occupied and create TU data set
+********************************************************************************)
+	E_LSPM_States.DESTACKING_ADD_PALLET:
+		BaseFunctionData.EnableTakeover 			:= FALSE;
+		BaseFunctionData.EnableHandover				:= FALSE;
+		FunctionInterface.Out.AddOnOrders.DataReady := TRUE;	
+		
+		F_SetOccupied(eFunctionNumber := SettingsFunction.FunctionLink.eFunctionNumber, 
+					  ZoneNumber := SettingsFunction.FunctionLink.ZoneNumber);
+
+		// If no index was found for that label			
+		IF TransportData.TU_DataIndex = 0 THEN
+			// Create new data set
+			TU_DataIndex := F_InsertTU_Data(SettingsFunction.FunctionLink.eFunctionNumber, SettingsFunction.FunctionLink.ZoneNumber);	
+			
+			IF TU_DataIndex = 0 THEN
+				// No free image slot available -> Error, no free index
+				F_SetError(
+							ErrorType 	:= E_ErrorType.ERROR,
+							ErrorParam 	:= 'Pallet Magazine - No TU Data found',
+							ErrorMsg 	:= E_ErrorConv.NO_FREE_TU_DATA_SET,
+							ErrorData 	:= FunctionData.ErrorData.ErrorDataSet[7]);
+			// If a new index was created
+			ELSE		
+				F_AssignTU_DataIndexToZone( eFunctionNumber	:= SettingsFunction.FunctionLink.eFunctionNumber, 
+											ZoneNumber		:= SettingsFunction.FunctionLink.ZoneNumber, 
+											TU_DataIndex	:= TU_DataIndex);			
+			
+				BaseFunctionData.States.eLastState := BaseFunctionData.States.eState;
+				BaseFunctionData.States.eState 	:= E_LSPM_States.DESTACKING_COMPLETE;
+			END_IF
+		END_IF
+			 
+(******************************************************************************
+DESTACKING_COMPLETE
+********************************************************************************)
+	E_LSPM_States.DESTACKING_COMPLETE:
+ 		BaseFunctionData.States.eLastState := BaseFunctionData.States.eState;
+		BaseFunctionData.States.eState 	:= E_LSPM_States.RESET_FORKS;
+{endregion}	
+
+(******************************************************************************
+STACKING START
+********************************************************************************)
+{region "Stacking states"}	
+	E_LSPM_States.STACKING_START:
+		BaseFunctionData.EnableTakeover 			:= FALSE;
+		BaseFunctionData.EnableHandover				:= FALSE;
+		FunctionInterface.Out.AddOnOrders.DataReady := FALSE;	
+		// Stacking with an pallet already in pallet magazine go down to start sequence
+		IF(LiftReady AND ForksReady AND TransportData.Occupied AND RequestedUserMode = E_LSPM_Mode.E_STACKING) THEN
+ 			BaseFunctionData.OrderPosLift := E_LSPM_LiftPos.E_LOWER;
+			BaseFunctionData.States.eLastState := BaseFunctionData.States.eState;
+			BaseFunctionData.States.eState := E_LSPM_States.STACKING_ENGAGE_FORKS;
+		// Stacking pallet magazine empty. For either single pallet or stack. Jump over unecessary steps
+		ELSIF NOT SensorOccupied AND NOT TransportData.Occupied THEN
+
+			IF ForkPos <> E_LSPM_ForkPos.E_In THEN
+				BaseFunctionData.OrderPosFork := E_LSPM_ForkPos.E_IN; 
+			END_IF
+
+			PalletMagazineEmpty := TRUE;
+			BaseFunctionData.States.eLastState := BaseFunctionData.States.eState;
+			BaseFunctionData.States.eState := E_LSPM_States.STACKING_RECIVE_STACK;
+		// Stacking pallet magazine not empty when an request to send stack is active raise error		
+		ELSIF RequestedUserMode = E_LSPM_Mode.E_RECEIVE_STACK AND (SensorOccupied OR TransportData.Occupied) THEN   
+			F_SetError(
+						ErrorType 	:= E_ErrorType.ERROR, 
+						ErrorParam 	:= 'PalletMagazine - not empty, req to send in stack', 
+						ErrorMsg 	:= E_ErrorConv.INCORRECT_SENSOR_SIGNAL, 
+						ErrorData 	:= FunctionData.ErrorData.ErrorDataSet[6]);	
+							 
+			BaseFunctionData.States.eLastState := BaseFunctionData.States.eState;
+			BaseFunctionData.States.eState := E_LSPM_States.ERROR;				 
+		END_IF 
+			 
+(******************************************************************************
+STACKING ENGAGE FORKS, Wait for lift to move down, -> order forks out
+********************************************************************************)
+	E_LSPM_States.STACKING_ENGAGE_FORKS:
+		BaseFunctionData.EnableTakeover 			:= FALSE;
+		BaseFunctionData.EnableHandover				:= FALSE;
+		FunctionInterface.Out.AddOnOrders.DataReady := FALSE;	
+		
+		//Pallet magazine is down, ok to insert forks
+		IF(LiftReady AND ForksReady AND LiftPos = E_LSPM_LiftPos.E_LOWER AND SensorOccupied) THEN 
+			BaseFunctionData.OrderPosFork := E_LSPM_ForkPos.E_OUT;				 
+			BaseFunctionData.States.eLastState := BaseFunctionData.States.eState;
+			BaseFunctionData.States.eState 	:= E_LSPM_States.STACKING_ORDER_LIFT;
+		END_IF
+
+(******************************************************************************
+STACKING LIFT, Wait for forks to move out -> Order Lift Up
+********************************************************************************)
+	E_LSPM_States.STACKING_ORDER_LIFT:
+		BaseFunctionData.EnableTakeover				:= FALSE;
+		BaseFunctionData.EnableHandover				:= FALSE;
+		FunctionInterface.Out.AddOnOrders.DataReady	:= FALSE;
+		// Possible to enter this state from either STACKING_ENGAGE_FORKS or IDLE_STACKED
+		// Forks are now in outer position (engaged) in bottom pallet -> OK to lift
+		IF(LiftReady AND ForksReady AND EnableTransport AND ForkPos = E_LSPM_ForkPos.E_Out) THEN 
+ 			BaseFunctionData.OrderPosLift		:= E_LSPM_LiftPos.E_UPPER;
+			BaseFunctionData.States.eLastState	:= BaseFunctionData.States.eState;
+			BaseFunctionData.States.eState		:= E_LSPM_States.STACKING_LIFT_ACTIVE;
+		END_IF
+
+(******************************************************************************
+STACKING LIFT ACTIVE, Wait for bottom pallet to move to upper position
+********************************************************************************)
+	E_LSPM_States.STACKING_LIFT_ACTIVE:
+		BaseFunctionData.EnableTakeover				:= FALSE;
+		BaseFunctionData.EnableHandover				:= FALSE;
+		FunctionInterface.Out.AddOnOrders.DataReady := FALSE;
+		// Bottom pallet has been lifted
+		IF(LiftReady AND ForksReady AND EnableTransport AND LiftPos = E_LSPM_LiftPos.E_UPPER AND NOT SensorOccupied) THEN 
+			BaseFunctionData.States.eLastState := BaseFunctionData.States.eState;
+			BaseFunctionData.States.eState 	:= E_LSPM_States.STACKING_RECIVE_PALLET;
+		// Sensor is still blocked even though bottom pallet have been lifted raise error		  
+		ELSIF(LiftReady AND ForksReady AND LiftPos = E_LSPM_LiftPos.E_UPPER AND SensorOccupied) THEN
+			F_SetError(ErrorType 	:= E_ErrorType.ERROR, 
+					   ErrorParam	:= 'Sensor blocked when pallet lifted', 
+					   ErrorMsg 	:= E_ErrorConv.INCORRECT_SENSOR_SIGNAL, 
+					   ErrorData 	:= FunctionData.ErrorData.ErrorDataSet[6]);	
+		END_IF
+
+(******************************************************************************
+STACKING RECIVE PALLET, STACKING_RECIVE_STACK Enable takeover
+********************************************************************************)
+	E_LSPM_States.STACKING_RECIVE_PALLET, E_LSPM_States.STACKING_RECIVE_STACK:	
+		BaseFunctionData.EnableTakeover				:= FALSE;
+		BaseFunctionData.EnableHandover				:= FALSE;
+		FunctionInterface.Out.AddOnOrders.DataReady	:= FALSE;	
+		// Okay to recive new pallet	 
+		IF(LiftReady AND ForksReady AND (LiftPos = E_LSPM_LiftPos.E_UPPER OR PalletMagazineEmpty) 
+		   AND NOT TransportData.Occupied AND NOT TransportData.DataPresent) THEN 
+				BaseFunctionData.EnableTakeover	:= TRUE;	
+				BaseFunctionData.States.eLastState := BaseFunctionData.States.eState;
+				BaseFunctionData.States.eState 	:= E_LSPM_States.STACKING_PALLET_IN;	
+		END_IF
+
+(******************************************************************************
+STACKING PALLET RECIVED, wait for pallet to enter into the LoadStacker
+********************************************************************************)
+	E_LSPM_States.STACKING_PALLET_IN:
+		BaseFunctionData.EnableHandover				:= FALSE;
+		FunctionInterface.Out.AddOnOrders.DataReady := FALSE;	
+		// If there was an pallet in magazine before stacking started lower the stack when new pallet have been recived.
+		IF(LiftReady AND ForksReady AND LiftPos = E_LSPM_LiftPos.E_UPPER AND TransportData.Occupied AND SensorOccupied 
+		   AND NOT PalletMagazineEmpty) THEN				
+			BaseFunctionData.States.eLastState := BaseFunctionData.States.eState;
+			BaseFunctionData.States.eState 	:= E_LSPM_States.STACKING_LOWER_STACK;	
+		// If the pallet magazine was empty and have now recived the pallet stacking is done. Jump over unecessary steps. 
+		ELSIF(LiftReady AND ForksReady AND TransportData.Occupied AND SensorOccupied AND PalletMagazineEmpty) THEN
+			BaseFunctionData.States.eLastState := BaseFunctionData.States.eState;
+			BaseFunctionData.States.eState 	:= E_LSPM_States.STACKING_COMPLETE;
+		END_IF
+	
+(******************************************************************************
+STACKING LOWER STACK, New pallet entered into LS, and there are already pallet(s) on forks
+********************************************************************************)
+	E_LSPM_States.STACKING_LOWER_STACK:	
+		BaseFunctionData.EnableTakeover 			:= FALSE;
+		BaseFunctionData.EnableHandover				:= FALSE;
+		FunctionInterface.Out.AddOnOrders.DataReady := FALSE;	
+		// Pallet have been received lower stack	 
+		IF(LiftReady AND ForksReady AND EnableTransport AND LiftPos = E_LSPM_LiftPos.E_UPPER) THEN
+			IF(SettingsMachineType = E_LSPM_MachineType.E_PALLET_MAGAZINE) THEN
+				BaseFunctionData.OrderPosLift := E_LSPM_LiftPos.E_LOWER;
+				BaseFunctionData.States.eLastState := BaseFunctionData.States.eState;
+				BaseFunctionData.States.eState 	:= E_LSPM_States.STACKING_COMPLETE;	 
+			// Loadstacker with forks
+			ELSE
+				BaseFunctionData.OrderPosLift := E_LSPM_LiftPos.E_MIDDLE;
+				BaseFunctionData.States.eLastState := BaseFunctionData.States.eState;
+				BaseFunctionData.States.eState 	:= E_LSPM_States.STACKING_MIDDLE_DONE;
+			END_IF					
+		END_IF	
+			 
+(******************************************************************************
+STACKING DONE, wait until lift is in middle position
+********************************************************************************)
+	E_LSPM_States.STACKING_MIDDLE_DONE:	
+		BaseFunctionData.EnableTakeover 			:= FALSE;
+		BaseFunctionData.EnableHandover				:= FALSE;
+		FunctionInterface.Out.AddOnOrders.DataReady := TRUE;	
+		
+		IF( LiftReady AND ForksReady AND EnableTransport AND LiftPos = E_LSPM_LiftPos.E_MIDDLE)  THEN 
+			BaseFunctionData.OrderPosFork := E_LSPM_ForkPos.E_IN;
+			BaseFunctionData.States.eLastState := BaseFunctionData.States.eState;
+			BaseFunctionData.States.eState 	:= E_LSPM_States.STACKING_COMPLETE;
+		END_IF
+		// Escape sequence if PalletStackerCtrl does not set EnableTransport due to an error with gap sensor
+		// Operator must enter manual mode and move forks to inner position
+		IF( NOT LoadstackerAutomode AND BaseFunctionData.OpRecover.OpControlRequired AND ForkPos = E_LSPM_ForkPos.E_IN) THEN
+			BaseFunctionData.OrderPosFork := E_LSPM_ForkPos.E_IN;
+			BaseFunctionData.OpRecover.OpControlCorrected:=TRUE;			
+		END_IF 
+			 
+(******************************************************************************
+STACKING COMPLETE, 
+********************************************************************************)
+	E_LSPM_States.STACKING_COMPLETE:
+		BaseFunctionData.EnableTakeover 			:= FALSE;
+		BaseFunctionData.EnableHandover				:= FALSE;
+		FunctionInterface.Out.AddOnOrders.DataReady := TRUE;
+		BaseFunctionData.States.eLastState := BaseFunctionData.States.eState;
+		BaseFunctionData.States.eState 	:= E_LSPM_States.RESET_FORKS;
+			 
+(********************************************************************************)			 
+{endregion}
+	 
+{region "Idle Stacking states"}
+(******************************************************************************
+IDLE_STACKING, 
+	Lift bottom pallet up on forks to optimize stacking of new empty pallet (or make the chain free if long chain used over several functions).
+********************************************************************************)		  
+	E_LSPM_States.IDLE_STACKING:
+	
+		IF( LiftReady AND ForksReady AND ForkPos <> E_LSPM_ForkPos.E_OUT) THEN
+			BaseFunctionData.OrderPosFork := E_LSPM_ForkPos.E_OUT;
+		ELSIF( LiftReady AND ForksReady AND ForkPos = E_LSPM_ForkPos.E_OUT AND LiftPos <> E_LSPM_LiftPos.E_UPPER) THEN
+			BaseFunctionData.OrderPosLift := E_LSPM_LiftPos.E_UPPER;
+		// Stacking complete
+		ELSIF( LiftReady AND ForksReady AND ForkPos = E_LSPM_ForkPos.E_OUT AND LiftPos = E_LSPM_LiftPos.E_UPPER) THEN
+			BaseFunctionData.States.eLastState := BaseFunctionData.States.eState;
+			BaseFunctionData.States.eState 	:= E_LSPM_States.IDLE_STACKED;
+		END_IF
+
+(******************************************************************************
+IDLE_STACKED, 
+	Idle stacking complete, pallet and lift is safe
+	Restore by lowering down the pallets
+********************************************************************************)		  
+	E_LSPM_States.IDLE_STACKED:
+		 
+		RequestedUserMode := UserMode; // Copy user requested mode
+		// Go to stacking. since pallet already lifted we can save time
+		IF(RequestedUserMode = E_LSPM_Mode.E_STACKING) THEN // Shortcut to stacking lift
+			BaseFunctionData.States.eLastState := BaseFunctionData.States.eState;
+			BaseFunctionData.States.eState 	:= E_LSPM_States.STACKING_ORDER_LIFT;
+		// Restore-> move down and forks out
+		ELSIF(RequestedUserMode <> E_LSPM_Mode.E_FREE OR NOT SettingsIdleStacking OR NOT TransportData.Occupied) THEN			
+			IF( LiftReady AND ForksReady AND ForkPos = E_LSPM_ForkPos.E_OUT AND LiftPos <> E_LSPM_LiftPos.E_LOWER) THEN
+				BaseFunctionData.OrderPosLift := E_LSPM_LiftPos.E_LOWER;
+			ELSIF( LiftReady AND ForksReady AND LiftPos = E_LSPM_LiftPos.E_LOWER AND ForkPos <> E_LSPM_ForkPos.E_IN) THEN
+				BaseFunctionData.OrderPosFork := E_LSPM_ForkPos.E_IN;
+			ELSIF( LiftReady AND ForksReady) THEN		 	
+				BaseFunctionData.States.eLastState := BaseFunctionData.States.eState;
+				BaseFunctionData.States.eState 	:= E_LSPM_States.RESET_FORKS;
+			END_IF
+		// Check occupied sensor...
+		ELSIF(LiftReady AND LiftPos = E_LSPM_LiftPos.E_UPPER AND SensorOccupied) THEN
+			F_SetError(ErrorType 	:= E_ErrorType.ERROR, 
+					   ErrorParam 	:= 'Sensor blocked when pallet lifted', 
+					   ErrorMsg 	:= E_ErrorConv.INCORRECT_SENSOR_SIGNAL, 
+					   ErrorData 	:= FunctionData.ErrorData.ErrorDataSet[6]);	
+		ELSIF(LiftReady AND ForksReady AND ForkPos = E_LSPM_ForkPos.E_OUT AND LiftPos = E_LSPM_LiftPos.E_UPPER) THEN
+			BaseFunctionData.CtrlOut.PalletLifted:=TRUE;
+		END_IF
+{endregion}
+	 
+END_CASE
+
+//monitor loadstacker state machine, if chaning state -> reset variables when changing states
+IF(LastCycleState<>BaseFunctionData.States.eState) THEN	
+	BaseFunctionData.OpRecover.OpControlCorrected:=FALSE;
+END_IF
+LastCycleState:= BaseFunctionData.States.eState;
+
+SettleCnt(IN:= BaseFunctionData.States.eState = E_LSPM_States.READY);
+
+BaseFunctionData.CtrlOut.MagazineFull := PalletMagazineFull;
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_TU_Data_Control" Id="{59161ca3-8fcf-4e9e-a9a3-b37ccb7ffaf6}">
+      <Declaration><![CDATA[// Setting of TU-data properties
+METHOD PROTECTED _M_TU_Data_Control : BOOL
+VAR_INPUT
+	LoadstackerType		: E_LSPM_MachineType;	// The machine type
+	DestinationFunction	: E_FunctionNumber;		// User provided destination function -passed by CtrlIn
+	DestinationZone		: INT;					// User provided destination zone -passed by CtrlIn
+	TU_Type				: INT;					// User provided TU Tupe -passed by CtrlIn
+	DeleteAssignmentData	: BOOL;				// Overwrite Assignment ID with UNKNOWN
+END_VAR
+
+VAR_INST		
+	OldState			: E_LSPM_States;
+	DataProcessed		: BOOL;			// Flag if step is processed.
+	OccupiedState		: INT; 
+END_VAR
+
+VAR
+	TU_DataIndex		: DINT;
+	ClearTU_Data		: BOOL;	
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[// Monitor loadstacker state machine, and apply additional tasks
+IF(OldState<>BaseFunctionData.States.eState) THEN
+	DataProcessed:=FALSE;
+END_IF
+
+IF(LoadstackerType = E_LSPM_MachineType.E_UNKNOWN) THEN
+	RETURN;
+END_IF
+
+// Get the TU data index of the pallet
+TU_DataIndex := F_PB_GetTransportControlDataRef(SettingsFunction.FunctionLink.eFunctionNumber, SettingsFunction.FunctionLink.ZoneNumber).TU_DataIndex;
+
+// Overwrite Assigment ID
+// Wait for TTC to be sent
+CASE OccupiedState OF
+	0:
+		IF(F_PB_GetTransportControlDataRef(ConfigFunction.FunctionLink.eFunctionNumber, 
+										   ConfigFunction.FunctionLink.ZoneNumber).Occupied
+		   AND DeleteAssignmentData) THEN
+			OccupiedState := OccupiedState+1;
+		END_IF
+	1:
+		// Wait one cycle in order to be sure TTC is sent (if configured)
+		OccupiedState := OccupiedState+1;
+	2:
+		//ITC_ZoneData : ST_ITC_Zone;	
+		//ITC_ZoneData := F_PB_GetZoneITC(ConfigFunction.FunctionLink.eFunctionNumber, ConfigFunction.FunctionLink.ZoneNumber);
+		//IF ITC_ZoneData.Flags.TransportTaksCompleteOccSent OR ITC_ZoneData.Flags.TransportTaksCompleteSent THEN 
+		IF(TU_DataIndex>0) THEN
+			TU_DataTable[TU_DataIndex].AssignmentID := Conveyor.ASSIGNMENT_ID_UNKNOWN;
+		END_IF
+		OccupiedState := OccupiedState+1;
+	3:
+		IF(NOT F_PB_GetTransportControlDataRef(ConfigFunction.FunctionLink.eFunctionNumber, ConfigFunction.FunctionLink.ZoneNumber).Occupied) THEN
+			OccupiedState := 0;
+		END_IF
+END_CASE
+
+CASE BaseFunctionData.States.eState OF
+	
+	//--------------------------------------------------------------------------------------------------------
+	// Ready state stacker is idle
+	E_LSPM_States.READY:
+		IF(NOT F_PB_GetTransportControlDataRef(ConfigFunction.FunctionLink.eFunctionNumber, 
+											   ConfigFunction.FunctionLink.ZoneNumber).Occupied) THEN
+			IF(NOT DataProcessed) THEN
+				MEMSET(ADR(_SavedTUData),0,SIZEOF(ST_TU_Data));
+				DataProcessed:=TRUE;
+			END_IF
+		END_IF
+			
+	//--------------------------------------------------------------------------------------------------------
+	// Bottom pallet lifted, before removing logical data, back it up
+	E_LSPM_States.STACKING_ORDER_LIFT:
+		IF(NOT DataProcessed AND TU_DataIndex > 0) THEN
+			IF(LoadstackerType = E_LSPM_MachineType.E_PALLET_STACKER OR	LoadstackerType= E_LSPM_MachineType.E_SUB_PALLETIZING) THEN
+				// Save TU data for the pallet that will be lifted up
+				_SavedTUData := TU_Table.TU_DataTable[TU_DataIndex];
+				//DataStored:=TRUE;
+				DebugMsg := CONCAT('Stacking. Stored new TU data set, TU index : ', DINT_TO_STRING(TU_DataIndex));
+				fbDebugMsg.M_SendInfoMsg(DebugMsg);
+				DebugMsg := CONCAT('Stacking. Stored new TU data set, TU ID : ', TU_Table.TU_DataTable[TU_DataIndex].TU_ID.ASCII);
+				fbDebugMsg.M_SendInfoMsg(DebugMsg);
+			ELSIF(LoadstackerType = E_LSPM_MachineType.E_PALLET_MAGAZINE) THEN
+				// Do nothing
+				;//DataStored:=FALSE;
+			END_IF
+			// Data has been backed up, delete in TU table
+			F_DeleteTU_Data(TU_DataIndex	:= TU_DataIndex,
+							//CallSource		:= 'FB_PalletMagazine',
+							NoTTC 			:= FALSE);
+			// TU data deleted, remove sensor
+			F_ResetOccupied(eFunctionNumber := SettingsFunction.FunctionLink.eFunctionNumber,
+							ZoneNumber 		:= Settingsfunction.FunctionLink.ZoneNumber);
+			
+			DataProcessed:=TRUE;
+		END_IF
+	
+	//--------------------------------------------------------------------------------------------------------
+	// Single pallet received
+	// Consider to wait some time in order for an eventually TTC to be sent, before overwrite the TU Data
+	E_LSPM_States.STACKING_MIDDLE_DONE:
+		IF( NOT DataProcessed AND TU_DataIndex > 0) THEN
+			IF(LoadstackerType= E_LSPM_MachineType.E_PALLET_STACKER) THEN
+				TU_Table.TU_DataTable[TU_DataIndex].Profile.Height := TU_Table.TU_DataTable[TU_DataIndex].Profile.Height + _SavedTUData.Profile.Height;
+			END_IF
+			IF(LoadstackerType= E_LSPM_MachineType.E_SUB_PALLETIZING) THEN
+				TU_Table.TU_DataTable[TU_DataIndex] := _SavedTUData;
+				TU_Table.TU_DataTable[TU_DataIndex].Destination[1].eFunctionNumber := E_FunctionNumber.F_BEGIN_FUNCTION;
+				//TU_Table.TU_DataTable[TU_DataIndex].AssignmentID := Conveyor.ASSIGNMENT_ID_UNKNOWN;
+				//DataStored := FALSE;
+				DebugMsg := CONCAT('Stacking Received pallet. Wrote stored TU data to TU ix : ', DINT_TO_STRING(TU_DataIndex));
+				fbDebugMsg.M_SendInfoMsg(DebugMsg);
+				DebugMsg := CONCAT('Stacking Received pallet. Wrote stored TU data set, TU ID : ', TU_Table.TU_DataTable[TU_DataIndex].TU_ID.ASCII);
+				fbDebugMsg.M_SendInfoMsg(DebugMsg);					
+			END_IF
+			DataProcessed:=TRUE;
+		END_IF
+		
+	//--------------------------------------------------------------------------------------------------------
+	// Sending out bottom pallet
+	E_LSPM_States.DESTACKING_SEND_PALLET: 
+		IF( NOT DataProcessed AND TU_DataIndex > 0) THEN
+			IF(LoadstackerType= E_LSPM_MachineType.E_SUB_PALLETIZING) THEN
+				// Save TU data for the pallet that is lifted up
+				_SavedTUData := TU_Table.TU_DataTable[TU_DataIndex];		
+				//DataStored:=TRUE;
+				ClearTU_Data := TRUE;			
+				
+				DebugMsg := CONCAT('Stacking. Stored new TU data set, TU index : ', DINT_TO_STRING(TU_DataIndex));
+				fbDebugMsg.M_SendInfoMsg(DebugMsg);
+				DebugMsg := CONCAT('Stacking. Stored new TU data set, TU ID : ', TU_Table.TU_DataTable[TU_DataIndex].TU_ID.ASCII);
+				fbDebugMsg.M_SendInfoMsg(DebugMsg);
+			// Pallet loadstacker, keep pallet data as is, but write destination if provided
+			ELSIF(LoadstackerType= E_LSPM_MachineType.E_PALLET_STACKER OR LoadstackerType = E_LSPM_MachineType.E_PALLET_MAGAZINE) THEN
+				ClearTU_Data := FALSE;
+			END_IF
+			
+			_M_WriteTU_Data(
+							TU_DataIndex			:= TU_DataIndex,
+							DestinationFunction		:= DestinationFunction,
+							DestinationZone			:= DestinationZone,
+							TU_Type					:= TU_Type,
+							ClearTU_Data			:= ClearTU_Data);
+			// Debug message
+			IF(ClearTU_Data) THEN
+				DebugMsg := CONCAT('Send Pallet. Cleared TU data set, TU index : ', DINT_TO_STRING(TU_DataIndex));
+				fbDebugMsg.M_SendInfoMsg(DebugMsg);
+				DebugMsg := CONCAT('Send Pallet. Cleared TU data set, TU ID : ', TU_Table.TU_DataTable[TU_DataIndex].TU_ID.ASCII);
+				fbDebugMsg.M_SendInfoMsg(DebugMsg);
+			END_IF
+							
+			DataProcessed:=TRUE;
+		END_IF
+
+	//--------------------------------------------------------------------------------------------------------
+	// Sending out complete stack
+	// Note: it could be possible to send stack even there is only one pallet in the magazine! -Not always there is stored data avaiilable
+	E_LSPM_States.DESTACKING_SEND_STACK:
+		// TU Data index must be > 0
+		IF(NOT DataProcessed AND TU_DataIndex > 0) THEN	
+			// Sub palletizer: Write stored TU data to the bottom pallet
+			IF(LoadstackerType = E_LSPM_MachineType.E_SUB_PALLETIZING) THEN					
+				ClearTU_Data := FALSE; // Do not clear TU data
+			// Pallet loadstacker: adjust the height of the load
+			ELSIF(LoadstackerType = E_LSPM_MachineType.E_PALLET_STACKER) THEN
+				DebugMsg := CONCAT('Send Stack. New height set to : ', INT_TO_STRING(TU_Table.TU_DataTable[TU_DataIndex].Profile.Height));
+				fbDebugMsg.M_SendInfoMsg(DebugMsg);
+				ClearTU_Data := FALSE; (* do not clear TU data*)				
+			// Pallet magazine	
+			ELSIF(LoadstackerType = E_LSPM_MachineType.E_PALLET_MAGAZINE) THEN
+				ClearTU_Data := FALSE;	(* do not clear TU data*)				
+			END_IF
+			// Over write destination with user provided destination (if provided)
+			_M_WriteTU_Data(
+						TU_DataIndex			:= TU_DataIndex,
+						DestinationFunction		:= DestinationFunction,
+						DestinationZone			:= DestinationZone,
+						TU_Type					:= TU_Type,
+						ClearTU_Data			:= ClearTU_Data);				
+			
+			//DataStored:=FALSE;	
+			DataProcessed:=TRUE;
+		END_IF 		
+		
+	//--------------------------------------------------------------------------------------------------------
+	// Destacking a stack of loaded pallets (Pallet stacker type or sub palletizer)
+	// The remaining pallet will now have the original data, this basecally to make it possible to see the TU Data from SynQ
+	// Also needed when stucking a additional pallet to the magazine.
+	// TU_DataIndex>0 ==> there is another pallet still in the magazine
+	E_LSPM_States.DESTACKING_COMPLETE:
+		IF(LoadstackerType = E_LSPM_MachineType.E_PALLET_STACKER OR LoadstackerType = E_LSPM_MachineType.E_SUB_PALLETIZING) THEN
+			IF(TU_DataIndex > 0 (*AND DataStored*)) THEN
+				TU_Table.TU_DataTable[TU_DataIndex] := _SavedTUData;
+				TU_Table.TU_DataTable[TU_DataIndex].Destination[1].eFunctionNumber := E_FunctionNumber.F_BEGIN_FUNCTION;
+				//DataStored := FALSE;
+				DebugMsg := CONCAT('DeStacking Complete. Wrote stored TU data to TU ix : ', DINT_TO_STRING(TU_DataIndex));
+				fbDebugMsg.M_SendInfoMsg(DebugMsg);
+				DebugMsg := CONCAT('DeStacking Complete. Wrote stored TU data set, TU ID : ', TU_Table.TU_DataTable[TU_DataIndex].TU_ID.ASCII);
+				fbDebugMsg.M_SendInfoMsg(DebugMsg);
+			END_IF
+		END_IF
+
+END_CASE
+
+// Copy old state
+OldState := BaseFunctionData.States.eState;
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_WriteTU_Data" Id="{2eeeed43-0c3c-4262-b040-51bc2c0937a2}">
+      <Declaration><![CDATA[//Helper function to write TU data
+METHOD PRIVATE _M_WriteTU_Data : BOOL
+VAR_INPUT
+	TU_DataIndex		: DINT;
+	DestinationFunction	: E_FunctionNumber;
+	DestinationZone		: INT;	
+	TU_Type				: INT;
+	ClearTU_Data		: BOOL;
+END_VAR
+
+VAR
+	CurrentTuDest		: ST_PositionIdent;
+	CurrentTuType		: INT;
+	SetUserDestination	: BOOL;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[//sanity check
+	IF(TU_DataIndex=0 OR TU_DataIndex>Conveyor.NUMBER_OF_TU_DATA) THEN
+		RETURN;
+	END_IF
+
+	
+	SetUserDestination := DestinationFunction > E_FunctionNumber.F_BEGIN_FUNCTION AND DestinationZone > 0;
+		
+	//ClearTUdata
+	IF(ClearTU_Data) THEN
+		
+		IF(NOT SetUserDestination) THEN
+			CurrentTuDest := TU_Table.TU_DataTable[TU_DataIndex].Destination[1];
+			CurrentTuType := TU_Table.TU_DataTable[TU_DataIndex].DataSet.TU_Type; 
+		END_IF	
+	
+		MEMSET(ADR(TU_Table.TU_DataTable[TU_DataIndex]),0,SIZEOF(ST_TU_Data));
+		TU_Table.TU_DataTable[TU_DataIndex].DataSet.DataPresent := TRUE;
+		TU_Table.TU_DataTable[TU_DataIndex].DataSet.NumberOfDest:=1;
+		
+		// Preset TU_Data on bottom pallet
+		TU_DataTable[TU_DataIndex].TU_ID.ASCII := Conveyor.TU_ID_UNKNOWN;
+		TU_DataTable[TU_DataIndex].TU_ID.HashCode := F_CreateHashCode(Conveyor.TU_ID_UNKNOWN);	
+		// Preset Assignmetn on bottom pallet
+		TU_DataTable[TU_DataIndex].AssignmentID := Conveyor.ASSIGNMENT_ID_UNKNOWN;		
+		
+		IF(NOT SetUserDestination) THEN
+			TU_Table.TU_DataTable[TU_DataIndex].Destination[1] := CurrentTuDest;
+			TU_Table.TU_DataTable[TU_DataIndex].DataSet.TU_Type := CurrentTuType; 
+		END_IF
+		
+	END_IF
+	
+	//If user provided destination, then this shall be used
+	IF(SetUserDestination) THEN
+		TU_DataTable[TU_DataIndex].Destination[1].eFunctionNumber := DestinationFunction;		//write the destination provided by the user
+		TU_DataTable[TU_DataIndex].Destination[1].ZoneNumber :=	 DestinationZone;
+		TU_Table.TU_DataTable[TU_DataIndex].DataSet.TU_Type := TU_Type;		
+	END_IF
+	
+	TU_Table.TU_DataTable[TU_DataIndex].DataSet.JobPresent := TU_DataTable[TU_DataIndex].Destination[1].eFunctionNumber<>F_BEGIN_FUNCTION;]]></ST>
+      </Implementation>
+    </Method>
+    <Action Name="A_Init" Id="{05638b56-a08f-4bb2-b9f0-48170818c24c}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_Init
+ * 	FUNCTION	Initialize function
+ **************************************************************************************)
+ 
+// Update Registry
+M_UpdateRegistry();
+ 
+
+// Init ongoing - Wait until init is released (Sequencial startup)
+IF NOT FunctionData.Init AND FunctionData.InitRunning  THEN
+	// When the subsystem is started, 
+	// When its released to initialize
+	IF FunctionData.OperationState.Info.SystemReady AND
+	   SettingsFunction.eFunctionNumber < FunctionData.OperationState.InitRelease.eLimitFunctionNumber THEN
+	   
+	   IF M_InitFunction(FALSE) THEN		   
+			// Function initialized - and initialization done
+			FunctionData.Init := TRUE;
+			FunctionData.InitRunning := FALSE;
+	
+			// Set reset cmd
+			FunctionData.ErrorData.Error.ResetError := TRUE;
+			
+			DebugMsg := CONCAT('Initialization done. Function: ', ConfigFunction.FunctionName);
+			fbDebugMsg.M_SendInfoMsg(DebugMsg);
+		END_IF
+	END_IF
+(*
+If the function is not initialized,
+clean all values and wait until init is released
+*)
+ELSIF NOT FunctionData.Init THEN
+	// Reset internal variables
+	FunctionData.OperationState := FunctionBase.PositionStateEmpty;
+
+	// Initiate initialization of all zones
+	FOR ZoneIdx := 1 TO SettingsFunction.NumberOfZones DO
+		ZoneData[ZoneIdx].Init := FALSE;
+	END_FOR;
+	
+	// Load function specific configuration to settings
+	// this is a base class module, do this in the inherited class
+	//Settings := Config;
+	
+	// Reset values and load config
+	M_PreInit();	
+	
+	// To start init a valid functionnumber and element link is needed
+	FunctionData.InitRunning := SettingsFunction.eFunctionNumber > 0 AND
+								SettingsFunction.eElementLink > 0;
+END_IF
+
+// Init zones
+IF FunctionData.Init THEN
+	// Set init flag after one cycle
+	FOR ZoneIdx := 1 TO SettingsFunction.NumberOfZones DO
+		// If a zone is not initialized, wait one cycle to finish init
+		IF NOT ZoneData[ZoneIdx].Init THEN
+			IF ZoneData[ZoneIdx].InitRunning THEN
+				ZoneData[ZoneIdx].InitRunning := FALSE;
+				ZoneData[ZoneIdx].Init := TRUE;
+				ZoneData[ZoneIdx].ErrorData.Error.ResetError := TRUE;
+			ELSE	
+				ZoneData[ZoneIdx].InitRunning := TRUE;
+			END_IF
+		END_IF
+	END_FOR;
+END_IF]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="A_InputMapping" Id="{6819b33e-f317-4bc6-8927-87aa950a1c5c}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_InputMapping
+ * 	FUNCTION	Input mapping
+ **************************************************************************************)
+ 
+
+(**************************************************************************************
+   Element states
+***************************************************************************************)
+// Get status of the corresponding element
+M_GetElementStates(); 
+
+(**************************************************************************************
+   AddOn states
+***************************************************************************************)
+// Get status of all corresponding AddOn functions and store it in FunctionInterface.In.AddOnOrder
+M_GetAddOnOrder();]]></ST>
+      </Implementation>
+    </Action>
+    <LineIds Name="FB_LSPM_Base">
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_LSPM_Base._M_CheckErrors">
+      <LineId Id="115" Count="1" />
+      <LineId Id="321" Count="0" />
+      <LineId Id="117" Count="9" />
+      <LineId Id="114" Count="0" />
+      <LineId Id="107" Count="0" />
+      <LineId Id="105" Count="1" />
+      <LineId Id="6" Count="4" />
+      <LineId Id="100" Count="0" />
+      <LineId Id="11" Count="3" />
+      <LineId Id="257" Count="0" />
+      <LineId Id="299" Count="1" />
+      <LineId Id="15" Count="1" />
+      <LineId Id="236" Count="0" />
+      <LineId Id="17" Count="46" />
+      <LineId Id="71" Count="7" />
+      <LineId Id="127" Count="3" />
+      <LineId Id="132" Count="3" />
+      <LineId Id="131" Count="0" />
+      <LineId Id="5" Count="0" />
+      <LineId Id="182" Count="0" />
+      <LineId Id="181" Count="0" />
+      <LineId Id="183" Count="4" />
+      <LineId Id="157" Count="0" />
+      <LineId Id="188" Count="6" />
+      <LineId Id="160" Count="0" />
+      <LineId Id="278" Count="0" />
+      <LineId Id="197" Count="0" />
+      <LineId Id="205" Count="0" />
+      <LineId Id="210" Count="3" />
+      <LineId Id="209" Count="0" />
+      <LineId Id="215" Count="0" />
+      <LineId Id="198" Count="4" />
+      <LineId Id="214" Count="0" />
+      <LineId Id="203" Count="0" />
+      <LineId Id="195" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_LSPM_Base._M_ForkControl">
+      <LineId Id="121" Count="0" />
+      <LineId Id="123" Count="0" />
+      <LineId Id="122" Count="0" />
+      <LineId Id="127" Count="0" />
+      <LineId Id="124" Count="0" />
+      <LineId Id="128" Count="2" />
+      <LineId Id="133" Count="0" />
+      <LineId Id="132" Count="0" />
+      <LineId Id="12" Count="18" />
+      <LineId Id="134" Count="0" />
+      <LineId Id="70" Count="2" />
+      <LineId Id="94" Count="1" />
+      <LineId Id="31" Count="18" />
+      <LineId Id="67" Count="0" />
+      <LineId Id="93" Count="0" />
+      <LineId Id="68" Count="0" />
+      <LineId Id="75" Count="0" />
+      <LineId Id="73" Count="1" />
+      <LineId Id="50" Count="0" />
+      <LineId Id="5" Count="0" />
+      <LineId Id="83" Count="8" />
+      <LineId Id="79" Count="0" />
+      <LineId Id="78" Count="0" />
+      <LineId Id="55" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_LSPM_Base._M_LiftControl">
+      <LineId Id="254" Count="0" />
+      <LineId Id="130" Count="0" />
+      <LineId Id="304" Count="0" />
+      <LineId Id="255" Count="4" />
+      <LineId Id="185" Count="0" />
+      <LineId Id="260" Count="1" />
+      <LineId Id="263" Count="0" />
+      <LineId Id="290" Count="0" />
+      <LineId Id="292" Count="0" />
+      <LineId Id="294" Count="0" />
+      <LineId Id="296" Count="4" />
+      <LineId Id="303" Count="0" />
+      <LineId Id="302" Count="0" />
+      <LineId Id="295" Count="0" />
+      <LineId Id="291" Count="0" />
+      <LineId Id="153" Count="1" />
+      <LineId Id="191" Count="13" />
+      <LineId Id="190" Count="0" />
+      <LineId Id="211" Count="0" />
+      <LineId Id="187" Count="0" />
+      <LineId Id="212" Count="1" />
+      <LineId Id="217" Count="1" />
+      <LineId Id="220" Count="0" />
+      <LineId Id="222" Count="0" />
+      <LineId Id="221" Count="0" />
+      <LineId Id="223" Count="2" />
+      <LineId Id="227" Count="0" />
+      <LineId Id="219" Count="0" />
+      <LineId Id="216" Count="0" />
+      <LineId Id="210" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_LSPM_Base._M_OverideManualDrive">
+      <LineId Id="9" Count="4" />
+      <LineId Id="5" Count="0" />
+      <LineId Id="21" Count="0" />
+      <LineId Id="19" Count="0" />
+      <LineId Id="18" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_LSPM_Base._M_PresetEncoder">
+      <LineId Id="6" Count="0" />
+      <LineId Id="33" Count="0" />
+      <LineId Id="32" Count="0" />
+      <LineId Id="34" Count="0" />
+      <LineId Id="101" Count="0" />
+      <LineId Id="87" Count="3" />
+      <LineId Id="54" Count="0" />
+      <LineId Id="100" Count="0" />
+      <LineId Id="91" Count="0" />
+      <LineId Id="60" Count="0" />
+      <LineId Id="57" Count="1" />
+      <LineId Id="61" Count="0" />
+      <LineId Id="63" Count="4" />
+      <LineId Id="62" Count="0" />
+      <LineId Id="69" Count="0" />
+      <LineId Id="133" Count="1" />
+      <LineId Id="72" Count="3" />
+      <LineId Id="70" Count="0" />
+      <LineId Id="76" Count="1" />
+      <LineId Id="79" Count="0" />
+      <LineId Id="82" Count="0" />
+      <LineId Id="137" Count="0" />
+      <LineId Id="135" Count="1" />
+      <LineId Id="103" Count="3" />
+      <LineId Id="102" Count="0" />
+      <LineId Id="109" Count="0" />
+      <LineId Id="83" Count="0" />
+      <LineId Id="80" Count="0" />
+      <LineId Id="138" Count="0" />
+      <LineId Id="141" Count="20" />
+      <LineId Id="140" Count="0" />
+      <LineId Id="139" Count="0" />
+      <LineId Id="96" Count="0" />
+      <LineId Id="99" Count="0" />
+      <LineId Id="97" Count="0" />
+      <LineId Id="95" Count="0" />
+      <LineId Id="35" Count="0" />
+      <LineId Id="53" Count="0" />
+      <LineId Id="5" Count="0" />
+      <LineId Id="36" Count="3" />
+      <LineId Id="43" Count="2" />
+      <LineId Id="50" Count="0" />
+      <LineId Id="52" Count="0" />
+      <LineId Id="51" Count="0" />
+      <LineId Id="40" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_LSPM_Base._M_ResetErrors">
+      <LineId Id="5" Count="0" />
+      <LineId Id="52" Count="0" />
+      <LineId Id="51" Count="0" />
+      <LineId Id="55" Count="0" />
+      <LineId Id="54" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_LSPM_Base._M_ResetSequence">
+      <LineId Id="76" Count="40" />
+      <LineId Id="75" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_LSPM_Base._M_StateControl">
+      <LineId Id="1633" Count="10" />
+      <LineId Id="1646" Count="3" />
+      <LineId Id="2437" Count="0" />
+      <LineId Id="1650" Count="4" />
+      <LineId Id="1656" Count="2" />
+      <LineId Id="1660" Count="6" />
+      <LineId Id="1668" Count="2" />
+      <LineId Id="1673" Count="9" />
+      <LineId Id="2442" Count="0" />
+      <LineId Id="1684" Count="0" />
+      <LineId Id="1686" Count="3" />
+      <LineId Id="1691" Count="6" />
+      <LineId Id="2647" Count="0" />
+      <LineId Id="1698" Count="3" />
+      <LineId Id="1703" Count="7" />
+      <LineId Id="2648" Count="0" />
+      <LineId Id="1711" Count="7" />
+      <LineId Id="1720" Count="1" />
+      <LineId Id="1724" Count="1" />
+      <LineId Id="1728" Count="0" />
+      <LineId Id="1731" Count="0" />
+      <LineId Id="1734" Count="0" />
+      <LineId Id="1736" Count="0" />
+      <LineId Id="2649" Count="0" />
+      <LineId Id="1740" Count="0" />
+      <LineId Id="1742" Count="0" />
+      <LineId Id="1745" Count="0" />
+      <LineId Id="1748" Count="0" />
+      <LineId Id="1750" Count="0" />
+      <LineId Id="1753" Count="0" />
+      <LineId Id="1755" Count="0" />
+      <LineId Id="1758" Count="0" />
+      <LineId Id="1761" Count="0" />
+      <LineId Id="1764" Count="0" />
+      <LineId Id="2650" Count="0" />
+      <LineId Id="1768" Count="0" />
+      <LineId Id="1770" Count="0" />
+      <LineId Id="2651" Count="1" />
+      <LineId Id="1776" Count="0" />
+      <LineId Id="1779" Count="0" />
+      <LineId Id="1782" Count="0" />
+      <LineId Id="2653" Count="0" />
+      <LineId Id="1787" Count="0" />
+      <LineId Id="1789" Count="0" />
+      <LineId Id="2654" Count="0" />
+      <LineId Id="1793" Count="0" />
+      <LineId Id="1795" Count="0" />
+      <LineId Id="1797" Count="9" />
+      <LineId Id="2655" Count="0" />
+      <LineId Id="1809" Count="7" />
+      <LineId Id="1818" Count="1" />
+      <LineId Id="1822" Count="1" />
+      <LineId Id="1825" Count="1" />
+      <LineId Id="1828" Count="1" />
+      <LineId Id="1831" Count="15" />
+      <LineId Id="1848" Count="1" />
+      <LineId Id="2656" Count="0" />
+      <LineId Id="1853" Count="2" />
+      <LineId Id="1857" Count="0" />
+      <LineId Id="2657" Count="0" />
+      <LineId Id="1860" Count="1" />
+      <LineId Id="1863" Count="10" />
+      <LineId Id="1875" Count="1" />
+      <LineId Id="2658" Count="0" />
+      <LineId Id="1878" Count="1" />
+      <LineId Id="1881" Count="1" />
+      <LineId Id="1884" Count="1" />
+      <LineId Id="2659" Count="0" />
+      <LineId Id="1887" Count="1" />
+      <LineId Id="1890" Count="2" />
+      <LineId Id="2660" Count="0" />
+      <LineId Id="1894" Count="1" />
+      <LineId Id="1897" Count="8" />
+      <LineId Id="1907" Count="8" />
+      <LineId Id="1917" Count="6" />
+      <LineId Id="1925" Count="1" />
+      <LineId Id="2661" Count="0" />
+      <LineId Id="1927" Count="8" />
+      <LineId Id="2662" Count="0" />
+      <LineId Id="1938" Count="0" />
+      <LineId Id="2663" Count="0" />
+      <LineId Id="1941" Count="2" />
+      <LineId Id="1945" Count="1" />
+      <LineId Id="1949" Count="18" />
+      <LineId Id="1969" Count="6" />
+      <LineId Id="1977" Count="1" />
+      <LineId Id="1981" Count="2" />
+      <LineId Id="1985" Count="4" />
+      <LineId Id="1991" Count="13" />
+      <LineId Id="2006" Count="1" />
+      <LineId Id="2010" Count="11" />
+      <LineId Id="2023" Count="1" />
+      <LineId Id="2664" Count="0" />
+      <LineId Id="2028" Count="1" />
+      <LineId Id="2031" Count="1" />
+      <LineId Id="2665" Count="0" />
+      <LineId Id="2035" Count="2" />
+      <LineId Id="2039" Count="7" />
+      <LineId Id="2666" Count="1" />
+      <LineId Id="2471" Count="0" />
+      <LineId Id="2476" Count="0" />
+      <LineId Id="2478" Count="1" />
+      <LineId Id="2474" Count="0" />
+      <LineId Id="2473" Count="0" />
+      <LineId Id="2049" Count="2" />
+      <LineId Id="2480" Count="0" />
+      <LineId Id="2052" Count="11" />
+      <LineId Id="2065" Count="1" />
+      <LineId Id="2068" Count="1" />
+      <LineId Id="2073" Count="1" />
+      <LineId Id="2076" Count="1" />
+      <LineId Id="2081" Count="2" />
+      <LineId Id="2085" Count="9" />
+      <LineId Id="2668" Count="0" />
+      <LineId Id="2095" Count="23" />
+      <LineId Id="2121" Count="5" />
+      <LineId Id="2128" Count="0" />
+      <LineId Id="2669" Count="0" />
+      <LineId Id="2129" Count="7" />
+      <LineId Id="2138" Count="4" />
+      <LineId Id="2144" Count="1" />
+      <LineId Id="2671" Count="0" />
+      <LineId Id="2147" Count="2" />
+      <LineId Id="2670" Count="0" />
+      <LineId Id="2151" Count="2" />
+      <LineId Id="2155" Count="7" />
+      <LineId Id="2440" Count="0" />
+      <LineId Id="2438" Count="1" />
+      <LineId Id="2163" Count="10" />
+      <LineId Id="2176" Count="11" />
+      <LineId Id="2189" Count="2" />
+      <LineId Id="2193" Count="3" />
+      <LineId Id="2578" Count="0" />
+      <LineId Id="2580" Count="6" />
+      <LineId Id="2588" Count="1" />
+      <LineId Id="2591" Count="1" />
+      <LineId Id="2594" Count="1" />
+      <LineId Id="2598" Count="0" />
+      <LineId Id="2600" Count="3" />
+      <LineId Id="2672" Count="0" />
+      <LineId Id="2247" Count="6" />
+      <LineId Id="2255" Count="1" />
+      <LineId Id="2673" Count="0" />
+      <LineId Id="2260" Count="10" />
+      <LineId Id="2272" Count="1" />
+      <LineId Id="2674" Count="0" />
+      <LineId Id="2278" Count="1" />
+      <LineId Id="2281" Count="1" />
+      <LineId Id="2286" Count="10" />
+      <LineId Id="2298" Count="1" />
+      <LineId Id="2510" Count="0" />
+      <LineId Id="2514" Count="0" />
+      <LineId Id="2520" Count="0" />
+      <LineId Id="2519" Count="0" />
+      <LineId Id="2675" Count="0" />
+      <LineId Id="2511" Count="0" />
+      <LineId Id="2513" Count="0" />
+      <LineId Id="2517" Count="1" />
+      <LineId Id="2512" Count="0" />
+      <LineId Id="2304" Count="14" />
+      <LineId Id="2320" Count="5" />
+      <LineId Id="2509" Count="0" />
+      <LineId Id="2327" Count="13" />
+      <LineId Id="2342" Count="23" />
+      <LineId Id="2367" Count="3" />
+      <LineId Id="2372" Count="9" />
+      <LineId Id="2383" Count="2" />
+      <LineId Id="2387" Count="2" />
+      <LineId Id="2391" Count="2" />
+      <LineId Id="2395" Count="8" />
+      <LineId Id="2676" Count="0" />
+      <LineId Id="2405" Count="0" />
+      <LineId Id="2407" Count="1" />
+      <LineId Id="2677" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_LSPM_Base._M_TU_Data_Control">
+      <LineId Id="652" Count="5" />
+      <LineId Id="901" Count="1" />
+      <LineId Id="659" Count="2" />
+      <LineId Id="1126" Count="0" />
+      <LineId Id="1131" Count="3" />
+      <LineId Id="1136" Count="0" />
+      <LineId Id="1331" Count="0" />
+      <LineId Id="1239" Count="0" />
+      <LineId Id="1137" Count="2" />
+      <LineId Id="1141" Count="0" />
+      <LineId Id="1235" Count="1" />
+      <LineId Id="1140" Count="0" />
+      <LineId Id="1237" Count="0" />
+      <LineId Id="1142" Count="0" />
+      <LineId Id="1192" Count="0" />
+      <LineId Id="1150" Count="0" />
+      <LineId Id="1148" Count="0" />
+      <LineId Id="1151" Count="0" />
+      <LineId Id="1143" Count="1" />
+      <LineId Id="1153" Count="1" />
+      <LineId Id="1149" Count="0" />
+      <LineId Id="1135" Count="0" />
+      <LineId Id="663" Count="1" />
+      <LineId Id="1193" Count="0" />
+      <LineId Id="1200" Count="2" />
+      <LineId Id="1332" Count="0" />
+      <LineId Id="1199" Count="0" />
+      <LineId Id="1204" Count="0" />
+      <LineId Id="1206" Count="0" />
+      <LineId Id="1208" Count="0" />
+      <LineId Id="1207" Count="0" />
+      <LineId Id="1205" Count="0" />
+      <LineId Id="1198" Count="0" />
+      <LineId Id="673" Count="4" />
+      <LineId Id="684" Count="0" />
+      <LineId Id="686" Count="1" />
+      <LineId Id="1210" Count="2" />
+      <LineId Id="1209" Count="0" />
+      <LineId Id="910" Count="1" />
+      <LineId Id="909" Count="0" />
+      <LineId Id="1303" Count="0" />
+      <LineId Id="1299" Count="0" />
+      <LineId Id="1301" Count="1" />
+      <LineId Id="1304" Count="2" />
+      <LineId Id="912" Count="0" />
+      <LineId Id="1070" Count="0" />
+      <LineId Id="1065" Count="0" />
+      <LineId Id="696" Count="0" />
+      <LineId Id="1089" Count="0" />
+      <LineId Id="1174" Count="1" />
+      <LineId Id="1184" Count="0" />
+      <LineId Id="1173" Count="0" />
+      <LineId Id="1273" Count="0" />
+      <LineId Id="1276" Count="0" />
+      <LineId Id="1275" Count="0" />
+      <LineId Id="1176" Count="0" />
+      <LineId Id="1182" Count="0" />
+      <LineId Id="1177" Count="0" />
+      <LineId Id="1179" Count="0" />
+      <LineId Id="1181" Count="0" />
+      <LineId Id="1188" Count="3" />
+      <LineId Id="1187" Count="0" />
+      <LineId Id="1183" Count="0" />
+      <LineId Id="1180" Count="0" />
+      <LineId Id="1178" Count="0" />
+      <LineId Id="1161" Count="0" />
+      <LineId Id="697" Count="2" />
+      <LineId Id="1068" Count="0" />
+      <LineId Id="913" Count="0" />
+      <LineId Id="1165" Count="1" />
+      <LineId Id="1164" Count="0" />
+      <LineId Id="727" Count="0" />
+      <LineId Id="1168" Count="0" />
+      <LineId Id="1170" Count="2" />
+      <LineId Id="1167" Count="0" />
+      <LineId Id="728" Count="0" />
+      <LineId Id="797" Count="0" />
+      <LineId Id="1040" Count="0" />
+      <LineId Id="914" Count="0" />
+      <LineId Id="1041" Count="0" />
+      <LineId Id="1043" Count="4" />
+      <LineId Id="1042" Count="0" />
+      <LineId Id="1051" Count="1" />
+      <LineId Id="1055" Count="2" />
+      <LineId Id="1053" Count="1" />
+      <LineId Id="1050" Count="0" />
+      <LineId Id="1048" Count="0" />
+      <LineId Id="1307" Count="0" />
+      <LineId Id="730" Count="2" />
+      <LineId Id="1080" Count="0" />
+      <LineId Id="1277" Count="0" />
+      <LineId Id="733" Count="0" />
+      <LineId Id="1026" Count="0" />
+      <LineId Id="743" Count="1" />
+      <LineId Id="763" Count="1" />
+      <LineId Id="1032" Count="0" />
+      <LineId Id="1030" Count="0" />
+      <LineId Id="1014" Count="0" />
+      <LineId Id="904" Count="0" />
+      <LineId Id="982" Count="0" />
+      <LineId Id="905" Count="0" />
+      <LineId Id="1027" Count="0" />
+      <LineId Id="992" Count="0" />
+      <LineId Id="1002" Count="0" />
+      <LineId Id="997" Count="4" />
+      <LineId Id="994" Count="0" />
+      <LineId Id="1015" Count="2" />
+      <LineId Id="785" Count="0" />
+      <LineId Id="837" Count="0" />
+      <LineId Id="840" Count="1" />
+      <LineId Id="875" Count="0" />
+      <LineId Id="976" Count="0" />
+      <LineId Id="939" Count="0" />
+      <LineId Id="838" Count="0" />
+      <LineId Id="842" Count="1" />
+      <LineId Id="846" Count="0" />
+      <LineId Id="872" Count="0" />
+      <LineId Id="870" Count="0" />
+      <LineId Id="873" Count="1" />
+      <LineId Id="1185" Count="1" />
+      <LineId Id="845" Count="0" />
+      <LineId Id="1308" Count="0" />
+      <LineId Id="786" Count="0" />
+      <LineId Id="1309" Count="0" />
+      <LineId Id="789" Count="1" />
+      <LineId Id="1310" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_LSPM_Base._M_WriteTU_Data">
+      <LineId Id="12" Count="3" />
+      <LineId Id="42" Count="0" />
+      <LineId Id="40" Count="0" />
+      <LineId Id="43" Count="0" />
+      <LineId Id="47" Count="0" />
+      <LineId Id="17" Count="2" />
+      <LineId Id="49" Count="0" />
+      <LineId Id="51" Count="1" />
+      <LineId Id="50" Count="0" />
+      <LineId Id="48" Count="0" />
+      <LineId Id="20" Count="1" />
+      <LineId Id="91" Count="0" />
+      <LineId Id="90" Count="0" />
+      <LineId Id="22" Count="4" />
+      <LineId Id="53" Count="0" />
+      <LineId Id="55" Count="1" />
+      <LineId Id="58" Count="0" />
+      <LineId Id="57" Count="0" />
+      <LineId Id="54" Count="0" />
+      <LineId Id="27" Count="0" />
+      <LineId Id="34" Count="0" />
+      <LineId Id="28" Count="4" />
+      <LineId Id="5" Count="0" />
+      <LineId Id="75" Count="0" />
+      <LineId Id="74" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_LSPM_Base.A_Init">
+      <LineId Id="148" Count="19" />
+      <LineId Id="171" Count="0" />
+      <LineId Id="173" Count="20" />
+      <LineId Id="220" Count="0" />
+      <LineId Id="194" Count="24" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_LSPM_Base.A_InputMapping">
+      <LineId Id="2" Count="4" />
+      <LineId Id="42" Count="5" />
+      <LineId Id="55" Count="4" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

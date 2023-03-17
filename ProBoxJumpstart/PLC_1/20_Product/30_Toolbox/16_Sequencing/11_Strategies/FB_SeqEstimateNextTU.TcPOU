@@ -1,0 +1,276 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.16">
+  <POU Name="FB_SeqEstimateNextTU" Id="{a1418dbd-1243-4f93-9e09-2f119aeec9ed}" SpecialFunc="None">
+    <Declaration><![CDATA[/// Estimates next awaiting TU after the requesting one of one specific destination.
+FUNCTION_BLOCK FB_SeqEstimateNextTU IMPLEMENTS I_SeqEstimateNext
+(************************************************************************************** 
+* 	Application 		: BoxControl Framework 
+* 	Revision 			: $Revision: 404877 $ 
+* 	Revision date 		: $Date: 2018-04-26 14:10:34 +0200 (Thu, 26 Apr 2018) $ 
+* 	Last changed by 	: $Author: b7ernsb $ 
+* 	URL 				: $URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/21_Projects/BCF_2.0/trunk/BCF/BCF/JumpStart/20_Product/10_App/12_E_Functions/10_Lib/10_Conv/FB_FunctionConv.TcPOU $ 
+* ------------------------------------------------------------------------------------ 
+* 	© Swisslog AG 
+* 	Swisslog is not liable for any usage of this source code that is not agreed 
+* 	on between Swisslog and the other party. The mandatory legal liability remains 
+* 	unaffected. 
+* ------------------------------------------------------------------------------------ 
+* 	Revision History: 
+* 
+* 	VERSION 		DATE 			INITIALS 			DESCRIPTION 
+* 	0.1 			23.05.2018 		mbo 				Created.
+*	0.2				31.10.2018		mbo					Race condition fixed for NextTUIndex
+* 
+**************************************************************************************)
+VAR_INPUT
+	Execute					: BOOL; // Requires rising edge for new request
+	TU_Present				: BOOL; // A TU is present on branch A
+	TU_Index				: DINT; // Waiting TU data index A
+	Destination				: ST_PositionIdent; // Estimates next TU for this destination
+	DestinationSlot			: INT; // Estimates next TU for this destination slot
+	Branch					: I_BranchCheckpoint; // Branch to check for next branch
+	BranchExclusionMode		: BOOL := FALSE; // False = TU on a branch is possible next, TRUE = TU on a branch is excluded as possible next
+END_VAR
+VAR_OUTPUT
+	Busy					: BOOL; // Process ongoing
+	Error					: BOOL; // Error during process (configuration error)
+	NextTU_Index			: DINT; // Next expected TU of this sequence
+END_VAR
+VAR_IN_OUT
+	TU_Table				: ARRAY[0..Conveyor.NUMBER_OF_TU_DATA] OF ST_TU_Data; // TU Table
+END_VAR
+VAR
+	State					: INT; // State machine 0: Request 1: Search
+	fbTrigExecute			: R_TRIG; // Trigger new request
+	TU_DataChanged			: BOOL; // Data of stored NextTU have changed
+	TU_LocationChanged		: BOOL; // Location of stored NextTU has changed
+	TU_IsPartOfDestSequence : BOOL; // TU is part of the sequence to this destination
+	SequenceDataPresent 	: BOOL; // Sequence data available
+	NextAssignmentID		: UDINT; // Stored next assignment ID
+	NextDestination			: ST_PositionIdent; // Stored destination information
+	NextDestinationSlot		: INT; // Stored destination slot
+	NextTU_ID				: STRING(Conveyor.TU_ID_STRINGLENGTH); // Stored next TU-ID HashCode
+	NextSequence			: ULINT; // Stored next sequence
+	NextSubSequence			: DINT; // Stored next sub sequence
+	NextCheckpointID		: STRING(5); // Stored next checkpoint ID
+	NextHaltSequencing		: BOOL; // Stored next halt sequencing bit
+	fbSeqGetNextTU			: FB_SeqGetNextTU; // Get next following TU of this sequence
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[// Monitor new request trigger
+fbTrigExecute(CLK := Execute);
+
+CASE State OF
+	// Wait for a new TU
+	0:
+		// Wait for new start trigger
+		IF fbTrigExecute.Q THEN
+			// Validate inputs
+			IF Branch = 0 THEN
+				Error := TRUE;
+				RETURN;
+			END_IF
+			
+			// Process started...
+			Busy := TRUE;
+			Error := FALSE;
+
+			// When a requesting TU is present
+			IF TU_Present THEN
+				// If already a next TU was determined on a previous search, 
+				// check if state or position has changed of it
+				IF NextTU_Index > 0 THEN
+					// Detect if the data of the monitored TU index has changed (e.g. TU data Add/Remove/Update)		
+					TU_DataChanged := TU_Table[NextTU_Index].AssignmentID <> NextAssignmentID OR
+									  TU_Table[NextTU_Index].TU_ID.ASCII <> NextTU_ID OR
+									  TU_Table[NextTU_Index].DataSet.Sequence <> NextSequence OR
+									  TU_Table[NextTU_Index].DataSet.SubSequence <> NextSubSequence OR
+                                      TU_Table[NextTU_Index].Destination[1].eFunctionNumber <> NextDestination.eFunctionNumber OR
+  									  TU_Table[NextTU_Index].Destination[1].ZoneNumber <> NextDestination.ZoneNumber OR
+									  TU_Table[NextTU_Index].DataSet.DestinationSlot <> NextDestinationSlot OR
+									  TU_Table[NextTU_Index].DataSet.HaltSequencing <> NextHaltSequencing;
+			
+					// Detect if the TU has changed the location (e.g. entered a new path)
+					TU_LocationChanged := TU_Table[NextTU_Index].DataSet.CheckpointID <> NextCheckpointID;
+
+					// Data changed, new release request		  
+					IF TU_DataChanged OR TU_LocationChanged THEN
+						M_ClearNextTU_Data();
+					END_IF
+				END_IF
+					
+				IF NextTU_Index > 0 THEN
+					// No change of expected TU
+					Busy := FALSE;
+					State := 0;
+				ELSIF TU_Index > 0 THEN
+					// If the TU consists of sequencing information
+					SequenceDataPresent := TU_Table[TU_Index].DataSet.Sequence > 0 AND
+					                       TU_Table[TU_Index].Destination[1].eFunctionNumber > 0;
+										   
+					TU_IsPartOfDestSequence := TU_Table[TU_Index].Destination[1].eFunctionNumber = Destination.eFunctionNumber AND
+					 						   TU_Table[TU_Index].Destination[1].ZoneNumber = Destination.ZoneNumber AND
+											   TU_Table[TU_Index].DataSet.DestinationSlot = DestinationSlot;
+					
+					IF SequenceDataPresent AND TU_IsPartOfDestSequence THEN
+						fbSeqGetNextTU(
+							Execute:= TRUE, 
+							TU_Index:= TU_Index, 
+							Destination:= TU_Table[TU_Index].Destination[1], 
+							DestinationSlot:= TU_Table[TU_Index].DataSet.DestinationSlot, 
+							Sequence:= TU_Table[TU_Index].DataSet.Sequence, 
+							SubSequence:= TU_Table[TU_Index].DataSet.SubSequence, 
+							Branch := Branch,
+							BranchExclusionMode := BranchExclusionMode,
+							TU_Table := TU_Table);
+							
+						State := 1;
+					ELSE
+						// Invalid TU data
+						Busy := FALSE;
+						State := 0;
+					END_IF
+				ELSE
+					// No TU data, not part of a sequence
+					Busy := FALSE;
+					State := 0;	
+				END_IF
+			ELSE
+				// No TU, stay
+				Busy := FALSE;
+				State := 0;
+			END_IF
+		END_IF
+	
+	// Search Next TU
+	1:
+		fbSeqGetNextTU(
+			Execute:= FALSE, 
+			TU_Index:= TU_Index, 
+			Destination:= TU_Table[TU_Index].Destination[1], 
+			DestinationSlot:= TU_Table[TU_Index].DataSet.DestinationSlot, 
+			Sequence:= TU_Table[TU_Index].DataSet.Sequence, 
+			SubSequence:= TU_Table[TU_Index].DataSet.SubSequence, 
+			Branch := Branch,
+			BranchExclusionMode := BranchExclusionMode,
+			NextTU_Index => NextTU_Index,
+			TU_Table := TU_Table);
+		
+		IF NOT fbSeqGetNextTU.Busy THEN
+			IF NOT fbSeqGetNextTU.Error THEN
+				// A next was found, store information to detect TU Data changes
+				IF NextTU_Index > 0 THEN
+					NextAssignmentID := TU_Table[NextTU_Index].AssignmentID; 
+					NextTU_ID := TU_Table[NextTU_Index].TU_ID.ASCII;
+					NextSequence := TU_Table[NextTU_Index].DataSet.Sequence;
+					NextSubSequence	:= TU_Table[NextTU_Index].DataSet.SubSequence;
+					NextCheckpointID := TU_Table[NextTU_Index].DataSet.CheckpointID;
+					NextDestination := TU_Table[NextTU_Index].Destination[1];
+					NextDestinationSlot := TU_Table[NextTU_Index].DataSet.DestinationSlot;
+					NextHaltSequencing := TU_Table[NextTU_Index].DataSet.HaltSequencing;
+
+				// No next found for this specific destination
+				ELSE
+					M_ClearNextTU_Data();
+				END_IF
+				
+				Busy := FALSE;
+				State := 0;
+			ELSE
+				// Error during search
+				Error := TRUE;
+				Busy := FALSE;
+				State := 0;
+			END_IF
+		END_IF
+ELSE
+	// Default
+	State := 0;
+END_CASE
+]]></ST>
+    </Implementation>
+    <Method Name="M_ResetExpectedTU" Id="{1b3ef0c0-b52e-4310-b095-be902c14103f}">
+      <Declaration><![CDATA[/// Reset next expected TU, so on a new request a new search is triggered
+METHOD M_ResetExpectedTU 
+VAR_INPUT
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[NextTU_Index := 0;
+
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_ClearNextTU_Data" Id="{29275d7f-d353-4c61-bc1e-73e8f9ce57e0}">
+      <Declaration><![CDATA[/// Clears next tu data
+METHOD PROTECTED M_ClearNextTU_Data
+VAR_INPUT
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[NextTU_Index := 0;
+NextAssignmentID := 0; 
+NextTU_ID := '';
+NextSequence := 0;
+NextSubSequence	:= 0;
+NextCheckpointID := '';
+NextDestination.eFunctionNumber := 0;
+NextDestination.ZoneNumber := 0;
+NextDestinationSlot := 0;
+NextHaltSequencing :=  FALSE;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_IsNextInSequence" Id="{72759731-1722-4dd4-9687-2953d570521e}">
+      <Declaration><![CDATA[/// Checks if requesting TU is next in sequence
+METHOD M_IsNextInSequence : BOOL // True = Next in Sequence, otherwise FALSE
+VAR_INPUT
+	mTU_Index		: DINT; // Requesting TU Index
+END_VAR
+VAR_IN_OUT
+	mTU_Data			: ST_TU_Data; // Tu Data
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+IF NextTU_Index > 0 THEN
+	// Check whether the requesting TU is the same, as the next sequence TU was stored
+	IF TU_Index = NextTU_Index AND
+	   mTU_Data.DataSet.Sequence = NextSequence AND
+	   mTU_Data.DataSet.SubSequence = NextSubSequence AND
+	   mTU_Data.TU_ID.ASCII = NextTU_ID AND
+	   mTU_Data.DataSet.CheckpointID = NextCheckpointID AND
+	   mTU_Data.Destination[1].eFunctionNumber = NextDestination.eFunctionNumber AND
+	   mTU_Data.Destination[1].ZoneNumber = NextDestination.ZoneNumber AND 
+	   mTU_Data.DataSet.DestinationSlot = NextDestinationSlot THEN
+	   
+	   	// Release
+		M_IsNextInSequence := TRUE;
+	ELSE
+	   M_IsNextInSequence := FALSE;
+	END_IF
+ELSE
+	M_IsNextInSequence := FALSE;
+END_IF
+]]></ST>
+      </Implementation>
+    </Method>
+    <LineIds Name="FB_SeqEstimateNextTU">
+      <LineId Id="334" Count="129" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_SeqEstimateNextTU.M_ResetExpectedTU">
+      <LineId Id="5" Count="0" />
+      <LineId Id="8" Count="0" />
+      <LineId Id="7" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_SeqEstimateNextTU.M_ClearNextTU_Data">
+      <LineId Id="19" Count="8" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_SeqEstimateNextTU.M_IsNextInSequence">
+      <LineId Id="3" Count="19" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

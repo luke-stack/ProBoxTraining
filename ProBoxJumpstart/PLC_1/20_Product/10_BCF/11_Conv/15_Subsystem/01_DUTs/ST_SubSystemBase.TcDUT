@@ -1,0 +1,65 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.12">
+  <DUT Name="ST_SubSystemBase" Id="{15b2d65b-5872-4896-8f27-b4f51b539dba}">
+    <Declaration><![CDATA[TYPE ST_SubSystemBase :
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 404529 $
+ *	Revision date	:	$Date: 2018-04-23 08:21:38 +0200 (Mo., 23 Apr 2018) $
+ *	Last changed by	:	$Author: b7bolm $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/trunk/01_Software/BCF/BCF/JumpStart/20_Product/10_App/15_Subsystem/10_Lib/10_Conv/01_DUTs/ST_SubSystemBase.TcDUT $
+ *
+ *	Purpose			:	Subsystem base data
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+STRUCT
+	SSQ							: ST_ITC_SSQ; // ITC Message
+	SCQ							: ST_ITC_SCQ; // ITC Message
+	GSQ							: ST_ITC_GSQ; // ITC Message
+	ESQ							: ST_ITC_ESQ; // ITC Message
+	FSQ							: ST_ITC_FSQ; // ITC Message
+	TimeValue					: STRING; // Received time value
+	eMsgType					: E_ITC_MsgTypeConv;
+	eUpdateGroupNumber			: E_GroupNumber; // Groupnumber index for subsystem update
+	eUpdateElementNumber		: E_ElementNumber; // Elementnumber index for subsystem update
+	eUpdateFunctionNumber		: E_FunctionNumber; // FunctionNumber index for subsystem update
+	UpdateGroupDone				: BOOL; // All status sent (Subsystem update) 
+	UpdateElementDone			: BOOL; // All status sent (Subsystem update) 
+	UpdateFunctionDone			: BOOL; // All status sent (Subsystem update) 
+	UpdateChannelSrc			: E_MFCS_Channel; // Channel
+	eLimitFunctionNumber		: E_FunctionNumber; // Initialization limit 
+	eLimitElementNumber			: E_ElementNumber; // Initialization limit 
+	eLimitGroupNumber			: E_GroupNumber; // Initialization limit 
+	OperationStateEmpty			: ST_PositionState;
+END_STRUCT
+END_TYPE
+]]></Declaration>
+    <ObjectProperties>
+      <XmlArchive>
+        <Data>
+          <o xml:space="preserve" t="UMLStereoTypeContainerObject">
+            <v n="IsType" t="UMLType">BaseArea</v>
+            <v n="Stereotype">""</v>
+            <d n="Stereotypes" t="Hashtable" />
+          </o>
+        </Data>
+        <TypeList>
+          <Type n="Hashtable">System.Collections.Hashtable</Type>
+          <Type n="String">System.String</Type>
+          <Type n="UMLStereoTypeContainerObject">{30250973-b110-4e31-b562-c102e042dca4}</Type>
+          <Type n="UMLType">{0197b136-405a-42ee-bb27-fd08b621d0cf}</Type>
+        </TypeList>
+      </XmlArchive>
+    </ObjectProperties>
+  </DUT>
+</TcPlcObject>

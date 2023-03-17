@@ -1,0 +1,17 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.4">
+  <DUT Name="ST_StraightBase" Id="{fe875f50-cf24-4ea8-9d9c-d75838f767db}">
+    <Declaration><![CDATA[TYPE ST_StraightBase :
+STRUCT		
+	FirstZoneIx					: INT;	//Normally zone 1 is the first zone, but when running reverse, the first zone is equal to SettingsFunction.NumberOfZones
+	LastZoneIx					: INT;	//Normally NumberOfZones is the last zone, but when running reverse, the last zone is 1.
+	ZoneOrders					: ARRAY[1..NUMBER_OF_ZONES_PER_FUNCTION] OF ST_StraightBaseZoneOrders;
+	DeletePrevTransportData 	: BOOL;
+    RequestPrevTransportData	: BOOL;
+	DeleteNextTransportData		: BOOL;
+	RequestNextTransportData	: BOOL;
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

@@ -1,0 +1,89 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <DUT Name="ST_HW_OutputsASi_1_15" Id="{f52ba3d0-8893-4810-91e5-52ab817debfc}">
+    <Declaration><![CDATA[TYPE ST_HW_OutputsASi_1_15 :
+STRUCT
+	OUT_1_1	: BIT;
+	OUT_1_2	: BIT;
+	OUT_1_3	: BIT;
+	OUT_1_4 : BIT;
+	
+	SET_OFFLINE			: BIT;
+	LOS_MASTER_BIT		: BIT;
+	SET_CONFIG_MODE		: BIT;
+	SET_PROTECTED_MODE	: BIT;
+
+	OUT_3_1	: BIT;
+	OUT_3_2	: BIT;
+	OUT_3_3	: BIT;
+	OUT_3_4 : BIT;
+
+	OUT_2_1	: BIT;
+	OUT_2_2	: BIT;
+	OUT_2_3	: BIT;
+	OUT_2_4 : BIT;
+
+	OUT_5_1	: BIT;
+	OUT_5_2	: BIT;
+	OUT_5_3	: BIT;
+	OUT_5_4 : BIT;
+	
+	OUT_4_1	: BIT;
+	OUT_4_2	: BIT;
+	OUT_4_3	: BIT;
+	OUT_4_4 : BIT;
+
+	OUT_7_1	: BIT;
+	OUT_7_2	: BIT;
+	OUT_7_3	: BIT;
+	OUT_7_4 : BIT;
+
+	OUT_6_1	: BIT;
+	OUT_6_2	: BIT;
+	OUT_6_3	: BIT;
+	OUT_6_4 : BIT;
+
+	OUT_9_1	: BIT;
+	OUT_9_2	: BIT;
+	OUT_9_3	: BIT;
+	OUT_9_4 : BIT;
+
+	OUT_8_1	: BIT;
+	OUT_8_2	: BIT;
+	OUT_8_3	: BIT;
+	OUT_8_4 : BIT;
+
+	OUT_11_1	: BIT;
+	OUT_11_2	: BIT;
+	OUT_11_3	: BIT;
+	OUT_11_4	: BIT;
+
+	OUT_10_1	: BIT;
+	OUT_10_2	: BIT;
+	OUT_10_3	: BIT;
+	OUT_10_4	: BIT;
+
+	OUT_13_1	: BIT;
+	OUT_13_2	: BIT;
+	OUT_13_3	: BIT;
+	OUT_13_4	: BIT;
+
+	OUT_12_1	: BIT;
+	OUT_12_2	: BIT;
+	OUT_12_3	: BIT;
+	OUT_12_4	: BIT;
+	
+	OUT_15_1	: BIT;
+	OUT_15_2	: BIT;
+	OUT_15_3	: BIT;
+	OUT_15_4	: BIT;
+
+	OUT_14_1	: BIT;
+	OUT_14_2	: BIT;
+	OUT_14_3	: BIT;
+	OUT_14_4	: BIT;
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

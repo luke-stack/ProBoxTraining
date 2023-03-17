@@ -1,0 +1,251 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.4">
+  <POU Name="FB_Handover" Id="{e4fb0022-73af-4952-80bb-962fbd7b0f42}" SpecialFunc="None">
+    <Declaration><![CDATA[/// Basic handover implementation
+FUNCTION_BLOCK FB_Handover
+(************************************************************************************** 
+* 	Application 		: BoxControl Framework 
+* 	Revision 			: $Revision: 408723 $ 
+* 	Revision date 		: $Date: 2018-06-27 13:49:08 +0200 (Wed, 27 Jun 2018) $ 
+* 	Last changed by 	: $Author: b7bolm $ 
+* 	URL 				: $URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/21_Projects/BCF_2.0/trunk/BCF/BCF/JumpStart/20_Product/10_App/12_E_Functions/10_Lib/10_Conv/FB_FunctionList.TcPOU $ 
+* ------------------------------------------------------------------------------------ 
+* 	© Swisslog AG 
+* 	Swisslog is not liable for any usage of this source code that is not agreed 
+* 	on between Swisslog and the other party. The mandatory legal liability remains 
+* 	unaffected. 
+* ------------------------------------------------------------------------------------ 
+* 	Revision History: 
+* 
+* 	VERSION 		DATE 			INITIALS 			DESCRIPTION 
+* 	0.1 			22.08.2018 		herzig 				First implementation
+*	0.2				05.10.2018		b7bolm				Review
+* 
+**************************************************************************************)
+VAR_INPUT
+	Enable						: BOOL; // Allow handover in general  
+	RequestHandover				: BOOL; // Rising edge initiates a new transport
+	NextZonePresent 			: BOOL;	// Next zone is known
+	HandoverComplete			: BOOL; // Handover complete
+	DriveReady					: BOOL; // Drive is ready to be switched on
+	iListener 					: I_HandoverListener; // Listener for any handover events
+END_VAR
+VAR_OUTPUT
+	FastSpeed					: BOOL; // Fastspeed possible
+	DriveRun					: BOOL; // Switch drive on
+	DriveRequest				: BOOL; // Request drive 
+	eHandOverState				: E_HandOverState; // Handover state
+	eNextTakeOverState			: E_TakeOverState; // Next takeover state
+	RequestNextTransportData 	: BOOL; // Request next transport data
+	DeleteNextTransportData 	: BOOL; // Delete next transport data
+	HandoverOngoing				: BOOL; // Handover ongoing, interface in interaction
+END_VAR
+VAR_IN_OUT
+	NextTransportData			: ST_TransportData; // Next transport data
+	ErrorData					: ST_ErrorDataSet;
+END_VAR
+VAR
+	CompleteReceived			: BOOL; // Complete received
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[// To ensure not missing any complete message during state change
+IF HandoverComplete THEN
+	CompleteReceived := HandoverComplete;
+END_IF
+
+// Handover state machine
+CASE eHandOverState OF
+	// Idle
+	E_HandOverState.IDLE:
+		DeleteNextTransportData := FALSE;
+		RequestNextTransportData := FALSE;
+		DriveRequest := FALSE;
+		DriveRun := FALSE;
+		CompleteReceived := FALSE;
+
+		IF RequestHandover THEN
+			// Transport is released, no command to stop or error active
+			IF Enable AND
+			   NOT HandoverComplete AND
+			   ErrorData.ErrorType <> E_ErrorType.ERROR THEN
+				 
+				// If next zone or function is available
+				IF NextZonePresent THEN	
+					DriveRequest := NOT DriveReady;
+					eHandOverState := E_HandOverState.READY;
+				ELSE
+					RequestNextTransportData := TRUE;
+				END_IF
+			END_IF
+		END_IF
+
+  	// Ready
+	E_HandOverState.READY:	
+		DriveRequest := NOT DriveReady;
+	
+		IF NOT Enable OR NOT RequestHandover OR
+		   ErrorData.ErrorType = E_ErrorType.ERROR OR
+           NOT NextZonePresent OR HandoverComplete THEN
+			
+			DeleteNextTransportData := TRUE;   
+			eHandOverState := E_HandOverState.IDLE;
+			
+		// Next position started takeover
+		ELSIF NextTransportData.rTransportControlData.eTakeOverState = E_TakeOverState.ACTIVE THEN			
+			IF iListener <> 0 THEN
+			   iListener.M_HandoverStartEvent();
+		   	END_IF
+		
+			// Set start drive
+			DriveRun := TRUE;
+			eHandOverState := E_HandOverState.ACTIVE;
+		END_IF
+		
+ 	// Active
+	E_HandOverState.ACTIVE:
+		DriveRequest := NOT DriveReady;
+		DriveRun := TRUE;
+
+		// Stop handover
+		IF NOT Enable OR
+		   ErrorData.ErrorType = E_ErrorType.ERROR OR 
+           NOT DriveReady THEN   
+			DriveRun := FALSE;
+			eHandOverState := E_HandOverState.STOP;
+	
+		ELSIF CompleteReceived THEN
+			DriveRun := FALSE;
+			
+			IF iListener <> 0 THEN
+				iListener.M_HandoverCompleteEvent();
+			END_IF
+			
+			eHandOverState := E_HandOverState.COMPLETE;	
+			
+		// If next position stopped handover
+		ELSIF NextTransportData.rTransportControlData.eTakeOverState = E_TakeOverState.STOP THEN
+			DriveRun := FALSE;
+			eHandOverState := E_HandOverState.INTERRUPTED;
+
+		// If the next position aborted the handover or the link is broken
+		ELSIF NextTransportData.rTransportControlData.eTakeOverState = E_TakeOverState.IDLE OR
+			  NextTransportData.rTransportControlData.eTakeOverState = E_TakeOverState.UNDEFINED THEN  
+			DeleteNextTransportData := TRUE;
+			DriveRun := FALSE;
+			eHandOverState := E_HandOverState.IDLE;
+			
+		// Next position completed takeover (normal completion with MFC)
+		ELSIF NextTransportData.rTransportControlData.eTakeOverState = E_TakeOverState.COMPLETE THEN
+			DeleteNextTransportData := TRUE;
+			
+			DriveRun := FALSE;
+			eHandOverState := E_HandOverState.IDLE;
+		END_IF
+
+  	// Stop
+	E_HandOverState.STOP:
+		// If the next position aborted the takeover or the link is broken, cancel the started handover
+		IF NextTransportData.rTransportControlData.eTakeOverState = E_TakeOverState.IDLE OR
+		   NextTransportData.rTransportControlData.eTakeOverState = E_TakeOverState.UNDEFINED THEN
+		   	DriveRun := FALSE;
+			DeleteNextTransportData := TRUE;
+			eHandOverState := E_HandOverState.IDLE;
+
+		// If transport is enabled and position is started
+		ELSIF Enable THEN
+			// If no error is pending
+			IF ErrorData.ErrorType <> E_ErrorType.ERROR THEN
+				IF DriveReady THEN
+					DriveRun := TRUE;
+					DriveRequest := FALSE;
+					eHandOverState := E_HandOverState.ACTIVE;
+				ELSE
+					DriveRequest := TRUE;
+				END_IF
+			END_IF
+		END_IF
+
+  	// Interrupted
+	E_HandOverState.INTERRUPTED:
+		// If the next position aborted the takeover or the link is broken, cancel the started handover
+		IF NextTransportData.rTransportControlData.eTakeOverState = E_TakeOverState.IDLE OR
+		   NextTransportData.rTransportControlData.eTakeOverState = E_TakeOverState.UNDEFINED THEN
+			DeleteNextTransportData := TRUE;
+			eHandOverState := E_HandOverState.IDLE;
+
+		// If the next position is active again
+		ELSIF NextTransportData.rTransportControlData.eTakeOverState = E_TakeOverState.ACTIVE THEN
+			DriveRun := TRUE;
+			eHandOverState := E_HandOverState.ACTIVE;
+		END_IF
+		
+  	// Complete
+	E_HandOverState.COMPLETE:	
+		// No pending transfer -> change to idle
+		IF NextTransportData.rTransportControlData.eTakeOverState = E_TakeOverState.COMPLETE OR
+		   NextTransportData.rTransportControlData.eTakeOverState = E_TakeOverState.READY OR
+		   NextTransportData.rTransportControlData.eTakeOverState = E_TakeOverState.IDLE OR
+		   NextTransportData.rTransportControlData.eTakeOverState = E_TakeOverState.UNDEFINED THEN
+			DeleteNextTransportData := TRUE;
+
+			eHandOverState := E_HandOverState.IDLE;
+		END_IF
+ELSE
+	// Set error
+	F_SetError(	
+		ErrorType	:= E_ErrorType.ERROR,
+		ErrorParam	:= INT_TO_STRING(eHandOverState),
+		ErrorMsg	:= E_ErrorConv.SOFTWARE_ERROR,
+		ErrorData	:= ErrorData);
+END_CASE
+
+// When a handover is ongoing
+IF DriveRun THEN
+	// During handover follow next position
+	FastSpeed := NextTransportData.rTransportControlData.FastSpeedActive;
+	
+// Otherwise, fast speed is dependet if next position is available for takeover
+ELSE
+	FastSpeed := (RequestHandover AND NextTransportData.rTransportControlData.eTakeoverState = E_TakeOverState.READY) OR
+				  NOT RequestHandover;
+END_IF
+
+eNextTakeOverState := NextTransportData.rTransportControlData.eTakeOverState;
+
+HandoverOngoing := eHandOverState = E_HandoverState.ACTIVE OR
+				   eHandOverState = E_HandoverState.STOP OR
+				   eHandOverState = E_HandoverState.INTERRUPTED;
+				   ]]></ST>
+    </Implementation>
+    <Method Name="M_Init" Id="{191fee1d-3937-4ca7-a0ef-ac793d476835}">
+      <Declaration><![CDATA[/// Initializes module
+/// Remark: Aborts all ongoing transfers immediately
+METHOD M_Init : BOOL
+VAR_INPUT
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[eHandOverState := E_HandOverState.IDLE;
+DeleteNextTransportData := FALSE;
+RequestNextTransportData := FALSE;
+HandoverComplete := FALSE;
+FastSpeed := FALSE;
+
+M_Init := TRUE;
+]]></ST>
+      </Implementation>
+    </Method>
+    <LineIds Name="FB_Handover">
+      <LineId Id="433" Count="166" />
+      <LineId Id="383" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_Handover.M_Init">
+      <LineId Id="3" Count="2" />
+      <LineId Id="13" Count="0" />
+      <LineId Id="6" Count="1" />
+      <LineId Id="2" Count="0" />
+      <LineId Id="19" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

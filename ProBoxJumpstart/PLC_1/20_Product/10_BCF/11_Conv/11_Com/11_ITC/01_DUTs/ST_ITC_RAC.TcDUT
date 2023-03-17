@@ -1,0 +1,37 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.12">
+  <DUT Name="ST_ITC_RAC" Id="{3d6eb1ab-c1e9-4543-b698-0fedcaa199ca}">
+    <Declaration><![CDATA[TYPE ST_ITC_RAC :
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 404529 $
+ *	Revision date	:	$Date: 2018-04-23 08:21:38 +0200 (Mo., 23 Apr 2018) $
+ *	Last changed by	:	$Author: b7bolm $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/trunk/01_Software/BCF/BCF/JumpStart/20_Product/10_App/11_Com/10_Lib/10_Conv/11_ITC/01_DUTs/ST_ITC_RAC.TcDUT $
+ *
+ *	Purpose			:	RCA Structure
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+STRUCT
+	eChannelSrc					: E_MFCS_Channel; // Source communicaton channel		
+	Position					: STRING(Conveyor.POSITION_STRINGLENGTH); // SIS MM-GGG-EEEE-FF-Z
+	CommandDataIndex			: INT;
+	AssignmentID				: UDINT;
+	GroupID						: ULINT;
+	eReturnCode					: E_ErrorConv; // Return Code
+END_STRUCT
+END_TYPE
+
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

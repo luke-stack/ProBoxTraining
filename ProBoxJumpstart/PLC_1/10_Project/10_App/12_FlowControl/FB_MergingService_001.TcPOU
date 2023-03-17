@@ -1,0 +1,86 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <POU Name="FB_MergingService_001" Id="{56ea0736-ef13-446a-91fa-a6112c945453}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK FB_MergingService_001
+VAR_INPUT
+	///Calling function number
+	eFunctionNumber: E_FunctionNumber;
+END_VAR
+VAR
+	///Debug message service
+	fbDebugMsg: FB_DebugMsg;
+	///Debug message
+	DebugMsg: T_MAXSTRING;
+	FlipFlopBool : BOOL;
+	PrevZone : ST_ZoneData;
+END_VAR
+VAR_OUTPUT
+	///Result previous function number
+	ePrevFunctionNumber: E_FunctionNumber;
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[
+// Example 
+// Initialize variable
+ePrevFunctionNumber := F_BEGIN_FUNCTION;
+
+CASE eFunctionNumber OF
+	
+	E_FunctionNumber.F_10_001_0200_01_0:
+		IF(F_PB_GetTuDestination(eFunctionNumber:= F_10_001_0201_01_0, 1,1) = E_FunctionNumber.F_10_001_0200_01_0) THEN
+			ePrevFunctionNumber := F_10_001_0201_01_0;
+		END_IF
+		
+	E_FunctionNumber.F_10_001_0209_01_0:
+		PrevZone := F_GetZoneData(E_FunctionNumber.F_10_001_0208_01_0, 1);
+		IF PrevZone.TransportControlData.Occupied THEN
+			ePrevFunctionNumber := F_10_001_0208_01_0;
+		ELSE 
+			ePrevFunctionNumber := F_10_001_0227_01_0;
+		END_IF
+		
+	E_FunctionNumber.F_10_001_0212_01_0:
+		PrevZone := F_GetZoneData(E_FunctionNumber.F_10_001_0211_01_0, 1);
+		IF PrevZone.TransportControlData.Occupied THEN
+			ePrevFunctionNumber := F_10_001_0211_01_0;
+		ELSE 
+			ePrevFunctionNumber := F_10_001_0217_01_0;
+		END_IF
+	
+
+//	E_FunctionNumber.F_10_001_0221_01_0:
+//		PrevZone := F_GetZoneData(E_FunctionNumber.F_10_001_0211_01_0, 1);
+//		IF PrevZone.TransportControlData.Occupied THEN
+//			ePrevFunctionNumber := F_10_001_0211_01_0;
+//		ELSE 
+//			ePrevFunctionNumber := F_10_001_0217_01_0;
+//		END_IF
+
+ELSE
+	DebugMsg := CONCAT('Merging function not defined. FunctionNumber: ', INT_TO_STRING(eFunctionNumber));
+	fbDebugMsg.M_SendInfoMsg(DebugMsg);
+END_CASE
+
+]]></ST>
+    </Implementation>
+    <LineIds Name="FB_MergingService_001">
+      <LineId Id="3" Count="10" />
+      <LineId Id="41" Count="0" />
+      <LineId Id="43" Count="0" />
+      <LineId Id="51" Count="0" />
+      <LineId Id="44" Count="3" />
+      <LineId Id="42" Count="0" />
+      <LineId Id="52" Count="0" />
+      <LineId Id="54" Count="5" />
+      <LineId Id="53" Count="0" />
+      <LineId Id="14" Count="0" />
+      <LineId Id="67" Count="0" />
+      <LineId Id="61" Count="5" />
+      <LineId Id="60" Count="0" />
+      <LineId Id="35" Count="0" />
+      <LineId Id="15" Count="4" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

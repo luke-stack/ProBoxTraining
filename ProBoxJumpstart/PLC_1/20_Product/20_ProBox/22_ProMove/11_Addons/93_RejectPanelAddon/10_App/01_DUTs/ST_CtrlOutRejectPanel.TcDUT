@@ -1,0 +1,11 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <DUT Name="ST_CtrlOutRejectPanel" Id="{05308dc5-9b03-40b9-abab-fd001c402c07}">
+    <Declaration><![CDATA[TYPE ST_CtrlOutRejectPanel :
+STRUCT
+	PalletRejected						: BOOL;
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

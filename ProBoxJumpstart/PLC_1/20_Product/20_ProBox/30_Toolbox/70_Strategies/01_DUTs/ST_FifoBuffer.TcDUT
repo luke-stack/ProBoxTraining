@@ -1,0 +1,14 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.12">
+  <DUT Name="ST_FifoBuffer" Id="{679880f3-b255-4ecd-af88-c307e67eba2e}">
+    <Declaration><![CDATA[TYPE ST_FifoBuffer :
+STRUCT
+	Occupied 			: BOOL;
+	EntryOK 			: BOOL;
+	eFunctionNumber		: E_FunctionNumber;
+	Priority 			: INT;
+	//TU_Indexs			: ARRAY [1..NUMBER_OF_ZONES_PER_FUNCTION] OF DINT;  //store the TU index for all zones	
+END_STRUCT
+END_TYPE]]></Declaration>
+  </DUT>
+</TcPlcObject>

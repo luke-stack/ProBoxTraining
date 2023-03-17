@@ -1,0 +1,40 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.12">
+  <DUT Name="ST_HW_OutputsProBoxElement2Motor" Id="{81a27266-419a-44b4-becb-fe3cb74ab98e}">
+    <Declaration><![CDATA[TYPE ST_HW_OutputsProBoxElement2Motor :
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 417092 $
+ *	Revision date	:	$Date: 2018-11-14 12:58:58 +0100 (Wed, 14 Nov 2018) $
+ *	Last changed by	:	$Author: q8aberh $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/ProMove/02_Controls/ProBox/03_Implementation/01_DevelopmentProject/01_Software/ProBox_COE/ProBox_DevProj_v1.0/PLC_1/20_Product/10_App/13_Elements/10_Lib/11_ProBox/12_Element2Motor/01_DUTs/ST_HW_Out $
+ *
+ *	Purpose			:	Dummy Element motor - Hardware outputs
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				13.04.2018		PkF					First version of outputs for a motor on a element
+ *
+ **************************************************************************************)
+STRUCT
+	Drive_Run_12 		: BOOL; // Drive run command axis 1-2 forward
+	Drive_Run_21 		: BOOL; // Drive run command axis 1-2 reverse
+	Drive_Run_34 		: BOOL; // Drive run command axis 3-4 forward
+	Drive_Run_43 		: BOOL; // Drive run command axis 1-2 reverse	
+	Drive_Creep_12 		: BOOL; // Drive creep speed command axis 1-2
+	Drive_Creep_34 		: BOOL; // Drive creep speed command axis 3-4	
+	Drive_Low_12 		: BOOL; // Drive low speed command axis 1-2	
+	Drive_Low_34 		: BOOL; // Drive low speed command axis 3-4		
+	MotorBrake_12		: BOOL; // Release brake axis 1-2	
+	MotorBrake_34		: BOOL; // Release brake axis 3-4		
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

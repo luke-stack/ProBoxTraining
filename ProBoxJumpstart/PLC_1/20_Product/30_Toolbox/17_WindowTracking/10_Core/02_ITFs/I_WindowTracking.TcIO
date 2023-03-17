@@ -1,0 +1,390 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.12">
+  <Itf Name="I_WindowTracking" Id="{c0357a91-2fd7-4dd2-abdf-3cdab7659f92}">
+    <Declaration><![CDATA[/// Implements window tracking funcitonality
+INTERFACE I_WindowTracking EXTENDS __System.IQueryInterface 
+]]></Declaration>
+    <Method Name="M_AddTU" Id="{b8f10e47-24d9-45a8-9c25-6fe30f018cf4}">
+      <Declaration><![CDATA[/// Adds a TU to the beginning of the zone
+METHOD M_AddTU : BOOL // Returns true successfully, otherwise false (Zone not found, Zone to small or already occupied)
+VAR_INPUT
+	mZoneIndex				: UINT;	// Zone index 
+	mTU_Index				: DINT; // Index of TU to add
+	mLength					: UINT; // Length of TU to be added [mm]
+	mTU_Offset				: UINT; // Relative TU offset position in zone [mm]
+END_VAR
+]]></Declaration>
+    </Method>
+    <Method Name="M_AddTU_FE" Id="{3a93c027-9216-4eba-85b6-214e04ddb471}">
+      <Declaration><![CDATA[/// Adds a TU to the tracking by creating a Zone and setting the front edge.
+/// The add process is completed by triggering M_AddTU_RearEdge
+METHOD M_AddTU_FE : UINT // Returns ZoneIndex > 0 if successfully, otherwise 0
+VAR_INPUT
+	mTU_Index			: DINT; // Index of TU to add
+	mAbsolutePosition	: UDINT; // Position where a TU should be added
+	miActionListener	: I_TrackingActionListener; // Action listener of the created zone
+END_VAR
+]]></Declaration>
+    </Method>
+    <Method Name="M_AddTU_RE" Id="{d968f4e6-a12c-4857-9d90-6d36d3f9039f}">
+      <Declaration><![CDATA[/// Completes an AddTU process which was initiated by M_AddTU_FrontEdge
+METHOD M_AddTU_RE : UINT // Returns ZoneIndex > 0 if successfully, otherwise 0
+VAR_INPUT
+	mAbsolutePosition		: UDINT; // Position where a TU should be added
+	mZoneIndex				: UINT;	// Zone index to be completed
+END_VAR
+]]></Declaration>
+    </Method>
+    <Method Name="M_AllocateFixedZone" Id="{71b2fc03-330a-41fe-8794-8a266ced0d2c}">
+      <Declaration><![CDATA[/// Allocates a fixed zone (Can not be shifted)
+/// at a specific position. Position needs to be free. 
+METHOD M_AllocateFixedZone : UINT; // > 0 Allocated successfully, otherwise 0
+VAR_INPUT
+	mActionId				: INT; (* ID of action requests zone - 
+								     (0 = Only allocation, but free to be used by other acitons) *)
+	mAbsolutePosition		: UDINT; // Absolute position on tracking [mm]
+	mLength					: UINT; // Length of Zone to be allocated [mm]
+	miActionListener		: I_TrackingActionListener; // Action listener of the created zone
+	mPositionToLive			: UDINT; // Period of validity until allocation gets deleted automatically (0 = disabled)
+END_VAR
+]]></Declaration>
+    </Method>
+    <Method Name="M_AllocateNextFreeZone" Id="{ba4262db-4c6c-404b-8288-0669ff8c2aa6}">
+      <Declaration><![CDATA[/// Looks from position ascending for enough space to allocate a new Zone.
+METHOD M_AllocateNextFreeZone : UINT; // >0 Index of allocated zone, otherwise 0
+VAR_INPUT
+	mActionId				: INT; (* ID of action which requests zone - 
+								     (0 = Only allocation, but free to be used by other actions) *)
+	mAbsolutePosition		: UDINT; // Absolute position on tracking [mm]
+	mLength					: UINT; // Length of Zone to be allocated [mm]
+	mMaxDistance			: UDINT; (* Max distance in which begin of a zone is allowed to be allocated (0=Complete distance) 
+										Remark: Multiple of windowsize *)
+	miActionListener		: I_TrackingActionListener; // Action listener of the created zone
+	mPositionToLive			: UDINT; // Absolute position until allocation gets deleted automatically if not used (0 = disabled)
+END_VAR
+]]></Declaration>
+    </Method>
+    <Method Name="M_AssignNextFreeZone" Id="{d386c4e4-b52f-4169-bb0c-4c2aadace6f8}">
+      <Declaration><![CDATA[// Assigns an already allocated but free zone, beginning at absolute position upstream
+// Remark: No zones are allocated, only existing zones are considered.
+METHOD M_AssignNextFreeZone : UINT // Returns index of assigned zone if successful, otherwise 0
+VAR_INPUT
+	mActionId				: INT; // ID of action which requests zone (<>0)
+	mAbsolutePosition		: UDINT; // Absolute Start position on the tracking [mm]
+	mMaxDistance			: UDINT; // Max distance in which begin of a zone is allowed to be for assignment (0=Complete distance) 
+	mLength					: UINT; // Length of Zone to be allocated [mm]
+	miActionListener		: I_TrackingActionListener; // Action listener of the created zone
+	mPositionToLive			: UDINT; // Absolute position until allocation gets deleted automatically if not used (0 = disabled)
+END_VAR
+]]></Declaration>
+    </Method>
+    <Method Name="M_DeleteZone" Id="{2856824e-2418-4279-9781-1119b03142a3}">
+      <Declaration><![CDATA[/// Delete a zone and all related windows
+/// Remark: Including zones with physical TUs 
+METHOD M_DeleteZone : BOOL // Returns true if successful, otherwise false
+VAR_INPUT
+	mZoneIndex 				: UINT; // Zone index to delete
+END_VAR
+]]></Declaration>
+    </Method>
+    <Method Name="M_EnlargeZone" Id="{b478ec07-c2c6-4579-9315-676639b25ef9}">
+      <Declaration><![CDATA[/// Enlarges a zone by given value to upstream direction
+METHOD M_EnlargeZone : BOOL
+VAR_INPUT
+	mZoneIndex 				: UINT; // Zone index to enlarge
+	mAdditionalLength		: UINT; // Add this length to existing zone [mm]
+	mShiftFrontEdge			: BOOL; // Shift front edge for reduction
+END_VAR
+]]></Declaration>
+    </Method>
+    <Method Name="M_FlushDistance" Id="{7d9f5deb-c6c6-491b-8e51-7afcaeb4d6e0}">
+      <Declaration><![CDATA[/// Marks all windows and zones in an area to be flushed.
+/// (e.g. because of an error the TU position is not reliable anymore)
+/// Remark: This includes empty windows as well
+METHOD M_FlushDistance : BOOL // Returns true if successful, otherwise false
+VAR_INPUT
+	mAbsoluteStartPosition		: UDINT; // Position to start marking [mm]
+	mAbsoluteEndPosition		: UDINT; // Position to stop marking [mm]
+END_VAR
+]]></Declaration>
+    </Method>
+    <Method Name="M_GetAbsolutePosition" Id="{b521d875-5548-44ba-81f4-4a98715a2fc5}">
+      <Declaration><![CDATA[/// Converts a tracking position into the absolute position regarding tracking length
+METHOD M_GetAbsolutePosition : UDINT // Absolute position releated to Tracking length [mm]
+VAR_INPUT
+	mTrackingPosition			: UDINT; // Tracking position on tracking 
+END_VAR
+
+]]></Declaration>
+    </Method>
+    <Method Name="M_GetDistanceToTU_End" Id="{0df5fbc9-7d5c-4d6b-bc2c-aaf1026a5736}">
+      <Declaration><![CDATA[/// Returns distance to end of tu from observation point. 
+/// Position 0 = observation point, Position Max = Observation point plus half tracking length.
+/// Remark: In order to reduce the area use M_IsZoneInRange.
+METHOD M_GetDistanceToTU_End : DINT // Returns distance to tu end. x < 0 Zone has already passed by x
+VAR_INPUT
+	mAbsolutePosition		: UDINT; // Absolute position to watch
+	mZoneIndex				: UINT; // Index to be measured
+END_VAR
+]]></Declaration>
+    </Method>
+    <Method Name="M_GetDistanceToTU_Start" Id="{d0256863-4f94-4885-9faa-6f0dc7bc6a1e}">
+      <Declaration><![CDATA[/// Returns distance to begin of TU in Zone from observation point.
+/// Remark: Positions after Tracking length are counter as in front of observation point
+METHOD M_GetDistanceToTU_Start : DINT // Returns distance to zone start. x < 0 Zone has already passed by x
+VAR_INPUT
+	mAbsolutePosition		: UDINT; // Absolute position to watch
+	mZoneIndex				: UINT; // Index to be measured
+END_VAR
+]]></Declaration>
+    </Method>
+    <Method Name="M_GetDistanceToZoneEnd" Id="{14b2c9df-66ce-4072-b388-2a38d9a9551e}">
+      <Declaration><![CDATA[/// Returns distance to end of zone from observation point. 
+/// Position 0 = observation point, Position Max = Observation point plus half tracking length.
+/// Remark: In order to reduce the area use M_IsZoneInRange.
+METHOD M_GetDistanceToZoneEnd : DINT // Returns distance to zone end. x < 0 Zone has already passed by x
+VAR_INPUT
+	mAbsolutePosition		: UDINT; // Absolute position to watch
+	mZoneIndex				: UINT; // Index to be measured
+END_VAR
+]]></Declaration>
+    </Method>
+    <Method Name="M_GetDistanceToZoneStart" Id="{7924a139-92f7-4574-8bd6-9533ca777750}">
+      <Declaration><![CDATA[/// Returns distance to begin of zone from observation point.
+/// Remark: Positions after Tracking length are counter as in front of observation point
+METHOD M_GetDistanceToZoneStart : DINT // Returns distance to zone start. x < 0 Zone has already passed by x
+VAR_INPUT
+	mAbsolutePosition		: UDINT; // Absolute position to watch
+	mZoneIndex				: UINT; // Index to be measured
+END_VAR
+]]></Declaration>
+    </Method>
+    <Method Name="M_GetFirstZoneIndex" Id="{1df87b87-be85-4447-816f-4cc9226329af}">
+      <Declaration><![CDATA[/// Returns first zone index that can be found between start and end position
+METHOD M_GetFirstZoneIndex : UINT // Returns ZoneIndex > 0, otherwise 0
+VAR_INPUT
+	mAbsoluteStartPosition	: UDINT; // Start position on the tracking [mm]
+	mAbsoluteEndPosition	: UDINT; // End position on the tracking [mm]
+	mOnlyZonesWithTU		: BOOL; // Check only zones with physical TU
+END_VAR
+]]></Declaration>
+    </Method>
+    <Method Name="M_GetLastZoneIndex" Id="{40a712a5-5e20-40c4-8ab1-6a4770f7e790}">
+      <Declaration><![CDATA[/// Returns last zone index that can be found between start and end position, direction according windows ascending
+/// REMARK: Size of area to be checked has influence to performance of method
+METHOD M_GetLastZoneIndex : UINT // Returns ZoneIndex > 0, otherwise 0
+VAR_INPUT
+	mAbsoluteStartPosition	: UDINT; // Start position on the tracking [mm]
+	mAbsoluteEndPosition	: UDINT; // End position on the tracking [mm]
+	mOnlyZonesWithTU		: BOOL; // Check only zones with physical TU
+END_VAR
+]]></Declaration>
+    </Method>
+    <Method Name="M_GetPendingAssignments" Id="{b32ccd40-2708-4b00-a498-811ace3982f5}">
+      <Declaration><![CDATA[/// Searches through all available zones and add all zone index of ActionId to pData
+/// Remark: Amount of available zones has influence to performance.
+/// Remark: Existing entries in pData get overwritten.
+METHOD M_GetPendingAssignments : BOOL // Returns true if all found zones could be added to pData, otherwise false
+VAR_INPUT
+	mActionId				: INT; // ID of action which requests zone (<>0)
+	mpData 					: POINTER TO UINT; // Address of Value or Array to store the result
+	mDataLen				: UINT; // Size of data
+END_VAR
+VAR_OUTPUT
+	mCount					: UINT; // Number of entries added to pData
+END_VAR
+]]></Declaration>
+    </Method>
+    <Method Name="M_GetTrackingPosition" Id="{0485811e-a422-4763-acdf-bfca7c0b1f41}">
+      <Declaration><![CDATA[/// Converts an absolute position into the current position on the tracking
+METHOD M_GetTrackingPosition : UDINT // Converted position on tracking [mm]
+VAR_INPUT
+	mAbsolutePosition	: UDINT; // Absolute position 
+END_VAR
+
+
+
+
+]]></Declaration>
+    </Method>
+    <Method Name="M_GetTU_EndPosition" Id="{35f7b085-d4fd-4ec0-bb41-37382cee9a59}">
+      <Declaration><![CDATA[/// Returns TU end position of a zone on tracked distance
+/// Remark: When no TU available the return value is 0, but is notfied with output "NoTuAvailable"
+METHOD M_GetTU_EndPosition : UDINT // Returns position of TU end [mm]
+VAR_INPUT
+	mZoneIndex			: UINT; // Index of zone
+END_VAR
+VAR_OUTPUT
+	mNoTU_Available		: BOOL; // No TU Available
+END_VAR
+]]></Declaration>
+    </Method>
+    <Method Name="M_GetTU_StartPosition" Id="{a6fbd4e9-c70e-4c0f-a37f-60fe3fe7e14f}">
+      <Declaration><![CDATA[/// Returns TU start position of a zone on tracked distance
+/// Remark: When no TU available the return value is 0, but is notfied with output "NoTuAvailable"
+METHOD M_GetTU_StartPosition : UDINT // Start position of TU [mm]
+VAR_INPUT
+	mZoneIndex			: UINT; // Index of zone
+END_VAR
+VAR_OUTPUT
+	mNoTU_Available		: BOOL; // No TU Available
+END_VAR
+]]></Declaration>
+    </Method>
+    <Method Name="M_GetZoneEndPosition" Id="{d7f7ce08-39a2-4207-987b-79dc9a1f1d42}">
+      <Declaration><![CDATA[/// Returns position of Zone end on tracked distance
+METHOD M_GetZoneEndPosition : UDINT // Position of Zone end [mm]
+VAR_INPUT
+	mZoneIndex			: UINT; // Index of zone
+END_VAR
+]]></Declaration>
+    </Method>
+    <Method Name="M_GetZoneIndex" Id="{56222557-bc89-41be-b9ef-df6a8b128653}">
+      <Declaration><![CDATA[/// Returns ZoneIndex at AbsolutePosition
+METHOD M_GetZoneIndex : UINT // Returns ZoneIndex > 0, otherwise 0
+VAR_INPUT
+	mAbsolutePosition	: UDINT; // Position on the tracking [mm]
+END_VAR
+]]></Declaration>
+    </Method>
+    <Method Name="M_GetZoneStartPosition" Id="{8066cad2-a121-4f42-b88e-218103902c2e}">
+      <Declaration><![CDATA[/// Returns position of Zone start on tracked distance
+METHOD M_GetZoneStartPosition : UDINT // Position of Zone start [mm]
+VAR_INPUT
+	mZoneIndex			: UINT; // Index of zone
+END_VAR
+]]></Declaration>
+    </Method>
+    <Method Name="M_InhibitShifting" Id="{e0f3bcbf-f9ae-4862-997c-6e30a0546c83}">
+      <Declaration><![CDATA[/// Inhibits shifting on a specific zone
+METHOD M_InhibitShifting : BOOL // Returns true if successfully, otherwise false (e.g. Zone not found or not in use)
+VAR_INPUT
+	mZoneIndex		: UINT; // Zone index
+	mInhibit		: BOOL; // True = Inhibit shifting
+END_VAR
+]]></Declaration>
+    </Method>
+    <Method Name="M_IsTU_InRange" Id="{ba5d5944-5c17-420b-a1cf-1ab0bcfbd6bb}">
+      <Declaration><![CDATA[/// Checks if a TU or a part of it, is found in a certain range.
+METHOD M_IsTU_InRange : BOOL; // Returns true if present, otherwise false
+VAR_INPUT
+	mZoneIndex				: UINT; // Tracking zone index
+	mAbsoluteStartRange		: UDINT; // Start range position on the tracking [mm]
+	mAbsoluteEndRange		: UDINT; // End range position on the tracking [mm]
+END_VAR
+]]></Declaration>
+    </Method>
+    <Method Name="M_IsTU_Present" Id="{5cfc1a19-2ac7-4925-ae66-0df192c92ffe}">
+      <Declaration><![CDATA[/// Returns if a physical TU is present at mAbsolutePosition
+METHOD M_IsTU_Present : BOOL; // Returns true if present, otherwise false
+VAR_INPUT
+	mAbsolutePosition		: UDINT; // Absolute position on tracking length
+END_VAR
+]]></Declaration>
+    </Method>
+    <Method Name="M_IsZoneInRange" Id="{12e01b46-e875-43ed-891f-f2312388a1fb}">
+      <Declaration><![CDATA[/// Checks if a zone or a part of it,  is found in a certain range.
+METHOD M_IsZoneInRange : BOOL; // Returns true if zone is in range, otherwise false
+VAR_INPUT
+	mZoneIndex				: UINT; // Tracking zone index
+	mAbsoluteStartRange		: UDINT; // Start range position on the tracking [mm]
+	mAbsoluteEndRange		: UDINT; // End range position on the tracking [mm]
+END_VAR
+]]></Declaration>
+    </Method>
+    <Method Name="M_ResyncOnlyFE" Id="{8befa1d1-3a8d-40e2-b24d-414a7d774d4f}">
+      <Declaration><![CDATA[/// This function synchronize only a Front edge to a specific position and calculates the new TU length.
+/// Remark: Zone begin gets adjusted to new front edge position. Spare windows in front of front edge get removed.
+/// Remark: If at absolute position no zone is found, it search to the left for next front edge
+/// until "mMaxFrontEdgeDeviation" to find one to synchronize.
+METHOD M_ResyncOnlyFE : UINT // Returns > 0 of the synchronized Zone index, otherwise 0 (e.g. No Zone, No occupied zone)
+VAR_INPUT
+	mAbsolutePosition		: UDINT; // Absolute position [mm]
+	mMaxFrontEdgeDeviation 	: UDINT; (* When zone can not be found at "Absolute position",
+										a search upwards is executed to a limit of MaxFrontEdgeDeviation [mm]*)
+END_VAR
+]]></Declaration>
+    </Method>
+    <Method Name="M_ResyncOnlyRE" Id="{3468dec7-0dfe-4f4b-ae17-57d92dbdfba2}">
+      <Declaration><![CDATA[/// This function synchronize only Rear edge to a specific position and calculates new TU length.
+/// Remark: Zone end gets adjusted to new rear edge position. Spare windows after rear edge get removed.
+/// Remark: If at absolute position no zone is found, it search to the right
+/// until "mMaxFrontEdgeDeviation" to find one to synchronize.
+METHOD M_ResyncOnlyRE : UINT // Returns > 0 of the synchronized Zone index, otherwise 0
+VAR_INPUT
+	mAbsolutePosition		: UDINT; // Absolute position [mm]
+	mMaxRearEdgeDeviation 	: UDINT; (* When zone can not be found at "Absolute position",
+										a search upwards is executed to a limit of MaxRearEdgeDeviation [mm]*)
+END_VAR
+]]></Declaration>
+    </Method>
+    <Method Name="M_ResyncTU_FE" Id="{74ccc29f-37f6-45b2-9f37-de8bddb741a0}">
+      <Declaration><![CDATA[/// This function synchronize whole TU aligned by Front edge to a specific position.
+/// Rear edge is adjusted automatically to keep the length of TU.
+/// Remark: If at absolute position no zone is found, it search to the left
+/// until "mMaxFrontEdgeDeviation" to find one to synchronize.
+METHOD M_ResyncTU_FE : UINT // Returns > 0 of the synchronized Zone index, otherwise 0
+VAR_INPUT
+	mAbsolutePosition		: UDINT; // Absolute position [mm]
+	mMaxFrontEdgeDeviation 	: UDINT; (* When zone can not be found at "Absolute position",
+										a search upwards is executed to a limit of MaxFrontEdgeDeviation [mm]*)
+END_VAR
+]]></Declaration>
+    </Method>
+    <Method Name="M_ResyncTU_RE" Id="{c46a8f9c-e8aa-47f4-9cec-4f3ebb6f97dc}">
+      <Declaration><![CDATA[/// This function synchronize whole TU aligned by Rear edge to a specific position.
+/// Front edge is adjusted automatically to keep the length of TU.
+/// Remark: If at absolute position no zone is found, it search to the right
+/// until "mMaxFrontEdgeDeviation" to find one to synchronize.
+METHOD M_ResyncTU_RE : UINT // Returns > 0 of the synchronized Zone index, otherwise 0
+VAR_INPUT
+	mAbsolutePosition		: UDINT; // Absolute position [mm]
+	mMaxRearEdgeDeviation 	: UDINT; (* When zone can not be found at "Absolute position",
+										a search upwards is executed to a limit of MaxRearEdgeDeviation [mm]*)
+END_VAR
+]]></Declaration>
+    </Method>
+    <Method Name="M_ShortenZone" Id="{3499a02b-8eb5-4fcb-b5b7-d4a8c33c344f}">
+      <Declaration><![CDATA[/// Enlarges a zone by given value to upstream direction
+METHOD M_ShortenZone : BOOL
+VAR_INPUT
+	mZoneIndex 				: UINT; // Zone index to enlarge
+	mReductionLength		: UINT; // Reduce existing zone by this length [mm]
+	mShiftFrontEdge			: BOOL; // Shift front edge for reduction
+END_VAR
+]]></Declaration>
+    </Method>
+    <Property Name="P_TU_Count" Id="{d4432fdb-5b2e-40dc-915f-1bbd35828801}">
+      <Declaration><![CDATA[/// Returns currently available amount of TUs
+PROPERTY P_TU_Count : INT]]></Declaration>
+      <Get Name="Get" Id="{5a49a547-08ad-4be8-9d4f-da534f3525d0}">
+        <Declaration><![CDATA[]]></Declaration>
+      </Get>
+    </Property>
+    <Property Name="P_WindowTable" Id="{19fdd750-e6ff-4b83-812b-7b4b55f4f172}">
+      <Declaration><![CDATA[/// Access to Window table  for read operations
+/// Remark: User has to ensure that writing does not influence the process in a bad way.
+{attribute 'suppress_wrn_C0410'}
+PROPERTY P_WindowTable : REFERENCE TO ARRAY[1..WindowTracking.MAX_NUMBER_OF_WINDOWS] OF ST_WindowTrackingWindow;]]></Declaration>
+      <Get Name="Get" Id="{7b7ed835-efa1-4d8a-ad79-cbe8e0c27c10}">
+        <Declaration><![CDATA[]]></Declaration>
+      </Get>
+    </Property>
+    <Property Name="P_ZoneCount" Id="{16d13d7a-5873-42fc-bdcf-aed20ccb5175}">
+      <Declaration><![CDATA[/// Returns currently available amount of Zones
+PROPERTY P_ZoneCount : INT]]></Declaration>
+      <Get Name="Get" Id="{8d8300d4-d45c-47a2-b8a3-a7450c12c2a0}">
+        <Declaration><![CDATA[]]></Declaration>
+      </Get>
+    </Property>
+    <Property Name="P_ZoneTable" Id="{e6341172-c1a9-4920-8695-9ac7380c2ac6}">
+      <Declaration><![CDATA[/// Access to Zone table  for read operations
+/// Remark: User has to ensure that writing does not influence the process in a bad way.
+{attribute 'suppress_wrn_C0410'}
+PROPERTY P_ZoneTable : REFERENCE TO ARRAY[1..WindowTracking.MAX_NUMBER_OF_ZONES] OF ST_WindowTrackingZone;]]></Declaration>
+      <Get Name="Get" Id="{1d1aad4f-aad2-4454-8d8d-03d23c1f5580}">
+        <Declaration><![CDATA[]]></Declaration>
+      </Get>
+    </Property>
+  </Itf>
+</TcPlcObject>

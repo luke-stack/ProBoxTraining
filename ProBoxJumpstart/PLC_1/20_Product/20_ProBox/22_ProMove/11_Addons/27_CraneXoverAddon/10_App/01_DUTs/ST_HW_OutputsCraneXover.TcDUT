@@ -1,0 +1,12 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.12">
+  <DUT Name="ST_HW_OutputsCraneXover" Id="{22169a7b-8ace-47bf-a3ef-067c234b192f}">
+    <Declaration><![CDATA[TYPE ST_HW_OutputsCraneXover :
+STRUCT
+	Drive_Run_UpDown				: BOOL; 		// Drive run command lift up/down	
+	HandshakeCraneInterfaceSend		: ST_Conveyor_Interface_5_1; // handshake interface received Sent Crane
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

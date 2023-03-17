@@ -1,0 +1,16 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <DUT Name="ST_ProBoxSafetyOutputsShuttle" Id="{d614a95f-8f4e-4fa0-8663-2dc900f89e37}">
+    <Declaration><![CDATA[TYPE ST_ProBoxSafetyOutputsShuttle :
+STRUCT
+	FeedBackContactor		: ARRAY[1..GVL_PB_SG.NUMBER_OF_CONTACTORS] OF BOOL; //Feed back contactor send to safety
+	ContactorOnShuttle      : BOOL; //Send button to safety button on shuttle
+	ContactorOnEntry        : BOOL; //Send button to safety button located at entry panels 
+	EmergencyDrive			: BOOL; //Send button to safety switch located on shuttle
+	//ResetSafetyNeeded       : BOOL; //Indication I/O output 
+	ErrorAck                : BOOL; //Error acknowledgement sent to safety
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

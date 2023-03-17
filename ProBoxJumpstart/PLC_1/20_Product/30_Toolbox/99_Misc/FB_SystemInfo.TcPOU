@@ -1,0 +1,245 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4020.6">
+  <POU Name="FB_SystemInfo" Id="{1766b999-166e-49cd-80f4-7c8749a2e54f}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK FB_SystemInfo
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 404529 $
+ *	Revision date	:	$Date: 2018-04-23 08:21:38 +0200 (Mo., 23 Apr 2018) $
+ *	Last changed by	:	$Author: b7bolm $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/trunk/01_Software/BCF/BCF/JumpStart/30_Toolbox/99_Misc/FB_SystemInfo.TcPOU $
+ *
+ *	Purpose			:	This functionblock should provide information about the system.
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+VAR_INPUT
+	TimeInterval 		: TIME := T#5S; // Polling time
+END_VAR
+VAR_OUTPUT
+	Error				: BOOL; // Error during data gathering
+	CPU_Temperatur		: INT; // Current cpu temperatur
+	CPU_Usage			: INT; // Current cpu usage
+	SystemUsage			: INT; // Current system usage
+	FanSpeed			: UINT; // Fan speed
+END_VAR
+VAR
+	fbTimeIntervalCPU	: TON; // Interval for gathering CPU data
+	fbTimeIntervalSystem: TON; // Interval for gathering system data
+	eCpuStates			: E_CPU_InfoStates;
+	fbGetCPU 			: FB_MDP_CPU_Read;
+	fbGetCpuTemp		: FB_MDP_ReadElement;
+	fbGetCpuUsage		: FB_MDP_ReadElement;
+	fbGetFanSpeed		: FB_MDP_ReadElement;
+	CPU_MDP_Addr		: ST_MDP_Addr;
+	HeaderCPU_Mod		: ST_MDP_ModuleHeader;
+	ContentCPU_Mod		: ST_MDP_CPU;
+	fbSystemLatency		: TC_SysLatency;
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[
+(**************************************************************************************************************
+   Gathering CPU data
+***************************************************************************************************************)
+A_CPU();
+
+(**************************************************************************************************************
+   Gathering System data
+***************************************************************************************************************)
+A_System();]]></ST>
+    </Implementation>
+    <Action Name="A_CPU" Id="{f4126576-51cc-466f-b079-017bdbd9a4a2}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_CPU
+ * 	FUNCTION	Gathering data of CPU
+ **************************************************************************************)
+ 
+CASE eCpuStates OF
+	
+	(**************************************************************************************
+   		Init
+	***************************************************************************************)
+	E_CPU_InfoStates.INIT:
+		fbTimeIntervalCPU(IN := FALSE);
+
+		// Change state
+		eCpuStates := E_CPU_InfoStates.READ_DEVICE;
+			
+	(**************************************************************************************
+   		Read device (CPU)
+	***************************************************************************************)
+	E_CPU_InfoStates.READ_DEVICE:
+	
+		fbTimeIntervalCPU(IN := TRUE, PT := TimeInterval);
+		
+		IF fbTimeIntervalCPU.Q THEN
+			// Reset
+			Error := FALSE;
+			
+			// Get access to CPU 0
+			fbGetCPU(
+				bExecute	:= TRUE,
+				iModIdx   	:= 0,	
+				sAmsNetId 	:= '');
+				
+			// Change state
+			eCpuStates := E_CPU_InfoStates.READ_TEMPERATURE;
+		END_IF
+	
+	(**************************************************************************************
+   		Read temperature
+	***************************************************************************************)
+	E_CPU_InfoStates.READ_TEMPERATURE:
+		fbGetCPU(bExecute	:= FALSE);
+		
+		// Wait until fbGetCPU is done
+		IF NOT fbGetCPU.bBusy THEN
+			// Error occured
+			IF fbGetCPU.bError THEN
+				// Set error
+				Error := TRUE;
+				
+				// Change state
+				eCpuStates := E_CPU_InfoStates.INIT;
+			ELSE
+				// Store address info
+				HeaderCPU_Mod := fbGetCPU.stMDP_ModuleHeader;
+				ContentCPU_Mod := fbGetCPU.stMDP_ModuleContent;
+				
+				// Define element of CPU temperature
+				CPU_MDP_Addr.nArea := INT_TO_BYTE(eMDP_Area_ConfigArea);
+				CPU_MDP_Addr.nTableId := 1;
+				CPU_MDP_Addr.nSubIdx := 3; // Temperatur
+				
+				// Read CPU Temperatur
+				fbGetCpuTemp(
+					bExecute 	:= TRUE,
+					eModuleType := E_MDP_ModuleType.eMDP_ModT_CPU,
+					stMDP_Addr  := CPU_MDP_Addr,
+					iModIdx     := 0,
+					pDstBuf     := ADR(CPU_Temperatur),
+					cbDstBufLen := SIZEOF(CPU_Temperatur),
+					sAmsNetId   := '');
+			
+				// Change state
+				eCpuStates := E_CPU_InfoStates.READ_USAGE;
+			END_IF
+		END_IF
+	
+	(**************************************************************************************
+   		Read latency
+	***************************************************************************************)
+	E_CPU_InfoStates.READ_USAGE:
+		fbGetCpuTemp(bExecute := FALSE);
+		
+		// Wait until fbGetCpuTemp is done
+		IF NOT fbGetCpuTemp.bBusy THEN
+			// Error occured
+			IF fbGetCpuTemp.bError THEN
+				// Set error
+				Error := TRUE;
+				
+				// Change state
+				eCpuStates := E_CPU_InfoStates.INIT;
+			ELSE
+				// Define element of CPU temperature
+				CPU_MDP_Addr.nArea := INT_TO_BYTE(eMDP_Area_ConfigArea);
+				CPU_MDP_Addr.nTableId := 1;
+				CPU_MDP_Addr.nSubIdx := 2; // Usage
+				
+				// Read CPU Usage
+				fbGetCpuUsage(
+					bExecute    := TRUE,
+					eModuleType := E_MDP_ModuleType.eMDP_ModT_CPU,	
+					stMDP_Addr  := CPU_MDP_Addr,
+					iModIdx     := 0,
+					pDstBuf     := ADR(CPU_Usage),
+					cbDstBufLen := SIZEOF(CPU_Usage),
+					sAmsNetId   := '');
+					
+				// Change state
+				eCpuStates := E_CPU_InfoStates.READ_FAN;
+			END_IF
+		END_IF
+	(**************************************************************************************
+   		Read FAN speed
+	***************************************************************************************)
+	E_CPU_InfoStates.READ_FAN:
+		fbGetCpuUsage(bExecute := FALSE);
+		
+		// Wait until fbGetCpuUsage is done
+		IF NOT fbGetCpuUsage.bBusy THEN
+			// Set error
+			IF fbGetCpuUsage.bError THEN
+				Error := TRUE;
+				
+				// Change state
+				eCpuStates := E_CPU_InfoStates.INIT;
+			ELSE
+				// Define element of CPU temperature
+				CPU_MDP_Addr.nArea := INT_TO_BYTE(eMDP_Area_ConfigArea);
+				CPU_MDP_Addr.nTableId := 1;
+				CPU_MDP_Addr.nSubIdx := 1; // Fan
+				
+				// Read FAN speed
+				fbGetFanSpeed(
+					bExecute    := TRUE,
+					eModuleType := E_MDP_ModuleType.eMDP_ModT_Fan,	
+					stMDP_Addr  := CPU_MDP_Addr,
+					iModIdx     := 0,
+					pDstBuf     := ADR(FanSpeed),
+					cbDstBufLen := SIZEOF(FanSpeed),
+					sAmsNetId   := '');	
+			END_IF
+			
+			// Change state
+			eCpuStates := E_CPU_InfoStates.DONE;
+		END_IF
+		
+	(**************************************************************************************
+   		Done
+	***************************************************************************************)
+	E_CPU_InfoStates.DONE:
+		fbGetFanSpeed(bExecute := FALSE);
+		
+		// Wait until fbGetCpuUsage is done
+		IF NOT fbGetFanSpeed.bBusy THEN
+			// Set error
+			Error := fbGetCpuUsage.bError;
+			
+			// Change state
+			eCpuStates := E_CPU_InfoStates.INIT;
+		END_IF
+	
+ELSE
+	// Default go to INIT
+	eCpuStates := E_CPU_InfoStates.INIT;
+END_CASE]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="A_System" Id="{2701204c-cfe1-4b86-ae0c-9477b89f1e7b}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_System
+ * 	FUNCTION	Gathering data of CPU
+ **************************************************************************************)
+ 
+fbTimeIntervalSystem(IN := NOT fbSystemLatency.BUSY, PT := TimeInterval);
+
+ // Get System Latency
+fbSystemLatency(Start := fbTimeIntervalSystem.Q AND NOT fbSystemLatency.BUSY);]]></ST>
+      </Implementation>
+    </Action>
+  </POU>
+</TcPlcObject>

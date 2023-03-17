@@ -1,0 +1,34 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.12">
+  <DUT Name="ST_GVQ_6_1" Id="{cb1d7a17-5506-47a9-a3dc-bb5e54f003bb}">
+    <Declaration><![CDATA[TYPE ST_GVQ_6_1 :
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 404529 $
+ *	Revision date	:	$Date: 2018-04-23 08:21:38 +0200 (Mo., 23 Apr 2018) $
+ *	Last changed by	:	$Author: b7bolm $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/trunk/01_Software/BCF/BCF/JumpStart/20_Product/10_App/11_Com/10_Lib/10_Conv/12_MFCS/11_SIS/01_DUTs/11_SIS_6_1/ST_GVQ_6_1.TcDUT $
+ *
+ *	Purpose			:	GVQ Structure
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+STRUCT
+	Code		: STRING(SIS_6_1.GVQ_CODE_STRINGLENGTH); // 12 Digit SIS Location MM-GGG-EEEE-FF-Z
+	Number		: STRING(SIS_6_1.GVQ_NUMBER_STRINGLENGTH); // 4 Digit Number
+	Quantity	: STRING(SIS_6_1.GVQ_QUANTITY_STRINGLENGTH); // 2 Digit Quantity
+	Variable	: ARRAY[0..9] OF STRING(SIS_6_1.GVQ_VARIABLE_STRINGLENGTH); // 6 Digit Variable
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

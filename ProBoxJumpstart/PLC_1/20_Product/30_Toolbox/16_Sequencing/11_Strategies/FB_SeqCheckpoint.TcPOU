@@ -1,0 +1,82 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.16">
+  <POU Name="FB_SeqCheckpoint" Id="{cfb9d913-88cb-48aa-adc1-9d9a54d51d79}" SpecialFunc="None">
+    <Declaration><![CDATA[/// Checkpoint updates all passing TUs and can be used
+/// as part of a sequencing tree-
+FUNCTION_BLOCK FB_SeqCheckpoint IMPLEMENTS I_BranchCheckpoint
+(************************************************************************************** 
+* 	Application 		: BoxControl Framework 
+* 	Revision 			: $Revision: 404877 $ 
+* 	Revision date 		: $Date: 2018-04-26 14:10:34 +0200 (Thu, 26 Apr 2018) $ 
+* 	Last changed by 	: $Author: b7ernsb $ 
+* 	URL 				: $URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/21_Projects/BCF_2.0/trunk/BCF/BCF/JumpStart/20_Product/10_App/12_E_Functions/10_Lib/10_Conv/FB_FunctionConv.TcPOU $ 
+* ------------------------------------------------------------------------------------ 
+* 	© Swisslog AG 
+* 	Swisslog is not liable for any usage of this source code that is not agreed 
+* 	on between Swisslog and the other party. The mandatory legal liability remains 
+* 	unaffected. 
+* ------------------------------------------------------------------------------------ 
+* 	Revision History: 
+* 
+* 	VERSION 		DATE 			INITIALS 			DESCRIPTION 
+* 	0.1 			23.05.2018 		mbo 				Created.
+* 
+**************************************************************************************)
+VAR_INPUT
+	Enable		: BOOL; // Enable checkpoint update
+	CheckpointID: STRING(5); // Checkpoint id to update
+END_VAR
+VAR_IN_OUT
+	TU_Data		: ST_TU_Data; // Tu data set
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[
+IF Enable THEN
+	TU_Data.DataSet.CheckpointID := CheckpointID;
+END_IF
+]]></ST>
+    </Implementation>
+    <Property Name="P_CheckpointID" Id="{66b7864d-afd5-46c7-9d46-d0ce9cc1e5a3}">
+      <Declaration><![CDATA[/// Identifier for checkpoint
+{attribute 'monitoring' := 'call'}
+{attribute 'suppress_wrn_C0410'}
+PROPERTY P_CheckpointID : REFERENCE TO STRING(5)
+]]></Declaration>
+      <Get Name="Get" Id="{930ca916-9c7c-44dc-9a23-2dc5c9f91eb2}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[P_CheckpointID REF= CheckpointID;]]></ST>
+        </Implementation>
+      </Get>
+    </Property>
+    <Method Name="M_IsOnBranches" Id="{ba7906e6-e7d8-4aec-92b7-1de06c8ddee9}">
+      <Declaration><![CDATA[/// Searches if a checkpoint can be found on a specific branch
+METHOD M_IsOnBranches : BOOL // Returns true if found, false = not found 
+VAR_INPUT
+	mRecursive	: BOOL := FALSE; // Search recursive through the whole tree
+END_VAR
+VAR_IN_OUT CONSTANT
+	mCheckpointID	: STRING(5); // Last checkpoint id	
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+M_IsOnBranches := mCheckpointID = P_CheckpointID;]]></ST>
+      </Implementation>
+    </Method>
+    <LineIds Name="FB_SeqCheckpoint">
+      <LineId Id="3" Count="3" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_SeqCheckpoint.P_CheckpointID.Get">
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_SeqCheckpoint.M_IsOnBranches">
+      <LineId Id="3" Count="0" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

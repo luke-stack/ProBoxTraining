@@ -1,0 +1,302 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.4">
+  <POU Name="FB_SeqBranch" Id="{421ab538-4343-4d02-93f4-467a67ceeefa}" SpecialFunc="None">
+    <Declaration><![CDATA[/// Function block is able to decide if a waiting TU is allowed to move, 
+/// considering one branch.
+FUNCTION_BLOCK FB_SeqBranch
+(************************************************************************************** 
+* 	Application 		: BoxControl Framework 
+* 	Revision 			: $Revision: 404877 $ 
+* 	Revision date 		: $Date: 2018-04-26 14:10:34 +0200 (Thu, 26 Apr 2018) $ 
+* 	Last changed by 	: $Author: b7ernsb $ 
+* 	URL 				: $URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/21_Projects/BCF_2.0/trunk/BCF/BCF/JumpStart/20_Product/10_App/12_E_Functions/10_Lib/10_Conv/FB_FunctionConv.TcPOU $ 
+* ------------------------------------------------------------------------------------ 
+* 	© Swisslog AG 
+* 	Swisslog is not liable for any usage of this source code that is not agreed 
+* 	on between Swisslog and the other party. The mandatory legal liability remains 
+* 	unaffected. 
+* ------------------------------------------------------------------------------------ 
+* 	Revision History: 
+* 
+* 	VERSION 		DATE 			INITIALS 			DESCRIPTION 
+* 	0.1 			23.05.2018 		mbo 				Created.
+*	0.2				08.02.2019		mbo					Racecondition fixed +
+*														Parameter Exclusion mode
+* 
+**************************************************************************************)
+VAR_INPUT
+	Execute						: BOOL; // Rising edge, starts new search process
+	TU_Present					: BOOL; // TU is available
+	TU_Index					: DINT; // Waiting TU data index 
+	Branch						: I_BranchCheckpoint; // Branch path
+	BranchExclusionMode			: BOOL := FALSE; // False = TU on a branch is possible next, TRUE = TU on a branch is excluded as possible next
+	iEstimateNextService		: I_SeqEstimateNext; // Service to estimate possible next in order to save calculation time (optional)
+END_VAR
+
+VAR_OUTPUT
+	Busy						: BOOL; // Process ongoing
+	Error						: BOOL; // Error during process
+	Release						: BOOL; // Movement released
+END_VAR
+
+VAR_IN_OUT 
+	TU_Table					: ARRAY[0..Conveyor.NUMBER_OF_TU_DATA] OF ST_TU_Data; // TU Table
+END_VAR
+
+VAR
+	fbTrigExecute				: R_TRIG; // Trigger new request
+	State 						: INT; // State machine
+	SequenceDataPresent			: BOOL; // TU consists of sequence information
+	TU_IsNextInSequence			: BOOL; // Waiting TU is the next expected for that destination
+	fbSeqReleaseRequest			: FB_SeqReleaseRequest; // Request release movement
+	TU_DataChanged				: BOOL; // Data of blocking index has changed since it was detected, determine new
+	TU_LocationChanged			: BOOL; // Location of blocking index has changed, determine new
+	
+	BlockingTU_Index			: DINT; // TU index of blocking index
+	BlockingCheckpointID		: STRING(5); // Checkpoint ID of blocking index
+	BlockingTU_ID			  	: STRING(Conveyor.TU_ID_STRINGLENGTH); // HashCode of blocking index
+	BlockingAssignmentID		: UDINT; // Assignment ID of blocking index
+	BlockingSequence			: ULINT; // Sequence of blocking index
+	BlockingSubSequence			: DINT; // Sub sequence of blocking index
+	BlockingDestination			: ST_PositionIdent; // Blocking Destination
+	BlockingDestinationSlot		: INT; // Blocking Destination Slot
+	BlockingHaltSequencing		: BOOL; // Halt sequence bit of blocking TU 
+	SelfBlocking				: BOOL; // Tu is blocking itself
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[// Monitor new request trigger
+fbTrigExecute(CLK := Execute);
+
+CASE State OF
+	// Wait for a new TU
+	0:
+		// Wait for new start trigger
+		IF fbTrigExecute.Q THEN
+			// Validate inputs
+			IF Branch = 0 THEN
+				Error := TRUE;
+				RETURN;
+			END_IF
+
+			Busy := TRUE;
+			Release := FALSE;
+			TU_IsNextInSequence := FALSE;
+			Error := FALSE;
+
+			// When a requesting TU is present
+			IF TU_Present THEN
+				// If already a blocking TU was determined on a previous search, 
+				// check if state or position has changed of it
+				IF BlockingTU_Index > 0 THEN
+					// Detect if the data of the monitored TU index has changed (e.g. TU data Add/Remove/Update)		
+					TU_DataChanged := TU_Table[BlockingTU_Index].AssignmentID <> BlockingAssignmentID OR
+									  TU_Table[BlockingTU_Index].TU_ID.ASCII <> BlockingTU_ID OR
+									  TU_Table[BlockingTU_Index].DataSet.Sequence <> BlockingSequence OR
+									  TU_Table[BlockingTU_Index].DataSet.SubSequence <> BlockingSubSequence OR
+                                      TU_Table[BlockingTU_Index].Destination[1].eFunctionNumber <> BlockingDestination.eFunctionNumber OR
+  									  TU_Table[BlockingTU_Index].Destination[1].ZoneNumber <> BlockingDestination.ZoneNumber OR
+									  TU_Table[BlockingTU_Index].DataSet.DestinationSlot <> BlockingDestinationSlot OR
+									  TU_Table[BlockingTU_Index].DataSet.HaltSequencing <> BlockingHaltSequencing;
+			
+					// Detect if the TU has changed the location (e.g. entered a new path)
+					TU_LocationChanged := TU_Table[BlockingTU_Index].DataSet.CheckpointID <> BlockingCheckpointID;
+					
+					// If blocking index is same as requesting
+					SelfBlocking := BlockingTU_Index = TU_Index;
+					
+					// Data changed, new release request		  
+					IF TU_DataChanged OR TU_LocationChanged OR SelfBlocking THEN
+						M_ClearBlockingData();
+					END_IF
+				END_IF
+
+				// A TU is blocking 
+				IF BlockingTU_Index > 0 THEN
+					// No release, stay in state, no drive on
+					Busy := FALSE;
+					Release := FALSE;
+					State := 0;
+					
+				// If the waiting TU consists of TU data,
+				ELSIF TU_Index > 0 THEN
+					// If the TU consists of sequencing information
+					SequenceDataPresent := TU_Table[TU_Index].DataSet.Sequence > 0 AND
+					                       TU_Table[TU_Index].Destination[1].eFunctionNumber > 0;
+					   
+					// When ever valid sequence information are avaiable, 
+					// check if the TU is already available in the pre calculation service. Otherwise
+					// request release.
+					IF SequenceDataPresent THEN	
+						// When a pre calculation service is configured and ready
+						IF iEstimateNextService <> 0 THEN
+							// Tu was found in precalculated list -> Release
+							TU_IsNextInSequence:= iEstimateNextService.M_IsNextInSequence(
+																			mTU_Index := TU_Index,
+																			mTU_Data := TU_Table[TU_Index]);
+																								
+							IF TU_IsNextInSequence THEN
+								// Release immediately, stay in state
+								Busy := FALSE;
+								Release := TRUE;
+								State := 0;
+							END_IF
+						END_IF
+						
+						// If TU was not found in temporary next list, request release
+						IF NOT TU_IsNextInSequence THEN
+							// Trigger new release request
+							fbSeqReleaseRequest(
+								Execute:= TRUE, 
+								TU_Index := TU_Index,
+								Destination:= TU_Table[TU_Index].Destination[1], 
+								DestinationSlot:= TU_Table[TU_Index].DataSet.DestinationSlot, 
+								Sequence:= TU_Table[TU_Index].DataSet.Sequence, 
+								SubSequence:= TU_Table[TU_Index].DataSet.SubSequence, 
+								Branch:= Branch, 
+								BranchExclusionMode := BranchExclusionMode, 
+								TU_Table:= TU_Table);
+		
+							State := 1;	
+						END_IF
+					// TU without sequence information
+					ELSE
+						// Release immediately, stay in state
+						Busy := FALSE;
+						Release := TRUE;
+						State := 0;
+					END_IF
+
+				// TU without data
+				ELSE
+					// Release immediately, stay in state
+					Busy := FALSE;
+					Release := TRUE;
+					State := 0;
+				END_IF
+			// No TU Present
+			ELSE
+				// Release immediately, stay in state
+				Busy := FALSE;
+				State := 0;
+			END_IF
+		END_IF
+	1:
+		fbSeqReleaseRequest(Execute := FALSE, TU_Table:= TU_Table);
+		
+		// Wait until process is done to check error and result
+		IF NOT fbSeqReleaseRequest.Busy THEN
+			IF NOT fbSeqReleaseRequest.Error THEN
+				// Release successful
+				IF fbSeqReleaseRequest.Release THEN
+					Busy := FALSE;
+					Release := TRUE;
+					
+					State := 0;
+				// Release not permitted, store data of next blocking TU
+				ELSE
+					BlockingTU_Index := fbSeqReleaseRequest.BlockingTU_Index;
+					
+					// When a blocking index could be determined
+					IF BlockingTU_Index > 0 THEN
+						BlockingAssignmentID := TU_Table[BlockingTU_Index].AssignmentID;
+						BlockingTU_ID := TU_Table[BlockingTU_Index].TU_ID.ASCII;
+						BlockingCheckpointID := TU_Table[BlockingTU_Index].DataSet.CheckpointID;
+						BlockingSequence := TU_Table[BlockingTU_Index].DataSet.Sequence;
+						BlockingSubSequence := TU_Table[BlockingTU_Index].DataSet.SubSequence;
+						BlockingDestination := TU_Table[BlockingTU_Index].Destination[1];
+						BlockingDestinationSlot :=  TU_Table[BlockingTU_Index].DataSet.DestinationSlot;
+						BlockingHaltSequencing := TU_Table[BlockingTU_Index].DataSet.HaltSequencing;
+					ELSE
+						M_ClearBlockingData();
+					END_IF
+					
+					Busy := FALSE;
+					Release := FALSE;
+					
+					State := 0;
+				END_IF
+			// Error during search
+			ELSE
+				Error := TRUE;
+				Busy  := FALSE;
+				State := 0;
+			END_IF
+		END_IF
+ELSE
+	State := 0;
+END_CASE]]></ST>
+    </Implementation>
+    <Method Name="M_ClearBlockingData" Id="{789b0d33-9df9-48bb-84ac-cbf1991f7de5}">
+      <Declaration><![CDATA[/// Clear blocking data
+METHOD PROTECTED M_ClearBlockingData
+VAR_INPUT
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[// Clear monitor of blocking index structure
+BlockingTU_Index := 0;
+BlockingAssignmentID :=0;
+BlockingTU_ID := '';
+BlockingCheckpointID := '';
+BlockingSequence := 0;
+BlockingSubSequence := 0;
+BlockingDestination.eFunctionNumber := 0;
+BlockingDestination.ZoneNumber := 0;
+BlockingDestinationSlot :=  0;
+BlockingHaltSequencing :=  FALSE;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_Reset" Id="{368c9d9e-6ba9-479e-b879-40e06dea9e20}">
+      <Declaration><![CDATA[// Resets all stored information
+METHOD M_Reset : BOOL
+VAR_INPUT
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[M_ClearBlockingData();]]></ST>
+      </Implementation>
+    </Method>
+    <Property Name="P_BranchRecursive" Id="{df90374d-4dfd-44d8-a686-87b2a5e1208b}">
+      <Declaration><![CDATA[{attribute 'monitoring' := 'call'}
+/// Recursive branch search active. Remark: No automated loop detection.
+PROPERTY P_BranchRecursive : BOOL]]></Declaration>
+      <Get Name="Get" Id="{45e0ed00-762a-4711-a714-aed5597ee01b}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[P_BranchRecursive := fbSeqReleaseRequest.P_BranchRecursive;]]></ST>
+        </Implementation>
+      </Get>
+      <Set Name="Set" Id="{6cf82891-e9fb-47f8-872e-9547e3986258}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[fbSeqReleaseRequest.P_BranchRecursive := P_BranchRecursive;]]></ST>
+        </Implementation>
+      </Set>
+    </Property>
+    <Property Name="P_EntriesPerCycle" Id="{3d49d89f-da25-43dd-81c2-09236f017d9b}">
+      <Declaration><![CDATA[/// TU Entries scanned per cycle
+PROPERTY P_EntriesPerCycle : DINT // Default 600]]></Declaration>
+      <Get Name="Get" Id="{5c8297b1-8534-4429-b0d1-da1829a5297b}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[P_EntriesPerCycle := fbSeqReleaseRequest.P_EntriesPerCycle;]]></ST>
+        </Implementation>
+      </Get>
+      <Set Name="Set" Id="{55c81f27-561a-4073-8fa8-5698f73e92ea}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[fbSeqReleaseRequest.P_EntriesPerCycle := P_EntriesPerCycle;]]></ST>
+        </Implementation>
+      </Set>
+    </Property>
+  </POU>
+</TcPlcObject>

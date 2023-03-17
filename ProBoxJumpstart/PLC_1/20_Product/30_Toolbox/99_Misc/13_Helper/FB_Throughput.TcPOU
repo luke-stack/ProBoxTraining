@@ -1,0 +1,118 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.18">
+  <POU Name="FB_Throughput" Id="{df0c04c9-31e2-4f8d-aba9-bd68d3c31ded}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK FB_Throughput
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 453140 $
+ *	Revision date	:	$Date: 2020-05-28 08:47:05 +0200 (tor, 28 maj 2020) $
+ *	Last changed by	:	$Author: b7muotj $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/tags/R1.12.0/01_Software/BCF/BCF/JumpStart/30_Toolbox/99_Misc/13_Helper/FB_Throughput.TcPOU $
+ *
+ *	Purpose			:	The Function block calculates two throughput values "Throughput" and "ThroughputLongTerm" that are normalised to TU's per Hour [TU/h].
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2015		ahe					Example
+ *	0.2				19.05.2020		jmu					Comments added, cleaned, added check for division 0. Added to the BCF
+ *
+ **************************************************************************************)
+VAR_INPUT
+	eFunctionNumber			: E_FunctionNumber; //FunctionNumber whose throughput is being measured
+	ZoneIndex				: INT; //Index of zone whose throughput is being measured in the given function
+	TimeInterval			: TIME; //Update time interval of the output Throughput 
+	TimeIntervalLongTerm	: TIME; //Update time interval of the output ThroughputLongTerm
+END_VAR
+VAR_OUTPUT
+	Throughput				: INT; //Output updated on intervals defined by TimeInterval normalised to TU/h
+	ThroughputLongTerm		: INT; //Output updated ont intervals defined by TimeIntervalLongTerm normalised to TU/h
+END_VAR
+VAR
+	ZoneData				: ST_TransportControlData;
+	LastSensorOccoupied		: BOOL;
+	TU_Counter				: UDINT;
+	TU_CounterLongTerm		: UDINT;
+	TU_CounterOverall		: UDINT;
+	fbTimer					: FB_Timer;
+	fbTimerLongTerm			: FB_Timer;
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[IF ZoneIndex > 0 AND ZoneIndex <= NUMBER_OF_ZONES_PER_FUNCTION
+   AND eFunctionNumber > E_FunctionNumber.F_BEGIN_FUNCTION
+   AND eFunctionNumber < E_FunctionNumber.F_END_FUNCTION THEN
+   
+	ZoneData := F_GetTransportControlData(eFunctionNumber, ZoneIndex);
+
+	//Count up on positive edge	
+	IF ZoneData.SensorOccupied AND NOT LastSensorOccoupied THEN
+		TU_Counter := TU_Counter + 1;
+		TU_CounterLongTerm := TU_CounterLongTerm + 1;
+		TU_CounterOverall := TU_CounterOverall + 1;
+	END_IF
+
+	LastSensorOccoupied := ZoneData.SensorOccupied;
+
+	//Calculate outputs after each period has passed	
+	fbTimer(IN := TRUE, PT := TimeInterval);
+	fbTimerLongTerm(IN := TRUE, PT := TimeIntervalLongTerm);
+
+	IF fbTimer.Q THEN
+		IF TimeInterval <> T#0S THEN
+			Throughput := UDINT_TO_INT(TIME_TO_UDINT(T#1H) / TIME_TO_UDINT(TimeInterval) * TU_Counter);
+		ELSE
+			Throughput := 0;
+		END_IF	
+			TU_Counter := 0;
+			fbTimer(IN := FALSE);		
+	END_IF
+	
+	IF fbTimerLongTerm.Q THEN
+		IF TimeIntervalLongTerm <> T#0S THEN		
+			ThroughputLongTerm := UDINT_TO_INT(TIME_TO_UDINT(T#1H) / TIME_TO_UDINT(TimeIntervalLongTerm) * TU_CounterLongTerm);
+		ELSE		
+			ThroughputLongTerm := 0;
+		END_IF
+		TU_CounterLongTerm := 0;
+		fbTimerLongTerm(IN := FALSE);
+	END_IF
+
+END_IF
+]]></ST>
+    </Implementation>
+    <LineIds Name="FB_Throughput">
+      <LineId Id="3" Count="0" />
+      <LineId Id="135" Count="0" />
+      <LineId Id="132" Count="1" />
+      <LineId Id="4" Count="0" />
+      <LineId Id="128" Count="0" />
+      <LineId Id="5" Count="5" />
+      <LineId Id="12" Count="1" />
+      <LineId Id="130" Count="0" />
+      <LineId Id="16" Count="0" />
+      <LineId Id="131" Count="0" />
+      <LineId Id="18" Count="0" />
+      <LineId Id="104" Count="0" />
+      <LineId Id="20" Count="0" />
+      <LineId Id="117" Count="0" />
+      <LineId Id="21" Count="0" />
+      <LineId Id="119" Count="0" />
+      <LineId Id="118" Count="0" />
+      <LineId Id="120" Count="2" />
+      <LineId Id="24" Count="2" />
+      <LineId Id="123" Count="0" />
+      <LineId Id="27" Count="0" />
+      <LineId Id="124" Count="2" />
+      <LineId Id="28" Count="2" />
+      <LineId Id="116" Count="0" />
+      <LineId Id="31" Count="0" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

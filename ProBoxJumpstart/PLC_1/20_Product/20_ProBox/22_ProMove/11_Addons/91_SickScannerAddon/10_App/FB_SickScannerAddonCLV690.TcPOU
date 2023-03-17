@@ -1,0 +1,295 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <POU Name="FB_SickScannerAddonCLV690" Id="{102b99ee-fec0-4d86-b0d4-9fee420d1f04}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK FB_SickScannerAddonCLV690 EXTENDS FB_SickScannerBase
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision:  $
+ *	Revision date	:	$Date: $
+ *	Last changed by	:	$Author: $
+ *	URL				:	$URL: $
+ *
+ *	Purpose			:	Sick function scanner 
+ *						This scanner reads a label and determines the corresponding TU Data index.
+ *						If the read label was already known, the existing index will be returned. 
+ *						Otherwise a new one will be created.
+ *						If no valid label could be determined - no index will be generated.
+ *						Noread = no index!
+ *
+ *						Counter1 - Good reads
+ *						Counter2 - No reads
+ *						Counter3 - bad reads
+ *						Counter4 - continous no reads
+ *						Counter5 - Spare
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				2018-05-30		PkF/RtK				First Version 
+ *
+ **************************************************************************************)
+VAR_INPUT
+	Config					: ST_CFG_SickScanner;
+	CtrlIn					: ST_CtrlInSickScanner;
+	HW_Inputs				: ST_HW_InputsSickScanner_CLV690;	
+END_VAR
+
+VAR_OUTPUT	
+	HW_Outputs				: ST_HW_OutputsSickScanner_CLV690; // Hardware scanner outputs
+	CtrlOut					: ST_CtrlOutSickScanner;
+END_VAR
+
+VAR
+	Inputs					: ST_InputsSickScanner_CLV690; // Inputs dummy scanner
+	Outputs					: ST_OutputsSickScanner; 	// Scanner outputs (reuse FB_SickScannerAddon structure)	
+	ScannerStates			: ST_SickScannerStates; // Scanner states
+	Trigger					: BOOL;
+	fbComTimeout			: TON; // Communication timeout
+	HeartbeatFlag			: BOOL; // Heartbeat flag
+	MessageString			: STRING(DATA_LENGTH); // Message as string
+	Idx						: INT; // Iterator
+	RecvLength				: WORD; // Last Received length
+	TU_DataIndex			: DINT; // Searched TU index
+	PositionIdent			: ST_PositionIdent;
+END_VAR
+
+VAR PERSISTENT
+	Settings				: ST_CFG_SickScanner; // Settings
+END_VAR
+
+VAR CONSTANT
+	DATA_LENGTH				: INT := 32; // Data length
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[(**************************************************************************************************************
+   Input mapping
+***************************************************************************************************************)
+A_InputMapping();
+
+(**************************************************************************************************************
+   Initialization
+***************************************************************************************************************)
+A_Init();
+
+(**************************************************************************************************************
+   State control 
+***************************************************************************************************************)
+A_StateControl();
+
+(**************************************************************************************************************
+   Error handler
+***************************************************************************************************************)
+A_ErrorHandler();
+(* call to fb_AddOnErrHandler() is not needed as this Add on is clickble from SPOC*)  
+
+
+(**************************************************************************************************************
+   Scanner addon control
+***************************************************************************************************************)
+M_ScannerControl();
+
+(**************************************************************************************************************
+   Interface handler out
+***************************************************************************************************************)
+M_ITC_ProcessOut();
+
+(**************************************************************************************************************
+   Output mapping
+***************************************************************************************************************)
+A_OutputMapping();
+
+]]></ST>
+    </Implementation>
+    <Action Name="A_DataAquisition" Id="{25b16840-3ee7-4981-a45c-c81e5975fde1}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_DataAquisition 
+ * 	FUNCTION	Call Method for Condition Monitoring 
+ **************************************************************************************)
+ 
+				
+	M_ITC_DataAquisition(	mVariableName				:= 'SacannerRead', 
+								meCM_Index				:= E_CM_Index.CM01,
+								mPosition				:= SettingsFunction.FunctionName,
+								mCurrentValue			:= DWORD_TO_STRING(MainConv.fbGetSystemTime.timeLoDW), 
+								meMode					:= E_CM_Mode.DEFAULT);]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="A_Init" Id="{e4a2f2f5-66ca-4932-a9c7-55ad0bdaf12d}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_Init
+ * 	FUNCTION	Initialize function
+ **************************************************************************************)
+
+
+ IF NOT FunctionData.Init AND FunctionData.InitRunning  THEN
+	 // Load function specific configuration to settings
+	Settings := Config;	
+ END_IF
+ 
+SUPER^.A_Init();]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="A_InputMapping" Id="{4c2009f7-b555-42f4-b32b-adadcf306c6d}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_InputMapping
+ * 	FUNCTION	Input mapping
+ **************************************************************************************)
+  
+(**************************************************************************************
+   Input mapping
+***************************************************************************************)
+// Control word in
+
+Inputs.GoodRead				:= HW_Inputs.GoodRead;
+
+Inputs.ConfMessageIn		:= HW_Inputs.ConfMessageIn;
+Inputs.Heartbeat			:= HW_Inputs.ConfMessageIn[0].2;
+
+Inputs.CtrlIn				:= CtrlIn;
+
+ 
+(**************************************************************************************
+   Element states
+***************************************************************************************)
+// Get status of the corresponding element and store it internally FunctionInterface.In.Element
+M_GetElementStates();
+					
+(**************************************************************************************
+   AddOn states
+***************************************************************************************)
+// Get status of all corresponding AddOn functions and store it in FunctionInterface.In.AddOnOrder
+M_GetAddOnOrder();
+
+]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="A_OutputMapping" Id="{3e20010f-323e-4cfd-82fe-6d12836f92d9}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_OutputMapping
+ * 	FUNCTION	Output mapping
+ **************************************************************************************)
+ 
+ 
+(**************************************************************************************
+   Hardware outputs
+***************************************************************************************)
+
+//For CLV630-690
+HW_Outputs.ConfMessageOut		:= Outputs.ConfMessageOut;
+HW_Outputs.Trigger				:= Outputs.Trigger;
+
+//Ctrl out
+CtrlOut.Busy	:= BaseFunctionData.Busy;
+CtrlOut.Ready	:= BaseFunctionData.Ready;
+
+//Base function output mapping
+M_OutputMapping();]]></ST>
+      </Implementation>
+    </Action>
+    <Method Name="M_ScannerControl" Id="{d14627b1-d952-4cb7-a3ed-a950f0d7b45f}">
+      <Declaration><![CDATA[METHOD PRIVATE M_ScannerControl : BOOL
+VAR_INPUT
+END_VAR
+VAR
+	Trig					: BOOL; //Trig signal to start scanner
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************************************
+	Scanner addon functions
+***************************************************************************************************************)
+//reset all errors
+_M_ResetErrors();
+
+//theck if there are too many no read attempts
+_M_MonitorNoReadSeries(AcceptedNoReadSeries:=Settings.AcceptedNoReadSeries);
+
+//monitor the scanner heart beat signal
+_M_MonitorCommunication(Heartbeat:= Inputs.Heartbeat, ComTimeout:=Settings.tComTimeout);
+
+//Get trigger (from either controls input or desition taken by the addon itself.
+Trig := _M_DetectTrigger(Inputs.CtrlIn.ExternTrigger, Settings.EnableExternalTrigger);
+
+//run the state machine
+_M_StateControl(
+		Trigger					:= Trig,
+		ScannerGoodRead			:= Inputs.GoodRead,
+		MaxLabelLength			:= Settings.MaxLabelLength, 
+		MoveDataLabelField		:= Settings.MoveDataLabelField,
+		SendTTQ					:= Settings.SendTTQ,
+		ScannerConfigFilePath	:= Settings.ConfigFilePath,
+		TrigScanner				=> Outputs.Trigger);
+
+//Write data to scanner
+_M_CLV6xWriteData(
+		Execute					:= BaseFunctionData.WriteData.TrigWrite,
+		WriteData				:= BaseFunctionData.WriteData.Data,		
+		ConfMsgIn				:= Inputs.ConfMessageIn, 
+		ConfMsgOut				:= Outputs.ConfMessageOut,
+		Busy					=> BaseFunctionData.WriteData.Busy);
+		
+//Decode scanner data (Conf message input data)
+_M_CLV6xReadData(
+		ClearBuffer				:= BaseFunctionData.State.eState = E_SickScannerState.IDLE, //when were idling-> clear buffer if there are garbage of any reason.
+		CopyBuffer				:= BaseFunctionData.State.eState = E_SickScannerState.READ OR BaseFunctionData.State.eState = E_SickScannerState.COM,	
+		ScannerLabel			:= BaseFunctionData.LabelData, 
+		ConfMsgIn				:= Inputs.ConfMessageIn, 
+		ConfMsgOut				:= Outputs.ConfMessageOut);
+
+	]]></ST>
+      </Implementation>
+    </Method>
+    <ObjectProperties>
+      <XmlArchive>
+        <Data>
+          <o xml:space="preserve" t="UMLStereoTypeContainerObject">
+            <v n="IsType" t="UMLType">BaseArea</v>
+            <v n="Stereotype">""</v>
+            <d n="Stereotypes" t="Hashtable" />
+          </o>
+        </Data>
+        <TypeList>
+          <Type n="Hashtable">System.Collections.Hashtable</Type>
+          <Type n="String">System.String</Type>
+          <Type n="UMLStereoTypeContainerObject">{30250973-b110-4e31-b562-c102e042dca4}</Type>
+          <Type n="UMLType">{0197b136-405a-42ee-bb27-fd08b621d0cf}</Type>
+        </TypeList>
+      </XmlArchive>
+    </ObjectProperties>
+    <LineIds Name="FB_SickScannerAddonCLV690">
+      <LineId Id="3" Count="36" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_SickScannerAddonCLV690.A_DataAquisition">
+      <LineId Id="2" Count="9" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_SickScannerAddonCLV690.A_Init">
+      <LineId Id="2" Count="10" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_SickScannerAddonCLV690.A_InputMapping">
+      <LineId Id="2" Count="29" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_SickScannerAddonCLV690.A_OutputMapping">
+      <LineId Id="2" Count="18" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_SickScannerAddonCLV690.M_ScannerControl">
+      <LineId Id="3" Count="21" />
+      <LineId Id="48" Count="0" />
+      <LineId Id="25" Count="17" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

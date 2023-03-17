@@ -1,0 +1,12 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <DUT Name="ST_DebugSensors_TransferUnitEmulation" Id="{9f01885c-6a75-41fe-b4c7-ff20500dcd9c}">
+    <Declaration><![CDATA[TYPE ST_DebugSensors_TransferUnitEmulation :
+STRUCT
+	EnableSensorDebug	: BOOL; 					// Overwrite sensor values with debug sensor values
+	HW_Inputs			: ST_HW_InputsTransferUnit;	// Debug sensors
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

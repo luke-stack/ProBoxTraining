@@ -1,0 +1,21 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <DUT Name="ST_FunctionForkData" Id="{6055d2bd-f2a1-4451-8d78-f9fc609bbd1a}">
+    <Declaration><![CDATA[//Structure with data used MPD control, Motion Pick n Deposit control
+//In-> read
+TYPE ST_FunctionForkData :
+STRUCT
+				
+	// Input / Output
+	RequestPosValue			: DINT;						// Out: The requested absolute encoder position to go to
+	RequestMove				: BOOL;						// Out: signal that we want to move the Fork
+	ActualPosValue			: DINT;						// In: the fork motion position	
+	Locked					: BOOL;						// In: MPD Lift/Car is in position applied
+	MotionAborted			: BOOL;						// IN: MPD Lift/Car is in positioning aborted
+	DriveParameterIndex		: UINT := 1;				// IN: The driveParameter index to select the motion profile of ST_CFG_MPD_Drive.DriveParameter[x]
+		
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

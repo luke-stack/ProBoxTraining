@@ -1,0 +1,184 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <POU Name="FB_ProBoxElementMotor" Id="{0b822cdd-9b0a-4f15-b748-e8b3e1b8258b}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK FB_ProBoxElementMotor EXTENDS FB_ProBoxElementBase
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: $
+ *	Revision date	:	$Date: $
+ *	Last changed by	:	$Author:  $
+ *	URL				:	$URL: $
+ *
+ *	Purpose			:	ProBox element with one drive.
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+  *
+ **************************************************************************************)
+VAR_INPUT
+	Config					: ST_CFG_ProBoxElementMotor; // Configuration	
+	HW_Inputs				: ST_HW_InputsProBoxElementMotor; // HW-Inputs	
+END_VAR
+
+VAR_OUTPUT
+	HW_Outputs				: ST_HW_OutputsProBoxElementMotor; // HW-Outputs
+END_VAR
+
+
+VAR PERSISTENT
+	Settings				: ST_CFG_ProBoxElementMotor; // Settings - activated configuration 
+END_VAR]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[
+(**************************************************************************************************************
+   Input mapping
+***************************************************************************************************************)
+A_InputMapping();
+
+
+(**************************************************************************************************************
+   Initialization
+***************************************************************************************************************)
+A_Init();
+
+
+(**************************************************************************************************************
+   State control
+***************************************************************************************************************)
+A_StateControl();
+
+
+(**************************************************************************************************************
+   Error handler
+***************************************************************************************************************)
+M_MonitorElementErrors();
+
+
+(**************************************************************************************************************
+   Manual control
+***************************************************************************************************************)
+A_ManualControl();
+
+
+(**************************************************************************************************************
+   Handle element functions
+***************************************************************************************************************)
+A_HandleFunctions();
+
+
+(**********************************************************************************************************
+   Drive control
+***********************************************************************************************************)
+
+A_DriveControl();
+
+
+
+(**************************************************************************************************************
+   Interface handler out
+***************************************************************************************************************)
+M_ITC_ProcessOut();
+
+
+(**************************************************************************************************************
+   Output mapping
+***************************************************************************************************************)
+A_OutputMapping();
+
+]]></ST>
+    </Implementation>
+    <Action Name="A_Init" Id="{e3e50279-f341-4b4a-a77c-accead4d286a}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_Init
+ * 	FUNCTION	Initialize element
+ **************************************************************************************)
+
+ 
+ 
+ IF NOT ElementData.Init AND NOT ElementData.InitRunning THEN
+	 // Load function specific configuration to settings
+	Settings := Config;
+	SUPER^.BaseSettings.BrakeTime := Settings.BrakeTime;	
+	SUPER^.BaseSettings.ElementSpeed := Settings.ElementSpeed;
+ END_IF
+ 
+SUPER^.A_Init();]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="A_InputMapping" Id="{217bdc6a-cf49-41be-a409-75a25ac4cfa8}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_InputMapping
+ * 	FUNCTION	Input mapping
+ **************************************************************************************)
+ 
+ 
+(**************************************************************************************
+   Map HW Inputs
+***************************************************************************************)
+Inputs.MotorUnitOK := HW_inputs.MotorUnitOK;
+
+SUPER^.A_InputMapping();]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="A_OutputMapping" Id="{fc78955c-d744-4913-a6c9-6c39824b616b}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_OutputMapping
+ * 	FUNCTION	Handles element specific outpus
+ **************************************************************************************)
+
+(**************************************************************************************
+   Map HW Outputs
+***************************************************************************************)
+HW_Outputs.Drive_Run_12		:= fbProBoxMotorControl_12.Forward;
+HW_Outputs.Drive_Run_21		:= fbProBoxMotorControl_12.Reverse;
+HW_Outputs.Drive_Creep_12	:= fbProBoxMotorControl_12.CreepSpeed;
+HW_Outputs.Drive_Low_12		:= fbProBoxMotorControl_12.LowSpeed;
+HW_Outputs.MotorBrake_12	:= fbProBoxMotorControl_12.BrakeRelease;
+
+
+Super^.A_OutputMapping();]]></ST>
+      </Implementation>
+    </Action>
+    <LineIds Name="FB_ProBoxElementMotor">
+      <LineId Id="3" Count="22" />
+      <LineId Id="331" Count="0" />
+      <LineId Id="27" Count="15" />
+      <LineId Id="390" Count="0" />
+      <LineId Id="389" Count="0" />
+      <LineId Id="388" Count="0" />
+      <LineId Id="75" Count="12" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ProBoxElementMotor.A_Init">
+      <LineId Id="2" Count="3" />
+      <LineId Id="52" Count="0" />
+      <LineId Id="47" Count="0" />
+      <LineId Id="45" Count="0" />
+      <LineId Id="48" Count="1" />
+      <LineId Id="51" Count="0" />
+      <LineId Id="53" Count="1" />
+      <LineId Id="50" Count="0" />
+      <LineId Id="44" Count="0" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ProBoxElementMotor.A_InputMapping">
+      <LineId Id="2" Count="10" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ProBoxElementMotor.A_OutputMapping">
+      <LineId Id="2" Count="11" />
+      <LineId Id="1" Count="0" />
+      <LineId Id="15" Count="1" />
+      <LineId Id="14" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

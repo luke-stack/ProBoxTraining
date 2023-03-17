@@ -1,0 +1,407 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <POU Name="FB_PlcCraneTcpIpCom" Id="{483faa22-d636-4c96-a3a8-94d2b8dd955d}" SpecialFunc="None">
+    <Declaration><![CDATA[{attribute 'reflection' := ''}
+FUNCTION_BLOCK FB_PlcCraneTcpIpCom
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 404529 $
+ *	Revision date	:	$Date: 2018-04-23 08:21:38 +0200 (Mo., 23 Apr 2018) $
+ *	Last changed by	:	$Author: b7bolm $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/trunk/01_Software/BCF/BCF/JumpStart/20_Product/10_App/11_Com/10_Lib/FB_DebugMsgManager.TcPOU $
+ *
+ *	Purpose			:	Debug msg manager 
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+VAR_INPUT
+	Config					: ST_CFG_TcpDriver; // Configuration of debug msg manager
+	pSendData				: PVOID; // Address to the send data storage
+	SizeOfSendData			: UDINT; // Data length which need to be sent
+	pReceiveData			: PVOID; //pointer where to write the received TCP/IP data, use ADR(xxx) to set the adress pointer when calling the function block
+	SizeOfReceiveData		: UDINT; //Size of the Databuffer where to put the received TCP/IP data. note this can not be changed without resetting connection
+	RestartCom				: BOOL;	
+END_VAR
+VAR_OUTPUT
+	ReceivedDataAvailable	: BOOL;
+	ReceiveDataError		: BOOL;
+	Connected				: BOOL; //TCP_IP connected	
+END_VAR
+ 
+VAR			
+	fbDebugMsg					: FB_DebugMsg; // Object Debug instance
+	fbTCP_Driver				: FB_TCP_Driver; // Instance of a TCP/IP connection handler
+		
+	//_SendBufferData				: ARRAY[1 .. MAX_BUFFER_SPACE] OF BYTE; // Space for send messages
+	ReadFromSendRingBuffer		: ARRAY[1 .. MAX_MSG_LENGTH] OF BYTE; // Read out message from Send ring buffer
+	fbSendBuffer				: FB_MemRingBuffer; // Send buffer
+	SendBufferSpace				: ARRAY[1 .. MAX_BUFFER_SPACE] OF BYTE; // Space for send messages
+		
+	
+	//private globals
+	fbRecvBuffer				: FB_MemRingBuffer; // Reveive buffer	
+	_ReceivTcpIpData			: ARRAY[1..MAX_BUFFER_SPACE] OF BYTE; // Receive buffer
+	_ReceivDataRingBuffer		: ARRAY[1..MAX_BUFFER_SPACE] OF BYTE; // Receive buffer
+
+	
+	
+	
+END_VAR
+
+VAR CONSTANT
+	MAX_MSG_LENGTH				: DINT := 30000; // Maximum byte length of a message
+	MAX_BUFFER_SPACE			: DINT := 30000; // Allocated send buffer space
+	MSG_PER_CYCLE				: INT := 5; // Maximum collected messages
+	
+END_VAR]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[
+IF(RestartCom) THEN
+	fbTCP_Driver.M_RestartCom();
+	fbRecvBuffer.A_Reset();	
+	RETURN;
+END_IF
+
+//Send Data
+M_SendData(pSendData,SizeOfSendData);
+//Process send ring buffer and send data on the TCP/IP channel
+_M_ProcessSend();
+
+// Cylic update of TCP/ IP driver (send and receive data)
+// Get the same size as the expected receive data buffer
+fbTCP_Driver(Config := Config,pReceiveData := ADR(_ReceivTcpIpData),ReceiveDataLen := SizeOfReceiveData);
+
+
+// set output variable
+ReceivedDataAvailable := fbRecvBuffer.nCount>0;	
+// Get received data
+ReceiveDataError := NOT _M_ProcessReceive(SizeOfReceiveData);
+
+
+//Get the oldest data from ring buffer. 
+_M_GetReceivedData(pReceiveData,SizeOfReceiveData);
+
+Connected := fbTCP_Driver.Connected;
+]]></ST>
+    </Implementation>
+    <Method Name="_M_GetReceivedData" Id="{a5a32ab9-e4f1-4138-b68b-e733a39145ce}">
+      <Declaration><![CDATA[METHOD PRIVATE _M_GetReceivedData : BOOL
+VAR_INPUT
+	pData			:PVOID; //pointer where to write the received TCP/IP data
+	SizeOfData		:UDINT;	
+END_VAR
+
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+IF(fbRecvBuffer.nCount>=1) THEN
+	
+	fbRecvBuffer.A_RemoveHead(	pBuffer := ADR(_ReceivDataRingBuffer), 
+								cbBuffer := SIZEOF(_ReceivDataRingBuffer), 
+								pRead := pData, 
+								cbRead := SizeOfData);
+	_M_GetReceivedData := fbRecvBuffer.bOk;
+ 	
+END_IF
+
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_ProcessReceive" Id="{02102972-a9d2-4b77-9966-f85f840241c5}">
+      <Declaration><![CDATA[METHOD PRIVATE _M_ProcessReceive : BOOL
+VAR_INPUT	
+	ExpectedReceiveDataSetSize	: UDINT;
+END_VAR
+
+VAR_INST
+	ReadyToReceive				: BOOL;	
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+IF(NOT fbTCP_Driver.Connected) then
+	ReadyToReceive := FALSE;
+END_IF
+
+//Set the Ready To Receive variable
+IF( ReadyToReceive = FALSE AND fbTCP_Driver.Connected AND NOT fbTCP_Driver.NewData) THEN
+	ReadyToReceive:=TRUE;	
+END_IF
+
+IF(ReadyToReceive AND  fbTCP_Driver.NewData AND fbTCP_Driver.ReceivedBytes < ExpectedReceiveDataSetSize) THEN
+	ReadyToReceive := FALSE;
+END_IF
+
+// Get received data
+//NewDataReceived	:=FALSE;
+IF(fbTCP_Driver.Connected AND fbTCP_Driver.NewData) THEN
+	// Inform TCP Driver data was processed
+	fbTCP_Driver.M_DataProcessed();
+		
+	IF(NOT ReadyToReceive OR fbTCP_Driver.RecvError (*OR _fbTCP_Driver.ReceivedBytes < SIZEOF(pReceiveData)*)) THEN
+		//Remove garbage from buffer, by reading data from TCP/IP buffer		 
+		fbDebugMsg.M_SendErrorMsg(CONCAT(UDINT_TO_STRING(fbTCP_Driver.ReceivedBytes),'bytes garbage removed' ));	 
+		
+	ELSE
+		//NewDataReceived:=TRUE;
+		fbRecvBuffer.A_AddTail(	pBuffer := ADR(_ReceivDataRingBuffer), 
+								cbBuffer := SIZEOF(_ReceivDataRingBuffer), 
+								pWrite :=ADR(_ReceivTcpIpData), 
+								cbWrite :=  fbTCP_Driver.ReceivedBytes);		
+			 	
+	END_IF		
+END_IF
+
+//successfull data processing?
+_M_ProcessReceive := fbTCP_Driver.Connected AND (NOT fbTCP_Driver.RecvError OR NOT fbRecvBuffer.bOk);]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_ProcessSend" Id="{e5db6d97-2ec1-4e54-9a79-41ee7e842175}">
+      <Declaration><![CDATA[METHOD PRIVATE _M_ProcessSend : BOOL
+VAR_INPUT
+END_VAR
+VAR
+	CollectedByteMessage		: ARRAY[1 .. MAX_MSG_LENGTH] OF BYTE; // Collected byte message
+	DataReady					: BOOL; // Data ready to send
+	NoError						: BOOL; // No error during operation
+	WritePointer				: UDINT; // Counter for assembling byte stream
+	Idx							: INT;
+	DebugMsg					: T_MaxString; // String to compose the logmessage
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+// Only handle all entries, if a connection is established
+IF fbTCP_Driver.Connected THEN
+	
+	// Check if a message to send is available and the sending channel is free to send
+	IF NOT fbTCP_Driver.SendBusy AND fbSendBuffer.nCount > 0 THEN
+			
+		// Initialize values
+		MEMSET(destAddr := ADR(CollectedByteMessage), 0, SIZEOF(CollectedByteMessage));
+		WritePointer := 0;
+		DataReady := FALSE;
+		(*
+		In order to send efficiently, it will be tried to collect
+		multiple messages to one TCP/IP stream.
+		
+		Generell it will be tried to collect everytime MSG_PER_CYCLE messages.
+		After MSG_PER_CYCLE messages or if the added messages exeeds MAX_MSG_LENGTH, 
+		no more messages will be added.
+		*)
+		FOR Idx := 1 TO MSG_PER_CYCLE DO
+			// If send buffer consists of unsent messages
+			IF fbSendBuffer.nCount > 0 THEN
+				// Clear byte stream
+				MEMSET(destAddr := ADR(ReadFromSendRingBuffer), 0, SIZEOF(ReadFromSendRingBuffer));
+				
+				// Read next message out of the buffer (But not remove)
+				fbSendBuffer.A_GetHead(
+					pBuffer := ADR(SendBufferSpace), 
+					cbBuffer := SIZEOF(SendBufferSpace), 
+					pRead := ADR(ReadFromSendRingBuffer), 
+					cbRead := SIZEOF(ReadFromSendRingBuffer));
+				
+				// If read out was successfully
+				IF fbSendBuffer.bOk THEN
+					// Append source
+					NoError := F_AssembleByteStream(
+									pSrc := ADR(ReadFromSendRingBuffer), 
+									SrcLen := fbSendBuffer.cbReturn,
+									pDest := ADR(CollectedByteMessage), 
+									DestLen := SIZEOF(CollectedByteMessage),
+									WritePointer := WritePointer);
+					
+					// if assembling was successful (Maybe the message was to long and therefore not adable
+					IF NoError THEN
+						// As a reason that the message could be assembled, remove from buffer
+						fbSendBuffer.A_RemoveHead(
+							pBuffer := ADR(SendBufferSpace), 
+							cbBuffer := SIZEOF(SendBufferSpace), 
+							pRead := ADR(ReadFromSendRingBuffer), 
+							cbRead := SIZEOF(ReadFromSendRingBuffer));
+							
+						// Data assembled
+						DataReady := TRUE;
+					ELSE
+						(*
+						It was not possible to add MSG_PER_CYCLE messages.
+						Already added messages exeeded MAX_MSG_LENGTH
+						*)
+						EXIT;
+					END_IF	
+				ELSE
+					DebugMsg := CONCAT('CRITICAL Buffer read out. ReturnValue:', UDINT_TO_STRING(fbSendBuffer.cbReturn));
+					fbDebugMsg.M_SendErrorMsg(DebugMsg);	
+				END_IF
+			ELSE
+				// No further messages waiting
+				EXIT;
+			END_IF
+		END_FOR
+	
+		// If data needs to be sent
+		IF DataReady THEN
+			// Send command
+			fbTCP_Driver.M_Send(
+				mpSendData	:= ADR(CollectedByteMessage),
+				mSendDataLen:= WritePointer);
+						
+		END_IF
+	END_IF
+END_IF
+
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_SendData" Id="{25159c21-db4f-4440-9f55-64c2b3e41430}">
+      <Declaration><![CDATA[METHOD M_SendData : BOOL
+
+VAR_INPUT	
+	mpMsgData			: PVOID; // Address to the send data storage
+	mMsgDataLen			: UDINT; // Data length which need to be sent
+END_VAR
+
+VAR_INST
+	ResendTmr			:TON := (PT:= T#10S);
+	LastSentData		: ARRAY[1 .. MAX_BUFFER_SPACE] OF BYTE; // Data last sent
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+//dont send data if not connected.
+IF(NOT fbTCP_Driver.Connected)THEN
+	RETURN;
+END_IF
+
+// check if new data differ from last sent
+ResendTmr();
+IF((MEMCMP(mpMsgData, ADR(LastSentData), mMsgDataLen)=0) AND NOT ResendTmr.Q) THEN
+	ResendTmr(IN:=TRUE);
+	RETURN; // the send buffer is equal to the last sent -> no new data available
+END_IF
+ResendTmr(IN:=FALSE);
+
+// copy data buffer and store for later compare
+F_BlockCopy(pSrc:= mpMsgData, 
+			LenSrc:= mMsgDataLen, 
+			pDest:= ADR(LastSentData), 
+			LenDest:= SIZEOF(LastSentData));
+
+
+// Reset
+M_SendData := FALSE;
+
+
+// Add to byte buffer in order to release caller
+fbSendBuffer.A_AddTail(
+	pBuffer := ADR(SendBufferSpace), 
+	cbBuffer := SIZEOF(SendBufferSpace), 
+	pWrite := mpMsgData,//ADR(AddByteMessage), 
+	cbWrite := mMsgDataLen);
+
+IF NOT fbSendBuffer.bOk THEN
+	// Remove oldest entry
+	fbSendBuffer.A_RemoveHead(
+		pBuffer := ADR(SendBufferSpace), 
+		cbBuffer := SIZEOF(SendBufferSpace), 
+		pRead := ADR(ReadFromSendRingBuffer), 
+		cbRead := SIZEOF(ReadFromSendRingBuffer));
+
+	// Add to byte buffer in order to release caller
+	fbSendBuffer.A_AddTail(
+		pBuffer := ADR(SendBufferSpace), 
+		cbBuffer := SIZEOF(SendBufferSpace), 
+		pWrite := mpMsgData,//ADR(AddByteMessage), 
+		cbWrite := mMsgDataLen);
+END_IF
+
+	
+// Return result
+M_SendData := fbSendBuffer.bOk;
+
+
+]]></ST>
+      </Implementation>
+    </Method>
+    <LineIds Name="FB_PlcCraneTcpIpCom">
+      <LineId Id="555" Count="3" />
+      <LineId Id="560" Count="1" />
+      <LineId Id="606" Count="2" />
+      <LineId Id="563" Count="3" />
+      <LineId Id="613" Count="0" />
+      <LineId Id="567" Count="1" />
+      <LineId Id="618" Count="1" />
+      <LineId Id="574" Count="1" />
+      <LineId Id="603" Count="0" />
+      <LineId Id="596" Count="0" />
+      <LineId Id="609" Count="0" />
+      <LineId Id="600" Count="0" />
+      <LineId Id="222" Count="0" />
+      <LineId Id="681" Count="0" />
+      <LineId Id="611" Count="0" />
+      <LineId Id="610" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_PlcCraneTcpIpCom._M_GetReceivedData">
+      <LineId Id="25" Count="0" />
+      <LineId Id="22" Count="0" />
+      <LineId Id="26" Count="0" />
+      <LineId Id="33" Count="2" />
+      <LineId Id="28" Count="0" />
+      <LineId Id="36" Count="0" />
+      <LineId Id="29" Count="0" />
+      <LineId Id="27" Count="0" />
+      <LineId Id="48" Count="0" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_PlcCraneTcpIpCom._M_ProcessReceive">
+      <LineId Id="85" Count="0" />
+      <LineId Id="82" Count="2" />
+      <LineId Id="29" Count="3" />
+      <LineId Id="27" Count="0" />
+      <LineId Id="81" Count="0" />
+      <LineId Id="35" Count="2" />
+      <LineId Id="28" Count="0" />
+      <LineId Id="6" Count="18" />
+      <LineId Id="80" Count="0" />
+      <LineId Id="25" Count="0" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_PlcCraneTcpIpCom._M_ProcessSend">
+      <LineId Id="6" Count="2" />
+      <LineId Id="10" Count="73" />
+      <LineId Id="90" Count="3" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_PlcCraneTcpIpCom.M_SendData">
+      <LineId Id="207" Count="0" />
+      <LineId Id="204" Count="0" />
+      <LineId Id="189" Count="0" />
+      <LineId Id="205" Count="1" />
+      <LineId Id="190" Count="0" />
+      <LineId Id="140" Count="0" />
+      <LineId Id="201" Count="0" />
+      <LineId Id="191" Count="0" />
+      <LineId Id="202" Count="0" />
+      <LineId Id="192" Count="1" />
+      <LineId Id="200" Count="0" />
+      <LineId Id="203" Count="0" />
+      <LineId Id="195" Count="1" />
+      <LineId Id="198" Count="1" />
+      <LineId Id="194" Count="0" />
+      <LineId Id="148" Count="0" />
+      <LineId Id="139" Count="0" />
+      <LineId Id="3" Count="1" />
+      <LineId Id="60" Count="0" />
+      <LineId Id="71" Count="23" />
+      <LineId Id="101" Count="4" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

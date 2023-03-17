@@ -1,0 +1,38 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4020.6">
+  <POU Name="F_BlockCopy" Id="{931f677d-4574-4f16-b58f-81218aff8ae8}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION F_BlockCopy : BOOL
+VAR_INPUT
+	pSrc	: PVOID;
+	LenSrc  : UDINT;
+	pDest 	: PVOID;
+	LenDest	: UDINT;
+END_VAR
+
+VAR
+
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[
+IF LenSrc > 0 AND
+   LenDest > 0 AND
+   pSrc > 0 AND
+   pDest > 0 THEN 
+	
+	MEMSET(destAddr := pDest, 0, LenDest);
+   
+	IF LenSrc > LenDest THEN	
+		MEMCPY(destAddr := pDest, srcAddr := pSrc, n := LenDest);
+	ELSE
+		MEMCPY(destAddr := pDest, srcAddr := pSrc, n := LenSrc);
+	END_IF
+
+	F_BlockCopy := TRUE;
+ELSE
+	F_BlockCopy := FALSE;
+END_IF
+]]></ST>
+    </Implementation>
+  </POU>
+</TcPlcObject>

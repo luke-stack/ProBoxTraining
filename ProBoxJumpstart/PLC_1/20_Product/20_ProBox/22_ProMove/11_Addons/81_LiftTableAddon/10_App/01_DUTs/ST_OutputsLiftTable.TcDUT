@@ -1,0 +1,12 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <DUT Name="ST_OutputsLiftTable" Id="{e6597d17-e055-4d79-898f-c4e481c72b73}">
+    <Declaration><![CDATA[TYPE ST_OutputsLiftTable :
+STRUCT
+	HW 							: ST_HW_OutputsLiftTable; //Hardware outputs
+	LiftTableEnableTransport	: BOOL; //Enable transport when lift is done
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

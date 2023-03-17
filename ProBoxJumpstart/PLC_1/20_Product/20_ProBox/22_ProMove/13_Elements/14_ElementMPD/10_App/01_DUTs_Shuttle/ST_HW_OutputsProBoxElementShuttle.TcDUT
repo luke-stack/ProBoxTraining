@@ -1,0 +1,33 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <DUT Name="ST_HW_OutputsProBoxElementShuttle" Id="{c09b0285-2da7-474b-848f-78301e7e9d95}">
+    <Declaration><![CDATA[TYPE ST_HW_OutputsProBoxElementShuttle :
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: $
+ *	Revision date	:	$Date: $
+ *	Last changed by	:	$Author: $
+ *	URL				:	$$
+ *
+ *	Purpose			:	Shuttle Element - Hardware outputs
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION 
+ *
+ **************************************************************************************)
+STRUCT
+	DriveCV						: ARRAY[GVL_MPD.CV_A..GVL_MPD.CV_B] OF ST_HW_OutputsProBoxElementMotorShuttle; // 1 = Conv A, 2 = Conv B
+	ShuttleDrive				: ST_HW_OutputsMotionDrive;	//Outputs to Motion Driver
+	//ShuttleToGroupSignals		: ST_ShuttleToGroupSignals;
+	//EntryReqLedOutput			: ARRAY [1..GVL_Shuttle.NUMBER_OF_ENTRYCABINETS] OF BOOL; //Entry request LED OUTPUT, Flashing= Request pending, Stady on = Request is finalized
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

@@ -1,0 +1,113 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.4">
+  <POU Name="F_SearchPositionOfTU_Index" Id="{f8044212-b7a9-4e8f-aba3-02c3ad7b29d2}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION F_SearchPositionOfTU_Index : ST_PositionIdent
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 464436 $
+ *	Revision date	:	$Date: 2020-10-27 15:58:44 +0100 (tis, 27 okt 2020) $
+ *	Last changed by	:	$Author: d7mangc $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/tags/R1.12.0/01_Software/BCF/BCF/JumpStart/20_Product/10_BCF/11_Conv/10_Base/F_SearchPositionOfTU_Index.TcPOU $
+ *
+ *	Purpose			:	Searchs for the FunctionNumber according the TU-DataIndex.
+ *						
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+VAR_INPUT
+	TU_DataIndex  			: DINT; // Index variable
+	eStartFunctionNumber 	: E_FunctionNumber; // Start loop from this ElementNumber 
+END_VAR
+
+VAR
+	eFunctionNumber  		: E_FunctionNumber;  // Function incrementor 
+	ZoneNumber				: INT; // Zone number
+	FoundOnFunction			: BOOL; // Requested index was found on a function
+	FoundOnZone				: BOOL; // Requested index was found on a zone
+END_VAR]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[// Initialize
+F_SearchPositionOfTU_Index.eFunctionNumber := 0;
+F_SearchPositionOfTU_Index.ZoneNumber := 0;
+
+// If no start function number is set
+IF eStartFunctionNumber <= 0 THEN
+	//Default set first function
+	eStartFunctionNumber := F_BEGIN_FUNCTION + 1;
+END_IF
+
+// Loop through all functions
+FOR eFunctionNumber := eStartFunctionNumber TO F_END_FUNCTION - 1 BY 1 DO
+	// If a valid reference was found, check if a function contains on any
+	// zone the requested TU Index 
+	IF __ISVALIDREF(FunctionRegistry[eFunctionNumber].rFunction) THEN
+		FoundOnFunction := FunctionRegistry[eFunctionNumber].rFunction.M_FindTU_DataIndex(
+							mZoneNumber := 0,
+							mTU_DataIndex := TU_DataIndex);
+
+		// If the requested index could be determined on a function,
+		// try to find the specific zone
+		IF FoundOnFunction THEN
+			// Set return value of the function	
+			F_SearchPositionOfTU_Index.eFunctionNumber := eFunctionNumber;
+		
+			// Loop through all zones of this function 
+			FOR ZoneNumber := 1 TO FunctionRegistry[eFunctionNumber].rFunction.SettingsFunction.NumberOfZones BY 1 DO
+				FoundOnZone := FunctionRegistry[eFunctionNumber].rFunction.M_FindTU_DataIndex(
+								mZoneNumber := ZoneNumber,
+								mTU_DataIndex := TU_DataIndex);
+				// Zone was found 
+				IF FoundOnZone THEN
+					// Set return value of the zone
+					F_SearchPositionOfTU_Index.ZoneNumber := ZoneNumber;
+					EXIT;
+				END_IF
+			END_FOR
+		END_IF
+		
+		// If search was succesful
+		IF FoundOnFunction THEN
+			// Stop, and return result
+			RETURN;
+		END_IF
+	END_IF
+END_FOR
+
+// Update position name
+F_SearchPositionOfTU_Index.PositionName := F_GetFunctionName(eFunctionNumber := F_SearchPositionOfTU_Index.eFunctionNumber,
+															 ZoneNumber := F_SearchPositionOfTU_Index.ZoneNumber);
+
+]]></ST>
+    </Implementation>
+    <ObjectProperties>
+      <XmlArchive>
+        <Data>
+          <o xml:space="preserve" t="UMLStereoTypeContainerObject">
+            <v n="IsType" t="UMLType">BaseArea</v>
+            <v n="Stereotype">""</v>
+            <d n="Stereotypes" t="Hashtable" />
+          </o>
+        </Data>
+        <TypeList>
+          <Type n="Hashtable">System.Collections.Hashtable</Type>
+          <Type n="String">System.String</Type>
+          <Type n="UMLStereoTypeContainerObject">{30250973-b110-4e31-b562-c102e042dca4}</Type>
+          <Type n="UMLType">{0197b136-405a-42ee-bb27-fd08b621d0cf}</Type>
+        </TypeList>
+      </XmlArchive>
+    </ObjectProperties>
+    <LineIds Name="F_SearchPositionOfTU_Index">
+      <LineId Id="3" Count="50" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

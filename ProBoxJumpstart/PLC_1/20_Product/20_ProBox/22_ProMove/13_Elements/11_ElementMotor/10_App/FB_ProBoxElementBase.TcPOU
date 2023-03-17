@@ -1,0 +1,902 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <POU Name="FB_ProBoxElementBase" Id="{0a918f7c-0637-49ab-9053-1347e5964f7f}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK FB_ProBoxElementBase EXTENDS FB_ElementConv IMPLEMENTS ITF_PB_Element
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: $
+ *	Revision date	:	$Date: $
+ *	Last changed by	:	$Author:  $
+ *	URL				:	$URL: $
+ *
+ *	Purpose			:	Base class ProBox element with one drive.
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+  *
+ **************************************************************************************)
+VAR_INPUT	
+	
+END_VAR
+
+
+VAR
+	Idx								: INT; // Iterator
+	Inputs							: ST_InputsProBoxElementMotor; // Module Internal inputs 
+	eFunctionNumber					: E_FunctionNumber; // Function number	
+	fbProBoxMotorControl_12			: FB_ProBoxMotorControl;
+	fbProBoxMotorControl_34			: FB_ProBoxMotorControl;
+	EmptyManualCommands				: ST_ITC_ManualMotion; // Empty commands	
+	fb_FunctionOrdersToProBox		: FB_FunctionOrdersToProBox;		
+	fb_ProBoxToElementState 		: FB_ProBoxToElementState;
+	TestStartDrive					: BOOL; // Force a drive start
+		 
+	BaseSettings					: ST_CFG_ProBoxElementBase;
+	_MasterIsConnected_12			: BOOL;	//True if an master element is connected
+	_MasterIsConnected_34			: BOOL;	//True if an master element is connected
+	_MasterOrdersDisable_12			: BOOL; //provided by MasterElement
+	_fb_SoftEncoder_12				: FB_PB_Element_Encoder;
+	_fb_SoftEncoder_34				: FB_PB_Element_Encoder;
+	_AxisDisabled_12				: BOOL; // interface from transfer Unit Function (Master) to disable drive axis 12 on an Slave element.
+	_EmuSpeedEnabled				: BOOL;
+	_EmuSpeed						: INT;	
+	_ManualOverrideDrive			: BOOL; // used for functions/addons that need to drive element despite there are errors or other functions not allowing so
+	_InhibitDrive					: BOOL;	// Set Drive to not allow transfer externally. Used when one want to make sure the drive is not running without setting an error.
+END_VAR    
+                   	
+VAR_TEMP                        	
+	FunctionDriveRun_12				: BOOL; // Function requests run
+	FunctionDriveDirection_12		: E_ProBoxMotorDirection; // Function requests direction
+	FunctionDriveSpeed_12			: E_ProBoxMotorSpeed; // Function requests speed
+                                	
+	FunctionDriveRun_34				: BOOL; // Function requests run
+	FunctionDriveDirection_34		: E_ProBoxMotorDirection; // Function requests direction
+	FunctionDriveSpeed_34			: E_ProBoxMotorSpeed; // Function requests speed	
+	                            	
+	//SlaveNoError					: BOOL; // Slave is not in error state
+	MasterElementNumber_12			: E_ElementNumber;
+	MasterElementNumber_34			: E_ElementNumber;
+			
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[//Base class never called
+
+
+
+]]></ST>
+    </Implementation>
+    <Method Name="_M_HandleMasterFunctionOrders" Id="{8eba87ee-b387-4197-9a93-ab6936f20fc7}">
+      <Declaration><![CDATA[// If element is an Slave Element, copy Function orders from Master Element 
+METHOD PRIVATE _M_HandleMasterFunctionOrders
+VAR_INPUT
+	ElementState			: ST_MasterSlaveStates;	// Master element states	
+	MasterIsConnected_12	: BOOL;
+	MasterIsConnected_34	: BOOL;
+END_VAR
+VAR_IN_OUT
+	FunctionDriveRun		: BOOL; 					// Own Function requests run
+	FunctionDriveDirection	: E_ProBoxMotorDirection;	// Own Function requests direction
+	FunctionDriveSpeed		: E_ProBoxMotorSpeed; 		// Own Function requests speed	
+END_VAR
+VAR_OUTPUT
+	MasterOrdersDisable_12 : BOOL;
+END_VAR
+
+VAR
+	fb_MasterFunctionOrdersToProBox : FB_FunctionOrdersToProBox;
+	MasterFunctionOrders			: ST_FunctionOrders;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+IF( NOT MasterIsConnected_12 AND NOT MasterIsConnected_34) THEN RETURN; END_IF
+
+// Get orders from Master Element_12 (special feature for Slave elements connected to Master transfer unit) 
+IF(MasterIsConnected_12) THEN
+	MasterFunctionOrders.Enable 			:= ElementState.Master_12.DriveReady;
+	MasterFunctionOrders.ReqDriveDirection	:= ElementState.Master_12.DriveDirection;
+	MasterFunctionOrders.ReqDriveRun		:= ElementState.Master_12.DriveRunning;
+	MasterFunctionOrders.ReqSpeed			:= ElementState.Master_12.Speed;
+// Get orders from Master Element_34 (special feature for Slave elements connected to Master transfer unit) 
+ELSIF(MasterIsConnected_34) THEN
+	MasterFunctionOrders.Enable 			:= ElementState.Master_34.DriveReady_34;
+	MasterFunctionOrders.ReqDriveDirection	:= ElementState.Master_34.DriveDirection_34;
+	MasterFunctionOrders.ReqDriveRun		:= ElementState.Master_34.DriveRunning_34;
+	MasterFunctionOrders.ReqSpeed			:= ElementState.Master_34.Speed_34;
+END_IF
+
+MasterOrdersDisable_12 						:= NOT MasterFunctionOrders.Enable;	
+
+// Overwrite Function orders with element orders
+IF(MasterFunctionOrders.Enable AND MasterFunctionOrders.ReqDriveRun) THEN
+	// Get lowest speed (if both own element and master element requesting drive)
+	IF( ElementData.FunctionOrder.ReqDriveRun) THEN
+		IF(ElementData.FunctionOrder.ReqSpeed  < MasterFunctionOrders.ReqSpeed	) THEN 
+			MasterFunctionOrders.ReqSpeed := ElementData.FunctionOrder.ReqSpeed;	
+		END_IF
+	END_IF
+	// Convert to FunctionOrdersToProBox type
+	fb_MasterFunctionOrdersToProBox(FunctionOrders := MasterFunctionOrders);
+	// Overwrite Function data	
+	FunctionDriveRun := fb_MasterFunctionOrdersToProBox.Run_12 AND fb_MasterFunctionOrdersToProBox.Enable_12;	
+	FunctionDriveDirection := fb_MasterFunctionOrdersToProBox.Direction_12;
+	FunctionDriveSpeed := fb_MasterFunctionOrdersToProBox.Speed_12;
+	
+	IF( fb_MasterFunctionOrdersToProBox.Direction_12 <> fb_FunctionOrdersToProBox.Direction_12 AND fb_FunctionOrdersToProBox.Run_12) THEN
+		DebugMsg := CONCAT('Own Element and Master Element request drive direction differ! ', ConfigElement.ElementName);
+		fbDebugMsg.M_SendInfoMsg(DebugMsg);
+	END_IF
+END_IF
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_InitProBoxElement" Id="{4f8efef5-e7ab-420e-bbcb-60ee9a2dae69}">
+      <Declaration><![CDATA[METHOD PRIVATE _M_InitProBoxElement : BOOL
+
+VAR
+	i:INT;	
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+F_ResetError(FALSE,ElementData.ErrorData.ErrorDataSet[1]);
+
+//Init Slave element, check if Master element is not set, but there is an master element pointing to an slave element = this element number
+IF(ConfigElement.eMasterElementNumber_34 = E_ElementNumber.E_BEGIN_ELEMENT) THEN
+	//search if an master element has set its slaveElementNumber_34 pointing towards this element number.
+	FOR i:=1 TO E_ElementNumber.E_END_ELEMENT-1 DO
+		IF(__ISVALIDREF(ElementRegistry[i].rElement)) THEN
+			IF(ElementRegistry[i].rElement.ConfigElement.eSlaveElementNumber_34 = ConfigElement.eElementNumber AND
+				  ConfigElement.eElementNumber <> E_ElementNumber.E_BEGIN_ELEMENT) THEN
+				  ConfigElement.eMasterElementNumber_34 := ElementRegistry[i].rElement.ConfigElement.eElementNumber; //Connect slave to master.				  
+				  //EXIT;				  
+			END_IF
+			IF(ElementRegistry[i].rElement.ConfigElement.eSlaveElementNumber_12 = ConfigElement.eElementNumber AND
+				  ConfigElement.eElementNumber <> E_ElementNumber.E_BEGIN_ELEMENT) THEN
+				  ConfigElement.eMasterElementNumber_12 := ElementRegistry[i].rElement.ConfigElement.eElementNumber; //Connect slave to master.				  
+				  //EXIT;				  
+			END_IF
+		END_IF
+	END_FOR
+END_IF
+
+//Sanity check, master and slave element cannot be the same!
+IF(ConfigElement.eMasterElementNumber_34 <> E_ElementNumber.E_BEGIN_ELEMENT AND	ConfigElement.eSlaveElementNumber_34 = ConfigElement.eMasterElementNumber_34) THEN
+	F_SetError(E_ErrorType.ERROR, 'Both slave and master is set in F_ConfigPosition', E_ErrorConv.CONFIGURATION_ERROR, ElementData.ErrorData.ErrorDataSet[1]);
+ELSE
+	_M_InitProBoxElement := TRUE; //No Error
+END_IF
+
+
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_MasterSlaveErrorHandling" Id="{268aa0ed-4374-4b12-8173-f2e1cba0e5ae}">
+      <Declaration><![CDATA[METHOD PRIVATE _M_MasterSlaveErrorHandling
+VAR_INPUT
+	MasterElementNumber		: E_ElementNumber;
+	SlaveElementNumber		: E_ElementNumber;
+	MasterIsConnected		: BOOL;
+END_VAR
+
+VAR
+	MasterElementErrorAckPending: BOOL;	
+	i:INT;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+IF(NOT MasterIsConnected OR NOT  ElementData.Init) THEN RETURN; END_IF
+
+
+//Sanity checks
+IF ( NOT __ISVALIDREF(ElementRegistry[MasterElementNumber].rElementData) OR
+	 NOT __ISVALIDREF(ElementRegistry[MasterElementNumber].rSettingsElement)) THEN
+		RETURN; 
+END_IF
+
+MasterElementErrorAckPending := ElementRegistry[MasterElementNumber].rElementData.ErrorData.ExternalError.ResetError;
+//reset external error on master element
+IF(MasterElementErrorAckPending) THEN
+	//Reset external errors on the function that the AddOn is linked to
+	F_ResetExternalElementError(eElementNumber := MasterElementNumber, Reset := FALSE);
+END_IF
+
+
+//If slave is in error and slave does not have an function extended to the element, then copy slave error to master element
+//Check if any functions are extended to the element
+IF(ElementData.MemberList.FunctionList[1].eFunctionNumber <> E_FunctionNumber.F_BEGIN_FUNCTION) THEN
+	RETURN; // yes,a function is found -> quit.
+END_IF 
+
+
+// check if master element error was acknowleded, ie error is not active anymore
+//last cycle the error was active, but this cycle the error is not active on master -> the error is acknowleged by operator
+IF(MasterElementErrorAckPending ) THEN //MasterElementLastCycleErrorActive AND ElementRegistry[MasterElementNumber].rElementData.ErrorData.Error.ErrorType = E_ErrorType.NO_ERROR_PENDING) THEN
+	//reset own (Slave) element errors
+	FOR i:=1 TO NUMBER_OF_ERROR_SETS DO
+		ElementData.ErrorData.ErrorDataSet[i].ResetError:=TRUE;		
+	END_FOR
+	F_ResetElementError(SlaveElementNumber,FALSE);
+	
+	
+	//if slave element is in error state, than set error on master function.
+ELSIF( ElementData.ErrorData.Error.ErrorType = E_ErrorType.ERROR) THEN
+				
+		//Copy Slave element error over to Master element error
+		F_SetExternalElementError(eElementNumber :=	MasterElementNumber,
+							  ErrorType := ElementData.ErrorData.Error.ErrorType,
+							  ErrorParam := CONCAT(CONCAT(SettingsElement.ElementName,': '), ElementData.ErrorData.Error.ErrorParam),
+							  ErrorMsg := ElementData.ErrorData.Error.ErrorCode.Conv);	
+END_IF
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_StateControl" Id="{00bfd0a1-c690-47ee-8028-7b7771ed3884}">
+      <Declaration><![CDATA[METHOD PROTECTED _M_StateControl : BOOL
+VAR_INPUT
+	AdditionalConditionInhibitStopping		: BOOL; //requiremet for inhibt stopping group
+END_VAR
+
+VAR
+	InhibitStoppingCondition	: BOOL;
+	MasterDriveIsRunning		: BOOL;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+//Inhibit drive
+//check if master element is commanding slave element to drive, then finsish operation before entering stop
+ MasterDriveIsRunning := (_MasterIsConnected_12 OR _MasterIsConnected_34) AND ElementInterface.In.GroupState.eState = E_PositionState.STOPPING AND 
+						 (ElementInterface.In.ElementStates.Master_12.DriveRunning OR ElementInterface.In.ElementStates.Master_12.DriveRunning_34 OR 
+						  ElementInterface.In.ElementStates.Master_34.DriveRunning OR ElementInterface.In.ElementStates.Master_34.DriveRunning_34);
+
+THIS^.InhibitStopping := MasterDriveIsRunning OR AdditionalConditionInhibitStopping;
+Super^.A_StateControl();]]></ST>
+      </Implementation>
+    </Method>
+    <Action Name="A_DriveControl" Id="{056375f5-68bd-4bde-9508-0e37551bb85b}">
+      <Implementation>
+        <ST><![CDATA[
+IF( NOT ElementData.Init) THEN
+	RETURN;
+END_IF
+
+// Get orders from functions in Element
+fb_FunctionOrdersToProBox(FunctionOrders := ElementData.FunctionOrder);
+
+// ------------------------------------------------------------------------------------------------
+// Function orders axis 1-2
+// ------------------------------------------------------------------------------------------------
+FunctionDriveRun_12 := fb_FunctionOrdersToProBox.Run_12 AND (fb_FunctionOrdersToProBox.Enable_12 OR _ManualOverrideDrive);
+FunctionDriveSpeed_12 := fb_FunctionOrdersToProBox.Speed_12;
+FunctionDriveDirection_12 := fb_FunctionOrdersToProBox.Direction_12;
+
+// Slave enable
+//SlaveNoError := NOT ElementInterface.In.ElementStates.Slave.Error AND NOT ElementInterface.In.ElementStates.Slave_12.Error AND NOT ElementInterface.In.ElementStates.Slave_34.Error;
+
+// Check if master element is connected
+MasterElementNumber_12 := ElementData.MemberList.ElementList.Master_12.eElementNumber;
+_MasterIsConnected_12 := MasterElementNumber_12 <> E_ElementNumber.E_BEGIN_ELEMENT;
+MasterElementNumber_34 := ElementData.MemberList.ElementList.Master_34.eElementNumber;
+_MasterIsConnected_34 := MasterElementNumber_34 <> E_ElementNumber.E_BEGIN_ELEMENT;
+
+// If Master element is connected => overwrite FunctionDrive orders
+_M_HandleMasterFunctionOrders(
+	ElementState 			:= ElementInterface.In.ElementStates,
+	MasterIsConnected_12 	:= _MasterIsConnected_12,
+	MasterIsConnected_34 	:= _MasterIsConnected_34,
+	FunctionDriveRun 		:= FunctionDriveRun_12,
+	FunctionDriveDirection 	:= FunctionDriveDirection_12,
+	FunctionDriveSpeed 		:= FunctionDriveSpeed_12,
+	MasterOrdersDisable_12	=> _MasterOrdersDisable_12);
+
+// Check Master/Slave errors
+_M_MasterSlaveErrorHandling(MasterElementNumber_12, SettingsElement.eElementNumber, _MasterIsConnected_12 );							
+_M_MasterSlaveErrorHandling(MasterElementNumber_34, SettingsElement.eElementNumber, _MasterIsConnected_34 );
+
+// Call motor control
+fbProBoxMotorControl_12(
+	Run 			:= (FunctionDriveRun_12 OR TestStartDrive) AND		    		   
+		    		   ((ElementData.ErrorData.Error.ErrorType <> E_ErrorType.ERROR AND ElementData.OperationState.eState <> E_PositionState.STOPPED) OR
+					   (ElementData.OperationState.eMode = E_PositionMode.MANUAL_MODE OR _ManualOverrideDrive)),
+	MotorSpeed		:= FunctionDriveSpeed_12, 
+	MotorDirection	:= FunctionDriveDirection_12, 
+	DelayBrakeTime	:= BaseSettings.BrakeTime,
+	MotorStarterOK	:= Inputs.MotorUnitOK,
+	ErrorData		:= ElementData.ErrorData.ErrorDataSet[2]);
+	
+// ------------------------------------------------------------------------------------------------
+// Function orders axis 3-4
+// ------------------------------------------------------------------------------------------------
+FunctionDriveRun_34 := fb_FunctionOrdersToProBox.Run_34 AND (fb_FunctionOrdersToProBox.Enable_34 OR _ManualOverrideDrive);
+FunctionDriveDirection_34 := fb_FunctionOrdersToProBox.Direction_34;
+FunctionDriveSpeed_34 := fb_FunctionOrdersToProBox.Speed_34;
+
+// Call motor control
+fbProBoxMotorControl_34(
+	Run				:= (FunctionDriveRun_34 OR TestStartDrive) AND
+				       ((ElementData.ErrorData.Error.ErrorType <> E_ErrorType.ERROR AND ElementData.OperationState.eState <> E_PositionState.STOPPED) OR
+					   (ElementData.OperationState.eMode = E_PositionMode.MANUAL_MODE OR _ManualOverrideDrive)),
+	MotorSpeed		:= FunctionDriveSpeed_34, 
+	MotorDirection	:= FunctionDriveDirection_34, 
+	DelayBrakeTime	:= BaseSettings.BrakeTime,
+	MotorStarterOK	:= Inputs.MotorUnitOK,
+	ErrorData		:= ElementData.ErrorData.ErrorDataSet[3]);
+]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="A_HandleFunctions" Id="{375ced84-70f7-48c6-aa3d-01427acae31f}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_HandleElementFunctions
+ * 	FUNCTION	Handle interface between element and function layer
+ **************************************************************************************)
+
+// Initialize
+ElementData.FunctionOrder.ReqDriveRun := FALSE;
+ElementData.FunctionOrder.Enable := TRUE;
+ElementData.FunctionOrder.ReqSpeed := 0;
+ElementData.FunctionOrder.ReqDriveDirection := FALSE;
+
+ElementData.FunctionOrder.ReqDriveRun_34 := FALSE;
+ElementData.FunctionOrder.Enable_34 := TRUE;
+ElementData.FunctionOrder.ReqSpeed_34 := 0;
+ElementData.FunctionOrder.ReqDriveDirection_34 := FALSE;
+
+
+// Go trough all functions and handle states
+FOR Idx := 1 TO NUMBER_OF_FUNCTIONS_PER_ELEMENT DO
+	// Get next function number
+	eFunctionNumber := ElementData.MemberList.FunctionList[Idx].eFunctionNumber;
+
+	// Is number valid 
+	IF eFunctionNumber > E_FunctionNumber.F_BEGIN_FUNCTION AND
+	   eFunctionNumber < E_FunctionNumber.F_END_FUNCTION THEN
+	   
+	   	// Summarize function enables 
+		IF NOT ElementInterface.In.FunctionOrders[Idx].Enable THEN
+			ElementData.FunctionOrder.Enable := FALSE;
+		END_IF
+		
+		IF NOT ElementInterface.In.FunctionOrders[Idx].Enable_34 THEN
+			ElementData.FunctionOrder.Enable_34 := FALSE;
+		END_IF		
+	
+		// Summarize drive requests
+		ElementData.FunctionOrder.ReqDriveRun := ElementData.FunctionOrder.ReqDriveRun OR
+													ElementInterface.In.FunctionOrders[Idx].ReqDriveRun;
+													
+		ElementData.FunctionOrder.ReqDriveRun_34 := ElementData.FunctionOrder.ReqDriveRun_34 OR
+													ElementInterface.In.FunctionOrders[Idx].ReqDriveRun_34;	
+
+		// Summarize direction requests
+		ElementData.FunctionOrder.ReqDriveDirection := ElementData.FunctionOrder.ReqDriveDirection OR
+													ElementInterface.In.FunctionOrders[Idx].ReqDriveDirection;
+													
+		ElementData.FunctionOrder.ReqDriveDirection_34 := ElementData.FunctionOrder.ReqDriveDirection_34 OR
+													ElementInterface.In.FunctionOrders[Idx].ReqDriveDirection_34;											
+															  
+		// Calculate lowest possible speed
+		IF ElementInterface.In.FunctionOrders[Idx].ReqDriveRun THEN
+			IF ElementData.FunctionOrder.ReqSpeed = 0 OR
+			   ElementData.FunctionOrder.ReqSpeed > ElementInterface.In.FunctionOrders[Idx].ReqSpeed THEN
+			   // Update speed request
+			   ElementData.FunctionOrder.ReqSpeed := ElementInterface.In.FunctionOrders[Idx].ReqSpeed;   
+			END_IF
+		END_IF
+		
+		IF ElementInterface.In.FunctionOrders[Idx].ReqDriveRun_34 THEN
+			IF ElementData.FunctionOrder.ReqSpeed_34 = 0 OR
+			   ElementData.FunctionOrder.ReqSpeed_34 > ElementInterface.In.FunctionOrders[Idx].ReqSpeed_34 THEN
+			   // Update speed request
+			   ElementData.FunctionOrder.ReqSpeed_34 := ElementInterface.In.FunctionOrders[Idx].ReqSpeed_34;   
+			END_IF
+		END_IF		
+	ELSE
+		// No more functions in list
+		EXIT;
+	END_IF
+END_FOR
+]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="A_Init" Id="{4de087ba-7ec4-4bcd-86ea-af867421b3b4}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_Init
+ * 	FUNCTION	Initialize element
+ **************************************************************************************)
+
+// Update registry
+M_UpdateRegistry();
+ 
+// Init ongoing - Wait until init is released (Sequencial startup)
+IF NOT ElementData.Init AND ElementData.InitRunning THEN
+	// If the system is initialized and its allowed to initialize
+	IF ElementData.OperationState.Info.SystemReady AND
+	   SettingsElement.eElementNumber < ElementData.OperationState.InitRelease.eLimitElementNumber THEN
+		// Initialization started when base element is initialized
+		IF M_InitElement(FALSE) THEN
+								
+			// Function initialized - and initialization done
+			ElementData.Init := TRUE;
+			ElementData.InitRunning := FALSE;
+			
+			// Set reset cmd
+			ElementData.ErrorData.Error.ResetError := TRUE;
+			
+			DebugMsg := CONCAT('Initialization done. Element: ', ConfigElement.ElementName);
+			fbDebugMsg.M_SendInfoMsg(DebugMsg);
+			
+		END_IF
+	END_IF
+(*
+If the function is not initialized,
+clean all values and wait until init is released
+*)
+ELSIF NOT ElementData.Init THEN
+	
+	// Reset internal variables
+	ElementData.OperationState.eState := E_PositionState.UNKNOWN;
+	ElementData.OperationState.eMode := E_PositionMode.UNKNOWN_MODE;
+	
+	// Create slave element (if configured) function configuration	
+	_M_InitProBoxElement();
+	//Clear persistent elementlist for master elements	
+	IF(SettingsElement.eSlaveElementNumber_34 > E_BEGIN_ELEMENT) THEN
+		MEMSET(ADR(ElementData.MemberList.ElementList), 0, SIZEOF(ST_ElementMasterSlave));
+	END_IF
+	// Reset values and load config
+	M_PreInit();
+	ElementData.InitRunning := SettingsElement.eElementNumber > 0;
+END_IF
+]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="A_InputMapping" Id="{bd8e47a3-0030-4d37-b9a1-14ec44a9bc01}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_InputMapping
+ * 	FUNCTION	Input mapping
+ **************************************************************************************)
+ 
+
+
+(**************************************************************************************
+   Map external inputs
+***************************************************************************************)
+// Get Master master states - Stored in ElementInterface.In.ElementStates.Master_34
+M_UpdateMasterSlaveStates();
+
+// Get element orders from all functions 
+M_GetElementOrders();
+ 
+// Get commanded group state and mode belonging to this element
+ElementInterface.In.GroupState := fbGroupManager.M_GetGroupCmd(
+											meElementNumber := SettingsElement.eElementNumber);
+]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="A_ManualControl" Id="{87f2091b-610c-430f-8b1e-c3f74b485db8}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_ManualControl
+ * 	FUNCTION	Control manual movement
+ **************************************************************************************)
+
+ 
+(**************************************************************************************
+   Reset manual commands
+***************************************************************************************)
+
+// If element is not in manual mode
+IF ElementData.OperationState.eMode <> E_PositionMode.MANUAL_MODE THEN
+	// Reset manual commands
+	ITC.ManualMotion := EmptyManualCommands;
+END_IF
+
+(**************************************************************************************
+   Enable available axis, buttons, features
+***************************************************************************************)
+// Example:
+//	ITC.ManualMotion.Axis[1].Forward.Enable := TRUE;]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="A_OutputMapping" Id="{76f152a7-3d50-49f3-8ec1-b48d09eec65a}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_OutputMapping
+ * 	FUNCTION	Handles element specific outpus
+ **************************************************************************************)
+
+(**************************************************************************************
+   Map element interface
+***************************************************************************************)						
+
+fb_ProBoxToElementState(
+	CreepSpeed_12 := fbProBoxMotorControl_12.CreepSpeed, 
+	LowSpeed_12 := fbProBoxMotorControl_12.LowSpeed, 
+	Forward_12 := fbProBoxMotorControl_12.Forward, 
+	Reverse_12 := fbProBoxMotorControl_12.Reverse, 
+	CreepSpeed_34 := fbProBoxMotorControl_34.CreepSpeed, 
+	LowSpeed_34 := fbProBoxMotorControl_34.LowSpeed, 
+	Forward_34 := fbProBoxMotorControl_34.Forward, 
+	Reverse_34 := fbProBoxMotorControl_34.Reverse);
+
+ElementInterface.Out.State.DriveReady := ElementData.FunctionOrder.Enable AND NOT _MasterOrdersDisable_12 AND NOT _AxisDisabled_12 AND NOT _InhibitDrive;
+ElementInterface.Out.State.Speed :=  fb_ProBoxToElementState.ElementState.Speed;
+ElementInterface.Out.State.DriveDirection := fb_ProBoxToElementState.ElementState.DriveDirection;
+ElementInterface.Out.State.DriveRunning := fb_ProBoxToElementState.ElementState.DriveRunning;
+ElementInterface.Out.State.DriveReady_34 := ElementData.FunctionOrder.Enable_34 AND NOT _InhibitDrive;
+ElementInterface.Out.State.Speed_34 :=  fb_ProBoxToElementState.ElementState.Speed_34;
+ElementInterface.Out.State.DriveDirection_34 := fb_ProBoxToElementState.ElementState.DriveDirection_34;
+ElementInterface.Out.State.DriveRunning_34 := fb_ProBoxToElementState.ElementState.DriveRunning_34;
+ElementInterface.Out.State.Error := ElementData.ErrorData.Error.ErrorType = E_ErrorType.ERROR;
+
+	
+	//Set syntetic endocer speed for axis 12  
+	//_fb_SoftEncoder_12.Speed :=0;
+	//IF(fbProBoxMotorControl_12.Forward OR fbProBoxMotorControl_12.Reverse) THEN		 
+		IF(fbProBoxMotorControl_12.LowSpeed) THEN
+			_fb_SoftEncoder_12.Speed := BaseSettings.ElementSpeed.SlowEncSpeed; 	
+		ELSIF(fbProBoxMotorControl_12.CreepSpeed) THEN
+			_fb_SoftEncoder_12.Speed := BaseSettings.ElementSpeed.CreepEncSpeed;
+		ELSE
+			_fb_SoftEncoder_12.Speed := BaseSettings.ElementSpeed.NormalEncSpeed; 			
+		END_IF
+	//END_IF
+		
+	//Set syntetic endocer speed for axis 34
+	//_fb_SoftEncoder_34.Speed :=0;
+	//IF(fbProBoxMotorControl_34.Forward OR fbProBoxMotorControl_34.Reverse) THEN  
+		IF(fbProBoxMotorControl_34.LowSpeed) THEN
+			_fb_SoftEncoder_34.Speed := BaseSettings.ElementSpeed.SlowEncSpeed; 	
+		ELSIF(fbProBoxMotorControl_34.CreepSpeed) THEN
+			_fb_SoftEncoder_34.Speed := BaseSettings.ElementSpeed.CreepEncSpeed;
+		ELSE
+			_fb_SoftEncoder_34.Speed := BaseSettings.ElementSpeed.NormalEncSpeed; 			
+		END_IF
+	//END_IF				
+	//apply probox gear ratio factor(we can not change resulution since  can not be less than 1 and has to 1 to suite BCF transport control!
+	IF(NOT _EmuSpeedEnabled) THEN
+		_fb_SoftEncoder_12.Speed := _fb_SoftEncoder_12.Speed;
+		_fb_SoftEncoder_34.Speed := _fb_SoftEncoder_34.Speed;
+	ELSE
+		//Set Emulation speed	
+		_fb_SoftEncoder_12.Speed := _EmuSpeed;
+		_fb_SoftEncoder_34.Speed := _EmuSpeed;
+		_EmuSpeedEnabled:=FALSE;
+	END_IF
+		
+	// run syntetic encoder
+	_fb_SoftEncoder_12(
+		Run				:= fbProBoxMotorControl_12.Forward OR fbProBoxMotorControl_12.Reverse,		
+		Resolution		:=	1); //use same resulution factor as in transportcontroller and in emulation functions
+	
+	_fb_SoftEncoder_34(
+		Run				:= fbProBoxMotorControl_34.Forward OR fbProBoxMotorControl_34.Reverse,		
+		Resolution		:=	1); //use same resulution factor as in transportcontroller and in emulation functions
+	
+		
+//output
+ElementInterface.Out.State.EncoderValue := _fb_SoftEncoder_12.EncoderValue;
+ElementInterface.Out.State.EncoderValue_34 := _fb_SoftEncoder_34.EncoderValue;]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="A_StateControl" Id="{d1d7292f-0f41-4410-8880-d0f6747aa2ed}">
+      <Implementation>
+        <ST><![CDATA[
+_M_StateControl(FALSE);]]></ST>
+      </Implementation>
+    </Action>
+    <Property Name="P_DisableAxis12" Id="{1c7850cb-e265-4c63-ad58-1ca5cb340d74}">
+      <Declaration><![CDATA[PROPERTY PUBLIC P_DisableAxis12 : BOOL]]></Declaration>
+      <Set Name="Set" Id="{4a77c301-dbb5-4bc3-9443-0cc4ff75d1cc}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[_AxisDisabled_12 := P_DisableAxis12;]]></ST>
+        </Implementation>
+      </Set>
+    </Property>
+    <Property Name="P_EmuSpeed" Id="{f4726561-dd58-416e-962b-996553451930}">
+      <Declaration><![CDATA[PROPERTY PUBLIC P_EmuSpeed : INT]]></Declaration>
+      <Set Name="Set" Id="{6592eb30-6410-4c17-a970-66a76c532710}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[
+_EmuSpeedEnabled := TRUE;
+_EmuSpeed:=P_EmuSpeed;]]></ST>
+        </Implementation>
+      </Set>
+    </Property>
+    <Property Name="P_InhibitDrive" Id="{8416d3a9-319b-4fde-ae84-f7c0284bef7c}">
+      <Declaration><![CDATA[PROPERTY PUBLIC P_InhibitDrive : BOOL]]></Declaration>
+      <Get Name="Get" Id="{02e89a68-0b71-4011-997e-a66ca378375e}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[P_InhibitDrive := _InhibitDrive;]]></ST>
+        </Implementation>
+      </Get>
+      <Set Name="Set" Id="{6dab00bd-736f-4687-bde4-0d00c7116d94}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[_InhibitDrive := P_InhibitDrive;]]></ST>
+        </Implementation>
+      </Set>
+    </Property>
+    <Property Name="P_OverrideManualDrive" Id="{6b7fbd6d-45b6-43af-ac6d-ec94c49921e7}">
+      <Declaration><![CDATA[//Use to override the normal inhibitation of driving while there are errors on other functions/addons
+PROPERTY PUBLIC P_OverrideManualDrive : BOOL]]></Declaration>
+      <Get Name="Get" Id="{a2aa6853-f33c-4861-8d06-4b7adeea6521}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[P_OverrideManualDrive := _ManualOverrideDrive;
+]]></ST>
+        </Implementation>
+      </Get>
+      <Set Name="Set" Id="{6998fd38-3561-44b4-89ef-863083a348cc}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[_ManualOverrideDrive := P_OverrideManualDrive;]]></ST>
+        </Implementation>
+      </Set>
+    </Property>
+    <Property Name="P_RegisterFuncton" Id="{4839d0cb-51fb-4dc7-a3d6-224fb0923a71}">
+      <Declaration><![CDATA[PROPERTY P_RegisterFuncton : PVOID]]></Declaration>
+      <Get Name="Get" Id="{2e6bc623-676a-4036-ac98-19c254f6c88d}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[//no implementaton in base, this has to be added for extended element classes if needed]]></ST>
+        </Implementation>
+      </Get>
+      <Set Name="Set" Id="{9ed17170-2575-466c-8e97-4e39a92de1c7}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[//no implementaton in base, this has to be added for extended element classes if needed]]></ST>
+        </Implementation>
+      </Set>
+    </Property>
+    <LineIds Name="FB_ProBoxElementBase">
+      <LineId Id="440" Count="0" />
+      <LineId Id="86" Count="0" />
+      <LineId Id="439" Count="0" />
+      <LineId Id="87" Count="0" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ProBoxElementBase._M_HandleMasterFunctionOrders">
+      <LineId Id="57" Count="0" />
+      <LineId Id="55" Count="0" />
+      <LineId Id="94" Count="0" />
+      <LineId Id="85" Count="5" />
+      <LineId Id="18" Count="0" />
+      <LineId Id="83" Count="0" />
+      <LineId Id="19" Count="3" />
+      <LineId Id="61" Count="0" />
+      <LineId Id="84" Count="0" />
+      <LineId Id="62" Count="0" />
+      <LineId Id="92" Count="0" />
+      <LineId Id="24" Count="1" />
+      <LineId Id="27" Count="5" />
+      <LineId Id="34" Count="10" />
+      <LineId Id="46" Count="0" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ProBoxElementBase._M_InitProBoxElement">
+      <LineId Id="29" Count="0" />
+      <LineId Id="7" Count="0" />
+      <LineId Id="48" Count="0" />
+      <LineId Id="8" Count="7" />
+      <LineId Id="49" Count="0" />
+      <LineId Id="17" Count="0" />
+      <LineId Id="55" Count="3" />
+      <LineId Id="54" Count="0" />
+      <LineId Id="18" Count="3" />
+      <LineId Id="28" Count="0" />
+      <LineId Id="22" Count="0" />
+      <LineId Id="24" Count="0" />
+      <LineId Id="36" Count="0" />
+      <LineId Id="43" Count="0" />
+      <LineId Id="26" Count="0" />
+      <LineId Id="39" Count="1" />
+      <LineId Id="38" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ProBoxElementBase._M_MasterSlaveErrorHandling">
+      <LineId Id="67" Count="1" />
+      <LineId Id="99" Count="6" />
+      <LineId Id="113" Count="0" />
+      <LineId Id="106" Count="0" />
+      <LineId Id="96" Count="0" />
+      <LineId Id="107" Count="0" />
+      <LineId Id="110" Count="1" />
+      <LineId Id="109" Count="0" />
+      <LineId Id="97" Count="0" />
+      <LineId Id="59" Count="0" />
+      <LineId Id="61" Count="4" />
+      <LineId Id="53" Count="0" />
+      <LineId Id="71" Count="0" />
+      <LineId Id="70" Count="0" />
+      <LineId Id="74" Count="2" />
+      <LineId Id="80" Count="1" />
+      <LineId Id="78" Count="0" />
+      <LineId Id="83" Count="0" />
+      <LineId Id="82" Count="0" />
+      <LineId Id="54" Count="0" />
+      <LineId Id="13" Count="2" />
+      <LineId Id="31" Count="4" />
+      <LineId Id="5" Count="0" />
+      <LineId Id="43" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ProBoxElementBase._M_StateControl">
+      <LineId Id="3" Count="4" />
+      <LineId Id="18" Count="0" />
+      <LineId Id="8" Count="1" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ProBoxElementBase.A_DriveControl">
+      <LineId Id="67" Count="0" />
+      <LineId Id="66" Count="0" />
+      <LineId Id="68" Count="1" />
+      <LineId Id="61" Count="0" />
+      <LineId Id="2" Count="1" />
+      <LineId Id="62" Count="0" />
+      <LineId Id="39" Count="0" />
+      <LineId Id="4" Count="0" />
+      <LineId Id="63" Count="0" />
+      <LineId Id="5" Count="5" />
+      <LineId Id="13" Count="3" />
+      <LineId Id="84" Count="1" />
+      <LineId Id="97" Count="0" />
+      <LineId Id="96" Count="0" />
+      <LineId Id="75" Count="0" />
+      <LineId Id="107" Count="0" />
+      <LineId Id="76" Count="0" />
+      <LineId Id="93" Count="0" />
+      <LineId Id="77" Count="3" />
+      <LineId Id="87" Count="0" />
+      <LineId Id="94" Count="1" />
+      <LineId Id="83" Count="0" />
+      <LineId Id="74" Count="0" />
+      <LineId Id="29" Count="1" />
+      <LineId Id="106" Count="0" />
+      <LineId Id="33" Count="0" />
+      <LineId Id="70" Count="0" />
+      <LineId Id="35" Count="3" />
+      <LineId Id="1" Count="0" />
+      <LineId Id="99" Count="6" />
+      <LineId Id="40" Count="0" />
+      <LineId Id="51" Count="3" />
+      <LineId Id="71" Count="0" />
+      <LineId Id="56" Count="4" />
+      <LineId Id="42" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ProBoxElementBase.A_HandleFunctions">
+      <LineId Id="2" Count="5" />
+      <LineId Id="70" Count="7" />
+      <LineId Id="13" Count="55" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ProBoxElementBase.A_Init">
+      <LineId Id="2" Count="14" />
+      <LineId Id="85" Count="0" />
+      <LineId Id="17" Count="8" />
+      <LineId Id="65" Count="0" />
+      <LineId Id="26" Count="1" />
+      <LineId Id="82" Count="2" />
+      <LineId Id="28" Count="3" />
+      <LineId Id="35" Count="2" />
+      <LineId Id="78" Count="1" />
+      <LineId Id="66" Count="0" />
+      <LineId Id="69" Count="0" />
+      <LineId Id="67" Count="0" />
+      <LineId Id="40" Count="4" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ProBoxElementBase.A_InputMapping">
+      <LineId Id="2" Count="3" />
+      <LineId Id="11" Count="14" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ProBoxElementBase.A_ManualControl">
+      <LineId Id="2" Count="19" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ProBoxElementBase.A_OutputMapping">
+      <LineId Id="2" Count="3" />
+      <LineId Id="15" Count="9" />
+      <LineId Id="64" Count="2" />
+      <LineId Id="28" Count="9" />
+      <LineId Id="1" Count="0" />
+      <LineId Id="71" Count="1" />
+      <LineId Id="143" Count="0" />
+      <LineId Id="149" Count="1" />
+      <LineId Id="145" Count="3" />
+      <LineId Id="152" Count="1" />
+      <LineId Id="116" Count="0" />
+      <LineId Id="151" Count="0" />
+      <LineId Id="128" Count="0" />
+      <LineId Id="120" Count="0" />
+      <LineId Id="157" Count="0" />
+      <LineId Id="154" Count="0" />
+      <LineId Id="123" Count="0" />
+      <LineId Id="142" Count="0" />
+      <LineId Id="125" Count="0" />
+      <LineId Id="127" Count="0" />
+      <LineId Id="155" Count="1" />
+      <LineId Id="109" Count="0" />
+      <LineId Id="95" Count="0" />
+      <LineId Id="112" Count="0" />
+      <LineId Id="163" Count="0" />
+      <LineId Id="113" Count="0" />
+      <LineId Id="137" Count="0" />
+      <LineId Id="164" Count="1" />
+      <LineId Id="160" Count="0" />
+      <LineId Id="162" Count="0" />
+      <LineId Id="166" Count="0" />
+      <LineId Id="161" Count="0" />
+      <LineId Id="99" Count="0" />
+      <LineId Id="134" Count="0" />
+      <LineId Id="101" Count="0" />
+      <LineId Id="106" Count="0" />
+      <LineId Id="105" Count="0" />
+      <LineId Id="74" Count="0" />
+      <LineId Id="139" Count="2" />
+      <LineId Id="138" Count="0" />
+      <LineId Id="75" Count="0" />
+      <LineId Id="68" Count="0" />
+      <LineId Id="67" Count="0" />
+      <LineId Id="136" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ProBoxElementBase.A_StateControl">
+      <LineId Id="9" Count="0" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ProBoxElementBase.P_DisableAxis12.Set">
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ProBoxElementBase.P_EmuSpeed.Set">
+      <LineId Id="5" Count="0" />
+      <LineId Id="2" Count="0" />
+      <LineId Id="6" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ProBoxElementBase.P_InhibitDrive.Get">
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ProBoxElementBase.P_InhibitDrive.Set">
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ProBoxElementBase.P_OverrideManualDrive.Get">
+      <LineId Id="2" Count="0" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ProBoxElementBase.P_OverrideManualDrive.Set">
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ProBoxElementBase.P_RegisterFuncton.Get">
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ProBoxElementBase.P_RegisterFuncton.Set">
+      <LineId Id="2" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

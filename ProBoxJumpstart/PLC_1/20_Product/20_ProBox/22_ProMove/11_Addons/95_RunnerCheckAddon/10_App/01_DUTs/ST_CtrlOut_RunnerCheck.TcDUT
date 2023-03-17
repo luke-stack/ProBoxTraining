@@ -1,0 +1,11 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <DUT Name="ST_CtrlOut_RunnerCheck" Id="{f1b8c75b-e2fd-4fdf-a388-d3982aaed454}">
+    <Declaration><![CDATA[TYPE ST_CtrlOut_RunnerCheck :
+STRUCT
+	RunnerCheckResult	: BOOL; //TRUE = OK, FALSE = FAIL. (valid when transportControl.Occupied is true)
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

@@ -1,0 +1,13 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <DUT Name="ST_CFG_PalletMagazine" Id="{1d47c5cc-8eba-49ed-9153-7814f56e5d5a}">
+    <Declaration><![CDATA[TYPE ST_CFG_PalletMagazine :
+STRUCT
+	TimeoutValueLift 			: TIME := T#10S; 	// Timeout value for lifting
+	TimeoutValueSeq				: TIME := T#1M;		// Timeout value entire sequence
+	IdleStacking				: BOOL := FALSE; 	// Optimize stacking. Enables lifting of TU if the pallet magazine chain/roller has to run without moving the pallet.
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

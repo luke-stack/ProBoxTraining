@@ -1,0 +1,14 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.4">
+  <DUT Name="ST_LS_CfgLiftEncPreset" Id="{2e2e41c2-6856-41c2-a159-b0398f039222}">
+    <Declaration><![CDATA[TYPE ST_LS_CfgLiftEncPreset :
+STRUCT
+	NetId			: T_AmsNetId := '192.31.3.1.2.1'; 	//NetId of EtherCAT Master
+	SlaveAddr		: UINT := 1014; 					//Port Number of EtherCAT Slave
+	Index			: WORD := 16#6003; 					//CoE Object Index	
+	PresetValue		: UDINT;							//Value to write
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

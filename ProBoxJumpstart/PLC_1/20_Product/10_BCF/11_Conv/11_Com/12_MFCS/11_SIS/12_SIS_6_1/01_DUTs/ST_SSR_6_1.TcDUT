@@ -1,0 +1,40 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.12">
+  <DUT Name="ST_SSR_6_1" Id="{ff81044e-e36e-4cab-a5c8-b7bb492555d3}">
+    <Declaration><![CDATA[TYPE ST_SSR_6_1 :
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 404529 $
+ *	Revision date	:	$Date: 2018-04-23 08:21:38 +0200 (Mo., 23 Apr 2018) $
+ *	Last changed by	:	$Author: b7bolm $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/trunk/01_Software/BCF/BCF/JumpStart/20_Product/10_App/11_Com/10_Lib/10_Conv/12_MFCS/11_SIS/01_DUTs/11_SIS_6_1/ST_SSR_6_1.TcDUT $
+ *
+ *	Purpose			:	SSR Structure
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+STRUCT
+	SubsystemName		: STRING(SIS_6_1.POSITION_STRINGLENGTH); // 12 Digit SIS Subsystem name MM-000-0000-000 
+	Mode				: STRING(SIS_6_1.MODE_STRINGLENGTH); // 1 Digit Mode 
+	State				: STRING(SIS_6_1.STATE_STRINGLENGTH); // 1 Digit State
+	SystemInfo			: STRING(SIS_6_1.SSR_SYSTEM_INFO); // 1 Digit system info
+	ErrorState			: STRING(SIS_6_1.ERRORSTATE_STRINGLENGTH); // 1 Digit Error State 
+	ErrorCode			: STRING(SIS_6_1.ERRORCODE_STRINGLENGTH); // 4 Digit error Code 
+	ErrorType			: STRING(SIS_6_1.ERRORTYPE_STRINGLENGTH); // 1 Digit Error Type 
+	ErrorInformation	: STRING(SIS_6_1.ERRORINFORMATION_STRINGLENGTH); // 5 Chars Error Information 
+	Variable			: STRING(SIS_6_1.CONTROLVARIABLE_STRINGLENGTH); // 4 Digit Variable 
+	ReturnCode			: STRING(SIS_6_1.ERRORCODE_STRINGLENGTH); // 4 Digit Return Code 
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

@@ -1,0 +1,16 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <DUT Name="E_CFG_Tilt" Id="{5ea3268b-267d-458a-aba2-b83095ed1f5a}">
+    <Declaration><![CDATA[{attribute 'qualified_only'}
+{attribute 'strict'}
+TYPE E_CFG_Tilt :
+(
+	Undefined, 
+	Right,
+	Left
+	
+);
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

@@ -1,0 +1,15 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.12">
+  <DUT Name="E_DriveMoverInverterType" Id="{f5b2ada0-6d13-4d6a-a0fe-c576e9154ae1}">
+    <Declaration><![CDATA[{attribute 'qualified_only'}
+{attribute 'strict'}
+TYPE E_DriveMoverInverterType :
+(
+	Unknown, 
+	SEW_MovidriveB,
+	ABB_ACS880
+);
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

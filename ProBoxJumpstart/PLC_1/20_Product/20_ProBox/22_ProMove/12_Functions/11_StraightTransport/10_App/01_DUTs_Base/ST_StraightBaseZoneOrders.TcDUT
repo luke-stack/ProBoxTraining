@@ -1,0 +1,15 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.4">
+  <DUT Name="ST_StraightBaseZoneOrders" Id="{0d5494ba-fd30-4ec5-8798-43cfa83198d7}">
+    <Declaration><![CDATA[//Probox Straight function zone orders. 
+TYPE ST_StraightBaseZoneOrders :
+STRUCT
+	Enable			: BOOL; // Zone enables transport axis 1-2
+	Drive_Run 		: BOOL; // Drive run command axis 1-2 forward
+	Drive_RunRev	: BOOL; // Drive run command axis 1-2 reverse
+	Speed			: E_ProBoxMotorSpeed; // Speed command axis 1-2
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

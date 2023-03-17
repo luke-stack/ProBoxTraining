@@ -1,0 +1,10 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.4">
+  <DUT Name="A_InstancePath" Id="{40e9b0d1-15ea-4a3d-9495-52ea54147106}">
+    <Declaration><![CDATA[// alias for instance path string
+TYPE
+  A_InstancePath : STRING[255];
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

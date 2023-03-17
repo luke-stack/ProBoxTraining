@@ -1,0 +1,59 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.18">
+  <DUT Name="ST_CFG_STI_Conveyor" Id="{529be422-cfac-4491-b76c-82b46063f563}">
+    <Declaration><![CDATA[TYPE ST_CFG_STI_Conveyor :
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 412555 $
+ *	Revision date	:	$Date: 2018-08-20 13:18:08 +0200 (Mo., 20 Aug 2018) $
+ *	Last changed by	:	$Author: d7herza $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/branches/R1.5.x/01_Software/BCF/BCF/JumpStart/20_Product/10_App/11_Com/10_Lib/10_Conv/13_Sub-Sub/01_DUTs/10_Config/ST_CFG_STI_Conveyor.TcDUT $
+ *
+ *	Purpose			:	Specific configuration for a conveyor Subsystem transport interface
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)	
+STRUCT
+	eExternalFunctionNumber	: E_FunctionNumber; // Function number
+	AdjFunctionNumber		: ST_PositionIdent; // Internal adjacent position
+	TCP_Driver				: ST_CFG_TcpDriver; // Used TCP Channel configuration
+	Inbound					: BOOL; // Is inbound interface - FALSE = Outbound
+	DeleteTU_Data			: BOOL := TRUE; // Inbound: Clears existing TU data slot which corresponds to data provided by the interface, Outbound: Deletes TU in own system after handover
+	tWatchdog				: TIME; // Monitor communicaiton
+	tRetryConnection		: TIME; // Time to retry connection after watchdog error, 0 = off (time must be at least as long that a data exchange is possible)
+	tResendMsg				: TIME; // Minimum time to resend last message, 0 = off
+	tHeartBeat				: TIME; // Time for generating watchdog heart beat
+	OnlyFastSpeed			: BOOL; // Enable means FastSpeed always active, Disable = Controlled by interface
+	SuppressTTC				: BOOL; // Supress the transfer completed message 
+	OverwriteTU_Data		: BOOL := TRUE ; // TRUE = Overwrite existing TU data in the system with data from the interface, FALSE = Use interface data for identifiation only
+END_STRUCT
+END_TYPE
+]]></Declaration>
+    <ObjectProperties>
+      <XmlArchive>
+        <Data>
+          <o xml:space="preserve" t="UMLStereoTypeContainerObject">
+            <v n="IsType" t="UMLType">BaseArea</v>
+            <v n="Stereotype">""</v>
+            <d n="Stereotypes" t="Hashtable" />
+          </o>
+        </Data>
+        <TypeList>
+          <Type n="Hashtable">System.Collections.Hashtable</Type>
+          <Type n="String">System.String</Type>
+          <Type n="UMLStereoTypeContainerObject">{30250973-b110-4e31-b562-c102e042dca4}</Type>
+          <Type n="UMLType">{0197b136-405a-42ee-bb27-fd08b621d0cf}</Type>
+        </TypeList>
+      </XmlArchive>
+    </ObjectProperties>
+  </DUT>
+</TcPlcObject>

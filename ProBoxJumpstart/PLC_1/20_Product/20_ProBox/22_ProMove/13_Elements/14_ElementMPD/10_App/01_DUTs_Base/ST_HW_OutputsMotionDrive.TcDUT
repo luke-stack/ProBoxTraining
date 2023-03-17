@@ -1,0 +1,28 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <DUT Name="ST_HW_OutputsMotionDrive" Id="{0da082ad-8de9-4f5f-bfa2-f14108305af2}">
+    <Declaration><![CDATA[//Outputs to motion driver
+TYPE ST_HW_OutputsMotionDrive :
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision:  $
+ *	Revision date	:	$Date: $
+ *	Last changed by	:	$Author: $
+ *	URL				:	$URL: $
+ *
+ *	Purpose			:	Outputs to motion driver
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ **************************************************************************************)	
+STRUCT
+	EnableDrive					: BOOL; // Send to I/O module to enable the frequency inverter	
+	DriveOutputs				: ST_PDO_DriveOut;	// Output to frequencey inverter	
+	MotionOutputHigh			: BYTE; //Axis motion most significant byte
+	MotionOutputLow				: BYTE; //Axis motion least significant byte
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

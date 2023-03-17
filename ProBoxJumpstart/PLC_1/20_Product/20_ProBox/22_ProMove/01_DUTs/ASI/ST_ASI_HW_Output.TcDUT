@@ -1,0 +1,14 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <DUT Name="ST_ASI_HW_Output" Id="{ce09b0db-cb07-4725-b303-e0a28a9b6004}">
+    <Declaration><![CDATA[TYPE ST_ASI_HW_Output :
+STRUCT
+	A_1_15              AT %Q* : ST_HW_OutputsASi_1_15;  //Slave A 1..15
+	A_16_31             AT %Q* : ST_HW_OutputsASi_16_31; //Slave A 16..31
+	B_1_15              AT %Q* : ST_HW_OutputsASi_1_15;  //Slave B 1..15
+	B_16_31             AT %Q* : ST_HW_OutputsASi_16_31; //Slave B 16..31
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

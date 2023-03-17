@@ -1,0 +1,111 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.4">
+  <POU Name="F_AddDividerToSisString" Id="{b4f43fab-498e-4c84-b250-8b87eab5d3a2}" SpecialFunc="None">
+    <Declaration><![CDATA[// adds '-' divider to a sis string: MMGGGEEEEFFZ -> MM-GGG-EEEE-FF-Z, even if there is already some dividers: M-M-G-G-G-E-E-E-E-F-F-Z -> MM-GGG-EEEE-FF-Z
+FUNCTION PUBLIC F_AddDividerToSisString : STRING[NAME_LENGTH]
+
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 461869 $
+ *	Revision date	:	$Date: 2020-09-25 14:40:24 +0200 (Fr., 25 Sep 2020) $
+ *	Last changed by	:	$Author: d7mangc $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/branches/R1.x/01_Software/BCF/BCF/JumpStart/20_Product/10_BCF/11_Conv/12_E_Functions/10_Helper/F_CreateTU_DataString.TcPOU $
+ *
+ *	Purpose			:	adds divider between subsystem, switchgroup, element, function and zone number
+ * 						String: 'MM-GGG-EEEE-FF-Z'
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * VERSION DATE         INITIALS     DESCRIPTION
+ * 0.0     DD.MM.YYYY   (name)       (explain customized modifications)
+ *
+ **************************************************************************************)
+
+//***********************************************************************************************************
+VAR_INPUT
+	Name				: STRING[NAME_LENGTH]		:= '';
+END_VAR
+
+//***********************************************************************************************************
+VAR
+	Without				: STRING[NAME_LENGTH]		:= '';
+	Result				: STRING[NAME_LENGTH]		:= '';
+	Src					: WORD						:= 0;
+	Dst					: WORD						:= 0;
+	Char				: BYTE						:= 0;
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[
+// initialize
+memset( destAddr:= ADR(Without),  fillByte:= 16#00,  n:= SIZEOF(Without)  );
+memset( destAddr:= ADR(Result),   fillByte:= 16#00,  n:= SIZEOF(Result)   );
+
+
+// has name already divider? ( and remove it)
+Src:= 0;
+Dst:= 0;
+WHILE(Name[Src] <> 16#00)DO
+	Char:= Name[Src];
+	Src := Src + 1;
+
+	// valid characters?
+	IF(Char >= 16#30) AND (Char <= 16#39)THEN
+		Without[Dst]:= Char;
+		Dst:= Dst + 1;
+		CONTINUE;
+
+	ELSIF Char >= 16#2D THEN (* '-' *)
+		CONTINUE;
+	END_IF
+
+	// invalid
+	F_AddDividerToSisString:= Name;
+	RETURN;
+END_WHILE
+
+
+// add divider to specific positions
+Src:= 0;
+Dst:= 0;
+WHILE(Without[Src] <> 16#00)DO
+	// string ends
+	IF Dst >= SIZEOF(Result) THEN
+		Dst:= SIZEOF(Result) - 1; // make space for termination
+		EXIT;
+	END_IF
+	
+	// add divider
+	IF    Src =  2 THEN  Result[Dst]:= 16#2D;  Dst:= Dst + 1;  // MM -> GGG
+	ELSIF Src =  5 THEN  Result[Dst]:= 16#2D;  Dst:= Dst + 1;  // GGG -> EEEE
+	ELSIF Src =  9 THEN  Result[Dst]:= 16#2D;  Dst:= Dst + 1;  // EEEE -> FF
+	ELSIF Src = 11 THEN  Result[Dst]:= 16#2D;  Dst:= Dst + 1;  // FF -> Z
+	END_IF
+	
+	// string ends
+	IF Dst >= SIZEOF(Result)THEN
+		Dst:= SIZEOF(Result) - 1; // make space for termination
+		EXIT;
+	END_IF
+	
+	// copy character
+	Result[Dst]:= Without[Src];
+	
+	// continue
+	Src:= Src + 1;
+	Dst:= Dst + 1;
+END_WHILE
+
+Result[Dst]:= 16#00;
+
+
+// done
+F_AddDividerToSisString:= Result;]]></ST>
+    </Implementation>
+  </POU>
+</TcPlcObject>

@@ -1,0 +1,44 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <DUT Name="ST_CFG_ProBoxElementShuttleForks" Id="{5f68816e-1559-4d2f-8c6a-bd1a2de4bbd1}">
+    <Declaration><![CDATA[//Shuttle car element configurations
+TYPE ST_CFG_ProBoxElementShuttleForks EXTENDS ST_CFG_ProBoxElementBase :
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision:  $
+ *	Revision date	:	$Date: $
+ *	Last changed by	:	$Author: $
+ *	URL				:	$URL: $
+ *
+ *	Purpose			:	Shuttle car element configuration.
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *
+ **************************************************************************************)	
+STRUCT
+	//BrakeTime				: TIME:=T#1S; 			// Time before the brake is applied after running shuttle car conveyor A or B	
+	ConvCFG					: ARRAY[1..GVL_MPD.MAXPDs] OF ST_CFG_PDs_ShuttleForks; //Configuration settings for Pickup and or Deposit functions to the shuttle car
+	TimeOutMove				: TIME := T#30S;		// Shuttle car timeout value
+	CvCC					: DINT := 1000;  		// Encoder value, Center to Center distance if shuttle car has 2 conveyors
+	EncoderHysterisis		: DINT := 5;			// Encoder fluktuation allowed. default is +- 5mm
+	DriveCFG				: ST_CFG_MPD_Drive;		// Shuttle car drive configuration parameters	
+	EnableIdlePosition		: BOOL;					// Enable Idle position for the shuttle car
+	IdlePosition			: DINT := 500;			// Idle position [mm]
+	ApEntryPositions		: ARRAY[1..GVL_PB_SG.NUMBER_OF_AP_PANELS] OF DINT; // Entry position [mm] for each AP cabinet
+	AkEntryPosition			: DINT; // Entry position [mm] for the AK cabinet
+	SgGroupRef				: REFERENCE TO FB_ProBOXSG;	
+	//Lift and Fork configuration
+	ForkLift				: ST_CFG_ShuttleForkLift;		// Fork lift configuration
+	
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

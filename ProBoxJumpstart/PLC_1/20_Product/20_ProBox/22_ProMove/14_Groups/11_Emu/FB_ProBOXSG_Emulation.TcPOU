@@ -1,0 +1,211 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <POU Name="FB_ProBOXSG_Emulation" Id="{d6813ee7-bc30-4c4e-b080-5d23823fcfd9}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK FB_ProBOXSG_Emulation EXTENDS FB_GroupConvEmulation
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 417092 $
+ *	Revision date	:	$Date: 2018-11-14 12:58:58 +0100 (Mi., 14 Nov 2018) $
+ *	Last changed by	:	$Author: q8aberh $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/ProMove/02_Controls/ProBox/03_Implementation/01_DevelopmentProject/01_Software/ProBox_COE/ProBox_DevProj_v1.0/PLC_1/20_Product/11_Emu/14_Groups/10_Lib/10_Conv/FB_DummySG_Emulation.TcPOU $
+ *
+ *	Purpose			:	Emulation switching group.
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+VAR_INPUT
+	Config						: ST_CFG_ProBoxSGEmulation; // Configuration emulation
+END_VAR
+ 
+VAR
+	pGroup						: POINTER TO FB_ProBOXSG; // Address to Group
+	rGroup						: REFERENCE TO FB_ProBOXSG; // Reference to real instance
+	DebugResetButton			: BOOL; //for debug purpose or visualisation
+	DebugStartButton			: BOOL; //for debug purpose or visualisation
+	DebugManualModeSw			: BOOL; //for debug purpose or visualisation
+	DebugResetEmgButton			: BOOL; //for debug purpose or visualisation
+	DebugMcOnButton				: BOOL; //for debug purpose or visualisation
+	
+	EmgStatus 					: ST_EmgStatus :=(eInternal:=TRUE, eExternal:=TRUE, eInternError:=FALSE);
+END_VAR
+
+VAR PERSISTENT
+	Settings					: ST_CFG_ProBoxSGEmulation; // Settings 
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[
+(**************************************************************************************************************
+   Initialization
+***************************************************************************************************************)
+A_Init();
+
+
+(**************************************************************************************************************
+   Update reference
+***************************************************************************************************************)
+A_UpdateReference();
+
+
+(**************************************************************************************************************
+   Emulation
+***************************************************************************************************************)
+// If emulation group is initialized
+IF GroupData.Init THEN
+	
+	// Update real data
+	M_UpdateRealObjectData();	
+
+	// Overwrite inputs
+	A_OverWriteInputs();
+END_IF
+]]></ST>
+    </Implementation>
+    <Action Name="A_Init" Id="{8b484231-ed2f-499a-b83c-071b3adca9ca}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_Init
+ * 	FUNCTION	Initialize emulated group
+ **************************************************************************************)
+ 
+// If group is not initialized
+IF NOT GroupData.Init THEN
+
+	// Check that linked group number is valid
+	IF eGroupNumber > E_GroupNumber.G_BEGIN_GROUP AND
+	   eGroupNumber < E_GroupNumber.G_END_GROUP THEN
+
+		// Load emulation settings	
+		Settings := Config;
+		
+		// Check that the real module is initialized
+		IF F_IsGroupInitialized(eGroupNumber := eGroupNumber) THEN
+			// Module is initialized
+			GroupData.Init := TRUE;
+			
+			// Send debug message
+			DebugMsg := CONCAT('Initialization done. Group: ', GroupRegistry[eGroupNumber].GroupName);
+			fbDebugMsg.M_SendInfoMsg(DebugMsg);
+			
+			// Initialize real module
+			F_InitializeGroup(eGroupNumber := eGroupNumber);
+		END_IF
+	END_IF
+END_IF
+
+
+
+]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="A_OverWriteInputs" Id="{f40c2a1b-5a22-457c-b3f0-cc4d3fe44275}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_OverWriteInputs
+ * 	FUNCTION	Overwrite inputs for emulation
+ **************************************************************************************)
+
+ // Modes
+rGroup.HW_Inputs.AK.OpManAuto				:= NOT DebugManualModeSw;
+
+// Commands
+rGroup.HW_Inputs.AK.OpResetError			:= DebugResetButton;
+rGroup.HW_Inputs.AK.OpAutoOn				:= (Settings.Autostart AND NOT GroupRegistry[rGroup.ConfigGroup.eGroupNumber].rGroupData.Init) OR DebugStartButton;
+rGroup.HW_Inputs.AK.OpMcOff					:= TRUE; //NC Push button
+//rGroup.HW_Inputs.AK.Ext.OpEntryReq				:= TRUE; //NC Auto/EntryRequest.
+
+// Device input states
+MemSet(ADR(rGroup.HW_Inputs.Diag.FeedBackMainContactorOFF),0,SIZEOF(rGroup.HW_Inputs.Diag.FeedBackMainContactorOFF));
+
+rGroup.HW_Inputs.Diag.FireAlarm						:= TRUE;
+rGroup.HW_Inputs.Diag.SupplyCircuitBreaker			:= TRUE;
+rGroup.HW_Inputs.Diag.ASI_BusConfigError				:= FALSE;
+
+DebugResetButton:=FALSE;
+
+//Set Emergency status to "ok"
+rGroup.M_SetEmgStatus(EmgStatus);//EmergencyCircuitOK
+
+
+]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="A_UpdateReference" Id="{0cd7aaae-023a-478d-b98b-d9f5257ee65b}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_UpdateReference
+ * 	FUNCTION	Update reference to real object
+ **************************************************************************************)
+
+// Check valid group number
+IF eGroupNumber > E_GroupNumber.G_BEGIN_GROUP AND
+   eGroupNumber < E_GroupNumber.G_END_GROUP THEN
+
+	// Is reference valid  
+	IF __ISVALIDREF(GroupRegistry[eGroupNumber].rGroup) THEN
+		// Build address to reference
+		pGroup := ADR(GroupRegistry[eGroupNumber].rGroup);
+
+		// If address is possible
+		IF pGroup <> 0 THEN
+			// Build reference to memory
+			rGroup REF= pGroup^;
+		ELSE
+			// Reinitialize module
+			GroupData.Init := FALSE;
+		END_IF
+	ELSE
+		// Reinitialize module
+		GroupData.Init := FALSE;
+	END_IF
+END_IF
+		]]></ST>
+      </Implementation>
+    </Action>
+    <ObjectProperties>
+      <XmlArchive>
+        <Data>
+          <o xml:space="preserve" t="UMLStereoTypeContainerObject">
+            <v n="IsType" t="UMLType">BaseArea</v>
+            <v n="Stereotype">""</v>
+            <d n="Stereotypes" t="Hashtable" />
+          </o>
+        </Data>
+        <TypeList>
+          <Type n="Hashtable">System.Collections.Hashtable</Type>
+          <Type n="String">System.String</Type>
+          <Type n="UMLStereoTypeContainerObject">{30250973-b110-4e31-b562-c102e042dca4}</Type>
+          <Type n="UMLType">{0197b136-405a-42ee-bb27-fd08b621d0cf}</Type>
+        </TypeList>
+      </XmlArchive>
+    </ObjectProperties>
+    <LineIds Name="FB_ProBOXSG_Emulation">
+      <LineId Id="3" Count="24" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ProBOXSG_Emulation.A_Init">
+      <LineId Id="2" Count="31" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ProBOXSG_Emulation.A_OverWriteInputs">
+      <LineId Id="2" Count="12" />
+      <LineId Id="16" Count="1" />
+      <LineId Id="38" Count="0" />
+      <LineId Id="27" Count="10" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ProBOXSG_Emulation.A_UpdateReference">
+      <LineId Id="2" Count="26" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

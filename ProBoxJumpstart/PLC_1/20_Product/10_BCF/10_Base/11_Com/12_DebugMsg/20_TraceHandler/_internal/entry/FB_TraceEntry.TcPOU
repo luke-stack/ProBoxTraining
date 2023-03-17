@@ -1,0 +1,293 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.4">
+  <POU Name="FB_TraceEntry" Id="{fb5fd69e-2153-459c-bf1e-106c33ca0c67}" SpecialFunc="None">
+    <Declaration><![CDATA[// represents one trace entry (line)
+{attribute 'enable_dynamic_creation'}
+{attribute 'hide'}
+FUNCTION_BLOCK INTERNAL FB_TraceEntry
+
+(********************************************************************************************************************************)
+VAR_STAT CONSTANT
+  DIVIDER               : STRING[3]                        := ',  ';
+END_VAR
+
+(********************************************************************************************************************************)
+VAR
+  _Valid                : BOOL                             := FALSE; // dynamic memory allocation succesful
+  (*-- instance ----------------------------------------------------------------------------------------------------------------*)
+  _DateTime             : Tc2_Utilities.TIMESTRUCT;                  // timestamp of trace entry
+  _TaskCounter          : WORD                             := 0;     // counter for put calls within one plc cycle
+  _MsgType              : E_DebugMsgType                   := E_DebugMsgType.ERROR;  // debug type
+  (*-- instance ----------------------------------------------------------------------------------------------------------------*)
+  _InstanceLength       : WORD                             := 0;     // length 
+  _InstancePtr          : POINTER TO BYTE                  := 0;     // buffer
+  (*-- additional text ---------------------------------------------------------------------------------------------------------*)
+  _TextLength           : WORD                             := 0;     // length
+  _TextPtr              : POINTER TO BYTE                  := 0;     // buffer
+  (*-- only for debugging ------------------------------------------------------------------------------------------------------*)
+  _TextString           : POINTER TO STRING                := 0;    // debugging only
+  _InstanceString       : POINTER TO STRING                := 0;    // debugging only
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[]]></ST>
+    </Implementation>
+    <Folder Name="_internal" Id="{00376bd9-71d7-4915-bf58-6f27fe165afb}" />
+    <Folder Name="Methods" Id="{4bbea409-bb27-454d-abb5-15ff2d380701}" />
+    <Folder Name="Properties" Id="{80842a2b-297f-439d-a4cf-562b931a3188}" />
+    <Property Name="DateTime" Id="{74d1a811-845f-49bf-96ca-48249e74bbff}" FolderPath="Properties\">
+      <Declaration><![CDATA[// timestamp of trace entry
+//{attribute 'monitoring' := 'call'}  -> not supported yet
+PROPERTY PUBLIC DateTime : Tc2_Utilities.TIMESTRUCT]]></Declaration>
+      <Get Name="Get" Id="{b8b38788-f300-4503-acec-fd14201e92dd}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[DateTime:= _DateTime;]]></ST>
+        </Implementation>
+      </Get>
+    </Property>
+    <Method Name="FB_exit" Id="{d6e56a20-71b3-4ea7-bad5-ca9886018c71}" FolderPath="_internal\">
+      <Declaration><![CDATA[METHOD FB_exit : BOOL
+
+(********************************************************************************************************************************)
+VAR_INPUT
+	bInCopyCode : BOOL; // if TRUE, the exit method is called for exiting an instance that is copied afterwards (online change).
+  (*----------------------------------------------------------------------------------------------------------------------------*)
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+(********************************************************************************************************************************)
+(** clean up ressources *********************************************************************************************************)
+IF (_InstancePtr <> 0)  THEN  __DELETE(_InstancePtr);  END_IF
+IF (_TextPtr     <> 0)  THEN  __DELETE(_TextPtr);      END_IF
+
+
+
+
+(********************************************************************************************************************************)
+(** done ************************************************************************************************************************)
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="FB_init" Id="{e8f270ca-5b8f-4290-8755-d22829384330}" FolderPath="_internal\">
+      <Declaration><![CDATA[{attribute 'hide'}
+METHOD FB_init : BOOL
+
+(********************************************************************************************************************************)
+VAR_INPUT
+	bInitRetains          : BOOL; // if TRUE, the retain variables are initialized (warm start / cold start)
+	bInCopyCode           : BOOL;  // if TRUE, the instance afterwards gets moved into the copy code (online change)
+  (*----------------------------------------------------------------------------------------------------------------------------*)
+  DateTime              : Tc2_Utilities.TIMESTRUCT;                  // timestamp of trace entry
+  TaskCounter           : WORD                             := 0;     // counter for put calls within one plc cycle
+ xMsgType               : E_DebugMsgType                   := E_DebugMsgType.ERROR;
+ xInstance              : POINTER TO BYTE                  := 0;     // pointer to string
+  Text                  : POINTER TO BYTE                  := 0;     // text to trace
+END_VAR  // leading x in the name: Beckhoff support case CH-29439
+
+(********************************************************************************************************************************)
+VAR
+  Empty                : STRING[3]                         := '';
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+(********************************************************************************************************************************)
+(********************************************************************************************************************************)
+_DateTime   := DateTime;
+_TaskCounter:= TaskCounter;
+_MsgType    := xMsgType;
+
+
+
+
+(********************************************************************************************************************************)
+(** check optional input variables **********************************************************************************************)
+Empty:= '';
+IF (xInstance = 0)  THEN  xInstance:= ADR(Empty);  END_IF
+IF (Text      = 0)  THEN  Text     := ADR(Empty);  END_IF
+
+
+
+
+(********************************************************************************************************************************)
+(** determine string lengths ****************************************************************************************************)
+_TextLength    := GetStringLength( Text:= Text      ) + 1;  // count also termination
+_InstanceLength:= GetStringLength( Text:= xInstance ) + 1;  // count also termination
+
+
+
+
+(********************************************************************************************************************************)
+(** request memory **************************************************************************************************************)
+_InstancePtr:= __NEW( BYTE, _InstanceLength );
+IF (_InstancePtr = 0)
+THEN
+  RETURN;
+END_IF
+
+
+_TextPtr:= __NEW( BYTE, _TextLength );
+IF (_TextPtr = 0)
+THEN
+  RETURN;
+END_IF
+
+
+
+
+(********************************************************************************************************************************)
+(** copy texts ******************************************************************************************************************)
+F_StringCopy(DestStart:= _TextPtr,      DestEnd:= _TextPtr     + _TextLength,      Source:= Text       );
+F_StringCopy(DestStart:= _InstancePtr,  DestEnd:= _InstancePtr + _InstanceLength,  Source:= xInstance  );
+
+_InstanceString:= _InstancePtr; // debugging reason
+_TextString    := _TextPtr;     // debugging reason
+
+
+
+
+(********************************************************************************************************************************)
+(** done ************************************************************************************************************************)
+_Valid:= TRUE;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="GetStringLength" Id="{39c743ec-c0d3-4a02-b6ab-50556552da1a}" FolderPath="_internal\">
+      <Declaration><![CDATA[// determines length of the string
+{attribute 'hide'}
+METHOD PROTECTED GetStringLength : WORD
+
+(********************************************************************************************************************************)
+VAR_INPUT
+  Text                  : POINTER TO BYTE                  := 0;     // text to trace
+END_VAR
+
+(********************************************************************************************************************************)
+VAR
+  Idx                   : WORD                             := 0;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+(********************************************************************************************************************************)
+(** search for zero termination *************************************************************************************************)
+Idx:= 0;
+WHILE(Text^ <> 16#00)
+DO
+  Text:= Text + SIZEOF(Text^);
+  Idx := Idx  + 1;
+END_WHILE
+
+
+
+
+(********************************************************************************************************************************)
+(** done ************************************************************************************************************************)
+GetStringLength:= Idx;]]></ST>
+      </Implementation>
+    </Method>
+    <Property Name="InstancePtr" Id="{56c3d9e3-671d-4be3-99ff-f4de47592aa5}" FolderPath="Properties\">
+      <Declaration><![CDATA[// pointer to instance data
+{attribute 'monitoring' := 'call'}
+PROPERTY PUBLIC InstancePtr : POINTER TO BYTE]]></Declaration>
+      <Get Name="Get" Id="{6540b87c-4ee5-4bdf-aab6-bd7b966d7c44}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[InstancePtr:= _InstancePtr;]]></ST>
+        </Implementation>
+      </Get>
+    </Property>
+    <Method Name="IsEqualDate" Id="{fa2e683d-8adc-48fc-bed6-3e1c399a24c6}" FolderPath="Methods\">
+      <Declaration><![CDATA[METHOD PUBLIC IsEqualDate : BOOL
+
+(********************************************************************************************************************************)
+VAR_INPUT
+  DateStruct            : TIMESTRUCT;                                          // date to compare
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+(********************************************************************************************************************************)
+(** check date is valid *********************************************************************************************************)
+IF   (_DateTime.wDay   = 0)  THEN  IsEqualDate:= TRUE;  RETURN;
+ELSIF(_DateTime.wMonth = 0)  THEN  IsEqualDate:= TRUE;  RETURN;
+ELSIF(_DateTime.wYear  = 0)  THEN  IsEqualDate:= TRUE;  RETURN;
+END_IF
+
+
+
+
+(********************************************************************************************************************************)
+(** compare *********************************************************************************************************************)
+IF   (_DateTime.wDay   <> DateStruct.wDay)    THEN  IsEqualDate:= FALSE;  RETURN;
+ELSIF(_DateTime.wMonth <> DateStruct.wMonth)  THEN  IsEqualDate:= FALSE;  RETURN;
+ELSIF(_DateTime.wYear  <> DateStruct.wYear)   THEN  IsEqualDate:= FALSE;  RETURN;
+END_IF
+
+
+
+
+(********************************************************************************************************************************)
+(** done ************************************************************************************************************************)
+IsEqualDate:= TRUE;]]></ST>
+      </Implementation>
+    </Method>
+    <Property Name="MsgType" Id="{b13f7fbc-eb3a-431c-a27b-2549756e6ca0}" FolderPath="Properties\">
+      <Declaration><![CDATA[// debug type
+{attribute 'monitoring' := 'call'}
+PROPERTY PUBLIC MsgType : E_DebugMsgType]]></Declaration>
+      <Get Name="Get" Id="{b8dd9956-a28f-4750-9de0-f9fab7a43bbd}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[MsgType:= _MsgType;]]></ST>
+        </Implementation>
+      </Get>
+    </Property>
+    <Property Name="TaskCounter" Id="{6511e402-7622-44b1-8e3b-5f6e2ee0a905}" FolderPath="Properties\">
+      <Declaration><![CDATA[// counter for put calls within one plc cycle
+{attribute 'monitoring' := 'call'}
+PROPERTY PUBLIC TaskCounter : WORD]]></Declaration>
+      <Get Name="Get" Id="{0f36c890-8941-4287-92e0-faf6a1478538}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[TaskCounter:= _TaskCounter;]]></ST>
+        </Implementation>
+      </Get>
+    </Property>
+    <Property Name="TextPtr" Id="{ee8f1a17-3d6f-4255-90cc-e711148530d1}" FolderPath="Properties\">
+      <Declaration><![CDATA[// pointer to text data
+{attribute 'monitoring' := 'call'}
+PROPERTY PUBLIC TextPtr : POINTER TO BYTE]]></Declaration>
+      <Get Name="Get" Id="{38b04f33-112f-4728-a028-a69b564cdf9a}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[TextPtr:= _TextPtr;]]></ST>
+        </Implementation>
+      </Get>
+    </Property>
+    <Property Name="Valid" Id="{7300af7c-d6c4-4eda-be34-6d9f562c232f}" FolderPath="Properties\">
+      <Declaration><![CDATA[// dynamic memory allocation succesful
+{attribute 'monitoring' := 'call'}
+PROPERTY PUBLIC Valid : BOOL]]></Declaration>
+      <Get Name="Get" Id="{940f7c6e-01cb-4b6f-85ec-d79d87dbbaf0}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[Valid:= _Valid;]]></ST>
+        </Implementation>
+      </Get>
+    </Property>
+  </POU>
+</TcPlcObject>

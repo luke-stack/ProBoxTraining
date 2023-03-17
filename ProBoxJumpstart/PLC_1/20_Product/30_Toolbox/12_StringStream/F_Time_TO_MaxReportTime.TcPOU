@@ -1,0 +1,33 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4020.6">
+  <POU Name="F_Time_TO_MaxReportTime" Id="{878ab19e-eb71-4c4b-b2ce-8a0a15180e20}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION F_Time_TO_MaxReportTime : STRING
+VAR_INPUT
+	TIN: TIME;
+END_VAR
+VAR
+	TempOT	:OTSTRUCT;
+	TempHr	:STRING(2);
+	TempMinute	:STRING(2);
+	TempSecond	:STRING(2);
+
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[	
+TempOT:= TIME_TO_OTSTRUCT(TIN:=TIN );
+TempHr:= F_StuffString(InputString := WORD_TO_STRING(TempOT.wHour),StringLength	:= 2,StuffCharacter:= '0',LeftAligned := FALSE);
+TempMinute:= F_StuffString(InputString := WORD_TO_STRING(TempOT.wMinute),StringLength	:= 2,StuffCharacter:= '0',LeftAligned := FALSE);
+TempSecond:= F_StuffString(InputString := WORD_TO_STRING(TempOT.wSecond),StringLength	:= 2,StuffCharacter:= '0', LeftAligned := FALSE);
+
+
+F_Time_TO_MaxReportTime:= CONCAT(F_Time_TO_MaxReportTime,TempHr);
+F_Time_TO_MaxReportTime:= CONCAT(F_Time_TO_MaxReportTime,':');
+F_Time_TO_MaxReportTime:= CONCAT(F_Time_TO_MaxReportTime,TempMinute);
+F_Time_TO_MaxReportTime:= CONCAT(F_Time_TO_MaxReportTime,':');
+F_Time_TO_MaxReportTime:= CONCAT(F_Time_TO_MaxReportTime,TempSecond);
+
+]]></ST>
+    </Implementation>
+  </POU>
+</TcPlcObject>

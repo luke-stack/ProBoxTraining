@@ -1,0 +1,17 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <DUT Name="ST_CtrlInMPD_Control" Id="{b80483c4-e345-4ef2-b8bd-f2d87d5df7e5}">
+    <Declaration><![CDATA[TYPE ST_CtrlInMPD_Control :
+STRUCT
+	RequestEntry		: BOOL;		//TRUE= Requests MPD driver to move SC/VC to the RequestEntryPosition 
+	RequestEntryPos		: DINT;		//Entry position of the requested position in [mm]
+	//RequestEntryDone: BOOL; 	//Remove the request?
+	
+	HoldPosition		: BOOL; 		// Hold the position after pickup or deposit.(the element enable status is true and it is possible to adjust VC height with M_AutoAdjustVcHeight)
+	
+	SemiDriveCtrl		: ST_MPD_SemiDriveControl;
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

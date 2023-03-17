@@ -1,0 +1,38 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4020.6">
+  <Itf Name="I_TrackingMaster" Id="{2395bae8-fdae-4cdd-8797-46bb2496215e}">
+    <Declaration><![CDATA[/// TrackingMaster - Allows access to WindowTracking
+INTERFACE I_TrackingMaster EXTENDS __SYSTEM.IQueryInterface 
+]]></Declaration>
+    <Property Name="P_TrackingReady" Id="{aae3e85c-4b48-4f50-b5ce-86fec8576f0d}">
+      <Declaration><![CDATA[/// Tracking is ready for interactions (e.g. Conveyor is on constant speed)
+PROPERTY P_TrackingReady : BOOL]]></Declaration>
+      <Get Name="Get" Id="{875e4818-6aa6-4dda-8935-53019a9cd610}">
+        <Declaration><![CDATA[]]></Declaration>
+      </Get>
+    </Property>
+    <Property Name="P_WindowTracking" Id="{c5787c80-d57e-4455-ac32-2f3848de25f5}">
+      <Declaration><![CDATA[PROPERTY P_WindowTracking : I_WindowTracking]]></Declaration>
+      <Get Name="Get" Id="{8b2ab2bd-690b-4bea-8728-86546e45b9c3}">
+        <Declaration><![CDATA[]]></Declaration>
+      </Get>
+    </Property>
+    <ObjectProperties>
+      <XmlArchive>
+        <Data>
+          <o xml:space="preserve" t="UMLStereoTypeContainerObject">
+            <v n="IsType" t="UMLType">BaseArea</v>
+            <v n="Stereotype">""</v>
+            <d n="Stereotypes" t="Hashtable" />
+          </o>
+        </Data>
+        <TypeList>
+          <Type n="Hashtable">System.Collections.Hashtable</Type>
+          <Type n="String">System.String</Type>
+          <Type n="UMLStereoTypeContainerObject">{30250973-b110-4e31-b562-c102e042dca4}</Type>
+          <Type n="UMLType">{0197b136-405a-42ee-bb27-fd08b621d0cf}</Type>
+        </TypeList>
+      </XmlArchive>
+    </ObjectProperties>
+  </Itf>
+</TcPlcObject>

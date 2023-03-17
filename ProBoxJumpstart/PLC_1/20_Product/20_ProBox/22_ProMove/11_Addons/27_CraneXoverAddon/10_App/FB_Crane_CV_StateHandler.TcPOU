@@ -1,0 +1,713 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <POU Name="FB_Crane_CV_StateHandler" Id="{165af8c2-87b2-4247-8f3d-17fa8fa7659e}" SpecialFunc="None">
+    <Declaration><![CDATA[//{attribute 'hide_all_locals'}
+FUNCTION_BLOCK INTERNAL FB_Crane_CV_StateHandler
+(**************************************************************************************
+ * 	Application		:	ProBox Framework
+ *	Revision		:	$Revision:  $
+ *	Revision date	:	$Date: ) $
+ *	Last changed by	:	$Author: q8hedls $
+ *	URL				:	$URL:  $
+ *
+ *	Purpose			:	Process the statemachine for handover or takeover.
+ *					:	Usage. call for M_SetConfig once before usage. 
+ **************************************************************************************)
+
+VAR	
+	//Config parameters
+	_SettingsFunction					: ST_CFG_Function;			 //the settings of the base element.
+	_HandlerType 						: E_CvCraneHandlerType := E_CvCraneHandlerType.eTYPE_UNKNOWN;
+	_TakeoverFunctionName				: STRING(NAME_LENGTH); // Takeover Conveyor position where the TU is read, shall be included in TTQ request
+	
+	//internal Variables (Private)	
+	_ElementTranspData					: REFERENCE TO ST_TransportControlData;	 //TransportControldata from base FB_FunctionConv	
+	_LastState 							: E_Conveyor_InterfaceState := E_Conveyor_InterfaceState.UNKNOWN;
+	_State 								: E_Conveyor_InterfaceState := E_Conveyor_InterfaceState.UNKNOWN;
+	
+	//watchdog (life Flag)	
+	_WatchDogTimoutTimer			: TON;
+	_FlagWatchdog					: BOOL; // Memorize last watchdog state		
+END_VAR]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[]]></ST>
+    </Implementation>
+    <Method Name="_M_LifeFlag" Id="{40a6ccc1-00fb-4d06-8708-392abc140932}">
+      <Declaration><![CDATA[METHOD PRIVATE _M_LifeFlag : BOOL
+VAR_INPUT
+	ConvInterfaceFromCrane		:REFERENCE TO ST_Conveyor_Interface_5_1; //data structure that is received from CRANE	
+END_VAR
+VAR_IN_OUT
+	ErrorData 					: ST_ErrorDataSet; // Error data
+	ConvInterfaceToCrane		: ST_Conveyor_Interface_5_1; //data structure that will be sent over to CRANE	
+END_VAR
+VAR
+	HandoverActionPending : BOOL;
+	TakeoverActionPending : BOOL;
+END_VAR
+
+//return: 	True = no error
+//			False = Timeout Error]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+	
+
+	HandoverActionPending := _HandlerType = E_CvCraneHandlerType.eTYPE_HANDOVER AND
+						 	ConvInterfaceToCrane.HandOverState >= E_Conveyor_InterfaceState.HANDOVERACTIVE AND 
+							ConvInterfaceToCrane.HandOverState < E_Conveyor_InterfaceState.HANDOVERCOMPLETE;
+
+	TakeoverActionPending := _HandlerType = E_CvCraneHandlerType.eTYPE_TAKEOVER AND
+					 		ConvInterfaceToCrane.TakeOverState > E_Conveyor_InterfaceState.TAKEOVERACTIVE AND 
+							ConvInterfaceToCrane.TakeOverState < E_Conveyor_InterfaceState.TAKEOVERCOMPLETE;
+						
+						
+	_M_LifeFlag := FALSE;
+		
+	//mirror back the watchdog flag
+	ConvInterfaceToCrane.Watchdog := ConvInterfaceFromCrane.Watchdog;
+	_WatchDogTimoutTimer(IN := ConvInterfaceFromCrane.Watchdog = _FlagWatchdog, PT := T#2S);
+	_FlagWatchdog := ConvInterfaceToCrane.Watchdog;
+	
+	
+	// check if timout ooccured, only valid if handing over is pending.
+	IF (_WatchDogTimoutTimer.Q AND (HandoverActionPending OR TakeoverActionPending)) THEN
+		//yes, timout error. if already in error state, then do not overwirte error
+		IF(ErrorData.ErrorType <> E_ErrorType.ERROR) THEN
+			// Timeout Error
+			F_SetError( ErrorType	:= E_ErrorType.ERROR,
+						ErrorParam	:= 'Watchdog timeout Crane-Conveyor',
+						ErrorMsg 	:= E_ErrorConv.TIMEOUT_COMMUNICATION,
+						ErrorData	:= ErrorData);	
+		END_IF
+		RETURN;
+	END_IF
+	
+	_M_LifeFlag := TRUE;
+	
+
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_ProcessHandover" Id="{e93a3a4e-f79f-4c9a-ab22-484568eeb453}">
+      <Declaration><![CDATA[METHOD PRIVATE _M_ProcessHandover
+(**************************************************************************************
+ * 	Application		:	ProBox Framework
+ *	Purpose			:	Process Handover state machine.
+						Handover equals the pickup position. ie TU transferred from conveyor to Crane 						
+ *  Return			:	void
+ **************************************************************************************)
+
+
+VAR_INPUT
+	ConvInterfaceFromCrane	: REFERENCE TO ST_Conveyor_Interface_5_1;// Data received from Crane
+	PositionOccupied		: BOOL;						//The physical or Logical sensor signal True=active/TU present.
+	EnableHandover			: BOOL;		 				//Handover is possible. (Conditions are fulfilled)	
+END_VAR
+VAR_IN_OUT
+	ConvInterfaceToCrane	: ST_Conveyor_Interface_5_1;//data structure that will be sent over to CRANE
+	ErrorData 				: ST_ErrorDataSet; 			// Error data
+END_VAR
+
+
+VAR
+	//Inputs: INT;
+	i:INT;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+
+CASE _State OF
+// ------------------------------------------------------------------------------------------------------------	
+	E_Conveyor_InterfaceState.UNKNOWN:
+		//update interface data that will be sent to crane
+		ConvInterfaceToCrane.HandOverState := E_Conveyor_InterfaceState.UNKNOWN ;
+		ConvInterfaceToCrane.TakeOverState := E_Conveyor_InterfaceState.UNKNOWN;
+		ConvInterfaceToCrane.NbrOfTUs:=0;
+		
+		MEMSET(ADR(ConvInterfaceToCrane),0, SIZEOF(ST_Conveyor_Interface_5_1.TUs));
+    	ConvInterfaceToCrane.TUs[1].TU_ID := TU_ID_UNKNOWN;		
+		ConvInterfaceToCrane.NbrOfTUs :=0;
+		
+		
+		//ready for next state
+		_LastState:=_State;
+		_State := E_Conveyor_InterfaceState.IDLE;
+		
+	
+// ------------------------------------------------------------------------------------------------------------		
+	E_Conveyor_InterfaceState.IDLE:
+				
+		IF(THIS^._ElementTranspData.eTransportState = E_TransportState.OCCUPIED AND NOT PositionOccupied AND EnableHandover) THEN
+			// TU logical present but sensor do not detect TU
+			F_SetError(
+					ErrorType	:= E_ErrorType.ERROR,
+					ErrorParam	:= 'Occupied sensor do not detect TU',
+					ErrorMsg 	:= E_ErrorConv.POSITION_OCCUPIED_BEFORE_TAKEOVER,
+					ErrorData	:= ErrorData); 	
+					
+		ELSIF( THIS^._ElementTranspData.eTransportState = E_TransportState.OCCUPIED AND PositionOccupied AND EnableHandover AND
+			(ConvInterfaceFromCrane.TakeOverState = E_Conveyor_InterfaceState.IDLE OR 
+			 ConvInterfaceFromCrane.TakeOverState = E_Conveyor_InterfaceState.READYFORTAKEOVER)) THEN
+			
+			//ready for next state
+			ConvInterfaceToCrane.TUs[1].TU_ID := TU_Table.TU_DataTable[_ElementTranspData.TU_DataIndex].TU_ID.ASCII;
+			ConvInterfaceToCrane.TUs[1].TU_Type := TU_Table.TU_DataTable[_ElementTranspData.TU_DataIndex].DataSet.TU_Type;
+			ConvInterfaceToCrane.NbrOfTUs :=1;
+			_LastState:=_State;
+			_State := E_Conveyor_InterfaceState.READYTOHANDOVER;	
+		END_IF
+
+// ------------------------------------------------------------------------------------------------------------	
+	E_Conveyor_InterfaceState.READYTOHANDOVER:
+		
+		IF( _ElementTranspData.eTransportState = E_TransportState.OCCUPIED AND PositionOccupied AND EnableHandover) THEN
+			IF(ConvInterfaceFromCrane.TakeOverState = E_Conveyor_InterfaceState.TAKEOVERACTIVE) THEN
+				//ready for next state
+				_LastState:=_State;
+				_State := E_Conveyor_InterfaceState.HANDOVERACTIVE;
+			END_IF
+		ELSE
+			//ready for next state
+			_LastState:=_State;
+			_State := E_Conveyor_InterfaceState.IDLE;
+		END_IF
+		
+		
+
+// ------------------------------------------------------------------------------------------------------------	
+	E_Conveyor_InterfaceState.HANDOVERACTIVE:
+			
+		//Crane is in stop -> to to interupted
+		IF( ConvInterfaceFromCrane.TakeOverState = E_Conveyor_InterfaceState.TAKEOVERSTOP) THEN
+			//ready for next state
+			_LastState:=_State;
+			_State := E_Conveyor_InterfaceState.HANDOVERINTERRUPTED;	
+		
+		//Error is active or other criteria is not fulfilled -> go to stop
+		ELSIF(NOT EnableHandover)THEN			
+			//Set next state
+			_LastState:=_State;
+			_State := E_Conveyor_InterfaceState.HANDOVERSTOP;
+		
+		//Crane has finished taking over TU.
+		ELSIF(ConvInterfaceFromCrane.TakeOverState = E_Conveyor_InterfaceState.TAKEOVERCOMPLETE ) THEN
+			
+			IF(PositionOccupied) THEN
+				// crane has picked up TU, but position still occupied
+				F_SetError(
+							ErrorType	:= E_ErrorType.ERROR,
+							ErrorParam	:= 'Position occupied after transmission',
+							ErrorMsg 	:= E_ErrorConv.POSITION_OCCUPIED_AFTER_HANDOVER,
+							ErrorData	:= ErrorData);
+			ELSE
+				//delete TU
+				F_ResetOccupied(eFunctionNumber := _SettingsFunction.FunctionLink.eFunctionNumber,ZoneNumber := _SettingsFunction.FunctionLink.ZoneNumber);
+				F_DeleteTU_Data(TU_DataIndex	:= _ElementTranspData.TU_DataIndex(*,CallSource := 'FB_Crane_CV_Handler-CranePickup'*),NoTTC:= TRUE);	
+	
+				//ready for next state (regardless of PositinOccupied, dont ) 
+				_LastState:=_State;
+				_State := E_Conveyor_InterfaceState.HANDOVERCOMPLETE;
+			END_IF
+		
+		ELSIF(ConvInterfaceFromCrane.TakeOverState = E_Conveyor_InterfaceState.IDLE) THEN
+			//Cancel operation request from crane. (Crane escape, not according to the protocol)
+			_LastState:=_State;
+			_State := E_Conveyor_InterfaceState.IDLE;
+		
+		END_IF
+	
+// ------------------------------------------------------------------------------------------------------------
+
+	E_Conveyor_InterfaceState.HANDOVERSTOP:
+		
+		IF(EnableHandover)THEN
+			//ready for next state
+			_LastState:=_State;
+			_State := E_Conveyor_InterfaceState.HANDOVERACTIVE;
+		ELSIF ConvInterfaceFromCrane.TakeOverState = E_Conveyor_InterfaceState.IDLE THEN 
+			//If crane aborts task to pickup pallet
+			_LastState:=_State;
+			_State := E_Conveyor_InterfaceState.IDLE;			
+		END_IF	
+// ------------------------------------------------------------------------------------------------------------
+
+	E_Conveyor_InterfaceState.HANDOVERINTERRUPTED:
+				
+		IF( ConvInterfaceFromCrane.TakeOverState = E_Conveyor_InterfaceState.TAKEOVERACTIVE OR
+		    ConvInterfaceFromCrane.TakeOverState = E_Conveyor_InterfaceState.IDLE OR
+			ConvInterfaceFromCrane.TakeOverState = E_Conveyor_InterfaceState.TAKEOVERCOMPLETE) THEN
+			//ready for next state
+			_LastState:=_State;
+			_State := E_Conveyor_InterfaceState.HANDOVERACTIVE;		
+		END_IF
+		 
+
+// ------------------------------------------------------------------------------------------------------------
+	E_Conveyor_InterfaceState.HANDOVERCOMPLETE:		
+		IF( ConvInterfaceFromCrane.TakeOverState = E_Conveyor_InterfaceState.IDLE OR 
+			ConvInterfaceFromCrane.TakeOverState = E_Conveyor_InterfaceState.TAKEOVERCOMPLETE) THEN			
+			_LastState:=_State;
+			_State := E_Conveyor_InterfaceState.IDLE;						
+		END_IF	
+
+// ------------------------------------------------------------------------------------------------------------
+	ELSE
+			;//programming error 
+END_CASE
+
+//update interface data that will be sent to crane
+ConvInterfaceToCrane.HandOverState :=_State;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_ProcessTakeover" Id="{bce10e5d-1344-40c7-8cbe-d05b20f3eea0}">
+      <Declaration><![CDATA[METHOD PRIVATE _M_ProcessTakeover
+(**************************************************************************************
+ * 	Application		:	ProBox Framework
+ *	Purpose			:	Process Takeover state machine.
+						Takeover equals crane deposit. ie TU transferred from crane to Conveyor 						
+ *  Return			:	void
+ **************************************************************************************)
+
+VAR_INPUT	
+	ConvInterfaceFromCrane		: REFERENCE TO ST_Conveyor_Interface_5_1; // Data received from Crane
+	PositionOccupied			: BOOL;				 //The physical or Logical sensor signal True=active/TU present.	
+	EnableTakeover				: BOOL;		 		//Takever is possible. (Conditions are fulfilled)	
+	MotorDriveTransfer			: ST_MotorDriver;   //Data used for transfering TU on conveyor to and from crane	
+END_VAR
+VAR_IN_OUT
+	ConvInterfaceToCrane		: ST_Conveyor_Interface_5_1; //data structure that will be sent over to CRANE
+	ErrorData 					: ST_ErrorDataSet; // Error data
+END_VAR
+
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+
+
+	CASE _State OF
+		
+		// ------------------------------------------------------------------------------------------------------------	
+		E_Conveyor_InterfaceState.UNKNOWN:
+		
+			//update interface data that will be sent to crane with initial states.
+			ConvInterfaceToCrane.HandOverState := E_Conveyor_InterfaceState.UNKNOWN;
+			ConvInterfaceToCrane.TakeOverState := E_Conveyor_InterfaceState.UNKNOWN;
+			ConvInterfaceToCrane.NbrOfTUs:=0;
+			//ready for next state
+			_LastState:=_State;
+			_State := E_Conveyor_InterfaceState.IDLE;
+		
+		// ------------------------------------------------------------------------------------------------------------
+		E_Conveyor_InterfaceState.IDLE:			
+		
+			IF( EnableTakeover AND NOT PositionOccupied AND THIS^._ElementTranspData.eTransportState <> E_TransportState.OCCUPIED) THEN
+				//ready for next state
+				_LastState:=_State;
+				_State := E_Conveyor_InterfaceState.READYFORTAKEOVER;	
+			END_IF
+			
+			
+		// ------------------------------------------------------------------------------------------------------------
+		E_Conveyor_InterfaceState.READYFORTAKEOVER:		
+	
+			//check that no zones in element is busy or error, since the chain must not run. (crane placing TU on chain)
+			IF( NOT EnableTakeover OR PositionOccupied OR THIS^._ElementTranspData.eTransportState = E_TransportState.OCCUPIED) THEN
+				_LastState:=_State;
+				_State := E_Conveyor_InterfaceState.IDLE;
+			
+			// Wait for crane to enter ReadyToHandover ie crane has TU to deliver.
+			ELSIF(ConvInterfaceFromCrane.HandOverState = E_Conveyor_InterfaceState.READYTOHANDOVER) THEN
+				//ready for next state
+				_LastState:=_State;
+				_State := E_Conveyor_InterfaceState.TAKEOVERACTIVE;					
+			END_IF				
+			
+		// ------------------------------------------------------------------------------------------------------------
+		E_Conveyor_InterfaceState.TAKEOVERACTIVE:				
+		
+			//Crane is in stop -> to to interupted
+			IF(ConvInterfaceFromCrane.HandOverState = E_Conveyor_InterfaceState.HANDOVERSTOP) THEN
+				_LastState:=_State;
+				_State := E_Conveyor_InterfaceState.TAKEOVERINTERRUPTED;	
+			//Error is active or other criteria is not fulfilled -> go to stop
+			ELSIF( NOT EnableTakeover) THEN 
+				_LastState:=_State;
+				_State := E_Conveyor_InterfaceState.TAKEOVERSTOP;		
+				
+			// Crane has finished handing over TU or TU is present at the TakeoverSensorStop 			
+			ELSIF ((MotorDriveTransfer.FeatureEnabled = FALSE AND ConvInterfaceFromCrane.HandOverState = E_Conveyor_InterfaceState.HANDOVERCOMPLETE)OR
+				   (MotorDriveTransfer.FeatureEnabled = TRUE  AND MotorDriveTransfer.HW_InputsMotorTransfer.TakeoverSensorStop)) THEN
+				IF(NOT PositionOccupied) THEN
+					// Crane has delivered TU, but sensor is not active -> error.
+					F_SetError(	ErrorType	:= E_ErrorType.ERROR,
+								ErrorParam	:= 'Check occupied Sensor',
+								ErrorMsg 	:= E_ErrorConv.POSITION_NOT_CORRECT_OCCUPIED,
+								ErrorData	:= ErrorData);				
+				ELSE
+					//Get TU_ID and send SIS TTQ
+					F_SetOccupied(eFunctionNumber := _SettingsFunction.FunctionLink.eFunctionNumber, ZoneNumber := _SettingsFunction.FunctionLink.ZoneNumber);
+					_M_SendSIS_TTQ(ConvInterfaceFromCrane,_TakeoverFunctionName,TU_DataIndex:=_ElementTranspData.TU_DataIndex, errorData=>ErrorData);					
+					_LastState:=_State;
+					_State := E_Conveyor_InterfaceState.TAKEOVERCOMPLETE;	
+				END_IF
+			ELSIF (ConvInterfaceFromCrane.HandOverState = E_Conveyor_InterfaceState.IDLE) THEN
+				//Cancel operation request from crane. (Crane escape, not according to the protocol)
+				_LastState:=_State;
+				_State := E_Conveyor_InterfaceState.IDLE;				
+			END_IF
+			
+		
+		// ------------------------------------------------------------------------------------------------------------
+		E_Conveyor_InterfaceState.TAKEOVERSTOP:			
+		
+			//ready for active state again..
+			IF(EnableTakeover) then						
+				_LastState:=_State;
+				_State := E_Conveyor_InterfaceState.TAKEOVERACTIVE;
+			END_IF
+			
+		
+		// ------------------------------------------------------------------------------------------------------------
+		E_Conveyor_InterfaceState.TAKEOVERINTERRUPTED:	
+		
+			IF(	ConvInterfaceFromCrane.HandOverState = E_Conveyor_InterfaceState.HANDOVERACTIVE OR 
+				ConvInterfaceFromCrane.HandOverState = E_Conveyor_InterfaceState.HANDOVERCOMPLETE OR
+				ConvInterfaceFromCrane.HandOverState = E_Conveyor_InterfaceState.IDLE) THEN
+				//ready for active state again..
+				_LastState:=_State;
+				_State := E_Conveyor_InterfaceState.TAKEOVERACTIVE;
+			END_IF
+								
+		// ------------------------------------------------------------------------------------------------------------
+		E_Conveyor_InterfaceState.TAKEOVERCOMPLETE:	
+					
+			IF(	ConvInterfaceFromCrane.HandOverState = E_Conveyor_InterfaceState.HANDOVERCOMPLETE OR
+				ConvInterfaceFromCrane.HandOverState = E_Conveyor_InterfaceState.IDLE) THEN
+				// takeover process done!
+				_LastState:=_State;
+				_State := E_Conveyor_InterfaceState.IDLE;
+			END_IF
+		// ------------------------------------------------------------------------------------------------------------
+		ELSE
+			;//programming error
+		
+	END_CASE
+	
+	//update interface data that will be sent to crane
+	ConvInterfaceToCrane.TakeOverState := _State;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_SendSIS_TTQ" Id="{0de76d55-0554-48fc-8612-c9abcec53c46}">
+      <Declaration><![CDATA[METHOD PRIVATE _M_SendSIS_TTQ : BOOL
+(**************************************************************************************
+ * 	Application		:	ProBox Framework
+ *	Purpose			:	1. Create new TU table dataset
+ 						2. Send TTQ
+ *  Return			: BOOL. True if no error occured.
+ **************************************************************************************)
+
+VAR_INPUT	
+	CV_Interface	: REFERENCE TO ST_Conveyor_Interface_5_1; //Crane com interface received from crane 
+	FunctionName	: STRING(NAME_LENGTH); // Conveyor position where the TU is read, shall be included in TTQ request  	
+	TU_DataIndex 	: DINT; //TU_DataIndex for the FUNCTION TO which the addon is attached.
+END_VAR
+
+VAR_OUTPUT
+	ErrorData	: ST_ErrorDataSet; // Error data
+END_VAR
+
+VAR CONSTANT
+	TUsIndex :INT :=1;	// currently NbrOfTUs > 1 not supported. so the index is hard coded.
+END_VAR
+VAR
+	
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[	
+	_M_SendSIS_TTQ:=FALSE;
+
+	//Currently CV_Interface.NbrOfTUs > 1 not supported
+	//CV_Interface.NbrOfTUs = the umber of TU's received from Crane. included in TYPE ST_Conveyor_Interface_5_1
+	IF(CV_Interface.NbrOfTUs<>1) THEN
+		F_SetError( ErrorType 	:= E_ErrorType.ERROR,
+					ErrorParam 	:= '_M_SendSIS_TTQ: NbrOfTUs > 1 not supported',
+					ErrorMsg 	:= E_ErrorConv.NOT_SUPPORTED,
+					ErrorData 	:= ErrorData);
+		RETURN;		
+	END_IF
+
+	
+	// If no index was found for that label (for the Function to which the addon is attached.) -> create one
+	// if dataset already being assigned, skip create new dataset, but send TTQ
+	IF  TU_DataIndex = 0 THEN
+		// Create new data set
+		TU_DataIndex := F_InsertTU_Data(_SettingsFunction.FunctionLink.eFunctionNumber,_SettingsFunction.FunctionLink.ZoneNumber);
+								
+		// If a new index was created
+		IF TU_DataIndex > 0 THEN
+			// Update new TU Data set
+			TU_DataTable[TU_DataIndex].DataSet.DataPresent := TRUE;
+			TU_DataTable[TU_DataIndex].DataSet.NumberOfDest	:= 0;
+			TU_DataTable[TU_DataIndex].Destination[1].eFunctionNumber := E_FunctionNumber.F_BEGIN_FUNCTION;
+			TU_DataTable[TU_DataIndex].Destination[1].ZoneNumber := 0;
+			TU_DataTable[TU_DataIndex].DataSet.TU_Type :=  CV_Interface.TUs[TUsIndex].TU_Type;
+			F_AssignTU_DataIndexToZone(_SettingsFunction.FunctionLink.eFunctionNumber, _SettingsFunction.FunctionLink.ZoneNumber,TU_DataIndex);			
+							
+		// Otherwise no free image slot available
+		ELSE
+			// Error, no free index
+			F_SetError(	ErrorType 	:= E_ErrorType.ERROR,
+						ErrorParam 	:= '',
+						ErrorMsg 	:= E_ErrorConv.NO_FREE_TU_DATA_SET,
+						ErrorData 	:= ErrorData);							
+			
+			RETURN;		
+		END_IF
+	END_IF
+	
+	// SEND TTQ
+	// Update new TU Data set
+	TU_DataTable[TU_DataIndex].DataSet.DataPresent := TRUE;
+	TU_DataTable[TU_DataIndex].TU_ID.ASCII := CV_Interface.TUs[TUsIndex].TU_ID;
+	TU_DataTable[TU_DataIndex].TU_ID.HashCode := F_CreateHashCode(CV_Interface.TUs[TUsIndex].TU_ID);
+	
+	// Send TTQ
+	IF NOT TU_DataTable[TU_DataIndex].DataSet.JobPresent THEN
+		F_ITC_SendTTQ(	eChannelSrc		:= 0, 
+						PositionName	:= F_ReduceToAlphaNumeric(FunctionName), 
+						TU_DataIndex	:= TU_DataIndex, 
+						TU_ID			:= CV_Interface.TUs[TUsIndex].TU_ID, 
+						NbrOfTT			:= 1, 
+						Label			:= '');
+	
+	ELSE
+		;//error??!!
+	END_IF
+
+	//all done!
+	_M_SendSIS_TTQ:=TRUE;
+			]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_ProcessXover" Id="{de2cac43-0da7-4381-b6f7-0e792a35d171}">
+      <Declaration><![CDATA[METHOD INTERNAL M_ProcessXover : BOOL
+VAR_INPUT
+	ConvInterfaceFromCrane		: REFERENCE TO ST_Conveyor_Interface_5_1; // Data received from Crane
+	PositionOccupied			: BOOL;				//The physical or Logical sensor signal True=active/TU present.	
+	Enable						: BOOL;		 		//Handover/Takover is possible. (Conditions are fulfilled)	
+	MotorDriveTransfer			: ST_MotorDriver;   //Data used for transfering TU on conveyor to and from crane
+END_VAR
+VAR_IN_OUT
+	ConvInterfaceToCrane		: ST_Conveyor_Interface_5_1; //data structure that will be sent over to CRANE
+	ErrorData 					: ST_ErrorDataSet; // Error data
+END_VAR
+
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+	// update locals	
+	IF (NOT __ISVALIDREF(FunctionRegistry[_SettingsFunction.FunctionLink.eFunctionNumber].rFunction))THEN
+		F_SetError( ErrorType	:= E_ErrorType.ERROR,
+					ErrorParam	:= 'Setup error. Check FunctionLink.eFunctionNumber',
+					ErrorMsg 	:= E_ErrorConv.CONFIGURATION_ERROR,
+					ErrorData	:= ErrorData);
+		RETURN;	
+	END_IF
+	_ElementTranspData REF= F_PB_GetTransportControlDataRef(_SettingsFunction.FunctionLink.eFunctionNumber,_SettingsFunction.FunctionLink.ZoneNumber);
+	
+	// Depending on how the object were initiated by M_SetConfig either handover or takeover being executed.
+	// Process the state configured, ie handover or takeover
+	// Handover = crane pickup, Takeover = Crane Deposit
+	IF(_HandlerType= E_CvCraneHandlerType.eTYPE_HANDOVER) THEN
+		_M_ProcessHandover(ConvInterfaceFromCrane, PositionOccupied,Enable,ConvInterfaceToCrane,ErrorData);		
+	ELSIF(_HandlerType= E_CvCraneHandlerType.eTYPE_TAKEOVER)THEN		
+		_M_ProcessTakeover(ConvInterfaceFromCrane, PositionOccupied,Enable,MotorDriveTransfer,ConvInterfaceToCrane, errorData);		
+	ELSIF(_HandlerType= E_CvCraneHandlerType.eTYPE_UNKNOWN)THEN
+		F_SetError( ErrorType	:= E_ErrorType.ERROR,
+					ErrorParam	:= 'FB_Crane_CV_Handler not configered correctly',
+					ErrorMsg 	:= E_ErrorConv.CONFIGURATION_ERROR,
+					ErrorData	:= ErrorData); 		
+	ELSIF(_HandlerType= E_CvCraneHandlerType.eType_UNDEFINED)THEN
+		;//no error state
+	END_IF
+		
+	//control Life Flag
+	_M_LifeFlag(ConvInterfaceFromCrane,ErrorData,ConvInterfaceToCrane);
+	
+	]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_SetConfig" Id="{8b3a4b45-3144-4991-8f34-90d6349d2217}">
+      <Declaration><![CDATA[METHOD PUBLIC M_SetConfig
+VAR_INPUT
+	SettingsFunction			:REFERENCE TO ST_CFG_Function;			 //the settings of the base element.
+	HandlerType 				: E_CvCraneHandlerType;	     //The type of station, ie pickup or deposit	
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+	//IF( THIS^._ConfigurationInitiated = FALSE OR _HandlerType = E_CvCraneHandlerType.eTYPE_UNKNOWN) THEN
+	IF(_HandlerType <> HandlerType)THEN
+		_HandlerType := HandlerType;				
+		THIS^._State := E_Conveyor_InterfaceState.UNKNOWN;
+		_TakeoverFunctionName := F_GetFunctionName(SettingsFunction.FunctionLink.eFunctionNumber, SettingsFunction.FunctionLink.ZoneNumber);
+		//copy over ConfigSettings
+		THIS^._SettingsFunction	:= SettingsFunction;
+	END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <LineIds Name="FB_Crane_CV_StateHandler">
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_Crane_CV_StateHandler._M_LifeFlag">
+      <LineId Id="3" Count="35" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_Crane_CV_StateHandler._M_ProcessHandover">
+      <LineId Id="3" Count="11" />
+      <LineId Id="148" Count="0" />
+      <LineId Id="16" Count="9" />
+      <LineId Id="173" Count="0" />
+      <LineId Id="175" Count="4" />
+      <LineId Id="174" Count="0" />
+      <LineId Id="180" Count="0" />
+      <LineId Id="27" Count="3" />
+      <LineId Id="395" Count="0" />
+      <LineId Id="393" Count="1" />
+      <LineId Id="392" Count="0" />
+      <LineId Id="31" Count="5" />
+      <LineId Id="41" Count="0" />
+      <LineId Id="306" Count="1" />
+      <LineId Id="311" Count="1" />
+      <LineId Id="309" Count="0" />
+      <LineId Id="308" Count="0" />
+      <LineId Id="43" Count="0" />
+      <LineId Id="313" Count="0" />
+      <LineId Id="315" Count="0" />
+      <LineId Id="325" Count="5" />
+      <LineId Id="316" Count="0" />
+      <LineId Id="323" Count="0" />
+      <LineId Id="46" Count="1" />
+      <LineId Id="181" Count="0" />
+      <LineId Id="48" Count="7" />
+      <LineId Id="238" Count="0" />
+      <LineId Id="303" Count="0" />
+      <LineId Id="264" Count="4" />
+      <LineId Id="302" Count="0" />
+      <LineId Id="271" Count="0" />
+      <LineId Id="269" Count="1" />
+      <LineId Id="263" Count="0" />
+      <LineId Id="331" Count="0" />
+      <LineId Id="333" Count="5" />
+      <LineId Id="332" Count="0" />
+      <LineId Id="57" Count="0" />
+      <LineId Id="304" Count="0" />
+      <LineId Id="239" Count="0" />
+      <LineId Id="233" Count="0" />
+      <LineId Id="58" Count="0" />
+      <LineId Id="223" Count="0" />
+      <LineId Id="59" Count="4" />
+      <LineId Id="225" Count="0" />
+      <LineId Id="231" Count="1" />
+      <LineId Id="229" Count="0" />
+      <LineId Id="227" Count="0" />
+      <LineId Id="365" Count="0" />
+      <LineId Id="367" Count="1" />
+      <LineId Id="366" Count="0" />
+      <LineId Id="228" Count="0" />
+      <LineId Id="226" Count="0" />
+      <LineId Id="278" Count="0" />
+      <LineId Id="273" Count="0" />
+      <LineId Id="277" Count="0" />
+      <LineId Id="276" Count="0" />
+      <LineId Id="83" Count="0" />
+      <LineId Id="272" Count="0" />
+      <LineId Id="84" Count="7" />
+      <LineId Id="95" Count="9" />
+      <LineId Id="340" Count="1" />
+      <LineId Id="339" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_Crane_CV_StateHandler._M_ProcessTakeover">
+      <LineId Id="3" Count="6" />
+      <LineId Id="369" Count="0" />
+      <LineId Id="10" Count="9" />
+      <LineId Id="368" Count="0" />
+      <LineId Id="346" Count="0" />
+      <LineId Id="349" Count="5" />
+      <LineId Id="348" Count="0" />
+      <LineId Id="347" Count="0" />
+      <LineId Id="367" Count="0" />
+      <LineId Id="24" Count="13" />
+      <LineId Id="366" Count="0" />
+      <LineId Id="290" Count="0" />
+      <LineId Id="304" Count="5" />
+      <LineId Id="292" Count="0" />
+      <LineId Id="287" Count="0" />
+      <LineId Id="42" Count="2" />
+      <LineId Id="288" Count="0" />
+      <LineId Id="45" Count="0" />
+      <LineId Id="47" Count="3" />
+      <LineId Id="355" Count="0" />
+      <LineId Id="234" Count="0" />
+      <LineId Id="334" Count="0" />
+      <LineId Id="259" Count="1" />
+      <LineId Id="256" Count="0" />
+      <LineId Id="262" Count="0" />
+      <LineId Id="257" Count="1" />
+      <LineId Id="255" Count="0" />
+      <LineId Id="319" Count="0" />
+      <LineId Id="328" Count="4" />
+      <LineId Id="365" Count="0" />
+      <LineId Id="320" Count="0" />
+      <LineId Id="261" Count="0" />
+      <LineId Id="235" Count="0" />
+      <LineId Id="214" Count="0" />
+      <LineId Id="127" Count="0" />
+      <LineId Id="54" Count="3" />
+      <LineId Id="364" Count="0" />
+      <LineId Id="336" Count="0" />
+      <LineId Id="341" Count="4" />
+      <LineId Id="337" Count="0" />
+      <LineId Id="339" Count="0" />
+      <LineId Id="338" Count="0" />
+      <LineId Id="335" Count="0" />
+      <LineId Id="363" Count="0" />
+      <LineId Id="173" Count="0" />
+      <LineId Id="130" Count="1" />
+      <LineId Id="129" Count="0" />
+      <LineId Id="132" Count="0" />
+      <LineId Id="263" Count="0" />
+      <LineId Id="133" Count="1" />
+      <LineId Id="71" Count="2" />
+      <LineId Id="360" Count="2" />
+    </LineIds>
+    <LineIds Name="FB_Crane_CV_StateHandler._M_SendSIS_TTQ">
+      <LineId Id="3" Count="3" />
+      <LineId Id="120" Count="0" />
+      <LineId Id="7" Count="7" />
+      <LineId Id="20" Count="1" />
+      <LineId Id="95" Count="0" />
+      <LineId Id="22" Count="46" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_Crane_CV_StateHandler.M_ProcessXover">
+      <LineId Id="3" Count="1" />
+      <LineId Id="54" Count="0" />
+      <LineId Id="57" Count="0" />
+      <LineId Id="63" Count="0" />
+      <LineId Id="59" Count="0" />
+      <LineId Id="61" Count="0" />
+      <LineId Id="60" Count="0" />
+      <LineId Id="56" Count="0" />
+      <LineId Id="8" Count="0" />
+      <LineId Id="77" Count="0" />
+      <LineId Id="40" Count="0" />
+      <LineId Id="10" Count="17" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_Crane_CV_StateHandler.M_SetConfig">
+      <LineId Id="3" Count="7" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

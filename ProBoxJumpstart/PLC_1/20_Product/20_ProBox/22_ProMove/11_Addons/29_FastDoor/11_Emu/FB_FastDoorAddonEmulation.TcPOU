@@ -1,0 +1,200 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <POU Name="FB_FastDoorAddonEmulation" Id="{6ebadaa6-a668-4d16-9cd4-f92005e4428c}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK FB_FastDoorAddonEmulation EXTENDS FB_FunctionConvEmulation
+VAR_INPUT
+END_VAR 
+
+VAR
+	pFunction						: POINTER TO FB_FastDoorAddon; // Address to function
+	rFunction						: REFERENCE TO FB_FastDoorAddon; // Reference to function
+	Closed							: BOOL; 
+	Open							: BOOL; 
+	Ready							: BOOL;
+END_VAR]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[(**************************************************************************************************************
+   Initialization
+***************************************************************************************************************)
+A_Init();
+
+(**************************************************************************************************************
+   Update reference
+***************************************************************************************************************)
+A_UpdateReference();
+
+(**************************************************************************************************************
+   Emulation
+***************************************************************************************************************)
+// If emulation function is initialized
+IF FunctionData.Init THEN
+
+	// Update data of real object
+	M_UpdateRealObjectData();
+	
+	// Handle external Subsystem-Subsystem interfaces
+	// not needed for Add On emulation
+	//A_ExternalSTI();
+	
+	_M_DoorEmu();
+					
+	// Overwrite inputs
+	A_OverWriteInputs();
+END_IF]]></ST>
+    </Implementation>
+    <Method Name="_M_DoorEmu" Id="{9981ce33-5c72-41fd-afca-bf61f71ae62f}">
+      <Declaration><![CDATA[METHOD _M_DoorEmu : REFERENCE TO ST_TransportDataEmulation
+VAR_INPUT
+
+END_VAR
+
+VAR_INST
+	Counter :INT;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+IF rFunction.HW_Outputs.CloseDoor AND Counter > 0 THEN 
+	Counter := Counter - 1;
+END_IF
+
+IF rFunction.HW_Outputs.OpenDoor  AND Counter < 1000 THEN
+	Counter := Counter +1;
+END_IF
+
+IF Counter = 0 THEN 
+	Closed := TRUE;
+ELSE
+	Closed := FALSE;
+END_IF
+
+IF Counter = 500 THEN
+	Open := TRUE;
+ELSE
+	Open := FALSE; 
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Action Name="A_Init" Id="{f7f02311-d63b-4b5c-b827-5c5f6a874ece}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_Init
+ * 	FUNCTION	Initialize emulated dummy function
+ **************************************************************************************)
+
+// If dummy function is not initialized
+IF NOT FunctionData.Init Then
+	// Check that linked dummy function number is valid
+	IF eFunctionNumber > E_FunctionNumber.F_BEGIN_FUNCTION AND
+	   eFunctionNumber < E_FunctionNumber.F_END_FUNCTION THEN   
+		
+		// Check if the real module is initialized
+		IF F_IsFunctionInitialized(eFunctionNumber := eFunctionNumber) THEN
+			// Module is initialized
+			FunctionData.Init:= TRUE;
+			
+			// Send debug message
+			DebugMsg := CONCAT('Initialization done. Element Function: ', FunctionRegistry[eFunctionNumber].FunctionName);
+			fbDebugMsg.M_SendInfoMsg(DebugMsg);
+			
+			// Initialize real module
+			F_InitializeFunction(eFunctionNumber := eFunctionNumber);
+		END_IF
+	END_IF
+END_IF
+]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="A_OverWriteInputs" Id="{21a1b1bc-35fb-47de-ab07-8782bde2ec74}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_OverWriteInputs
+ * 	FUNCTION	Overwrite inputs for emulation
+ **************************************************************************************)
+
+rFunction.HW_Inputs.Closed 	:= Closed;
+rFunction.HW_Inputs.Open 	:= Open;
+rFunction.HW_Inputs.Ready	:= TRUE; 
+
+
+
+]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="A_UpdateReference" Id="{c72519c3-bc4a-431f-98ef-efc31ca66f73}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_UpdateReference
+ * 	FUNCTION	Update reference to real object
+ **************************************************************************************)
+
+// Check valid function number
+IF eFunctionNumber > E_FunctionNumber.F_BEGIN_FUNCTION AND
+   eFunctionNumber < E_FunctionNumber.F_END_FUNCTION THEN
+
+	// Is reference valid  
+	IF __ISVALIDREF(FunctionRegistry[eFunctionNumber].rFunction) THEN
+		// Build address to reference
+		pFunction := ADR(FunctionRegistry[eFunctionNumber].rFunction);
+
+		// If address is possible
+		IF pFunction <> 0 THEN
+			// Build reference to memory
+			rFunction REF= pFunction^;
+		ELSE
+			// Reinitialize module
+			FunctionData.Init:= FALSE;
+		END_IF
+	ELSE
+		// Reinitialize module
+		FunctionData.Init:= FALSE;
+	END_IF
+END_IF
+		]]></ST>
+      </Implementation>
+    </Action>
+    <LineIds Name="FB_FastDoorAddonEmulation">
+      <LineId Id="228" Count="19" />
+      <LineId Id="390" Count="0" />
+      <LineId Id="248" Count="0" />
+      <LineId Id="402" Count="1" />
+      <LineId Id="285" Count="2" />
+      <LineId Id="71" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_FastDoorAddonEmulation._M_DoorEmu">
+      <LineId Id="6" Count="0" />
+      <LineId Id="5" Count="0" />
+      <LineId Id="7" Count="1" />
+      <LineId Id="29" Count="0" />
+      <LineId Id="31" Count="1" />
+      <LineId Id="30" Count="0" />
+      <LineId Id="17" Count="0" />
+      <LineId Id="16" Count="0" />
+      <LineId Id="18" Count="0" />
+      <LineId Id="40" Count="1" />
+      <LineId Id="19" Count="0" />
+      <LineId Id="26" Count="0" />
+      <LineId Id="25" Count="0" />
+      <LineId Id="27" Count="0" />
+      <LineId Id="42" Count="1" />
+      <LineId Id="28" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_FastDoorAddonEmulation.A_Init">
+      <LineId Id="2" Count="24" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_FastDoorAddonEmulation.A_OverWriteInputs">
+      <LineId Id="30" Count="3" />
+      <LineId Id="47" Count="0" />
+      <LineId Id="49" Count="0" />
+      <LineId Id="55" Count="0" />
+      <LineId Id="63" Count="0" />
+      <LineId Id="74" Count="0" />
+      <LineId Id="66" Count="0" />
+      <LineId Id="68" Count="1" />
+    </LineIds>
+    <LineIds Name="FB_FastDoorAddonEmulation.A_UpdateReference">
+      <LineId Id="2" Count="26" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

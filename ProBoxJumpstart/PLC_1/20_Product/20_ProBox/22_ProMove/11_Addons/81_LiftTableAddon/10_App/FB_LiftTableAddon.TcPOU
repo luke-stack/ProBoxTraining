@@ -1,0 +1,701 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <POU Name="FB_LiftTableAddon" Id="{3608c6cc-388c-407f-94df-cbf30a5c978b}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK FB_LiftTableAddon EXTENDS FB_FunctionConv
+VAR_INPUT
+	Config						: ST_CFG_LiftTable; 		// Configuration
+	HW_Inputs					: ST_HW_InputsLiftTable; 	// Hardware inputs
+END_VAR
+
+VAR_OUTPUT	
+	HW_Outputs					: ST_HW_OutputsLiftTable; // Hardware outputs
+END_VAR
+
+VAR
+	Inputs						: ST_InputsLiftTable;  // Function specific inputs
+	Outputs						: ST_OutputsLiftTable; // Function specific outputs
+	LiftTableState				: ST_LiftTableStates;  
+	fbAddonErrHandler			: FB_AddOnErrHandler;
+	EnableHandover				: BOOL;
+	OperatorMode				: BOOL;
+END_VAR
+
+VAR PERSISTENT
+	Settings					: ST_CFG_LiftTable; // Settings - activated configuration 
+END_VAR]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[(**************************************************************************************************************
+   Input mapping
+***************************************************************************************************************)
+A_InputMapping();
+
+(**************************************************************************************************************
+   Initialization
+***************************************************************************************************************)
+A_Init();
+
+(**************************************************************************************************************
+  BCF State control
+***************************************************************************************************************)
+A_StateControl();
+
+(**************************************************************************************************************
+   Error handler
+***************************************************************************************************************)
+A_ErrorHandler();
+fbAddOnErrHandler(AddOnSettingsFunction :=SettingsFunction, AddOnFunctionData:=FunctionData);
+_M_CheckErrors();
+
+(**************************************************************************************************************
+   Process AddOns
+***************************************************************************************************************)
+M_ProcessAddOns();
+
+(**********************************************************************************************************
+   State Handler 
+***********************************************************************************************************)
+_M_LiftStates();
+
+(**********************************************************************************************************
+   Control Lift
+***********************************************************************************************************)
+_M_ControlLift();
+
+(**********************************************************************************************************
+   Check Error 
+***********************************************************************************************************)
+//ERROR POS och (MOTOR STARTER OK)-element
+
+(**************************************************************************************************************
+   Interface handler out
+***************************************************************************************************************)
+M_ITC_ProcessOut();
+
+(**************************************************************************************************************
+   Output mapping
+***************************************************************************************************************)
+A_OutputMapping();		]]></ST>
+    </Implementation>
+    <Method Name="_M_CheckErrors" Id="{ad1caaa9-d752-4c44-aae3-ef27a28eda62}">
+      <Declaration><![CDATA[METHOD PRIVATE _M_CheckErrors : BOOL
+VAR_INPUT 
+END_VAR
+VAR_INST
+	fbOverhangSensor1			: FB_OH_SensorControl;
+	fbOverhangSensor2			: FB_OH_SensorControl;
+END_VAR
+
+VAR
+	TakoverActive	: BOOL; 
+	HandoverActive	: BOOL; 
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[F_ResetError(FALSE,	FunctionData.ErrorData.ErrorDataSet[1]);
+F_ResetError(FALSE,	FunctionData.ErrorData.ErrorDataSet[2]);
+
+TakoverActive  := F_PB_GetTransportControlDataRef(ConfigFunction.FunctionLink.eFunctionNumber, ConfigFunction.FunctionLink.ZoneNumber).eTakeOverState = E_TakeOverState.ACTIVE; 
+HandoverActive := F_PB_GetTransportControlDataRef(ConfigFunction.FunctionLink.eFunctionNumber, ConfigFunction.FunctionLink.ZoneNumber).eHandOverState = E_HandOverState.ACTIVE;
+
+//Overhang Sensors
+IF Settings.OverhangSensorsEnable THEN 
+	
+	fbOverhangSensor1(
+			FunctionNumber:= ConfigFunction.FunctionLink.eFunctionNumber, 
+			ZoneNumber:= ConfigFunction.FunctionLink.ZoneNumber, 
+			OH_PositionSide:= 1, 
+			OH_SensorInput:= Inputs.HW.Lift.Sensor_overhang_12,  
+			Mute:= Outputs.LiftTableEnableTransport <> (TakoverActive OR HandoverActive), 
+			Error:= FunctionData.ErrorData.ErrorDataSet[1]); 
+			
+	fbOverhangSensor2(
+			FunctionNumber:= ConfigFunction.FunctionLink.eFunctionNumber, 
+			ZoneNumber:= ConfigFunction.FunctionLink.ZoneNumber, 
+			OH_PositionSide:= 2, 
+			OH_SensorInput:= Inputs.HW.Lift.Sensor_overhang_21,  
+			Mute:= Outputs.LiftTableEnableTransport <> (TakoverActive OR HandoverActive), 
+			Error:= FunctionData.ErrorData.ErrorDataSet[2]); 
+
+END_IF
+
+//Control if lift table is in error state
+IF(Inputs.HW.Lift.ErrorPos) THEN
+	//Position error signal set 
+	F_SetError(
+				ErrorType	:= E_ErrorType.ERROR,
+				ErrorParam	:= 'Lift Table Error',
+				ErrorMsg 	:= E_ErrorConv.DEVICE_ERROR,
+				ErrorData	:= FunctionData.ErrorData.ErrorDataSet[1]);
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_ControlLift" Id="{68440d2a-1199-4a53-970a-35857dedd466}">
+      <Declaration><![CDATA[METHOD PRIVATE _M_ControlLift : BOOL
+VAR_INPUT
+END_VAR
+VAR
+	MotorDirectionLift		: E_ProBoxMotorDirection; // Assigned motor direction for lift
+	OrderPos				: E_Positions_LowLiftControl;
+	HomePos					: E_Positions_LowLiftControl;
+	NxtFwd					: BOOL;
+	PrevFwd					: BOOL;
+	
+END_VAR
+
+VAR_INST
+	fbTableLiftControl			: FB_TableLiftControl;  // Lift control with operator inputs
+	fbProBoxMotorControlLift	: FB_ProBoxMotorControl; // Motor control for low lift
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[(**********************************************************************************************************
+   Lift Table lift control 
+***********************************************************************************************************)
+
+// Initialize variables
+OrderPos := E_Positions_LowLiftControl.UNDEFINED;  
+
+IF Settings.OperatorPanelEnable THEN 
+	//When operator is done
+	IF EnableHandover THEN 
+		OrderPos := Settings.HomePosLiftTable; 
+	END_IF
+//Decide Order pos when lift is in automatic mode	
+ELSE
+	//IF Zone is occupied
+	IF F_PB_IsLogicalOccupied(F_PB_GetTransportControlDataRef(SettingsFunction.FunctionLink.eFunctionNumber,SettingsFunction.FunctionLink.ZoneNumber)) THEN
+	
+		//IF direction is forward
+			IF _M_IsFwdDriveDirection() THEN
+				OrderPos := Settings.PosOccupied;
+			ELSE
+				IF Settings.PosOccupied = E_Positions_LowLiftControl.UP THEN 
+					OrderPos := E_Positions_LowLiftControl.DOWN;
+				ELSIF Settings.PosOccupied = E_Positions_LowLiftControl.DOWN THEN
+					OrderPos := E_Positions_LowLiftControl.UP;
+				ELSE
+					OrderPos := E_Positions_LowLiftControl.UNDEFINED;
+				END_IF	
+			END_IF
+	ELSE 
+		//If not occupied check direction
+		IF _M_IsFwdDriveDirection() THEN
+			OrderPos := Settings.PosFree;
+		ELSE
+				IF Settings.PosFree = E_Positions_LowLiftControl.UP THEN 
+					OrderPos := E_Positions_LowLiftControl.DOWN;
+				ELSIF Settings.PosFree = E_Positions_LowLiftControl.DOWN THEN
+					OrderPos := E_Positions_LowLiftControl.UP;
+				ELSE
+					OrderPos := E_Positions_LowLiftControl.UNDEFINED;
+				END_IF
+		END_IF
+	END_IF 
+END_IF 
+
+fbTableLiftControl(
+	FunctionData			:= FunctionData, // Function data 
+	Sensor_Pos_Down			:= Inputs.HW.Lift.SensorPosDown, // Sensor position lift down
+	Sensor_Pos_Up			:= Inputs.HW.Lift.SensorPosUp, // Sensor position lift up´
+	TimeoutValueLift		:= Settings.TimeoutValueLift, // Timeout value for lifting
+	OrderPos				:= OrderPos, // Order position Lift		
+	ErrorData				:= FunctionData.ErrorData.ErrorDataSet[2], //Error Data
+	UserUp					:= Inputs.HW.OperatorPanel.DriveUp,
+	UserDown				:= Inputs.HW.OperatorPanel.DriveDown,
+	OperatorPanel			:= Settings.OperatorPanelEnable,
+	Operatormode			:= OperatorMode,
+	Sensor_EndLimit_Down	:= TRUE, // Sensor end limit lift down, inverted, not used
+	Sensor_EndLimit_Up		:= TRUE, // Sensor end limit lift up, inverted, not used	
+	EnableTransport			=> Outputs.LiftTableEnableTransport); 
+
+(**********************************************************************************************************
+   Motor control lift
+***********************************************************************************************************)			  
+
+// Assign motor direction
+IF fbTableLiftControl.Drive_Run_Down THEN
+	MotorDirectionLift := E_ProBoxMotorDirection.MOTOR_REVERSE;
+ELSIF fbTableLiftControl.Drive_Run_Up THEN
+	MotorDirectionLift := E_ProBoxMotorDirection.MOTOR_FORWARD;
+END_IF;
+
+
+fbProBoxMotorControlLift(
+				Run 			:= fbTableLiftControl.Drive_Run_Down OR fbTableLiftControl.Drive_Run_Up,
+				MotorSpeed 		:= E_ProBoxMotorSpeed.NORMAL, 
+				MotorDirection 	:= MotorDirectionLift,
+				MotorStarterOK 	:= Inputs.HW.Lift.SignalMotorUnitOK AND NOT Inputs.HW.Lift.ErrorPos,
+				ErrorData 		:= FunctionData.ErrorData.ErrorDataSet[3],
+				Forward			=> Outputs.HW.LiftUp,
+				Reverse			=> Outputs.HW.LiftDown);
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_IsFwdDriveDirection" Id="{8b7aa157-3050-4e05-b6f3-9ed304ea1ca2}">
+      <Declaration><![CDATA[METHOD PRIVATE _M_IsFwdDriveDirection : BOOL
+VAR_INPUT
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[IF NOT __ISVALIDREF(FunctionRegistry[SettingsFunction.FunctionLink.eFunctionNumber].rSettingsFunction) THEN 
+	RETURN;
+END_IF
+
+IF NOT FunctionRegistry[SettingsFunction.FunctionLink.eFunctionNumber].rSettingsFunction.FlowDirectionREV THEN 
+	_M_IsFwdDriveDirection := TRUE; 
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_LiftStates" Id="{8f016d01-7e79-4cfb-82e1-80bd63dd2e57}">
+      <Declaration><![CDATA[METHOD PRIVATE _M_LiftStates : BOOL
+VAR_INPUT
+END_VAR
+VAR
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[CASE LiftTableState.eState OF
+(**************************************************************************************************************
+ INIT
+***************************************************************************************************************)
+	E_LiftTableState.INIT:
+	
+	OperatorMode := FALSE; 
+	
+		//Function is in error
+		IF( FunctionData.ErrorData.Error.ErrorType <> E_ErrorType.ERROR) AND
+			(FunctionData.OperationState.eState = E_PositionState.STARTED) THEN
+
+			//Change state
+			LiftTableState.eLastState := LiftTableState.eState;
+			LiftTableState.eState := E_LiftTableState.IDLE;
+		ELSE
+			LiftTableState.eLastState := LiftTableState.eState;
+			LiftTableState.eState := E_LiftTableState.ERROR;
+		END_IF
+		
+(**************************************************************************************************************
+ IDLE
+***************************************************************************************************************)
+	E_LiftTableState.IDLE:
+	
+	EnableHandover := TRUE; 
+ 
+	//Check which mode that is selected in configuration
+	IF Settings.OperatorPanelEnable THEN 
+		//Change state
+		LiftTableState.eLastState := LiftTableState.eState;
+		LiftTableState.eState := E_LiftTableState.READY;
+	ELSE
+		//Change state
+		LiftTableState.eLastState := LiftTableState.eState;
+		LiftTableState.eState := E_LiftTableState.AUTO;
+	END_IF
+	
+(**************************************************************************************************************
+ READY
+***************************************************************************************************************)
+	E_LiftTableState.READY:
+	
+	//When zone is occupied and destination is current zone change state and disable handover
+	IF F_PB_IsLogicalOccupied(F_PB_GetTransportControlDataRef(SettingsFunction.FunctionLink.eFunctionNumber,SettingsFunction.FunctionLink.ZoneNumber)) AND
+		F_PB_GetTuDestination(eFunctionNumber := SettingsFunction.FunctionLink.eFunctionNumber, 1, 1) = SettingsFunction.FunctionLink.eFunctionNumber THEN
+		
+		EnableHandover := FALSE;
+ 
+		//Change state
+		LiftTableState.eLastState := LiftTableState.eState;
+		LiftTableState.eState := E_LiftTableState.PICK;
+	END_IF
+	
+(**************************************************************************************************************
+ PICK
+***************************************************************************************************************)
+	E_LiftTableState.PICK:
+	
+	//Operator can only handle the lift in this mode
+	OperatorMode := TRUE; 
+
+	//When new assignment to TU exist
+	IF F_PB_GetTuDestination(eFunctionNumber := SettingsFunction.FunctionLink.eFunctionNumber, 1, 1) > F_BEGIN_FUNCTION AND
+		F_PB_GetTuDestination(eFunctionNumber := SettingsFunction.FunctionLink.eFunctionNumber, 1, 1) <> SettingsFunction.FunctionLink.eFunctionNumber THEN
+		//Lamp starts blinking
+		Outputs.HW.StartTransport := fbBlink_500ms.Pulse;
+	ELSE
+		Outputs.HW.StartTransport := FALSE;
+	END_IF
+	
+	//Wait for operator to press button
+	IF Inputs.HW.OperatorPanel.OPStartTransport THEN
+		//From this point the lift cannot be controled from the operator panel
+		OperatorMode := FALSE; 
+		//Change state
+		LiftTableState.eLastState := LiftTableState.eState;
+		LiftTableState.eState := E_LiftTableState.STARTTRANSP;		
+	END_IF
+	
+(**************************************************************************************************************
+ STARTTRANSP
+***************************************************************************************************************)
+	E_LiftTableState.STARTTRANSP:
+
+	//Turn on light continuously 
+	Outputs.HW.StartTransport := TRUE;
+	
+	//Lift is moved to home position and move pallet
+	EnableHandover := TRUE; 
+	
+	//When TU is moved from zone, ie. zone not occupied
+	IF NOT F_PB_IsLogicalOccupied(F_PB_GetTransportControlDataRef(SettingsFunction.FunctionLink.eFunctionNumber,SettingsFunction.FunctionLink.ZoneNumber)) THEN
+		//Turn off lamp
+		Outputs.HW.StartTransport := FALSE;
+		//Change state
+		LiftTableState.eLastState := LiftTableState.eState;
+		LiftTableState.eState := E_LiftTableState.IDLE;
+	END_IF
+	
+(**************************************************************************************************************
+ AUTO
+***************************************************************************************************************)
+	E_LiftTableState.AUTO:
+
+	EnableHandover := TRUE; 
+	
+	//If error	
+	IF FunctionData.ErrorData.Error.ErrorType = E_ErrorType.ERROR THEN
+		//Change state
+		LiftTableState.eLastState := LiftTableState.eState;
+		LiftTableState.eState := E_LiftTableState.ERROR;
+	END_IF
+
+(**************************************************************************************************************
+ ERROR
+***************************************************************************************************************)
+	E_LiftTableState.ERROR:
+	
+	Outputs.LiftTableEnableTransport := FALSE; 
+	
+	// Wait until error is resetted
+	IF FunctionData.ErrorData.Error.ErrorType <> E_ErrorType.ERROR THEN
+		//Change state
+		LiftTableState.eLastState := LiftTableState.eState;
+		LiftTableState.eState := E_LiftTableState.IDLE;
+	END_IF
+	
+	
+END_CASE]]></ST>
+      </Implementation>
+    </Method>
+    <Action Name="A_Init" Id="{a04a131c-e7ac-4027-bb1a-382a2571f936}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_Init
+ * 	FUNCTION	Initialize function
+ **************************************************************************************)
+ 
+// Update Registry
+M_UpdateRegistry();
+
+
+// Init ongoing - Wait until init is released (Sequencial startup)
+IF NOT FunctionData.Init AND FunctionData.InitRunning THEN
+	// When the subsystem is started, 
+	// When its released to initialize
+	IF FunctionData.OperationState.Info.SystemReady AND
+	   SettingsFunction.eFunctionNumber < FunctionData.OperationState.InitRelease.eLimitFunctionNumber THEN
+	   
+	   IF M_InitFunction(FALSE) THEN		   
+			// Function initialized - and initialization done
+			FunctionData.Init := TRUE;
+			FunctionData.InitRunning := FALSE;
+			
+			// Set reset cmd
+			FunctionData.ErrorData.Error.ResetError := TRUE;
+			
+			DebugMsg := CONCAT('Initialization done. Function: ', ConfigFunction.FunctionName);
+			fbDebugMsg.M_SendInfoMsg(DebugMsg);
+		END_IF
+	END_IF
+(*
+If the function is not initialized,
+clean all values and wait until init is released
+*)
+ELSIF NOT FunctionData.Init THEN
+	// Reset internal variables
+	FunctionData.OperationState := FunctionBase.PositionStateEmpty;
+
+	// Initiate initialization of all zones
+	(*FOR ZoneIdx := 1 TO SettingsFunction.NumberOfZones DO
+		ZoneData[ZoneIdx].Init := FALSE;
+	END_FOR;*)
+	
+	// Load function specific configuration to settings
+	Settings := Config;
+	
+	// Reset values and load config
+	M_PreInit();	
+	
+	// To start init a valid functionnumber and element link is needed
+	FunctionData.InitRunning := SettingsFunction.eFunctionNumber > 0 AND
+								SettingsFunction.eElementLink > 0;
+								
+								
+END_IF]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="A_InputMapping" Id="{a2a48670-0f41-42ee-abc4-4f2dbb9fcfe9}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_InputMapping
+ * 	FUNCTION	Input mapping
+ **************************************************************************************)
+ 
+(**************************************************************************************
+   Hardware Inputs
+***************************************************************************************)
+// Adapt input logic state high/low
+Inputs.HW.Lift.SensorPosDown					:= HW_Inputs.Lift.SensorPosDown;
+Inputs.HW.Lift.SensorPosUp						:= HW_Inputs.Lift.SensorPosUp;
+Inputs.HW.Lift.LiftTableStart					:= HW_Inputs.Lift.LiftTableStart;
+Inputs.HW.Lift.ErrorPos							:= HW_Inputs.Lift.ErrorPos;
+Inputs.HW.Lift.SignalMotorUnitOK				:= HW_Inputs.Lift.SignalMotorUnitOK;
+
+Inputs.HW.Lift.Sensor_overhang_12				:= HW_Inputs.Lift.Sensor_overhang_12;
+Inputs.HW.Lift.Sensor_overhang_21				:= HW_Inputs.Lift.Sensor_overhang_21;
+
+Inputs.HW.OperatorPanel.DriveDown				:= HW_Inputs.OperatorPanel.DriveDown;
+Inputs.HW.OperatorPanel.DriveUp					:= HW_Inputs.OperatorPanel.DriveUp;
+Inputs.HW.OperatorPanel.OPStartTransport		:= HW_Inputs.OperatorPanel.OPStartTransport;
+
+(**************************************************************************************
+   Element states
+***************************************************************************************)
+// Get status of the corresponding element
+M_GetElementStates(); 
+]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="A_OutputMapping" Id="{c935602c-1e2f-4f06-82bb-d07b50b14843}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_OutputMapping
+ * 	FUNCTION	Output mapping
+ **************************************************************************************)
+ 
+(**************************************************************************************
+   Hardware outputs
+***************************************************************************************)
+HW_Outputs.LiftDown										:= Outputs.HW.LiftDown;
+HW_Outputs.LiftUp										:= Outputs.HW.LiftUp;
+HW_Outputs.StartTransport								:= Outputs.HW.StartTransport;
+		
+(**************************************************************************************
+   Order outputs (Commands to corresponding element)
+***************************************************************************************)
+MEMSET(ADR(FunctionInterface.Out.FunctionOrders),0,SIZEOF(ST_FunctionOrders));
+FunctionInterface.Out.FunctionOrders.Enable 				:= FunctionData.ErrorData.Error.ErrorType <> E_ErrorType.ERROR;
+FunctionInterface.Out.FunctionOrders.Enable_34 				:= FunctionInterface.Out.FunctionOrders.Enable;
+
+(**************************************************************************************
+   AddOn outputs
+***************************************************************************************)
+
+FunctionInterface.Out.AddOnOrders.Enable 					:= FunctionData.ErrorData.Error.ErrorType <> E_ErrorType.ERROR;
+FunctionInterface.Out.AddOnOrders.DataReady					:= TRUE;
+FunctionInterface.Out.AddOnOrders.EnableHandover 			:= Outputs.LiftTableEnableTransport AND EnableHandover;
+FunctionInterface.Out.AddOnOrders.EnableTakeover 			:= Outputs.LiftTableEnableTransport;
+
+(**************************************************************************************
+   Status outputs
+***************************************************************************************)
+
+//Inhibit stopping for the function when ExtendedRun is driving
+THIS^.InhibitStopping := HW_Outputs.LiftDown OR HW_Outputs.LiftUp; 
+
+]]></ST>
+      </Implementation>
+    </Action>
+    <LineIds Name="FB_LiftTableAddon">
+      <LineId Id="289" Count="49" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_LiftTableAddon._M_CheckErrors">
+      <LineId Id="9" Count="0" />
+      <LineId Id="109" Count="0" />
+      <LineId Id="123" Count="0" />
+      <LineId Id="117" Count="0" />
+      <LineId Id="124" Count="0" />
+      <LineId Id="21" Count="1" />
+      <LineId Id="77" Count="0" />
+      <LineId Id="87" Count="0" />
+      <LineId Id="101" Count="6" />
+      <LineId Id="88" Count="0" />
+      <LineId Id="90" Count="5" />
+      <LineId Id="89" Count="0" />
+      <LineId Id="80" Count="0" />
+      <LineId Id="79" Count="0" />
+      <LineId Id="30" Count="1" />
+      <LineId Id="10" Count="6" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_LiftTableAddon._M_ControlLift">
+      <LineId Id="82" Count="5" />
+      <LineId Id="378" Count="0" />
+      <LineId Id="454" Count="0" />
+      <LineId Id="456" Count="2" />
+      <LineId Id="452" Count="0" />
+      <LineId Id="460" Count="0" />
+      <LineId Id="459" Count="0" />
+      <LineId Id="382" Count="6" />
+      <LineId Id="439" Count="1" />
+      <LineId Id="442" Count="3" />
+      <LineId Id="441" Count="0" />
+      <LineId Id="390" Count="5" />
+      <LineId Id="446" Count="5" />
+      <LineId Id="396" Count="1" />
+      <LineId Id="399" Count="0" />
+      <LineId Id="380" Count="0" />
+      <LineId Id="278" Count="0" />
+      <LineId Id="125" Count="2" />
+      <LineId Id="130" Count="0" />
+      <LineId Id="136" Count="1" />
+      <LineId Id="139" Count="0" />
+      <LineId Id="175" Count="2" />
+      <LineId Id="421" Count="0" />
+      <LineId Id="182" Count="0" />
+      <LineId Id="476" Count="0" />
+      <LineId Id="140" Count="11" />
+      <LineId Id="158" Count="9" />
+      <LineId Id="174" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_LiftTableAddon._M_IsFwdDriveDirection">
+      <LineId Id="6" Count="5" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_LiftTableAddon._M_LiftStates">
+      <LineId Id="6" Count="0" />
+      <LineId Id="18" Count="1" />
+      <LineId Id="11" Count="0" />
+      <LineId Id="8" Count="0" />
+      <LineId Id="303" Count="0" />
+      <LineId Id="310" Count="1" />
+      <LineId Id="47" Count="0" />
+      <LineId Id="14" Count="0" />
+      <LineId Id="289" Count="0" />
+      <LineId Id="51" Count="1" />
+      <LineId Id="54" Count="1" />
+      <LineId Id="165" Count="2" />
+      <LineId Id="46" Count="0" />
+      <LineId Id="213" Count="0" />
+      <LineId Id="20" Count="1" />
+      <LineId Id="17" Count="0" />
+      <LineId Id="15" Count="0" />
+      <LineId Id="304" Count="0" />
+      <LineId Id="307" Count="0" />
+      <LineId Id="306" Count="0" />
+      <LineId Id="22" Count="0" />
+      <LineId Id="68" Count="0" />
+      <LineId Id="72" Count="1" />
+      <LineId Id="71" Count="0" />
+      <LineId Id="74" Count="0" />
+      <LineId Id="76" Count="1" />
+      <LineId Id="75" Count="0" />
+      <LineId Id="70" Count="0" />
+      <LineId Id="290" Count="0" />
+      <LineId Id="215" Count="3" />
+      <LineId Id="229" Count="0" />
+      <LineId Id="219" Count="0" />
+      <LineId Id="313" Count="1" />
+      <LineId Id="221" Count="0" />
+      <LineId Id="236" Count="1" />
+      <LineId Id="235" Count="0" />
+      <LineId Id="222" Count="1" />
+      <LineId Id="214" Count="0" />
+      <LineId Id="228" Count="0" />
+      <LineId Id="24" Count="1" />
+      <LineId Id="23" Count="0" />
+      <LineId Id="26" Count="0" />
+      <LineId Id="233" Count="0" />
+      <LineId Id="250" Count="1" />
+      <LineId Id="309" Count="0" />
+      <LineId Id="100" Count="0" />
+      <LineId Id="200" Count="0" />
+      <LineId Id="249" Count="0" />
+      <LineId Id="189" Count="1" />
+      <LineId Id="203" Count="1" />
+      <LineId Id="103" Count="0" />
+      <LineId Id="196" Count="0" />
+      <LineId Id="191" Count="1" />
+      <LineId Id="253" Count="1" />
+      <LineId Id="193" Count="2" />
+      <LineId Id="99" Count="0" />
+      <LineId Id="62" Count="0" />
+      <LineId Id="33" Count="1" />
+      <LineId Id="32" Count="0" />
+      <LineId Id="10" Count="0" />
+      <LineId Id="116" Count="0" />
+      <LineId Id="93" Count="0" />
+      <LineId Id="257" Count="2" />
+      <LineId Id="117" Count="0" />
+      <LineId Id="169" Count="0" />
+      <LineId Id="119" Count="1" />
+      <LineId Id="126" Count="1" />
+      <LineId Id="124" Count="1" />
+      <LineId Id="122" Count="1" />
+      <LineId Id="121" Count="0" />
+      <LineId Id="276" Count="3" />
+      <LineId Id="296" Count="0" />
+      <LineId Id="281" Count="0" />
+      <LineId Id="297" Count="0" />
+      <LineId Id="282" Count="0" />
+      <LineId Id="292" Count="3" />
+      <LineId Id="287" Count="0" />
+      <LineId Id="35" Count="0" />
+      <LineId Id="40" Count="1" />
+      <LineId Id="39" Count="0" />
+      <LineId Id="38" Count="0" />
+      <LineId Id="98" Count="0" />
+      <LineId Id="273" Count="1" />
+      <LineId Id="267" Count="1" />
+      <LineId Id="271" Count="1" />
+      <LineId Id="269" Count="0" />
+      <LineId Id="265" Count="1" />
+      <LineId Id="43" Count="0" />
+      <LineId Id="9" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_LiftTableAddon.A_Init">
+      <LineId Id="236" Count="6" />
+      <LineId Id="287" Count="0" />
+      <LineId Id="243" Count="43" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_LiftTableAddon.A_InputMapping">
+      <LineId Id="2" Count="7" />
+      <LineId Id="38" Count="0" />
+      <LineId Id="41" Count="0" />
+      <LineId Id="45" Count="0" />
+      <LineId Id="18" Count="0" />
+      <LineId Id="59" Count="1" />
+      <LineId Id="62" Count="0" />
+      <LineId Id="61" Count="0" />
+      <LineId Id="63" Count="0" />
+      <LineId Id="56" Count="0" />
+      <LineId Id="55" Count="0" />
+      <LineId Id="57" Count="1" />
+      <LineId Id="49" Count="5" />
+      <LineId Id="48" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_LiftTableAddon.A_OutputMapping">
+      <LineId Id="83" Count="16" />
+      <LineId Id="146" Count="0" />
+      <LineId Id="101" Count="3" />
+      <LineId Id="123" Count="0" />
+      <LineId Id="105" Count="0" />
+      <LineId Id="143" Count="0" />
+      <LineId Id="139" Count="0" />
+      <LineId Id="136" Count="0" />
+      <LineId Id="109" Count="3" />
+      <LineId Id="144" Count="1" />
+      <LineId Id="116" Count="1" />
+      <LineId Id="45" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

@@ -1,0 +1,157 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.12">
+  <POU Name="FB_HandoverEmulation" Id="{ff0a484b-9df5-4002-9b96-1242dee7dc7d}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK FB_HandoverEmulation
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 355136 $
+ *	Revision date	:	$Date: 2015-09-21 07:38:56 +0200 (Mo, 21 Sep 2015) $
+ *	Last changed by	:	$Author: d7mangc $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/trunk/01_Software/BoxControlFramework/BoxControlFramework/JumpStart/11_Library/10_Application/12_ElementFunctions/10_Functions/FB_TransportControl.TcPOU $
+ *
+ *	Purpose			:	Handovers a emulation TU from encoder tracking with standard handshake.
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+VAR_INPUT
+	Param 						: ST_TransportControlParam; // Parameter of the transport control
+	NextTransportData			: ST_TransportDataEmulation; // Next transport data
+	DriveRunning				: BOOL; // Feedback drive is running
+	iListener					: I_HandoverEmulationListener; // Handover listener
+END_VAR
+VAR_IN_OUT
+	ZoneData					: ST_ZoneDataEmulation; // Zone data
+END_VAR
+VAR
+	Init						: BOOL; // Init flag
+	fbDebugMsg					: FB_DebugMsg; // Debug instance
+	DebugMsg					: T_MAXSTRING; // Debug message
+END_VAR]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[(**************************************************************************************************************
+   Init
+***************************************************************************************************************)
+A_Init();
+
+(**************************************************************************************************************
+   Handover state
+***************************************************************************************************************)
+// Reset transport data request
+ 
+CASE ZoneData.TransportControlData.eHandOverState OF
+(*************************************************************************
+  Idle
+*************************************************************************)
+	E_HandOverState.IDLE:
+		// Zone is ready to handover
+		IF ZoneData.TransportControlData.Occupied THEN
+			ZoneData.TransportControlData.eHandOverState := E_HandOverState.READY;
+		END_IF
+
+(*************************************************************************
+  Ready
+*************************************************************************)
+	E_HandOverState.READY:
+		// Next zone started takeover
+		IF NextTransportData.rTransportControlData.eTakeOverState = E_TakeOverState.ACTIVE THEN
+			
+			IF iListener <> 0 THEN
+				iListener.M_HandoverStartEvent();
+			END_IF
+		
+			ZoneData.TransportControlData.eHandOverState := E_HandOverState.ACTIVE;
+			
+		ELSIF NOT ZoneData.TransportControlData.Occupied THEN
+			ZoneData.TransportControlData.eHandOverState := E_HandOverState.IDLE;
+		END_IF
+
+(*************************************************************************
+  Active
+*************************************************************************)
+	E_HandOverState.ACTIVE:		
+		IF NOT ZoneData.TransportControlData.Occupied THEN
+			ZoneData.TransportControlData.eHandOverState := E_HandOverState.COMPLETE;
+		END_IF
+		
+(*************************************************************************
+  Complete
+*************************************************************************)
+	E_HandOverState.COMPLETE:
+		// No pending transfer -> change to idle
+		IF NextTransportData.rTransportControlData.eTakeOverState = E_TakeOverState.COMPLETE OR
+		   NextTransportData.rTransportControlData.eTakeOverState = E_TakeOverState.READY OR
+		   NextTransportData.rTransportControlData.eTakeOverState = E_TakeOverState.IDLE OR
+		   NextTransportData.rTransportControlData.eTakeOverState = E_TakeOverState.UNDEFINED THEN
+
+			ZoneData.TransportControlData.eHandOverState := E_HandOverState.IDLE;
+		END_IF		
+		
+(*************************************************************************
+  State error
+*************************************************************************)
+ELSE
+	// Software error
+	DebugMsg := CONCAT('Emulation: A_HandOverState: Software error: ', Param.rSettings.ZoneName);
+	fbDebugMsg.M_SendInfoMsg(DebugMsg);
+	ZoneData.TransportControlData.eHandOverState := E_HandOverState.IDLE;
+	
+END_CASE]]></ST>
+    </Implementation>
+    <Action Name="A_Init" Id="{c32e4919-7d61-4761-9ff7-4624caecfcd5}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_Init
+ * 	FUNCTION	Initialize
+ **************************************************************************************)	
+// When zone is not initialized
+IF NOT ZoneData.Init OR NOT Init THEN
+
+	// Reset internal variables
+	ZoneData.TransportControlData.eHandoverState := E_HandoverState.IDLE;
+	
+
+	ZoneData.Init := TRUE;
+	Init := TRUE;
+		
+	DebugMsg := CONCAT('Initialization done. TrackingHandoverControlEmulation: ', Param.rSettings.ZoneName);
+	fbDebugMsg.M_SendInfoMsg(DebugMsg);
+END_IF
+]]></ST>
+      </Implementation>
+    </Action>
+    <ObjectProperties>
+      <XmlArchive>
+        <Data>
+          <o xml:space="preserve" t="UMLStereoTypeContainerObject">
+            <v n="IsType" t="UMLType">BaseArea</v>
+            <v n="Stereotype">""</v>
+            <d n="Stereotypes" t="Hashtable" />
+          </o>
+        </Data>
+        <TypeList>
+          <Type n="Hashtable">System.Collections.Hashtable</Type>
+          <Type n="String">System.String</Type>
+          <Type n="UMLStereoTypeContainerObject">{30250973-b110-4e31-b562-c102e042dca4}</Type>
+          <Type n="UMLType">{0197b136-405a-42ee-bb27-fd08b621d0cf}</Type>
+        </TypeList>
+      </XmlArchive>
+    </ObjectProperties>
+    <LineIds Name="FB_HandoverEmulation">
+      <LineId Id="3" Count="66" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_HandoverEmulation.A_Init">
+      <LineId Id="2" Count="16" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

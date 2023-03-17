@@ -1,0 +1,50 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <POU Name="F_UpdateISR" Id="{a67db04c-c36f-47ee-b937-e2df9a915d6f}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION F_UpdateISR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[
+
+ISR_SignalType[2].SignalNumber[0001] :=  fbF_10_001_0200_01_0.ZoneData[1].TransportControlData.NumberOfPresentTUs > 0;
+ISR_SignalType[2].SignalNumber[0002] :=  fbF_10_001_0201_01_0.ZoneData[1].TransportControlData.NumberOfPresentTUs > 0;
+ISR_SignalType[2].SignalNumber[0003] :=  fbF_10_001_0202_01_0.ZoneData[1].TransportControlData.NumberOfPresentTUs > 0;
+ISR_SignalType[2].SignalNumber[0004] :=  fbF_10_001_0203_01_0.ZoneData[1].TransportControlData.NumberOfPresentTUs > 0;
+ISR_SignalType[2].SignalNumber[0005] :=  fbF_10_001_0204_01_0.ZoneData[1].TransportControlData.NumberOfPresentTUs > 0;
+ISR_SignalType[2].SignalNumber[0006] :=  fbF_10_001_0207_01_0.ZoneData[1].TransportControlData.NumberOfPresentTUs > 0;
+ISR_SignalType[2].SignalNumber[0007] :=  fbF_10_001_0208_01_0.ZoneData[1].TransportControlData.NumberOfPresentTUs > 0;
+ISR_SignalType[2].SignalNumber[0008] :=  fbF_10_001_0209_01_0.ZoneData[1].TransportControlData.NumberOfPresentTUs > 0;
+ISR_SignalType[2].SignalNumber[0009] :=  fbF_10_001_0211_01_0.ZoneData[1].TransportControlData.NumberOfPresentTUs > 0;
+ISR_SignalType[2].SignalNumber[0010] :=  fbF_10_001_0212_01_0.ZoneData[1].TransportControlData.NumberOfPresentTUs > 0;
+ISR_SignalType[2].SignalNumber[0011] :=  fbF_10_001_0213_01_0.ZoneData[1].TransportControlData.NumberOfPresentTUs > 0;
+ISR_SignalType[2].SignalNumber[0012] :=  fbF_10_001_0214_01_0.ZoneData[1].TransportControlData.NumberOfPresentTUs > 0;
+ISR_SignalType[2].SignalNumber[0013] :=  fbF_10_001_0215_01_0.ZoneData[1].TransportControlData.NumberOfPresentTUs > 0;
+ISR_SignalType[2].SignalNumber[0014] :=  fbF_10_001_0215_02_0.ZoneData[1].TransportControlData.NumberOfPresentTUs > 0;
+ISR_SignalType[2].SignalNumber[0015] :=  fbF_10_001_0216_01_0.ZoneData[1].TransportControlData.NumberOfPresentTUs > 0;
+ISR_SignalType[2].SignalNumber[0016] :=  fbF_10_001_0216_01_0.ZoneData[2].TransportControlData.NumberOfPresentTUs > 0;
+ISR_SignalType[2].SignalNumber[0017] :=  fbF_10_001_0217_01_0.ZoneData[1].TransportControlData.NumberOfPresentTUs > 0;
+ISR_SignalType[2].SignalNumber[0018] :=  fbF_10_001_0218_01_0.ZoneData[1].TransportControlData.NumberOfPresentTUs > 0;
+ISR_SignalType[2].SignalNumber[0019] :=  fbF_10_001_0218_01_0.ZoneData[2].TransportControlData.NumberOfPresentTUs > 0;
+ISR_SignalType[2].SignalNumber[0020] :=  fbF_10_001_0219_01_0.ZoneData[1].TransportControlData.NumberOfPresentTUs > 0;
+ISR_SignalType[2].SignalNumber[0021] :=  fbF_10_001_0219_01_0.ZoneData[2].TransportControlData.NumberOfPresentTUs > 0;
+ISR_SignalType[2].SignalNumber[0022] :=  fbF_10_001_0220_01_0.ZoneData[1].TransportControlData.NumberOfPresentTUs > 0;
+ISR_SignalType[2].SignalNumber[0023] :=  fbF_10_001_0221_01_0.ZoneData[1].TransportControlData.NumberOfPresentTUs > 0;
+ISR_SignalType[2].SignalNumber[0024] :=  fbF_10_001_0222_01_0.ZoneData[1].TransportControlData.NumberOfPresentTUs > 0;
+ISR_SignalType[2].SignalNumber[0025] :=  fbF_10_001_0225_01_0.ZoneData[1].TransportControlData.NumberOfPresentTUs > 0;
+ISR_SignalType[2].SignalNumber[0026] :=  fbF_10_001_0225_01_0.ZoneData[2].TransportControlData.NumberOfPresentTUs > 0;
+ISR_SignalType[2].SignalNumber[0027] :=  fbF_10_001_0226_01_0.ZoneData[1].TransportControlData.NumberOfPresentTUs > 0;
+ISR_SignalType[2].SignalNumber[0028] :=  fbF_10_001_0226_01_0.ZoneData[2].TransportControlData.NumberOfPresentTUs > 0;
+ISR_SignalType[2].SignalNumber[0029] :=  fbF_10_001_0227_01_0.ZoneData[1].TransportControlData.NumberOfPresentTUs > 0;
+ISR_SignalType[2].SignalNumber[0030] :=  fbF_10_001_0230_01_0.ZoneData[1].TransportControlData.NumberOfPresentTUs > 0;
+ISR_SignalType[2].SignalNumber[0031] :=  fbF_10_001_0232_01_0.ZoneData[1].TransportControlData.NumberOfPresentTUs > 0;
+ISR_SignalType[2].SignalNumber[0032] :=  fbF_10_001_0232_01_0.ZoneData[2].TransportControlData.NumberOfPresentTUs > 0;
+ISR_SignalType[2].SignalNumber[0033] :=  fbF_10_001_0233_01_0.ZoneData[1].TransportControlData.NumberOfPresentTUs > 0;
+ISR_SignalType[2].SignalNumber[0034] :=  fbF_10_002_0206_01_0.ZoneData[1].TransportControlData.NumberOfPresentTUs > 0;
+]]></ST>
+    </Implementation>
+    <LineIds Name="F_UpdateISR">
+      <LineId Id="3" Count="35" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

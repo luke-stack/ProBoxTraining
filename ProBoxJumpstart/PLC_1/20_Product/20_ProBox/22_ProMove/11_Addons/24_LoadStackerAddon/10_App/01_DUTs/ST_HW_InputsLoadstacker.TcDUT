@@ -1,0 +1,16 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.4">
+  <DUT Name="ST_HW_InputsLoadstacker" Id="{eeabcd90-2c66-4ea8-b125-bf7677bfa579}">
+    <Declaration><![CDATA[// Load stacker HW inputs
+TYPE ST_HW_InputsLoadstacker :
+STRUCT	
+	Lift		: ST_LSPM_Inp_LiftSensors;		// Sensor inputs used for the lift function
+	LeftFork	: ST_LSPM_Inp_ForkSensors;		// Sensor inputs used for the Left fork function
+	RightFork	: ST_LSPM_Inp_ForkSensors;		// Sensor inputs used for the Right fork function
+	Manual		: ST_LSPM_Inp_ManualControl;	// Buttons and switches used by operator manual operation 
+	Element 	: ST_LSPM_Inp_Element;			// Sensor inputs used for the Load stacker function
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

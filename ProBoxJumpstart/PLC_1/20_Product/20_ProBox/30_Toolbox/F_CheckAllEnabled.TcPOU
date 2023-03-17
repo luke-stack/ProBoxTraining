@@ -1,0 +1,97 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.4">
+  <POU Name="F_CheckAllEnabled" Id="{4222810c-7ad2-4602-9bd7-ad53e9c879e6}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION F_CheckAllEnabled : BOOL
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 417092 $
+ *	Revision date	:	$Date: 2018-11-14 12:58:58 +0100 (Mi., 14 Nov 2018) $
+ *	Last changed by	:	$Author: q8aberh $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/ProMove/02_Controls/ProBox/03_Implementation/01_DevelopmentProject/01_Software/ProBox_COE/ProBox_DevProj_v1.0/PLC_1/20_Product/10_App/12_E_Functions/11_ProBox/02_Functions/02_TransportControl/F_Che $
+ *
+ *	Purpose			:	Returns true if all the zones on the function are enabled
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				2018-09-17		PkF					First version
+ *
+ **************************************************************************************)
+VAR_INPUT
+	eFunctionNumber		: E_FunctionNumber; // Function number
+END_VAR
+VAR
+	idx 				: INT; // Iterator
+	AllEnabled			: BOOL; // Temp to check if all zones are enabled
+	ElementNumber		: E_ElementNumber;
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[// Check if function number is valid
+IF eFunctionNumber > E_FunctionNumber.F_BEGIN_FUNCTION AND
+   eFunctionNumber < E_FunctionNumber.F_END_FUNCTION THEN
+  
+	// Check reference is valid
+	IF  __ISVALIDREF(FunctionRegistry[eFunctionNumber].rSettingsFunction) AND 
+		__ISVALIDREF(FunctionRegistry[eFunctionNumber].rFunctionData) THEN
+		// Return All Started
+		AllEnabled := TRUE;
+		FOR idx := 1 TO FunctionRegistry[eFunctionNumber].rSettingsFunction.NumberOfZones DO
+			IF NOT Functionregistry[eFunctionNumber].Zone[idx].refZoneInterface.In.ZoneEnable  THEN
+				AllEnabled := FALSE;
+				EXIT;
+			END_IF
+		END_FOR
+		F_CheckAllEnabled := AllEnabled;
+								
+		//check if function or element is disabled.				
+		IF(__ISVALIDREF(FunctionRegistry[eFunctionNumber].rFunctionInterface)) THEN
+			F_CheckAllEnabled := F_CheckAllEnabled AND FunctionRegistry[eFunctionNumber].rFunctionInterface.In.FunctionEnable;
+		END_IF
+		ElementNumber := FunctionRegistry[eFunctionNumber].rSettingsFunction.eElementLink;
+		IF(__ISVALIDREF(ElementRegistry[ElementNumber].rElementInterface)) THEN
+			F_CheckAllEnabled := F_CheckAllEnabled AND ElementRegistry[ElementNumber].rElementInterface.In.ElementEnable;	
+		END_IF
+	END_IF
+   
+	
+	  
+     
+   
+END_IF]]></ST>
+    </Implementation>
+    <ObjectProperties>
+      <XmlArchive>
+        <Data>
+          <o xml:space="preserve" t="UMLStereoTypeContainerObject">
+            <v n="IsType" t="UMLType">BaseArea</v>
+            <v n="Stereotype">""</v>
+            <d n="Stereotypes" t="Hashtable" />
+          </o>
+        </Data>
+        <TypeList>
+          <Type n="Hashtable">System.Collections.Hashtable</Type>
+          <Type n="String">System.String</Type>
+          <Type n="UMLStereoTypeContainerObject">{30250973-b110-4e31-b562-c102e042dca4}</Type>
+          <Type n="UMLType">{0197b136-405a-42ee-bb27-fd08b621d0cf}</Type>
+        </TypeList>
+      </XmlArchive>
+    </ObjectProperties>
+    <LineIds Name="F_CheckAllEnabled">
+      <LineId Id="3" Count="16" />
+      <LineId Id="69" Count="0" />
+      <LineId Id="64" Count="2" />
+      <LineId Id="71" Count="0" />
+      <LineId Id="67" Count="1" />
+      <LineId Id="62" Count="0" />
+      <LineId Id="20" Count="1" />
+      <LineId Id="28" Count="3" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

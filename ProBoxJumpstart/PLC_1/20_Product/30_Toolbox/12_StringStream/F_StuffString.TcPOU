@@ -1,0 +1,55 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4020.6">
+  <POU Name="F_StuffString" Id="{0f127137-1ca5-4123-a333-4abc5e6186cb}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION F_StuffString : T_MaxString
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 404529 $
+ *	Revision date	:	$Date: 2018-04-23 08:21:38 +0200 (Mo., 23 Apr 2018) $
+ *	Last changed by	:	$Author: b7bolm $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/trunk/01_Software/BCF/BCF/JumpStart/30_Toolbox/12_StringStream/F_StuffString.TcPOU $
+ *
+ *	Purpose			:	Add leading characters to get a string of predefined length.
+ *						The stuffcharacter could be any character but typical '0'.
+ *						The function add to the inputString acording to the input variable 
+ *						Stringlenght a number of stuffCharacters.
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+VAR_INPUT
+	InputString			: STRING(MAX_STRING_LENGTH); // String to be stuffed with characters 
+	StringLength		: INT; // Required string length 
+	StuffCharacter		: STRING(1); // Character to stuff into string
+	LeftAligned			: BOOL; // Stuff characters will be put at the end of input string
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[// Check that stuff character is valid
+IF StuffCharacter <> '' THEN
+	// Go through length
+	WHILE LEN(InputString) < StringLength DO
+		IF LeftAligned THEN
+			// Fill up with trailing StuffCharacter until StringLength is reached 
+			InputString := CONCAT(InputString, StuffCharacter);
+		ELSE
+			// Fill up with leading StuffCharacter until StringLength is reached 
+			InputString := CONCAT(StuffCharacter, InputString);
+		END_IF
+	END_WHILE
+END_IF
+
+// Return string
+F_StuffString := InputString;
+]]></ST>
+    </Implementation>
+  </POU>
+</TcPlcObject>

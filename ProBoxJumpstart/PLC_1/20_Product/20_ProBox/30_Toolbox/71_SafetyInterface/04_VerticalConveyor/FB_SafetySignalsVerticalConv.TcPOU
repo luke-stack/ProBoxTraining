@@ -1,0 +1,55 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <POU Name="FB_SafetySignalsVerticalConv" Id="{eabcda6b-ebfd-44db-94b6-ef995bbf8d3c}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK FB_SafetySignalsVerticalConv
+VAR_INPUT
+	SZPCo						: BOOL; //Safety Zone Pallet Conveyor	
+END_VAR
+VAR_IN_OUT
+	SGref			: FB_ProBOXSG; //Reference to Switching group
+	VCSignals		: ST_ProBoxSafetyVerticalConv;
+END_VAR
+VAR
+	EmgStatus		: ST_EmgStatus;
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[//check if ResetSafetyNeeded
+EmgStatus.eExternal := SZPCo;
+EmgStatus.eInternal := VCSignals.Inputs.EsOk AND VCSignals.Inputs.VcOK;
+EmgStatus.eInternError := (VCSignals.Inputs.ComErr OR VCSignals.Inputs.FBErr); 
+SGref.M_SetEmgStatus(EmgStatus);
+
+
+//Pass signals from input to output
+VCSignals.Outputs.ContactorOn 		:= SGref.CtrlOut.OpSummary.OpMcOn;
+VCSignals.Outputs.ContactorOff 		:= SGref.CtrlOut.OpSummary.OpMcOff;
+VCSignals.Outputs.ErrorAck 			:= SGref.CtrlOut.OpSummary.OpResetSafety;
+                                                              
+VCSignals.Outputs.EmergencyDrive	:= SGref.CtrlOut.OpSummary.OpEmgDrive;
+VCSignals.Outputs.ManAuto 			:= SGref.CtrlOut.OpSummary.OpManAuto;
+VCSignals.Outputs.EntryRequest 		:= SGref.CtrlOut.OpSummary.OpEntryReq;
+//VerticalConvSignals.Outputs.DoorClosed := HW_ElementSignalsToGroup.DoorClosed;
+
+
+// Copy over all feedback signals from SG group to be transfered to Safety							   
+MEMCPY(ADR(VCSignals.Outputs.FeedBackContactor),ADR(SGref.HW_Inputs.Diag.FeedbackMainContactorOFF),SIZEOF(VCSignals.Outputs.FeedBackContactor));
+]]></ST>
+    </Implementation>
+    <LineIds Name="FB_SafetySignalsVerticalConv">
+      <LineId Id="205" Count="0" />
+      <LineId Id="194" Count="2" />
+      <LineId Id="15" Count="0" />
+      <LineId Id="151" Count="0" />
+      <LineId Id="198" Count="3" />
+      <LineId Id="197" Count="0" />
+      <LineId Id="88" Count="0" />
+      <LineId Id="91" Count="0" />
+      <LineId Id="132" Count="2" />
+      <LineId Id="93" Count="0" />
+      <LineId Id="175" Count="0" />
+      <LineId Id="203" Count="1" />
+      <LineId Id="174" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

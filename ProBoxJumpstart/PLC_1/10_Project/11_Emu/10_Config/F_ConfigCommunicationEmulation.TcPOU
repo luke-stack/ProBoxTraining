@@ -1,0 +1,15 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <POU Name="F_ConfigCommunicationEmulation" Id="{d700ac22-5cfb-4b93-816e-bb60783ad3fa}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION F_ConfigCommunicationEmulation : BOOL
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[;
+]]></ST>
+    </Implementation>
+    <LineIds Name="F_ConfigCommunicationEmulation">
+      <LineId Id="3" Count="0" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

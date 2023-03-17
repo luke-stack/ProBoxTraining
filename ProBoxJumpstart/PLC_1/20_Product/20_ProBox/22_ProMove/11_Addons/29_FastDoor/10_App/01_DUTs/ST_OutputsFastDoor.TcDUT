@@ -1,0 +1,11 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <DUT Name="ST_OutputsFastDoor" Id="{2cafb99a-1b2d-4a56-981a-111ae9e78de9}">
+    <Declaration><![CDATA[TYPE ST_OutputsFastDoor :
+STRUCT
+	HW		: ST_HW_OutputsFastDoor; //Hardware output
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

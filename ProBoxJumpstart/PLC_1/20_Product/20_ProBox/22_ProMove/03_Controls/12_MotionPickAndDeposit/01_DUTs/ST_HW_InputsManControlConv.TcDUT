@@ -1,0 +1,15 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <DUT Name="ST_HW_InputsManControlConv" Id="{d732b649-b6d7-441c-a3bf-9a2afbf10a0b}">
+    <Declaration><![CDATA[// Manual control buttons and switches used to control shuttle car or vertical conveyor
+TYPE ST_HW_InputsManControlConv :
+STRUCT
+	
+	ConvFwd		: BOOL; 	// Manual drive Conveyor forward
+	ConvRev		: BOOL; 	// Manual drive Conveyor reverse
+
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

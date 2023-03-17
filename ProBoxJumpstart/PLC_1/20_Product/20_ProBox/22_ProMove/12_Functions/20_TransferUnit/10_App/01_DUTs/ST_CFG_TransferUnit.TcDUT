@@ -1,0 +1,36 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.4">
+  <DUT Name="ST_CFG_TransferUnit" Id="{d6d85359-9c19-445d-817c-2479953f8254}">
+    <Declaration><![CDATA[TYPE ST_CFG_TransferUnit :
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 417092 $
+ *	Revision date	:	$Date: $
+ *	Last changed by	:	$Author: $
+ *	URL				:	$URL: $
+ *
+ *	Purpose			:	Specific configuration for Probox Transfer unit
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *
+ **************************************************************************************)	
+STRUCT
+	HW_InputInverted 			: ST_HW_InputsTransferUnit;
+	TimeoutValueLift 			: TIME; // Timeout value for lifting
+	HomePosFree					: E_Positions_LiftControl; // Homeposition lift when zone free
+	HomePosOccupied				: E_Positions_LiftControl; // Homeposition lift when zone occupied	
+	LiftType					: E_LiftType; // Configured lifting type, Roller or Chain
+	SingleTUMode				: E_SingleTuMode := E_SingleTuMode.SingleTuMode; //Controls how to restrict takoever to the DTU and its slave functions. (Single TU Mode)
+	ExtendedRun					: ST_CFG_ExtendedRun;
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

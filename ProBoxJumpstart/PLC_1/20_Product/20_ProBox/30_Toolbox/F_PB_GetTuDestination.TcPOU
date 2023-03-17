@@ -1,0 +1,41 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <POU Name="F_PB_GetTuDestination" Id="{67064ea1-6b0d-42c1-b28a-a11d48c498a1}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION F_PB_GetTuDestination : E_FunctionNumber
+VAR_INPUT
+	eFunctionNumber		: E_FunctionNumber; // Function number
+	ZoneNumber			: INT; // ZoneNumber
+	TuTableDestIdx		: INT; // Which Tu Table destination slot (Default 1)
+END_VAR
+VAR_OUTPUT	
+	TU_DataIndex		: DINT;
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[
+IF( ZoneNumber > 0 AND ZoneNumber <= Conveyor.NUMBER_OF_ZONES_PER_FUNCTION) THEN
+
+		// If zone is valid and consists of a TU-Data index
+		IF __ISVALIDREF(FunctionRegistry[eFunctionNumber].Zone[ZoneNumber].refZoneData) THEN
+			TU_DataIndex := FunctionRegistry[eFunctionNumber].Zone[ZoneNumber].refZoneData.TransportControlData.TU_DataIndex;
+			 IF TU_DataIndex > 0 THEN
+				// Return destination slot
+				F_PB_GetTuDestination := TU_DataTable[TU_DataIndex].Destination[TuTableDestIdx].eFunctionNumber;				
+			 END_IF
+		END_IF	
+END_IF]]></ST>
+    </Implementation>
+    <LineIds Name="F_PB_GetTuDestination">
+      <LineId Id="110" Count="1" />
+      <LineId Id="113" Count="0" />
+      <LineId Id="76" Count="0" />
+      <LineId Id="21" Count="0" />
+      <LineId Id="85" Count="0" />
+      <LineId Id="96" Count="0" />
+      <LineId Id="101" Count="0" />
+      <LineId Id="97" Count="0" />
+      <LineId Id="74" Count="1" />
+      <LineId Id="114" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

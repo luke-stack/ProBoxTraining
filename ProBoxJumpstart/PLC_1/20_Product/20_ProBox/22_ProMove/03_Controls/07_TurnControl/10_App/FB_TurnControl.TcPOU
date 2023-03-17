@@ -1,0 +1,486 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <POU Name="FB_TurnControl" Id="{b0b29989-0027-4829-97ea-debf66023907}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK FB_TurnControl
+VAR_INPUT
+	FunctionData			: ST_FunctionData; // Function data
+	ZoneData				: ST_ZoneData;
+	Sensor_Pos_CW			: BOOL; // Sensor position clockwise
+	Sensor_Creep_CW			: BOOL; // Sensor creep speed clockwise
+	Sensor_Pos_CCW			: BOOL; // Sensor position counter-clockwise
+	Sensor_Creep_CCW		: BOOL; // Sensor creep speed counter-clockwise
+	Sensor_Pos_MIDDLE_CW	: BOOL; // Sensor position middle towards clockwise
+	Sensor_Pos_MIDDLE_CCW	: BOOL; // Sensor position middle towards counter-clockwise		
+	Sensor_Overhang_12		: BOOL; // Sensor overhang axis 1-2 forward	
+	Sensor_Overhang_21		: BOOL; // Sensor overhang axis 1-2 reverse
+	TimeoutValueTurn		: TIME; // Timeout value for turning
+	OrderPos				: E_Positions_TurnControl; // Order position turn table	
+	HomePos					: E_Positions_TurnControl; // Home position turn table
+	Disable					: BOOL;					   // Disable turning, if turning is ongoing, the movement is finished, no new turning will take place if Disable is true
+END_VAR
+
+VAR_OUTPUT
+	Drive_Run_CW			: BOOL; // Drive run command turn table clockwise
+	Drive_Run_CCW			: BOOL; // Drive run command turn table counter-clockwise
+	Drive_Creep_CW_CCW		: BOOL; // Drive creep speed command turn table
+	Drive_Brake_CW_CCW 		: BOOL; // Drive brake release command turn table
+	EnableTransport			: BOOL;	// Enable transport		
+	ActualPosition			: E_Positions_TurnControl;
+END_VAR
+
+VAR_IN_OUT
+	ErrorData 				: ST_ErrorDataSet; // Error data
+END_VAR
+
+VAR
+	eState					: E_States_TurnControl;
+	eLastState				: E_States_TurnControl;	
+	fbTimerMovement		: TON;		
+END_VAR	]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[F_ResetError(
+	Reset 	  := FALSE,
+	ErrorData := ErrorData);
+
+// Sensor error check
+IF ((Sensor_Pos_CW OR Sensor_Creep_CW) AND (Sensor_Pos_CCW OR Sensor_Creep_CCW)) OR 
+   	((Sensor_Pos_CW OR Sensor_Creep_CW) AND (Sensor_Pos_MIDDLE_CW OR Sensor_Pos_MIDDLE_CCW)) OR 
+	((Sensor_Pos_CCW OR Sensor_Creep_CCW) AND (Sensor_Pos_MIDDLE_CW OR Sensor_Pos_MIDDLE_CCW)) THEN
+		EnableTransport := FALSE;	
+		F_SetError(
+			ErrorType := E_ErrorType.ERROR, 
+			ErrorParam := 'Two turntable positions active', 
+			ErrorMsg := E_ErrorConv.INCORRECT_SENSOR_SIGNAL, 
+			ErrorData := ErrorData);
+END_IF	
+	
+// Initialise variables	
+Drive_Run_CW := FALSE;
+Drive_Run_CCW := FALSE;
+Drive_Creep_CW_CCW := FALSE;
+Drive_Brake_CW_CCW := FALSE;
+EnableTransport := FALSE;
+ActualPosition := E_Positions_TurnControl.UNDEFINED;	
+fbTimerMovement.IN := FALSE;
+fbTimerMovement.PT := TimeoutValueTurn;
+
+CASE eState OF
+	(*************************************************************************
+	  Initialise
+	*************************************************************************)	
+	E_States_TurnControl.INIT:
+		Drive_Run_CW := FALSE;
+		Drive_Run_CCW := FALSE;
+		Drive_Creep_CW_CCW := FALSE;
+		Drive_Brake_CW_CCW := FALSE;
+		EnableTransport := FALSE;	
+	
+		IF FunctionData.OperationState.eState = E_PositionState.STARTED THEN
+			eLastState := eState;
+			eState := E_States_TurnControl.IDLE;
+		END_IF
+		
+	(*************************************************************************
+	  Error
+	*************************************************************************)	
+	E_States_TurnControl.Error:
+		Drive_Run_CW := FALSE;
+		Drive_Run_CCW := FALSE;
+		Drive_Creep_CW_CCW := FALSE;
+		Drive_Brake_CW_CCW := FALSE;
+		EnableTransport := FALSE;	
+		
+		// Acknowledge request error
+		IF ErrorData.ErrorType <> E_ErrorType.ERROR AND ZoneData.ErrorData.ErrorState <> E_ErrorState.ERROR THEN	
+			eLastState := eState;
+			eState := E_States_TurnControl.Init;			
+		END_IF	
+		
+	(*************************************************************************
+	  Idle
+	*************************************************************************)		
+	E_States_TurnControl.IDLE:
+			//If the overhang sensors are activated when turning set an error
+		IF (NOT Sensor_Overhang_12 OR NOT Sensor_Overhang_21) AND
+			ZoneData.TransportControlData.eHandOverState <> E_HandOverState.ACTIVE AND
+			ZoneData.TransportControlData.eTakeOverState <> E_TakeOverState.ACTIVE THEN
+			F_SetError(
+						ErrorType := E_ErrorType.ERROR, 
+						ErrorParam := 'Check Overhang sensors', 
+						ErrorMsg := E_ErrorConv.JAM_ERROR, 
+						ErrorData := ErrorData);
+			eLastState := eState;
+			eState := E_States_TurnControl.ERROR;
+		END_IF
+		
+		// If function is started and no error	
+		IF FunctionData.OperationState.eState = E_PositionState.STARTED AND
+		   FunctionData.ErrorData.Error.ErrorType <> E_ErrorType.ERROR AND ZoneData.ErrorData.ErrorState <> E_ErrorState.ERROR THEN		  	
+			IF OrderPos = E_Positions_TurnControl.CCW OR 
+				(OrderPos = E_Positions_TurnControl.UNDEFINED AND HomePos = E_Positions_TurnControl.CCW) THEN
+				// When turn table is on position ccw
+				IF Sensor_Pos_CCW AND Sensor_Creep_CCW THEN
+					EnableTransport := OrderPos <> E_Positions_TurnControl.UNDEFINED; // Only set True if OrderPos is valid
+					ActualPosition := E_Positions_TurnControl.CCW;
+				ELSIF(_M_CheckActiveTransportError(ErrorData)) THEN
+					eLastState := eState;
+					eState := E_States_TurnControl.ERROR;			
+				ELSIF Disable=FALSE THEN
+					eLastState := eState;
+					eState := E_States_TurnControl.TURN_TO_CCW;
+				END_IF
+				
+			ELSIF OrderPos = E_Positions_TurnControl.CW OR 
+				(OrderPos = E_Positions_TurnControl.UNDEFINED AND HomePos = E_Positions_TurnControl.CW)  THEN
+				// When turn table is on position cw
+				IF Sensor_Pos_CW AND Sensor_Creep_CW THEN
+					EnableTransport := OrderPos <> E_Positions_TurnControl.UNDEFINED; // Only set True if OrderPos is valid
+					ActualPosition := E_Positions_TurnControl.CW;	
+				ELSIF(_M_CheckActiveTransportError(ErrorData)) THEN
+					eLastState := eState;
+					eState := E_States_TurnControl.ERROR;
+				ELSIF Disable=FALSE THEN
+					eLastState := eState;
+					eState := E_States_TurnControl.TURN_TO_CW;
+				END_IF
+			ELSIF OrderPos = E_Positions_TurnControl.MIDDLE  OR 
+				(OrderPos = E_Positions_TurnControl.UNDEFINED AND HomePos = E_Positions_TurnControl.MIDDLE) THEN
+				// When turn table is on position middle 
+				IF Sensor_Pos_MIDDLE_CW AND Sensor_Pos_MIDDLE_CCW THEN
+					EnableTransport := OrderPos <> E_Positions_TurnControl.UNDEFINED; // Only set True if OrderPos is valid
+					ActualPosition := E_Positions_TurnControl.MIDDLE;
+				ELSIF(_M_CheckActiveTransportError(ErrorData)) THEN
+					eLastState := eState;
+					eState := E_States_TurnControl.ERROR;
+				ELSIF Disable=FALSE THEN 
+					IF Sensor_Pos_CCW OR Sensor_Creep_CCW OR (Sensor_Pos_MIDDLE_CCW AND NOT Sensor_Pos_MIDDLE_CW) THEN
+						eLastState := eState;
+						eState := E_States_TurnControl.TURN_MIDDLE_FROM_CCW;
+						
+					ELSIF Sensor_Pos_CW OR Sensor_Creep_CW OR (Sensor_Pos_MIDDLE_CW AND NOT Sensor_Pos_MIDDLE_CCW) THEN
+						eLastState := eState;
+						eState := E_States_TurnControl.TURN_MIDDLE_FROM_CW;
+					ELSE
+						eLastState := eState;
+						eState := E_States_TurnControl.TURN_TO_CCW;						
+					END_IF
+				END_IF		
+			END_IF
+		ELSE	
+			eLastState := eState;
+			eState := E_States_TurnControl.ERROR;
+		END_IF	
+	
+	(*************************************************************************
+	  Turn to ccw
+	*************************************************************************)	
+	E_States_TurnControl.TURN_TO_CCW:
+	
+	//If the overhang sensors are activated when turning set an error
+		IF NOT Sensor_Overhang_12 OR NOT Sensor_Overhang_21 THEN
+			F_SetError(
+						ErrorType := E_ErrorType.ERROR, 
+						ErrorParam := 'Check Overhang sensors', 
+						ErrorMsg := E_ErrorConv.JAM_ERROR, 
+						ErrorData := ErrorData);
+			eLastState := eState;
+			eState := E_States_TurnControl.ERROR;
+		END_IF
+		// If function is started or stopping and no error
+		IF (FunctionData.OperationState.eState = E_PositionState.STARTED OR FunctionData.OperationState.eState = E_PositionState.STOPPING) AND
+		  FunctionData.ErrorData.Error.ErrorType <> E_ErrorType.ERROR AND ZoneData.ErrorData.ErrorState <> E_ErrorState.ERROR THEN
+			// When turn table is on position ccw
+			IF Sensor_Pos_CCW AND Sensor_Creep_CCW THEN
+				Drive_Run_CCW := FALSE;
+				Drive_Creep_CW_CCW := FALSE;
+				
+				eLastState := eState;
+				eState := E_States_TurnControl.IDLE;
+			ELSE
+				fbTimerMovement.IN := TRUE;
+				
+				// If time is up
+				IF fbTimerMovement.Q THEN
+					Drive_Run_CCW := FALSE;
+					F_SetError(
+						ErrorType := E_ErrorType.ERROR, 
+						ErrorParam := 'Timeout Turning', 
+						ErrorMsg := E_ErrorConv.TIMEOUT_MOVEMENT, 
+						ErrorData := ErrorData);
+						
+					eLastState := eState;
+					eState := E_States_TurnControl.Error;
+				ELSE
+					Drive_Run_CCW := TRUE;
+				
+					IF Sensor_Creep_CCW THEN
+						Drive_Creep_CW_CCW := TRUE;
+					ELSE
+						Drive_Creep_CW_CCW := FALSE;
+					END_IF
+				END_IF		
+			END_IF
+		ELSE
+			eLastState := eState;
+			eState := E_States_TurnControl.ERROR;	
+		END_IF
+		
+	
+	(*************************************************************************
+	  Turn to cw
+	*************************************************************************)		
+	E_States_TurnControl.TURN_TO_CW:
+	//If the overhang sensors are activated when turning set an error	
+		IF NOT Sensor_Overhang_12 OR NOT Sensor_Overhang_21 THEN
+			F_SetError(
+						ErrorType := E_ErrorType.ERROR, 
+						ErrorParam := 'Check Overhang sensors', 
+						ErrorMsg := E_ErrorConv.JAM_ERROR, 
+						ErrorData := ErrorData);
+			eLastState := eState;
+			eState := E_States_TurnControl.ERROR;
+			END_IF
+	
+		IF (FunctionData.OperationState.eState = E_PositionState.STARTED OR FunctionData.OperationState.eState = E_PositionState.STOPPING) AND
+		  FunctionData.ErrorData.Error.ErrorType <> E_ErrorType.ERROR AND ZoneData.ErrorData.ErrorState <> E_ErrorState.ERROR THEN
+			// When turn table is on position cw
+			IF Sensor_Pos_CW AND Sensor_Creep_CW THEN
+				Drive_Run_CW := FALSE;
+				Drive_Creep_CW_CCW := FALSE;
+				
+				eLastState := eState;
+				eState := E_States_TurnControl.IDLE;
+			ELSE
+				fbTimerMovement.IN := TRUE;
+				
+				// If time is up
+				IF fbTimerMovement.Q THEN
+					Drive_Run_CW := FALSE;
+					F_SetError(
+						ErrorType := E_ErrorType.ERROR, 
+						ErrorParam := 'Timeout Turning', 
+						ErrorMsg := E_ErrorConv.TIMEOUT_MOVEMENT, 
+						ErrorData := ErrorData);
+						
+					eLastState := eState;
+					eState := E_States_TurnControl.Error;
+				ELSE
+					Drive_Run_CW := TRUE;
+				
+					IF Sensor_Creep_CW THEN
+						Drive_Creep_CW_CCW := TRUE;
+					ELSE
+						Drive_Creep_CW_CCW := FALSE;
+					END_IF
+				END_IF	
+			END_IF
+		ELSE
+			eLastState := eState;
+			eState := E_States_TurnControl.ERROR;				
+		END_IF
+
+	(*************************************************************************
+	  Turn to middle from ccw
+	*************************************************************************)
+	E_States_TurnControl.TURN_MIDDLE_FROM_CCW:
+		
+		IF NOT Sensor_Overhang_12 OR NOT Sensor_Overhang_21 THEN
+			F_SetError(
+						ErrorType := E_ErrorType.ERROR, 
+						ErrorParam := 'Check Overhang sensors', 
+						ErrorMsg := E_ErrorConv.JAM_ERROR, 
+						ErrorData := ErrorData);
+			eLastState := eState;
+			eState := E_States_TurnControl.ERROR;
+		END_IF
+		
+		IF Sensor_Pos_CW OR Sensor_Creep_CW THEN
+			F_SetError(
+						ErrorType := E_ErrorType.ERROR, 
+						ErrorParam := 'Turntable gone past middle', 
+						ErrorMsg := E_ErrorConv.POSITIONING_ERROR, 
+						ErrorData := ErrorData);
+			eLastState := eState;
+			eState := E_States_TurnControl.ERROR;
+		END_IF		
+	
+		IF (FunctionData.OperationState.eState = E_PositionState.STARTED OR FunctionData.OperationState.eState = E_PositionState.STOPPING) AND
+		  FunctionData.ErrorData.Error.ErrorType <> E_ErrorType.ERROR AND ZoneData.ErrorData.ErrorState <> E_ErrorState.ERROR THEN
+			// When turn table is on position middle
+			IF Sensor_Pos_MIDDLE_CW AND Sensor_Pos_MIDDLE_CCW THEN
+				Drive_Run_CW := FALSE;
+				Drive_Creep_CW_CCW := FALSE;
+				
+				eLastState := eState;
+				eState := E_States_TurnControl.IDLE;
+			ELSE
+				fbTimerMovement.IN := TRUE;
+				
+				// If time is up
+				IF fbTimerMovement.Q THEN
+					Drive_Run_CW := FALSE;
+					F_SetError(
+						ErrorType := E_ErrorType.ERROR, 
+						ErrorParam := 'Timeout Turning', 
+						ErrorMsg := E_ErrorConv.TIMEOUT_MOVEMENT, 
+						ErrorData := ErrorData);
+						
+					eLastState := eState;
+					eState := E_States_TurnControl.Error;
+				ELSE
+					Drive_Run_CW := TRUE;
+				
+					IF Sensor_Pos_MIDDLE_CW OR Sensor_Pos_MIDDLE_CCW THEN
+						Drive_Creep_CW_CCW := TRUE;
+					ELSE
+						Drive_Creep_CW_CCW := FALSE;
+					END_IF
+				END_IF
+			END_IF
+		ELSE
+			eLastState := eState;
+			eState := E_States_TurnControl.ERROR;				
+		END_IF
+		
+	(*************************************************************************
+	  Turn to middle from cw
+	*************************************************************************)		
+	E_States_TurnControl.TURN_MIDDLE_FROM_CW:
+		IF NOT Sensor_Overhang_12 OR NOT Sensor_Overhang_21 THEN
+			F_SetError(
+						ErrorType := E_ErrorType.ERROR, 
+						ErrorParam := 'Check Overhang sensors', 
+						ErrorMsg := E_ErrorConv.JAM_ERROR, 
+						ErrorData := ErrorData);
+			eLastState := eState;
+			eState := E_States_TurnControl.ERROR;
+		END_IF
+		
+		IF Sensor_Pos_CCW OR Sensor_Creep_CCW THEN
+			F_SetError(
+						ErrorType := E_ErrorType.ERROR, 
+						ErrorParam := 'Turntable gone past middle', 
+						ErrorMsg := E_ErrorConv.POSITIONING_ERROR, 
+						ErrorData := ErrorData);
+			eLastState := eState;
+			eState := E_States_TurnControl.ERROR;
+		END_IF		
+		IF (FunctionData.OperationState.eState = E_PositionState.STARTED OR FunctionData.OperationState.eState = E_PositionState.STOPPING) AND
+		  FunctionData.ErrorData.Error.ErrorType <> E_ErrorType.ERROR AND ZoneData.ErrorData.ErrorState <> E_ErrorState.ERROR THEN
+			// When turn table is on position middle
+			IF Sensor_Pos_MIDDLE_CW AND Sensor_Pos_MIDDLE_CCW THEN
+				Drive_Run_CCW := FALSE;
+				Drive_Creep_CW_CCW := FALSE;
+				
+				eLastState := eState;
+				eState := E_States_TurnControl.IDLE;
+			ELSE
+				fbTimerMovement.IN := TRUE;
+				
+				// If time is up
+				IF fbTimerMovement.Q THEN
+					Drive_Run_CCW := FALSE;
+					F_SetError(
+						ErrorType := E_ErrorType.ERROR, 
+						ErrorParam := 'Timeout Turning', 
+						ErrorMsg := E_ErrorConv.TIMEOUT_MOVEMENT, 
+						ErrorData := ErrorData);
+						
+					eLastState := eState;
+					eState := E_States_TurnControl.Error;
+				ELSE
+					Drive_Run_CCW := TRUE;
+				
+					IF Sensor_Pos_MIDDLE_CCW OR Sensor_Pos_MIDDLE_CW THEN
+						Drive_Creep_CW_CCW := TRUE;
+					ELSE
+						Drive_Creep_CW_CCW := FALSE;
+					END_IF
+				END_IF
+		  	END_IF
+		ELSE
+			eLastState := eState;
+			eState := E_States_TurnControl.ERROR;				
+		END_IF
+END_CASE
+
+fbTimerMovement();
+
+]]></ST>
+    </Implementation>
+    <Method Name="_M_CheckActiveTransportError" Id="{2df0d092-0a27-4b4b-ae20-f7044e7a82c6}">
+      <Declaration><![CDATA[//checks if an transport is active, then set error
+//Return True if an error is detected
+METHOD PRIVATE _M_CheckActiveTransportError : BOOL
+VAR_INPUT
+END_VAR
+	
+VAR_IN_OUT
+	ErrorData 				: ST_ErrorDataSet; // Error data
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[ 
+	IF( ZoneData.TransportControlData.eHandOverState = E_HandOverState.ACTIVE OR
+		ZoneData.TransportControlData.eHandOverState = E_HandOverState.STOP OR
+		ZoneData.TransportControlData.eHandOverState = E_HandOverState.INTERRUPTED OR
+		ZoneData.TransportControlData.eTakeOverState = E_TakeOverState.ACTIVE OR
+		ZoneData.TransportControlData.eTakeOverState = E_TakeOverState.STOP OR
+		ZoneData.TransportControlData.eTakeOverState = E_TakeOverState.INTERRUPTED) THEN
+		
+		_M_CheckActiveTransportError:=TRUE;				
+		F_SetError(	ErrorType 	:= E_ErrorType.ERROR, 
+					ErrorParam 	:= 'Turntable not in position during transport',
+					ErrorMsg 	:= E_ErrorConv.INCORRECT_SENSOR_SIGNAL,
+					ErrorData 	:= ErrorData);
+	END_IF
+	//eLastState := eState;
+	//eState := E_States_TurnControl.ERROR;]]></ST>
+      </Implementation>
+    </Method>
+    <LineIds Name="FB_TurnControl">
+      <LineId Id="537" Count="21" />
+      <LineId Id="924" Count="0" />
+      <LineId Id="559" Count="60" />
+      <LineId Id="962" Count="0" />
+      <LineId Id="964" Count="1" />
+      <LineId Id="622" Count="0" />
+      <LineId Id="625" Count="9" />
+      <LineId Id="967" Count="1" />
+      <LineId Id="966" Count="0" />
+      <LineId Id="637" Count="0" />
+      <LineId Id="640" Count="8" />
+      <LineId Id="970" Count="1" />
+      <LineId Id="969" Count="0" />
+      <LineId Id="649" Count="1" />
+      <LineId Id="653" Count="3" />
+      <LineId Id="659" Count="1" />
+      <LineId Id="663" Count="0" />
+      <LineId Id="666" Count="131" />
+      <LineId Id="1007" Count="0" />
+      <LineId Id="1009" Count="7" />
+      <LineId Id="1008" Count="0" />
+      <LineId Id="798" Count="51" />
+      <LineId Id="1025" Count="0" />
+      <LineId Id="1017" Count="7" />
+      <LineId Id="850" Count="37" />
+      <LineId Id="2" Count="0" />
+      <LineId Id="350" Count="1" />
+      <LineId Id="925" Count="1" />
+    </LineIds>
+    <LineIds Name="FB_TurnControl._M_CheckActiveTransportError">
+      <LineId Id="9" Count="0" />
+      <LineId Id="24" Count="0" />
+      <LineId Id="10" Count="3" />
+      <LineId Id="5" Count="0" />
+      <LineId Id="16" Count="0" />
+      <LineId Id="36" Count="0" />
+      <LineId Id="18" Count="0" />
+      <LineId Id="20" Count="0" />
+      <LineId Id="26" Count="0" />
+      <LineId Id="22" Count="0" />
+      <LineId Id="27" Count="0" />
+      <LineId Id="23" Count="0" />
+      <LineId Id="25" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

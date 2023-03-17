@@ -1,0 +1,14 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.12">
+  <DUT Name="ST_HW_OutputsPalletMagazine" Id="{ea5bdeb1-baa9-42bb-8299-d05f5d6709e8}">
+    <Declaration><![CDATA[TYPE ST_HW_OutputsPalletMagazine :
+STRUCT
+	LiftUp			: BOOL; //Move lift up
+	LiftDown		: BOOL; //Move lift down
+	SolenoidForks	: BOOL; //Solenoid that holds the forks in place 
+	
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

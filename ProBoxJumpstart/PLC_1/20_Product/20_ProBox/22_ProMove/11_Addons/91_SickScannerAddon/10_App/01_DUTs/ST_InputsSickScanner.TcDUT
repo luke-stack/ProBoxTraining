@@ -1,0 +1,56 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.4">
+  <DUT Name="ST_InputsSickScanner" Id="{5c91e36d-c0c7-4914-b76c-1efc6edd0ec1}">
+    <Declaration><![CDATA[TYPE ST_InputsSickScanner :
+	
+STRUCT	
+	CtrlIn					: ST_CtrlInSickScanner;
+	ConfMessageIn			: ARRAY[0..31] OF BYTE; // Message Byte 5 and forward result from scanner			
+	Heartbeat				: BOOL;	
+	GoodRead				: BOOL; //D2 Good Read * Status of the last read results *
+
+END_STRUCT
+END_TYPE
+(*
+Ctrl bits In
+By adding the Ctrl bits In, the PLC can monitor the digital inputs and outputs of the CLV61x Dual Port.
+Here is the assignment for the CLV61x Dual Port.
+Add. Bit Name Meaning
+Add.+1 D0 Device Ready Status of the CLV61x Dual Port
+Add.+1 D1 Reserved
+Add.+1 D2 Good Read * Status of the last read results *
+Add.+1 D3 No Read * Status of the last read results *
+Add.+1 D4 External Output 1 Only available as a bit logical, no hardware output
+Add.+1 D5 External output 2 Only available as a bit logical, no hardware output
+Add.+1 D6 Result 1 Only available as a bit logical, no hardware output
+Add.+1 D7 Result 2 Only available as a bit logical, no hardware output
+Add. D8 - Reserved
+Add. D9 - Reserved
+Add. D10 Sensor 1 Status of dig. input sensor 1.(Hardware dependent, equipment type on request)
+Add. D11 - Reserved
+Add. D12 – Reserved
+Add. D13 – Reserved
+Add. D14 – Reserved
+Add. D15 Toggle Inverted after each read cycle.
+Observe byte order: D0 stands for the least significant bit of Add.+1.
+* The bits are valid if the "Toggle" bit changes.
+*)]]></Declaration>
+    <ObjectProperties>
+      <XmlArchive>
+        <Data>
+          <o xml:space="preserve" t="UMLStereoTypeContainerObject">
+            <v n="IsType" t="UMLType">BaseArea</v>
+            <v n="Stereotype">""</v>
+            <d n="Stereotypes" t="Hashtable" />
+          </o>
+        </Data>
+        <TypeList>
+          <Type n="Hashtable">System.Collections.Hashtable</Type>
+          <Type n="String">System.String</Type>
+          <Type n="UMLStereoTypeContainerObject">{30250973-b110-4e31-b562-c102e042dca4}</Type>
+          <Type n="UMLType">{0197b136-405a-42ee-bb27-fd08b621d0cf}</Type>
+        </TypeList>
+      </XmlArchive>
+    </ObjectProperties>
+  </DUT>
+</TcPlcObject>

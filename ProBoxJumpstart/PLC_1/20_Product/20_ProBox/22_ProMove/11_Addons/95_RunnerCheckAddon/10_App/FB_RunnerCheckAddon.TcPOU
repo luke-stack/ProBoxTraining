@@ -1,0 +1,487 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <POU Name="FB_RunnerCheckAddon" Id="{28fabc1f-5e91-4eb5-87f6-6b3422babbba}" SpecialFunc="None">
+    <Declaration><![CDATA[//Pallet runner check. Detects flaws on the runners by a number of sensors.
+FUNCTION_BLOCK FB_RunnerCheckAddon EXTENDS FB_FunctionConv
+VAR_INPUT
+	Config						: ST_CFG_RunnerCheck; 		// Configuration
+	HW_Inputs					: ST_HW_InputsRunnerCheck; 	// Hardware inputs
+	CtrlIn						: ST_CtrlInRunnerCheck;		// User function control inputs
+END_VAR
+VAR_OUTPUT	
+	CtrlOut						: ST_CtrlOut_RunnerCheck;	// User function control outputs
+END_VAR
+VAR
+	PalletRunerCheckData		: ST_RunnerCheckData;	
+	Inputs						: ST_InputsRunnerCheck; 	// Function specific inputs	
+	fbAddOnErrHandler			: FB_AddOnErrHandler;
+	
+END_VAR
+VAR PERSISTENT
+	Settings					: ST_CFG_RunnerCheck; 		// Settings - activated configuration 
+END_VAR]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[(**************************************************************************************************************
+   Input mapping
+***************************************************************************************************************)
+A_InputMapping();
+
+(**************************************************************************************************************
+   Initialization
+***************************************************************************************************************)
+A_Init();
+
+
+(**************************************************************************************************************
+   BCF State control
+***************************************************************************************************************)
+A_StateControl();
+
+(**************************************************************************************************************
+   Error handler
+***************************************************************************************************************)
+A_ErrorHandler();
+fbAddOnErrHandler(AddOnSettingsFunction:= SettingsFunction, AddOnFunctionData:= FunctionData);
+
+(**************************************************************************************************************
+   BCF Process AddOns
+***************************************************************************************************************)
+M_ProcessAddOns();
+
+(**********************************************************************************************************
+   MovableStop sequence
+***********************************************************************************************************)
+_M_CheckStates();
+
+
+(**************************************************************************************************************
+   BCF Interface handler out
+***************************************************************************************************************)
+M_ITC_ProcessOut();
+
+(**************************************************************************************************************
+   Output mapping
+***************************************************************************************************************)
+A_OutputMapping();	]]></ST>
+    </Implementation>
+    <Method Name="_M_CheckSensors" Id="{9aac4adf-9174-4eaa-ad11-59eb09330f48}">
+      <Declaration><![CDATA[//Check HW input sensors if an defect is detected. 
+//Return: TRUE = Success, no errors found
+//Return: FALSE = Error found.
+METHOD PRIVATE _M_CheckSensors : BOOL
+VAR_INPUT
+	FilterTime : TIME;
+END_VAR
+
+VAR
+	i:INT;
+	ErrorCount:INT;
+END_VAR
+
+VAR_INST
+	FT_RunnerLeft				: ARRAY[1..2] OF TOF; // filter timer Runner Left  sensor 1 and 2
+	FT_RunnerCenter				: ARRAY[1..2] OF TOF; // filter timer Runner center sensor 1 and 2
+	FT_RunnerRight				: ARRAY[1..2] OF TOF; // filter timer Runner Right 1 and 2
+
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+_M_CheckSensors:=TRUE; //no errors found
+
+FOR i := 1 TO 2 DO
+	
+	FT_RunnerLeft[i](PT:=FilterTime, IN:= Inputs.HW.SensorRunnerLeft[i]);	
+	IF(NOT FT_RunnerLeft[i].Q) THEN
+		ErrorCount := ErrorCount + 1;
+	END_IF
+
+	FT_RunnerCenter[i](PT:=FilterTime, IN:= Inputs.HW.SensorRunnerCenter[i]);
+	IF(NOT FT_RunnerCenter[i].Q) THEN
+		ErrorCount := ErrorCount + 1;
+	END_IF		
+
+	FT_RunnerRight[i](PT:=FilterTime, IN:= Inputs.HW.SensorRunnerRight[i]);
+	IF(NOT FT_RunnerRight[i].Q) THEN
+		ErrorCount := ErrorCount + 1;
+	END_IF
+		
+END_FOR
+
+_M_CheckSensors := ErrorCount=0;
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_CheckStates" Id="{84bc5696-2020-4e3b-8246-89087c9d4b87}">
+      <Declaration><![CDATA[METHOD PRIVATE _M_CheckStates : BOOL
+VAR_INPUT
+END_VAR
+
+VAR
+	Trigger						: BOOL;
+	TranspCtrlData				: REFERENCE TO ST_TransportControlData;	
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[//A_CheckStates
+
+// Reset Error - Infeed addon failed to add TU Data Index during TU detection.
+F_ResetError(
+	Reset 	  := FALSE,
+	ErrorData := FunctionData.ErrorData.ErrorDataSet[1]);
+	
+F_ResetError(
+	Reset 	  := FALSE,
+	ErrorData := FunctionData.ErrorData.ErrorDataSet[2]);
+
+
+//Get transportdata reference(only for reading)
+TranspCtrlData REF= F_PB_GetTransportControlDataRef(ConfigFunction.FunctionLink.eFunctionNumber, ConfigFunction.FunctionLink.ZoneNumber);	
+
+//Trigger to start alignment
+IF Settings.EnableExternalTrigger AND Inputs.CtrlIn.ExternalTrigger THEN
+	Trigger := TRUE;
+ELSIF(NOT Settings.EnableExternalTrigger) THEN
+	//Automatically trig measurement	
+	//-check if the destination is to this function and zone, or equal to CtrlIn.StartTrigDestination	
+	//-then if takevoer state is active we shall trigg the scanner
+	IF(TranspCtrlData.eTakeOverState = E_TakeOverState.ACTIVE  AND 
+		(F_PB_GetTuDestination(SettingsFunction.FunctionLink.eFunctionNumber,SettingsFunction.FunctionLink.ZoneNumber,1) = SettingsFunction.FunctionLink.eFunctionNumber OR
+		 F_PB_GetTuDestination(SettingsFunction.FunctionLink.eFunctionNumber,SettingsFunction.FunctionLink.ZoneNumber,1) = Settings.StartTrigDestination))	THEN
+		Trigger := TRUE;	
+	END_IF
+ELSE
+	Trigger := FALSE;
+END_IF
+
+
+(**************************************************************************************
+   States
+***************************************************************************************)
+CASE PalletRunerCheckData.eState OF
+
+(**************************************************************************************************************
+   INIT
+***************************************************************************************************************)
+	E_RunnerCheckStates.INIT:
+		PalletRunerCheckData.Busy := FALSE;
+		IF FunctionData.ErrorData.Error.ErrorType <> E_ErrorType.ERROR AND
+			FunctionInterface.In.Element.OperationState.eState = E_PositionState.STARTED THEN
+			
+			PalletRunerCheckData.eLastState := PalletRunerCheckData.eState;
+			PalletRunerCheckData.eState := E_RunnerCheckStates.IDLE;
+			
+		ELSIF FunctionData.ErrorData.Error.ErrorType = E_ErrorType.ERROR THEN
+			// Change state
+			PalletRunerCheckData.eLastState := PalletRunerCheckData.eState;
+			PalletRunerCheckData.eState := E_RunnerCheckStates.ERROR;
+		END_IF	
+	
+(**************************************************************************************************************
+   Idle
+***************************************************************************************************************)	
+	E_RunnerCheckStates.IDLE:
+		PalletRunerCheckData.Busy := FALSE;
+		
+		IF( FunctionData.ErrorData.Error.ErrorType = E_ErrorType.ERROR) THEN
+			// Change state
+			PalletRunerCheckData.eLastState := PalletRunerCheckData.eState;
+			PalletRunerCheckData.eState := E_RunnerCheckStates.ERROR;
+		
+			
+		ELSIF(FunctionInterface.In.Element.OperationState.eState = E_PositionState.STARTED AND Trigger) THEN 
+			
+			PalletRunerCheckData.RunnerCheckErrorDetected:=FALSE;
+			// check pre conditions, ie that all sensors are ok and do not detect an obsticle
+			IF(_M_CheckSensors(T#0MS (* no filter time at this point*))) THEN				
+				// Change state
+				PalletRunerCheckData.eLastState := PalletRunerCheckData.eState;
+				PalletRunerCheckData.eState := E_RunnerCheckStates.MEASURING;
+			
+			ELSE
+				//the sensors are being covered. set error
+				F_SetError(
+						ErrorType 	:= E_ErrorType.ERROR,
+						ErrorParam 	:= 'Sensors not clear before measuring',
+						ErrorMsg 	:= E_ErrorConv.INCORRECT_SENSOR_SIGNAL,
+						ErrorData 	:= FunctionData.ErrorData.ErrorDataSet[1]);	
+			
+			END_IF
+			
+		END_IF		
+		
+	(**************************************************************************************
+   		MEASURING
+	***************************************************************************************)		
+	E_RunnerCheckStates.MEASURING:
+		PalletRunerCheckData.Busy := TRUE;
+		//check sensors
+		IF( NOT _M_CheckSensors(Settings.FilterTime)) THEN
+			PalletRunerCheckData.RunnerCheckErrorDetected := TRUE; // an flaw detected.
+		END_IF	
+		
+
+		//When pallet has gone through the pallet runner check -> test completed	
+		IF TranspCtrlData.Occupied THEN 
+			// Change state
+			PalletRunerCheckData.eLastState 	:= PalletRunerCheckData.eState;
+			PalletRunerCheckData.eState 		:= E_RunnerCheckStates.DATA_AVAIABLE;				
+		END_IF
+
+		IF(TranspCtrlData.TU_DataIndex = 0) THEN
+			// Error, no data present
+				F_SetError(
+						ErrorType 	:= E_ErrorType.ERROR,
+						ErrorParam 	:= 'Measurement aborted, No TU data available',
+						ErrorMsg 	:= E_ErrorConv.TU_ID_WRONG,
+						ErrorData 	:= FunctionData.ErrorData.ErrorDataSet[2]);
+
+				// Change state
+				PalletRunerCheckData.eLastState 	:= PalletRunerCheckData.eState;
+				PalletRunerCheckData.eState 		:= E_RunnerCheckStates.ERROR;				
+		END_IF
+			
+	
+	
+	(**************************************************************************************
+   		DATA AVAIABLE
+	***************************************************************************************)			
+			
+	E_RunnerCheckStates.DATA_AVAIABLE:
+		PalletRunerCheckData.Busy := TRUE;
+		
+		IF TranspCtrlData.TU_DataIndex <> 0 THEN 
+							
+			IF(PalletRunerCheckData.RunnerCheckErrorDetected) THEN
+				TU_DataTable[TranspCtrlData.TU_DataIndex].Profile.Runner := 0; //not ok
+				fbDebugMsg.M_SendInfoMsg(CONCAT('Pallet Runner check addon detected flaw(s) on the pallet. TU ID: ', TU_DataTable[TranspCtrlData.TU_DataIndex].TU_ID.ASCII));
+			ELSE
+				TU_DataTable[TranspCtrlData.TU_DataIndex].Profile.Runner := 1;
+				//fbDebugMsg.M_SendInfoMsg(CONCAT('Pallet Runner check addon successfully tested. TU ID: ', TU_DataTable[TranspCtrlData.TU_DataIndex].TU_ID.ASCII));
+			END_IF
+			// Change state
+			PalletRunerCheckData.eLastState 	:= PalletRunerCheckData.eState;
+			PalletRunerCheckData.eState 		:= E_RunnerCheckStates.WAIT_UNTIL_FREE;		
+			
+		ELSE			
+			// Error, no data present
+			F_SetError(
+					ErrorType 	:= E_ErrorType.ERROR,
+					ErrorParam 	:= 'No TU Data found',
+					ErrorMsg 	:= E_ErrorConv.NO_FREE_TU_DATA_SET,
+					ErrorData 	:= FunctionData.ErrorData.ErrorDataSet[2]);
+
+			// Change state
+			PalletRunerCheckData.eLastState 	:= PalletRunerCheckData.eState;
+			PalletRunerCheckData.eState 		:= E_RunnerCheckStates.ERROR;					
+		END_IF
+				
+														
+	
+	(**********************************************************************************
+   		WAIT_UNTIL_FREE
+	***********************************************************************************)
+	E_RunnerCheckStates.WAIT_UNTIL_FREE:
+		PalletRunerCheckData.Busy := FALSE;
+		// Wait until zone is free.
+		IF(NOT TranspCtrlData.Occupied) THEN
+			// Go to "IDLE"
+			PalletRunerCheckData.eLastState 	:= PalletRunerCheckData.eState;
+			PalletRunerCheckData.eState 		:= E_RunnerCheckStates.IDLE;
+		END_IF
+	
+					
+
+	(**************************************************************************************
+   		ERROR 
+	***************************************************************************************)	
+	E_RunnerCheckStates.ERROR:	
+		
+		// Wait until error is resetted
+		IF FunctionData.ErrorData.Error.ErrorType <> E_ErrorType.ERROR THEN
+			// Go back to init
+			PalletRunerCheckData.eLastState 	:= PalletRunerCheckData.eState;
+			PalletRunerCheckData.eState 		:= E_RunnerCheckStates.INIT;
+		END_IF
+END_CASE
+
+
+
+
+]]></ST>
+      </Implementation>
+    </Method>
+    <Action Name="A_Init" Id="{6d3fd9a1-54ba-4bd4-9299-4c097e9956d9}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_Init
+ * 	FUNCTION	Initialize function
+ **************************************************************************************)
+ 
+// Update Registry
+M_UpdateRegistry();
+
+IF NOT FunctionData.Init AND FunctionData.InitRunning THEN
+	// When the subsystem is started, 
+	// and its released to initialize
+	IF FunctionData.OperationState.Info.SystemReady AND
+	   SettingsFunction.eFunctionNumber < FunctionData.OperationState.InitRelease.eLimitFunctionNumber THEN
+	   
+	   IF M_InitFunction(FALSE) THEN
+			// Function initialized - and initialization done
+			FunctionData.Init := TRUE;
+			FunctionData.InitRunning := FALSE;
+			
+			//CheckStates.eLastState := CheckStates.eState;
+			//CheckStates.eState := E_PalletRunnerCheckStates.INIT;
+			
+			// Set reset cmd
+			FunctionData.ErrorData.Error.ResetError := TRUE;
+			
+			DebugMsg := CONCAT('Initialization done. Function: ', ConfigFunction.FunctionName);
+			fbDebugMsg.M_SendInfoMsg(DebugMsg);
+		END_IF
+	END_IF
+ELSIF NOT FunctionData.Init THEN
+	//CheckStates.eLastState := CheckStates.eState;
+	//CheckStates.eState := E_PalletRunnerCheckStates.INIT;
+	
+	FunctionData.OperationState := FunctionBase.PositionStateEmpty;
+	
+	Settings := Config;
+	
+	M_PreInit();
+	
+	FunctionData.InitRunning := SettingsFunction.eFunctionNumber > 0 AND
+								SettingsFunction.eElementLink > 0;
+	
+END_IF
+ ]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="A_InputMapping" Id="{ff01388d-1fe1-4335-8c1e-fd75ec989389}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_InputMapping
+ * 	FUNCTION	Input mapping
+ **************************************************************************************)
+ 
+(**************************************************************************************
+   Hardware Inputs
+***************************************************************************************)
+Inputs.HW		:= Hw_Inputs;
+Inputs.CtrlIn	:= CtrlIn;
+
+(**************************************************************************************
+   Element states
+***************************************************************************************)
+// Get status of the corresponding element
+M_GetElementStates(); ]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="A_OutputMapping" Id="{21d2e551-efcc-4243-b47e-0cd1803dd7e6}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_OutputMapping
+ * 	FUNCTION	Output mapping
+ **************************************************************************************)
+ 
+(**************************************************************************************
+   Hardware outputs
+***************************************************************************************)
+//NA
+
+(**************************************************************************************
+   Order outputs (Commands to corresponding element)
+***************************************************************************************)
+                                                        	
+// Allow element to drive                               	
+FunctionInterface.Out.FunctionOrders.Enable 				:= TRUE;
+FunctionInterface.Out.FunctionOrders.Enable_34 				:= TRUE;
+(**************************************************************************************
+   AddOn outputs
+***************************************************************************************)
+FunctionInterface.Out.AddOnOrders.Enable 					:= FunctionData.ErrorData.Error.ErrorType <> E_ErrorType.ERROR;
+FunctionInterface.Out.AddOnOrders.DataReady					:= PalletRunerCheckData.Busy = FALSE;
+FunctionInterface.Out.AddOnOrders.EnableHandover 			:= PalletRunerCheckData.Busy = FALSE;
+FunctionInterface.Out.AddOnOrders.EnableTakeover 			:= PalletRunerCheckData.Busy = FALSE;
+
+(**************************************************************************************
+   Status outputs
+***************************************************************************************)
+CtrlOut.RunnerCheckResult 									:= NOT PalletRunerCheckData.RunnerCheckErrorDetected;]]></ST>
+      </Implementation>
+    </Action>
+    <LineIds Name="FB_RunnerCheckAddon">
+      <LineId Id="69" Count="40" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_RunnerCheckAddon._M_CheckSensors">
+      <LineId Id="42" Count="0" />
+      <LineId Id="41" Count="0" />
+      <LineId Id="8" Count="0" />
+      <LineId Id="7" Count="0" />
+      <LineId Id="60" Count="0" />
+      <LineId Id="25" Count="0" />
+      <LineId Id="39" Count="0" />
+      <LineId Id="56" Count="0" />
+      <LineId Id="43" Count="0" />
+      <LineId Id="57" Count="0" />
+      <LineId Id="37" Count="0" />
+      <LineId Id="45" Count="1" />
+      <LineId Id="44" Count="0" />
+      <LineId Id="58" Count="0" />
+      <LineId Id="29" Count="0" />
+      <LineId Id="48" Count="1" />
+      <LineId Id="47" Count="0" />
+      <LineId Id="59" Count="0" />
+      <LineId Id="26" Count="0" />
+      <LineId Id="63" Count="0" />
+      <LineId Id="31" Count="0" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_RunnerCheckAddon._M_CheckStates">
+      <LineId Id="259" Count="18" />
+      <LineId Id="440" Count="0" />
+      <LineId Id="442" Count="0" />
+      <LineId Id="444" Count="0" />
+      <LineId Id="438" Count="0" />
+      <LineId Id="278" Count="0" />
+      <LineId Id="436" Count="0" />
+      <LineId Id="279" Count="0" />
+      <LineId Id="439" Count="0" />
+      <LineId Id="282" Count="31" />
+      <LineId Id="467" Count="0" />
+      <LineId Id="315" Count="45" />
+      <LineId Id="448" Count="8" />
+      <LineId Id="446" Count="1" />
+      <LineId Id="361" Count="8" />
+      <LineId Id="466" Count="0" />
+      <LineId Id="370" Count="3" />
+      <LineId Id="445" Count="0" />
+      <LineId Id="374" Count="1" />
+      <LineId Id="465" Count="0" />
+      <LineId Id="376" Count="28" />
+      <LineId Id="437" Count="0" />
+      <LineId Id="406" Count="2" />
+      <LineId Id="419" Count="16" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_RunnerCheckAddon.A_Init">
+      <LineId Id="2" Count="42" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_RunnerCheckAddon.A_InputMapping">
+      <LineId Id="2" Count="14" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_RunnerCheckAddon.A_OutputMapping">
+      <LineId Id="2" Count="7" />
+      <LineId Id="12" Count="7" />
+      <LineId Id="32" Count="0" />
+      <LineId Id="22" Count="3" />
+      <LineId Id="34" Count="0" />
+      <LineId Id="26" Count="5" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

@@ -1,0 +1,13 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.4">
+  <DUT Name="ST_HW_OutputLoadStacker" Id="{ec785982-d5ed-4692-bb04-b8d9dd0f9b8f}">
+    <Declaration><![CDATA[TYPE ST_HW_OutputLoadStacker :
+STRUCT		
+	Lift				: ST_LSPM_Outp_Lift;	// Outputs signals used for the lift function
+	RightFork			: ST_LSPM_Outp_Fork;	// Outputs signals used for the Right fork function
+	LeftFork			: ST_LSPM_Outp_Fork;	// Outputs signals used for the Left fork function
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

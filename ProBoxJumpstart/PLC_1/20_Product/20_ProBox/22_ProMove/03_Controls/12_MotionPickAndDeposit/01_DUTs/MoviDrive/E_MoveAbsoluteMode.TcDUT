@@ -1,0 +1,15 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.12">
+  <DUT Name="E_MoveAbsoluteMode" Id="{8ab523b1-1b56-4f58-9898-0392516727e2}">
+    <Declaration><![CDATA[{attribute 'qualified_only'}
+{attribute 'strict'}
+TYPE E_MoveAbsoluteMode :
+(
+	ONLY_MOVE := 0,
+	CALC_TIME_START_IMMEDIATELY := 1,
+	CALC_TIME_DELAY_START	:= 2
+);
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

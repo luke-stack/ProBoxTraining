@@ -1,0 +1,46 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <POU Name="FB_SafetySignalsSZPCo" Id="{eb0a1f19-0a53-4993-afa6-e4e35ef074e5}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK FB_SafetySignalsSZPCo
+VAR_INPUT
+	ErrorAck		: BOOL; //Summarized from all reset safety buttons located within safety zone
+END_VAR
+VAR_OUTPUT
+	TwinSafeError	: BOOL; //Error in FB or Com in TwinSafe
+	TwinSafeOK		: BOOL; //Summary of Safety zone inputs
+END_VAR
+VAR_IN_OUT
+	SZPCoSignals	:	ST_ProBoxSafetySZPCo;
+END_VAR
+VAR	
+	i			: INT;
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[//Indicate that an error exit with blinking blue lamp on cabinet. 
+IF (SZPCoSignals.Inputs.ComErr OR SZPCoSignals.Inputs.FBErr) THEN
+	TwinSafeError := TRUE;
+ELSE 
+	TwinSafeError := FALSE;
+END_IF
+
+TwinSafeOK := SZPCoSignals.Inputs.SafetyZoneOk AND NOT TwinSafeError;
+
+//Pass on pushbutton and pass on to Safety
+SZPCoSignals.Outputs.ErrorAck := ErrorAck;
+]]></ST>
+    </Implementation>
+    <LineIds Name="FB_SafetySignalsSZPCo">
+      <LineId Id="20" Count="0" />
+      <LineId Id="9" Count="0" />
+      <LineId Id="14" Count="0" />
+      <LineId Id="16" Count="1" />
+      <LineId Id="15" Count="0" />
+      <LineId Id="79" Count="1" />
+      <LineId Id="52" Count="0" />
+      <LineId Id="32" Count="0" />
+      <LineId Id="31" Count="0" />
+      <LineId Id="63" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

@@ -1,0 +1,14 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.12">
+  <DUT Name="ST_PDO_DriveIn" Id="{7b0064bb-13a8-4c63-81e5-5ad49e5a3997}">
+    <Declaration><![CDATA[TYPE ST_PDO_DriveIn :
+STRUCT
+	SEW_MoviDriveStatusWord		: ST_MoviDriveStatusWord;
+	ABB_ACS880_StatusWord		: ST_ABBDriveStatusWord;	
+	MotorRPM					: INT; // Revolution per minute [rpm]
+	OutputCurrent				: INT; // Real current [A]
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

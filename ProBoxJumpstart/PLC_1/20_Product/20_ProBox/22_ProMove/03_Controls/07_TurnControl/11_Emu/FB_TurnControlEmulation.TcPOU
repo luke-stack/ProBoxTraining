@@ -1,0 +1,97 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <POU Name="FB_TurnControlEmulation" Id="{898a668c-0f8a-42dd-ad86-3b4b1f727e74}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK FB_TurnControlEmulation 
+VAR_INPUT	
+	Config					: ST_CFG_TurnTablePositionEmu; // emulation config	
+	DriveRun_CW			: BOOL;
+	DriveRun_CCW        : BOOL;
+END_VAR
+
+VAR_OUTPUT
+	Turn_Pos_CW				: BOOL;
+	Turn_Pos_CCW			: BOOL;
+	Turn_Pos_Middle_CW		: BOOL;
+	Turn_Pos_Middle_CCW		: BOOL;
+END_VAR
+
+VAR
+	ActualPosition			: INT :=0;
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[
+
+// When lift is moving
+IF DriveRun_CW THEN
+	IF ActualPosition < Config.Position_Max_CW THEN
+	ActualPosition := ActualPosition + 1;
+	END_IF
+END_IF
+
+IF DriveRun_CCW THEN
+	IF ActualPosition > Config.Position_Max_CCW THEN
+	ActualPosition := ActualPosition - 1;
+	END_IF
+END_IF
+
+
+// Update positions
+IF ActualPosition = Config.Position_CCW THEN
+	 Turn_Pos_CCW := TRUE;
+ELSIF ActualPosition = Config.Position_CW THEN
+	 Turn_Pos_CW := TRUE;
+ELSIF ActualPosition = Config.Position_Middle_CW THEN
+	Turn_Pos_Middle_CW := TRUE;
+	Turn_Pos_Middle_CCW := TRUE;
+
+(* Debug code for emulating creep. since the Positions may be changed in project configuration, this is disabled to reduce risk of emulation error
+ELSIF ActualPosition < Config.Position_Middle_CW AND ActualPosition > Config.Position_Middle_CW-30 THEN //Turning from CCW
+	Turn_Pos_Middle_CW := FALSE;
+	Turn_Pos_Middle_CCW := TRUE;
+ELSIF ActualPosition > Config.Position_Middle_CW AND ActualPosition < Config.Position_Middle_CW+30 THEN // turning from CW
+	Turn_Pos_Middle_CW := FALSE;
+	Turn_Pos_Middle_CCW := TRUE;
+*)
+ELSE  	
+	Turn_Pos_CCW := FALSE;
+	Turn_Pos_CW := FALSE;
+	Turn_Pos_Middle_CW := FALSE;
+	Turn_Pos_Middle_CCW := FALSE;		
+END_IF
+
+
+]]></ST>
+    </Implementation>
+    <ObjectProperties>
+      <XmlArchive>
+        <Data>
+          <o xml:space="preserve" t="UMLStereoTypeContainerObject">
+            <v n="IsType" t="UMLType">BaseArea</v>
+            <v n="Stereotype">""</v>
+            <d n="Stereotypes" t="Hashtable" />
+          </o>
+        </Data>
+        <TypeList>
+          <Type n="Hashtable">System.Collections.Hashtable</Type>
+          <Type n="String">System.String</Type>
+          <Type n="UMLStereoTypeContainerObject">{30250973-b110-4e31-b562-c102e042dca4}</Type>
+          <Type n="UMLType">{0197b136-405a-42ee-bb27-fd08b621d0cf}</Type>
+        </TypeList>
+      </XmlArchive>
+    </ObjectProperties>
+    <LineIds Name="FB_TurnControlEmulation">
+      <LineId Id="3" Count="23" />
+      <LineId Id="59" Count="0" />
+      <LineId Id="54" Count="0" />
+      <LineId Id="60" Count="0" />
+      <LineId Id="55" Count="0" />
+      <LineId Id="53" Count="0" />
+      <LineId Id="57" Count="1" />
+      <LineId Id="56" Count="0" />
+      <LineId Id="52" Count="0" />
+      <LineId Id="27" Count="7" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

@@ -1,0 +1,75 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <POU Name="FB_TiltControlEmulation" Id="{6a616511-852d-4cac-ba9c-7a01278c94cc}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK FB_TiltControlEmulation 
+VAR_INPUT	
+	Config					: ST_CFG_TiltPositionEmu; // emulation config	
+	DriveRun_Up				: BOOL;
+	DriveRun_Down      		: BOOL;
+END_VAR
+
+VAR_OUTPUT
+	Lift_Pos_Up				: BOOL;
+	Lift_Pos_Down			: BOOL;
+	Lift_Pos_Middle			: BOOL;
+	
+END_VAR
+
+VAR
+	ActualPosition			: INT :=0;
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[// When lift is moving
+IF DriveRun_Up THEN
+	IF ActualPosition < Config.Position_Max_Up THEN
+	ActualPosition := ActualPosition + 1;
+	END_IF
+END_IF
+
+IF DriveRun_Down THEN
+	IF ActualPosition > Config.Position_Max_Down THEN
+	ActualPosition := ActualPosition - 1;
+	END_IF
+END_IF
+
+
+// Update positions
+IF ActualPosition = Config.Position_Down THEN
+	 Lift_Pos_Down := TRUE;
+ELSIF ActualPosition = Config.Position_Up THEN
+	 Lift_Pos_Up := TRUE;
+ELSIF ActualPosition = Config.Position_Middle THEN
+	Lift_Pos_Middle := TRUE;
+ELSE  	
+	Lift_Pos_Down := FALSE;
+	Lift_Pos_Up := FALSE;
+	Lift_Pos_Middle := FALSE;
+END_IF
+
+
+]]></ST>
+    </Implementation>
+    <ObjectProperties>
+      <XmlArchive>
+        <Data>
+          <o xml:space="preserve" t="UMLStereoTypeContainerObject">
+            <v n="IsType" t="UMLType">BaseArea</v>
+            <v n="Stereotype">""</v>
+            <d n="Stereotypes" t="Hashtable" />
+          </o>
+        </Data>
+        <TypeList>
+          <Type n="Hashtable">System.Collections.Hashtable</Type>
+          <Type n="String">System.String</Type>
+          <Type n="UMLStereoTypeContainerObject">{30250973-b110-4e31-b562-c102e042dca4}</Type>
+          <Type n="UMLType">{0197b136-405a-42ee-bb27-fd08b621d0cf}</Type>
+        </TypeList>
+      </XmlArchive>
+    </ObjectProperties>
+    <LineIds Name="FB_TiltControlEmulation">
+      <LineId Id="317" Count="27" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

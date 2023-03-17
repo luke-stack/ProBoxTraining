@@ -1,0 +1,16 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.12">
+  <DUT Name="E_AdjacentSideType" Id="{dbd1350a-e034-4998-aaff-b970e963c72d}">
+    <Declaration><![CDATA[{attribute 'qualified_only'}
+{attribute 'strict'}
+//Adjacent conveyor adjacent types, ie chain or roller conveyor
+TYPE E_AdjacentSideType :
+(	
+	E_NotUsed, 	// the adjacent side is not in used (Closed)	
+	E_RC,	// adjacent element requires lift up, roller conveyor type
+	E_CC	// adjacent element requires lift down, chain conveyor type
+);
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

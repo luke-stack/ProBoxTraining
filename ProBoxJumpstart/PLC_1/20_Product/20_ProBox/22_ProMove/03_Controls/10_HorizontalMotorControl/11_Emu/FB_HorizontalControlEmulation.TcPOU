@@ -1,0 +1,76 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.12">
+  <POU Name="FB_HorizontalControlEmulation" Id="{64565963-7dad-4cda-b228-2b8e3c887e44}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK FB_HorizontalControlEmulation
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: q8hedls $
+ *	Revision date	:	$Date: $
+ *	Last changed by	:	$Author:  $
+ *	URL				:	$URL:  $
+ *
+ *	Purpose			:	Emulation low lift control emulation NOTE NOT FINISHED...
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				26.04.2019		SHE					LowLiftUnitEmulation
+ *
+ **************************************************************************************)
+
+VAR_INPUT	
+	Config					: ST_CFG_TransferCCEmulation; // emulation config	
+	DriveRun_Motor			: BOOL;  // lift is moving
+END_VAR
+
+VAR_OUTPUT
+	Lift_Pos_Left			: BOOL;
+	Lift_Pos_Right			: BOOL;
+END_VAR
+
+VAR
+	ActualPosition			: INT;
+	CountPositive			: BOOL;
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[
+// When lift is moving
+IF DriveRun_Motor THEN
+	IF CountPositive THEN
+		IF ActualPosition < Config.Position_Max_Right THEN
+			ActualPosition := ActualPosition + 1;
+		ELSE
+			CountPositive := FALSE;
+		END_IF;	
+	ELSE
+		IF ActualPosition > Config.Position_Max_Left THEN
+			ActualPosition := ActualPosition - 1;
+		ELSE
+			CountPositive := TRUE;
+		END_IF;					
+	END_IF
+END_IF
+
+// Update positions
+IF ActualPosition = Config.Position_Left THEN
+	 Lift_Pos_Left := TRUE;
+ELSIF ActualPosition = Config.Position_Right THEN
+	 Lift_Pos_Right := TRUE;
+ELSE
+	Lift_Pos_Left := FALSE;
+	Lift_Pos_Right := FALSE;
+END_IF
+]]></ST>
+    </Implementation>
+    <LineIds Name="FB_HorizontalControlEmulation">
+      <LineId Id="3" Count="26" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

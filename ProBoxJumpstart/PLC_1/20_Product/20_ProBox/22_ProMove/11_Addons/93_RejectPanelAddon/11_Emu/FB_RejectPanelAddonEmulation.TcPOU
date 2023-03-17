@@ -1,0 +1,194 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.12">
+  <POU Name="FB_RejectPanelAddonEmulation" Id="{97c02645-f23e-4088-af9e-e1dd9aa7d285}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK FB_RejectPanelAddonEmulation EXTENDS FB_FunctionConvEmulation
+VAR_INPUT
+	Config :ST_CFG_ProfileCheck;
+	TU_DataIndex			: DINT;
+	
+END_VAR
+VAR_OUTPUT
+	
+END_VAR
+VAR
+	pFunction						: POINTER TO FB_RejectPanelAddon; // Address to function
+	rFunction						: REFERENCE TO FB_RejectPanelAddon; // Reference to function
+    MaxValueEmu   					: ST_MaxProfileValues;
+	MaxWeightEmu					: ST_CFG_TLB4Weight;
+	TranspCtrlData					: ST_TransportControlData;
+	Occupied						:BOOL :=FALSE;	
+ProfileInformation:ST_Profile;	
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[(**************************************************************************************************************
+   Initialization
+***************************************************************************************************************)
+A_Init();
+
+
+(**************************************************************************************************************
+   Update reference
+***************************************************************************************************************)
+A_UpdateReference();
+
+(**************************************************************************************************************
+   Emulation
+***************************************************************************************************************)
+// If emulation function is initialized
+IF FunctionData.Init THEN
+
+	// Update data of real object
+	M_UpdateRealObjectData();
+	
+	// Handle external Subsystem-Subsystem interfaces
+	// not needed for Add On emulation
+	//A_ExternalSTI();
+
+	
+	// Overwrite inputs	
+	A_OverWriteInputs();
+END_IF
+
+]]></ST>
+    </Implementation>
+    <Action Name="A_Init" Id="{30d93443-d7ce-4fb6-94b2-e7aaa83a513f}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_Init
+ * 	FUNCTION	Initialize emulated dummy function
+ **************************************************************************************)
+
+// If dummy function is not initialized
+IF NOT FunctionData.Init Then
+	// Check that linked dummy function number is valid
+	IF eFunctionNumber > E_FunctionNumber.F_BEGIN_FUNCTION AND
+	   eFunctionNumber < E_FunctionNumber.F_END_FUNCTION THEN   
+		
+		// Check if the real module is initialized
+		IF F_IsFunctionInitialized(eFunctionNumber := eFunctionNumber) THEN
+			// Module is initialized
+			FunctionData.Init:= TRUE;
+			
+			// Send debug message
+			DebugMsg := CONCAT('Initialization done. Element Function: ', FunctionRegistry[eFunctionNumber].FunctionName);
+			fbDebugMsg.M_SendInfoMsg(DebugMsg);
+			
+			// Initialize real module
+			F_InitializeFunction(eFunctionNumber := eFunctionNumber);
+		END_IF
+	END_IF
+END_IF
+]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="A_OverWriteInputs" Id="{d667d8ec-26ef-4936-8ea8-c003f0dc4b0d}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_OverWriteInputs
+ * 	FUNCTION	Overwrite inputs for emulation
+ **************************************************************************************)
+TranspCtrlData	:= F_GetTransportControlData(rFunction.ConfigFunction.FunctionLink.eFunctionNumber, rFunction.ConfigFunction.FunctionLink.ZoneNumber);
+Occupied := TranspCtrlData.SensorOccupied;
+
+IF(Occupied AND TranspCtrlData.TU_DataIndex >0 ) THEN
+	;// zone is occupied
+	
+	TU_DataTable[TranspCtrlData.TU_DataIndex].Profile.Height:=1300;
+	TU_DataTable[TranspCtrlData.TU_DataIndex].Profile.ProfileFront:=60;
+	TU_DataTable[TranspCtrlData.TU_DataIndex].Profile.ProfileLeft:=60;
+	TU_DataTable[TranspCtrlData.TU_DataIndex].Profile.ProfileRear:=60;
+	TU_DataTable[TranspCtrlData.TU_DataIndex].Profile.ProfileRight:=60;
+	TU_DataTable[TranspCtrlData.TU_DataIndex].Profile.Runner:=20;
+	TU_DataTable[TranspCtrlData.TU_DataIndex].Profile.Tunnel:=20;
+	TU_DataTable[TranspCtrlData.TU_DataIndex].Profile.Weight:=20;
+(*	
+ RejectPanel.PanelOutputs_200.HeightError					:=rFunction.HW_Outputs.HeightError;
+ RejectPanel.PanelOutputs_200.WeightError					:=rFunction.HW_Outputs.WeightError;
+ RejectPanel.PanelOutputs_200.ProfileFrontErrorLongSide	    :=rFunction.HW_Outputs.ProfileFrontErrorLongSide;
+ RejectPanel.PanelOutputs_200.ProfileLeftErrorLongSide		:=rFunction.HW_Outputs.ProfileLeftErrorLongSide;
+ RejectPanel.PanelOutputs_200.ProfileRearErrorLongSide		:=rFunction.HW_Outputs.ProfileRearErrorLongSide;
+ RejectPanel.PanelOutputs_200.ProfileRightErrorLongSide	    :=rFunction.HW_Outputs.ProfileRightErrorLongSide;
+ RejectPanel.PanelOutputs_200.ProfileFrontErrorShortSide	:=rFunction.HW_Outputs.ProfileFrontErrorShortSide;
+ RejectPanel.PanelOutputs_200.ProfileLeftErrorShortSide	    :=rFunction.HW_Outputs.ProfileLeftErrorShortSide;
+ RejectPanel.PanelOutputs_200.ProfileRearErrorShortSide		:=rFunction.HW_Outputs.ProfileRearErrorShortSide;
+ RejectPanel.PanelOutputs_200.ProfileRightErrorShortSide	:=rFunction.HW_Outputs.ProfileRightErrorShortSide;
+ RejectPanel.PanelOutputs_200.ProfileBtnShow				:=rFunction.HW_Outputs.ProfileBtnShow;
+ RejectPanel.PanelOutputs_200.RejectBtnShow					:=rFunction.HW_Outputs.RejectBtnShow;
+ RejectPanel.PanelOutputs_200.WrapperBtnShow				:=rFunction.HW_Outputs.WrapperBtnShow;
+ RejectPanel.PanelOutputs_200.DepallatizerBtnShow			:=rFunction.HW_Outputs.DepallatizerBtnShow;
+ RejectPanel.PanelOutputs_200.DirectionEnableLongSide		:=rFunction.HW_Outputs.DirectionEnableLongSide;
+ RejectPanel.PanelOutputs_200.DirectionEnableShortSide		:=rFunction.HW_Outputs.DirectionEnableShortSide;
+ RejectPanel.PanelOutputs_200.LabelReadError				:=rFunction.HW_Outputs.LabelReadError;
+ RejectPanel.PanelOutputs_200.RunnerError					:=rFunction.HW_Outputs.RunnerError;
+ RejectPanel.PanelOutputs_200.TunnelError					:=rFunction.HW_Outputs.TunnelError;
+ RejectPanel.PanelOutputs_200.WindowNo[2]					:=rFunction.HW_Outputs.WindowNo[2];
+	*)
+END_IF
+					]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="A_UpdateReference" Id="{96ee1d09-f036-4ba0-abf0-d0e6aaa8b7b9}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_UpdateReference
+ * 	FUNCTION	Update reference to real object
+ **************************************************************************************)
+
+// Check valid function number
+IF eFunctionNumber > E_FunctionNumber.F_BEGIN_FUNCTION AND
+   eFunctionNumber < E_FunctionNumber.F_END_FUNCTION THEN
+
+	// Is reference valid  
+	IF __ISVALIDREF(FunctionRegistry[eFunctionNumber].rFunction) THEN
+		// Build address to reference
+		pFunction := ADR(FunctionRegistry[eFunctionNumber].rFunction);
+
+		// If address is possible
+		IF pFunction <> 0 THEN
+			// Build reference to memory
+			rFunction REF= pFunction^;
+		ELSE
+			// Reinitialize module
+			FunctionData.Init:= FALSE;
+		END_IF
+	ELSE
+		// Reinitialize module
+		FunctionData.Init:= FALSE;
+	END_IF
+END_IF
+		]]></ST>
+      </Implementation>
+    </Action>
+    <LineIds Name="FB_RejectPanelAddonEmulation">
+      <LineId Id="13" Count="8" />
+      <LineId Id="9" Count="0" />
+      <LineId Id="23" Count="12" />
+      <LineId Id="48" Count="0" />
+      <LineId Id="37" Count="2" />
+      <LineId Id="22" Count="0" />
+      <LineId Id="67" Count="0" />
+      <LineId Id="66" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_RejectPanelAddonEmulation.A_Init">
+      <LineId Id="2" Count="24" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_RejectPanelAddonEmulation.A_OverWriteInputs">
+      <LineId Id="56" Count="6" />
+      <LineId Id="21" Count="0" />
+      <LineId Id="64" Count="0" />
+      <LineId Id="66" Count="4" />
+      <LineId Id="73" Count="4" />
+      <LineId Id="79" Count="18" />
+      <LineId Id="78" Count="0" />
+      <LineId Id="71" Count="0" />
+      <LineId Id="65" Count="0" />
+      <LineId Id="63" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_RejectPanelAddonEmulation.A_UpdateReference">
+      <LineId Id="2" Count="26" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

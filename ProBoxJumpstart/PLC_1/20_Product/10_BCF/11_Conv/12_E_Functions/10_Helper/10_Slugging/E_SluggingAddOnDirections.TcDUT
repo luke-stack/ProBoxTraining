@@ -1,0 +1,33 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.4">
+  <DUT Name="E_SluggingAddOnDirections" Id="{8c79cea1-2c8f-4f42-8759-17d7c8f5234b}">
+    <Declaration><![CDATA[// direction/enabling of FB_SluggingAddOn
+{attribute 'qualified_only'}
+{attribute 'strict'}
+{attribute 'to_string'}
+(**************************************************************************************
+ *  Application     :   BoxControl Framework
+ *  Revision date   :   $Date: 2021-04-09 08:29:02 +0200 (fre, 09 apr 2021) $
+ *  Author          :   CDC
+ * ------------------------------------------------------------------------------------
+ *  © Swisslog AG
+ *  Swisslog is not liable for any usage of this source code that is not agreed 
+ *  on between Swisslog and the other party. The mandatory legal liability remains 
+ *  unaffected.
+ * ------------------------------------------------------------------------------------
+ *  Revision History: 
+ *
+ *  VERSION DATE         INITIALS     DESCRIPTION
+ *  0.0     DD.MM.YYYY   (name)       (explain customized modifications)
+ *
+ **************************************************************************************)
+TYPE E_SluggingAddOnDirections:
+(
+	None_Disabled	:=  0,		// function disabled (no movement controlled, standard transport control behaviour)
+	Forward			:=  1,		// movement in direction of increasing array indices: 1-2-3-4...
+	Reverse			:=  2		// movement in direction of decreasing array indices: ...4-3-2-1
+);
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

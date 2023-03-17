@@ -1,0 +1,37 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.12">
+  <DUT Name="ST_ITC_SubSystemCommands" Id="{671d9ef1-18fc-4bc5-a421-353da12e147f}">
+    <Declaration><![CDATA[TYPE ST_ITC_SubsystemCommands :
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 404529 $
+ *	Revision date	:	$Date: 2018-04-23 08:21:38 +0200 (Mo., 23 Apr 2018) $
+ *	Last changed by	:	$Author: b7bolm $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/trunk/01_Software/BCF/BCF/JumpStart/20_Product/10_App/15_Subsystem/10_Lib/10_Conv/01_DUTs/ST_ITC_SubSystemCommands.TcDUT $
+ *
+ *	Purpose			:	Subsystem ITC commands - Are set internally
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+STRUCT
+	SystemRestartInfo				: BOOL; // Command to send StatusReport after system restart
+	RequestTimeUpdate				: BOOL; // Command to send StatusReport to request time update
+	NoErrorReport					: BOOL; // Command to send StatusReport error is gone
+	StatusReport					: BOOL; // Command to send default StatusReport
+	ControlReport					: BOOL; // Command to send default ControlReport
+	UpdateSystemTime				: BOOL; // Command to update system time internally
+	UpdateAllGroupsAndPositions		: BOOL; // Command to send a full system status report
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

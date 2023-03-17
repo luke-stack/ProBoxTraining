@@ -1,0 +1,19 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <DUT Name="E_PositioningState" Id="{69ca3900-ce23-4e0c-8fac-f41131a07d73}">
+    <Declaration><![CDATA[TYPE E_PositioningState :
+(
+	INIT,
+	STANDBY,
+	POSITIONING_ABSOLUTE,
+	STOPPING,
+	HALTING,
+	POSITIONING_FINISHED,
+	MANUAL_MODE,
+	COMMISSIONING,
+	ERROR
+);
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

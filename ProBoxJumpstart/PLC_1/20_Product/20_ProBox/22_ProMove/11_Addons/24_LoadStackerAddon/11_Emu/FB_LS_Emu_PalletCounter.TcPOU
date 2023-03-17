@@ -1,0 +1,165 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <POU Name="FB_LS_Emu_PalletCounter" Id="{650ea2db-123f-4c5a-9eb8-20279de20bac}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK PUBLIC FB_LS_Emu_PalletCounter
+VAR_INPUT
+	RealFunctionNumber				: E_FunctionNumber;
+	RealZoneNumber					: INT;
+	RealLoadstackerState			: E_LSPM_States;
+	RealLoadStackerMode				: E_LSPM_Mode;
+	
+	ConfigNumberPalletStack			: INT;
+	ConfigNumberPalletFull			: INT;		
+END_VAR
+VAR_OUTPUT
+	SensorOccupied					: BOOL;
+	SensorMagazineFull				: BOOL;
+END_VAR
+VAR
+	TrpData							: ST_TransportControlData;
+	//LinkedFunctionSettings 			: ST_CFG_Function;
+	fbLiftSensorTimer				: TON;		
+	PalletsInStack					: INT;	
+	fbRisingEdgeAddPall				: R_TRIG;
+	fbRisingEdgeDelPall				: R_TRIG;	
+	fbRisingEdgeAddPallManual		: R_TRIG;
+	TransportData_Prev				: ST_TransportControlData;
+	ReqRemovePallet					: BOOL;
+	ReqAddPallet					: BOOL;	
+	fbRisingEdgeATQ					: R_TRIG;	
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[TrpData := F_GetTransportControlData(RealFunctionNumber, RealZoneNumber); 
+
+
+//----------------------------------------------------------------------
+// counter for pallets in stack
+
+//When receiving an stack add pallets configured
+IF RealLoadStackerMode = E_LSPM_Mode.E_RECEIVE_STACK AND RealLoadstackerState = E_LSPM_States.STACKING_START THEN 
+	PalletsInStack := ConfigNumberPalletStack;
+END_IF
+
+//When a stack have left the palletmagazine remove all pallets in stack
+IF RealLoadstackerState = E_LSPM_States.DESTACKING_SEND_STACK THEN 
+	PalletsInStack := 0;
+END_IF
+
+//When stacking add one pallet to stack on rising edged
+fbRisingEdgeAddPall(CLK :=  RealLoadStackerMode = E_LSPM_Mode.E_STACKING AND RealLoadstackerState = E_LSPM_States.STACKING_START); 
+IF fbRisingEdgeAddPall.Q THEN 
+	PalletsInStack := PalletsInStack + 1;
+END_IF
+
+//When destacking remove one pallet from stack on rising edged
+fbRisingEdgeDelPall(CLK :=  RealLoadstackerState = E_LSPM_States.DESTACKING_SEND_PALLET);
+IF fbRisingEdgeDelPall.Q THEN 
+	PalletsInStack := PalletsInStack - 1;
+END_IF
+
+//When adding an pallet manually to functionlink
+fbRisingEdgeAddPallManual(CLK := RealLoadstackerState = E_LSPM_States.READY AND 
+								 TrpData.Occupied AND PalletsInStack = 0);
+IF fbRisingEdgeAddPallManual.Q THEN 
+	PalletsInStack := ConfigNumberPalletStack;
+END_IF
+
+
+//----------------------------------------------------------------------
+//Sensor magazine full emulation 
+
+IF PalletsInStack >= ConfigNumberPalletFull THEN
+	SensorMagazineFull := TRUE;
+ELSE
+	SensorMagazineFull := FALSE;		
+END_IF
+
+		
+
+
+//----------------------------------------------------------------------
+// Sensor occupied emulation
+SensorOccupied := TrpData.Occupied;//SensorOccupied;
+// When stacking and pallet is lifting remove sensor
+IF RealLoadstackerState = E_LSPM_States.STACKING_LIFT_ACTIVE THEN
+		SensorOccupied := FALSE;					
+END_IF 
+
+//----------------------------------------------------------------------
+// Add pallet
+//When lowering pallet and there is still an pallet in stack
+IF RealLoadstackerState = E_LSPM_States.DESTACKING_DONE AND PalletsInStack > 0 THEN 
+	SensorOccupied := TRUE;
+	ReqAddPallet := TRUE;		
+END_IF
+
+fbRisingEdgeATQ(CLK := ReqAddPallet);
+//Add sensor first and last in the zone data
+IF fbRisingEdgeATQ.Q THEN 
+	F_AddPhysicalTU(eFunctionNumber:= RealFunctionNumber, 
+					ZoneNumber:= RealZoneNumber);
+	
+ELSIF TrpData.SensorOccupied THEN 
+	ReqAddPallet := FALSE;								
+END_IF
+
+
+//----------------------------------------------------------------------
+// Remove pallet
+//When stacking and pallet is lifting remove sensor
+IF	RealLoadstackerState = E_LSPM_States.STACKING_LIFT_ACTIVE THEN
+	ReqRemovePallet := TRUE;					
+END_IF
+
+IF NOT TrpData.SensorOccupied THEN
+	ReqRemovePallet := FALSE;
+	
+ELSIF ReqRemovePallet THEN
+	F_RemovePhysicalTU(eFunctionNumber:= RealFunctionNumber, 
+     					ZoneNumber:= RealZoneNumber);		
+END_IF
+
+]]></ST>
+    </Implementation>
+    <LineIds Name="FB_LS_Emu_PalletCounter">
+      <LineId Id="10" Count="0" />
+      <LineId Id="224" Count="0" />
+      <LineId Id="226" Count="0" />
+      <LineId Id="225" Count="0" />
+      <LineId Id="227" Count="0" />
+      <LineId Id="11" Count="2" />
+      <LineId Id="15" Count="4" />
+      <LineId Id="21" Count="4" />
+      <LineId Id="28" Count="5" />
+      <LineId Id="36" Count="5" />
+      <LineId Id="210" Count="0" />
+      <LineId Id="45" Count="2" />
+      <LineId Id="220" Count="0" />
+      <LineId Id="222" Count="0" />
+      <LineId Id="221" Count="0" />
+      <LineId Id="223" Count="0" />
+      <LineId Id="48" Count="7" />
+      <LineId Id="71" Count="0" />
+      <LineId Id="76" Count="1" />
+      <LineId Id="199" Count="0" />
+      <LineId Id="201" Count="0" />
+      <LineId Id="203" Count="3" />
+      <LineId Id="186" Count="1" />
+      <LineId Id="184" Count="0" />
+      <LineId Id="189" Count="3" />
+      <LineId Id="188" Count="0" />
+      <LineId Id="97" Count="1" />
+      <LineId Id="100" Count="3" />
+      <LineId Id="105" Count="3" />
+      <LineId Id="211" Count="0" />
+      <LineId Id="213" Count="0" />
+      <LineId Id="212" Count="0" />
+      <LineId Id="216" Count="3" />
+      <LineId Id="214" Count="0" />
+      <LineId Id="111" Count="7" />
+      <LineId Id="156" Count="0" />
+      <LineId Id="9" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

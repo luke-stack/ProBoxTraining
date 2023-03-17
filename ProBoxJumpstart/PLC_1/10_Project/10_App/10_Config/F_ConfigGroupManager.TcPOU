@@ -1,0 +1,45 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <POU Name="F_ConfigGroupManager" Id="{2a86a13c-2cae-47cc-bf28-7b7d787f0184}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION F_ConfigGroupManager
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[
+
+fbGroupManager.Config.Group[G_SG_001].eMemberElement[1]     := E_10_001_0200_00_0;
+fbGroupManager.Config.Group[G_SG_001].eMemberElement[2]     := E_10_001_0201_00_0;
+fbGroupManager.Config.Group[G_SG_001].eMemberElement[3]     := E_10_001_0202_00_0;
+fbGroupManager.Config.Group[G_SG_001].eMemberElement[4]     := E_10_001_0203_00_0;
+fbGroupManager.Config.Group[G_SG_001].eMemberElement[5]     := E_10_001_0204_00_0;
+fbGroupManager.Config.Group[G_SG_001].eMemberElement[6]     := E_10_001_0205_00_0;
+fbGroupManager.Config.Group[G_SG_001].eMemberElement[7]     := E_10_001_0207_00_0;
+fbGroupManager.Config.Group[G_SG_001].eMemberElement[8]     := E_10_001_0208_00_0;
+fbGroupManager.Config.Group[G_SG_001].eMemberElement[9]     := E_10_001_0209_00_0;
+fbGroupManager.Config.Group[G_SG_001].eMemberElement[10]     := E_10_001_0211_00_0;
+fbGroupManager.Config.Group[G_SG_001].eMemberElement[11]     := E_10_001_0212_00_0;
+fbGroupManager.Config.Group[G_SG_001].eMemberElement[12]     := E_10_001_0213_00_0;
+fbGroupManager.Config.Group[G_SG_001].eMemberElement[13]     := E_10_001_0214_00_0;
+fbGroupManager.Config.Group[G_SG_001].eMemberElement[14]     := E_10_001_0215_00_0;
+fbGroupManager.Config.Group[G_SG_001].eMemberElement[15]     := E_10_001_0216_00_0;
+fbGroupManager.Config.Group[G_SG_001].eMemberElement[16]     := E_10_001_0217_00_0;
+fbGroupManager.Config.Group[G_SG_001].eMemberElement[17]     := E_10_001_0218_00_0;
+fbGroupManager.Config.Group[G_SG_001].eMemberElement[18]     := E_10_001_0219_00_0;
+fbGroupManager.Config.Group[G_SG_001].eMemberElement[19]     := E_10_001_0220_00_0;
+fbGroupManager.Config.Group[G_SG_001].eMemberElement[20]     := E_10_001_0221_00_0;
+fbGroupManager.Config.Group[G_SG_001].eMemberElement[21]     := E_10_001_0222_00_0;
+fbGroupManager.Config.Group[G_SG_001].eMemberElement[22]     := E_10_001_0223_00_0;
+fbGroupManager.Config.Group[G_SG_001].eMemberElement[23]     := E_10_001_0225_00_0;
+fbGroupManager.Config.Group[G_SG_001].eMemberElement[24]     := E_10_001_0226_00_0;
+fbGroupManager.Config.Group[G_SG_001].eMemberElement[25]     := E_10_001_0227_00_0;
+fbGroupManager.Config.Group[G_SG_001].eMemberElement[26]     := E_10_001_0230_00_0;
+fbGroupManager.Config.Group[G_SG_001].eMemberElement[27]     := E_10_001_0232_00_0;
+fbGroupManager.Config.Group[G_SG_001].eMemberElement[28]     := E_10_001_0233_00_0;
+fbGroupManager.Config.Group[G_SG_002].eMemberElement[1]     := E_10_002_0206_00_0;
+]]></ST>
+    </Implementation>
+    <LineIds Name="F_ConfigGroupManager">
+      <LineId Id="3" Count="30" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

@@ -1,0 +1,16 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <DUT Name="ST_CtrlInPbTc" Id="{b3db674a-8980-48e2-8c2d-b5da4e07d367}">
+    <Declaration><![CDATA[// Control input for Pro box Transport control
+TYPE ST_CtrlInPbTc :
+STRUCT
+	EnableSlugging			: BOOL;	// Start Slugging TU's by stopping at first zone to create Slugging train.
+	SlugSensorExists		: BOOL; // Configuration if function has slug sensor (for the current transport direction) 
+	SlugSensor				: BOOL;	// HW sensor input from slugging sensor on first zone (for the current transport direction)
+	StopSensor				: BOOL; // HW sensor input from stop sensor on last zone (for the current transport direction)
+	//PbTcDebugLogLevel		: INT:=2; //ProBox Transport Control Debug level. 0 = Off, 1=States, 2 Verbose	
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

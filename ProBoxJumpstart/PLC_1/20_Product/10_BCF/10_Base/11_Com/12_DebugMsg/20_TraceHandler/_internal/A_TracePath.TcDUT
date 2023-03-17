@@ -1,0 +1,10 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.4">
+  <DUT Name="A_TracePath" Id="{c6e0b9db-31fb-4cc8-a833-99feee0700c3}">
+    <Declaration><![CDATA[// alias for path/filenames in FB_TraceHandler
+TYPE
+  A_TracePath      : STRING[255];
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

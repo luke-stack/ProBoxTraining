@@ -1,0 +1,14 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.12">
+  <Itf Name="I_TakeoverEmulationListener" Id="{7d920be6-e550-40a3-97d9-38e05e1a47c7}">
+    <Declaration><![CDATA[INTERFACE I_TakeoverEmulationListener
+]]></Declaration>
+    <Method Name="M_TakeoverTU_IndexMovedEvent" Id="{b563a25c-88da-4c31-8117-48cc91f9319f}">
+      <Declaration><![CDATA[METHOD M_TakeoverTU_IndexMovedEvent
+VAR_INPUT
+	mMovedTU_Index	: DINT;
+END_VAR
+]]></Declaration>
+    </Method>
+  </Itf>
+</TcPlcObject>

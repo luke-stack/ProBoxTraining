@@ -1,0 +1,211 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <POU Name="F_ConfigCommunication" Id="{4d5562ee-97a0-451a-82b9-302705ca877a}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION F_ConfigCommunication : BOOL
+VAR
+	///Set to true when connected to SynQ
+	SynQComm: BOOL := FALSE;
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[
+
+(**************************************************************************************************************
+   Configuration DebugMsgManager
+***************************************************************************************************************)
+fbDebugMsgManager.Config.SystemNumber := 10;
+
+fbDebugMsgManager.Config.TCP_Driver.ChannelName                     := 'Debug Message Manager';
+fbDebugMsgManager.Config.TCP_Driver.EnableConnection                := TRUE;
+fbDebugMsgManager.Config.TCP_Driver.RemoteHost                      := '0.0.0.0';
+fbDebugMsgManager.Config.TCP_Driver.RemotePort                      := 0;
+fbDebugMsgManager.Config.TCP_Driver.LocalHost                       := '0.0.0.0';
+fbDebugMsgManager.Config.TCP_Driver.LocalPort                       := 5000;
+fbDebugMsgManager.Config.TCP_Driver.Server                          := TRUE;
+fbDebugMsgManager.Config.TCP_Driver.ConnectTimeout                  := T#10S;
+fbDebugMsgManager.Config.TCP_Driver.ClientRetryInterval             := T#5S;
+fbDebugMsgManager.Config.TCP_Driver.ServerRetryInterval             := T#1S;
+fbDebugMsgManager.Config.TCP_Driver.AcceptPollInterval              := T#10S;
+fbDebugMsgManager.Config.TCP_Driver.EnableDebugMsg                  := FALSE;
+
+(******************* Communication Parameters for SIS Engine to AM **************************)
+
+fbMFCS_SIS_AM.Config.BaseDriver.TCP_Driver.ChannelName              := 'AM TCP/IP Driver';
+fbMFCS_SIS_AM.Config.BaseDriver.TCP_Driver.EnableConnection         := TRUE;
+IF SynQComm THEN
+	(***Config Communication parameters when connected TO SynQ, inhuse tests(Project specific)***)  
+	fbMFCS_SIS_AM.Config.BaseDriver.TCP_Driver.RemoteHost               := '10.49.134.93';
+	fbMFCS_SIS_AM.Config.BaseDriver.TCP_Driver.RemotePort               := 10001;
+	fbMFCS_SIS_AM.Config.BaseDriver.TCP_Driver.LocalHost                := '0.0.0.0';
+	fbMFCS_SIS_AM.Config.BaseDriver.TCP_Driver.LocalPort                := 0;
+	fbMFCS_SIS_AM.Config.BaseDriver.TCP_Driver.Server                   := FALSE;
+ELSE
+(***Config Communication parameters when connected to ComTool, stand alone tests***)  	
+	fbMFCS_SIS_AM.Config.BaseDriver.TCP_Driver.RemoteHost               := '0.0.0.0';
+	fbMFCS_SIS_AM.Config.BaseDriver.TCP_Driver.RemotePort               := 0;
+	fbMFCS_SIS_AM.Config.BaseDriver.TCP_Driver.LocalHost                := '0.0.0.0';
+	fbMFCS_SIS_AM.Config.BaseDriver.TCP_Driver.LocalPort                := 2111;
+	fbMFCS_SIS_AM.Config.BaseDriver.TCP_Driver.Server                   := TRUE;	
+END_IF
+fbMFCS_SIS_AM.Config.BaseDriver.TCP_Driver.ConnectTimeout           := T#10S;
+fbMFCS_SIS_AM.Config.BaseDriver.TCP_Driver.ClientRetryInterval      := T#5S;
+fbMFCS_SIS_AM.Config.BaseDriver.TCP_Driver.ServerRetryInterval      := T#1S;
+fbMFCS_SIS_AM.Config.BaseDriver.TCP_Driver.AcceptPollInterval       := T#10S;
+fbMFCS_SIS_AM.Config.BaseDriver.TCP_Driver.EnableDebugMsg           := FALSE;
+
+fbMFCS_SIS_AM.Config.BaseDriver.StartChar                           := '<';
+fbMFCS_SIS_AM.Config.BaseDriver.EndChar                             := '>';
+IF SynQComm THEN
+(***Config Communication parameters when connected to SynQ, inhuse tests(Project spesific)***) 
+	fbMFCS_SIS_AM.Config.BaseDriver.StationName                         := 'PFA_10';
+	fbMFCS_SIS_AM.Config.BaseDriver.PartnerName                         := 'MOVE01';
+ELSE
+(***Config Communication parameters when connected to ComTool, stand alone tests***)  
+	fbMFCS_SIS_AM.Config.BaseDriver.StationName                         := 'LGCS10';
+	fbMFCS_SIS_AM.Config.BaseDriver.PartnerName                         := 'MOVE01';
+END_IF
+fbMFCS_SIS_AM.Config.BaseDriver.DoAutoSync                          := TRUE;
+fbMFCS_SIS_AM.Config.BaseDriver.EnableDebugMsg                      := FALSE;
+fbMFCS_SIS_AM.Config.BaseDriver.EnableBufferOverwrite               := FALSE;
+
+fbMFCS_SIS_AM.Config.MFCS_Channel                                   := E_MFCS_Channel.AM;
+fbMFCS_SIS_AM.Config.BufferLevelWarning                             := 700;
+fbMFCS_SIS_AM.Config.BufferLevelAlarm                               := 900;
+fbMFCS_SIS_AM.Config.MirrorChannel                                  := E_MFCS_Channel.LOGGING;
+
+fbMFCS_SIS_AM.Config.Telegrams.SendFCR                              := FALSE;
+fbMFCS_SIS_AM.Config.Telegrams.SendFSR                              := FALSE;
+fbMFCS_SIS_AM.Config.Telegrams.SendECR                              := FALSE;
+fbMFCS_SIS_AM.Config.Telegrams.SendESR                              := FALSE;
+fbMFCS_SIS_AM.Config.Telegrams.SendGCR                              := FALSE;
+fbMFCS_SIS_AM.Config.Telegrams.SendGSR                              := FALSE;
+fbMFCS_SIS_AM.Config.Telegrams.SendSCR                              := FALSE;
+fbMFCS_SIS_AM.Config.Telegrams.SendSSR                              := FALSE;
+fbMFCS_SIS_AM.Config.Telegrams.SendMCR                              := FALSE;
+fbMFCS_SIS_AM.Config.Telegrams.SendGVR                              := FALSE;
+fbMFCS_SIS_AM.Config.Telegrams.SendIPR                              := TRUE;
+fbMFCS_SIS_AM.Config.Telegrams.SendMSG                              := TRUE;
+fbMFCS_SIS_AM.Config.Telegrams.SendPOR                              := TRUE;
+fbMFCS_SIS_AM.Config.Telegrams.SendSDI                              := FALSE;
+fbMFCS_SIS_AM.Config.Telegrams.SendSIR                              := FALSE;
+fbMFCS_SIS_AM.Config.Telegrams.SendSNR                              := TRUE;
+fbMFCS_SIS_AM.Config.Telegrams.SendTDR                              := TRUE;
+fbMFCS_SIS_AM.Config.Telegrams.SendTTC                              := TRUE;
+fbMFCS_SIS_AM.Config.Telegrams.SendTTQ                              := TRUE;
+fbMFCS_SIS_AM.Config.Telegrams.SendTUR                              := TRUE;
+fbMFCS_SIS_AM.Config.Telegrams.SendATR                              := TRUE;
+fbMFCS_SIS_AM.Config.Telegrams.SendRTR                              := TRUE;
+fbMFCS_SIS_AM.Config.Telegrams.SendERR                              := TRUE;
+fbMFCS_SIS_AM.Config.Telegrams.SendRDR                              := TRUE;
+fbMFCS_SIS_AM.Config.Telegrams.SendRAC                              := TRUE;
+fbMFCS_SIS_AM.Config.Telegrams.SendVIR                              := FALSE;
+
+(******************* Communication Parameters for SIS Engine to SPOC ************************)
+
+fbMFCS_SIS_SPOC.Config.BaseDriver.TCP_Driver.ChannelName            := 'SPOC TCP/IP Driver';
+fbMFCS_SIS_SPOC.Config.BaseDriver.TCP_Driver.EnableConnection       := TRUE;
+IF SynQComm THEN
+(***Config Communication parameters when connected to SynQ, inhuse tests(Project spesific)***) 
+	fbMFCS_SIS_SPOC.Config.BaseDriver.TCP_Driver.RemoteHost             := '10.49.134.93';
+	fbMFCS_SIS_SPOC.Config.BaseDriver.TCP_Driver.RemotePort             := 10002;
+	fbMFCS_SIS_SPOC.Config.BaseDriver.TCP_Driver.LocalHost              := '0.0.0.0';
+	fbMFCS_SIS_SPOC.Config.BaseDriver.TCP_Driver.LocalPort              := 0;
+	fbMFCS_SIS_SPOC.Config.BaseDriver.TCP_Driver.Server                 := FALSE;
+ELSE
+(***Config Communication parameters when connected to ComTool, stand alone tests***)  	
+	fbMFCS_SIS_SPOC.Config.BaseDriver.TCP_Driver.RemoteHost             := '0.0.0.0';
+	fbMFCS_SIS_SPOC.Config.BaseDriver.TCP_Driver.RemotePort             := 0;
+	fbMFCS_SIS_SPOC.Config.BaseDriver.TCP_Driver.LocalHost              := '127.0.0.1';
+	fbMFCS_SIS_SPOC.Config.BaseDriver.TCP_Driver.LocalPort              := 2211;
+	fbMFCS_SIS_SPOC.Config.BaseDriver.TCP_Driver.Server                 := TRUE;
+END_IF
+fbMFCS_SIS_SPOC.Config.BaseDriver.TCP_Driver.ConnectTimeout         := T#10S;
+fbMFCS_SIS_SPOC.Config.BaseDriver.TCP_Driver.ClientRetryInterval    := T#5S;
+fbMFCS_SIS_SPOC.Config.BaseDriver.TCP_Driver.ServerRetryInterval    := T#1S;
+fbMFCS_SIS_SPOC.Config.BaseDriver.TCP_Driver.AcceptPollInterval	    := T#10S;
+fbMFCS_SIS_SPOC.Config.BaseDriver.TCP_Driver.EnableDebugMsg	        := FALSE;
+
+fbMFCS_SIS_SPOC.Config.BaseDriver.StartChar	                        := '<';
+fbMFCS_SIS_SPOC.Config.BaseDriver.EndChar                           := '>';
+IF SynQComm THEN
+(***Config Communication parameters when connected to SynQ, inhuse tests(Project spesific)***) 
+	fbMFCS_SIS_SPOC.Config.BaseDriver.StationName                       := 'PFA_10';
+	fbMFCS_SIS_SPOC.Config.BaseDriver.PartnerName                       := 'VISU02';
+ELSE
+(***Config Communication parameters when connected to ComTool, stand alone tests***) 
+	fbMFCS_SIS_SPOC.Config.BaseDriver.StationName                       := 'LGCS10';
+	fbMFCS_SIS_SPOC.Config.BaseDriver.PartnerName                       := 'SPOC02';
+END_IF
+fbMFCS_SIS_SPOC.Config.BaseDriver.DoAutoSync                        := TRUE;
+fbMFCS_SIS_SPOC.Config.BaseDriver.EnableDebugMsg                    := FALSE;
+fbMFCS_SIS_SPOC.Config.BaseDriver.EnableBufferOverwrite             := TRUE;
+
+fbMFCS_SIS_SPOC.Config.MFCS_Channel                                 := E_MFCS_Channel.SPOC;
+fbMFCS_SIS_SPOC.Config.BufferLevelWarning                           := 700;
+fbMFCS_SIS_SPOC.Config.BufferLevelAlarm                             := 900;
+fbMFCS_SIS_SPOC.Config.MirrorChannel                                := E_MFCS_Channel.LOGGING;
+
+fbMFCS_SIS_SPOC.Config.Telegrams.SendFCR                            := TRUE;
+fbMFCS_SIS_SPOC.Config.Telegrams.SendFSR                            := TRUE;
+fbMFCS_SIS_SPOC.Config.Telegrams.SendECR                            := TRUE;
+fbMFCS_SIS_SPOC.Config.Telegrams.SendESR                            := TRUE;
+fbMFCS_SIS_SPOC.Config.Telegrams.SendGCR                            := TRUE;
+fbMFCS_SIS_SPOC.Config.Telegrams.SendGSR                            := TRUE;
+fbMFCS_SIS_SPOC.Config.Telegrams.SendSCR                            := TRUE;
+fbMFCS_SIS_SPOC.Config.Telegrams.SendSSR                            := TRUE;
+fbMFCS_SIS_SPOC.Config.Telegrams.SendMCR                            := TRUE;
+fbMFCS_SIS_SPOC.Config.Telegrams.SendGVR                            := TRUE;
+fbMFCS_SIS_SPOC.Config.Telegrams.SendIPR                            := FALSE;
+fbMFCS_SIS_SPOC.Config.Telegrams.SendMSG                            := TRUE;
+fbMFCS_SIS_SPOC.Config.Telegrams.SendPOR                            := FALSE;
+fbMFCS_SIS_SPOC.Config.Telegrams.SendSDI                            := FALSE;
+fbMFCS_SIS_SPOC.Config.Telegrams.SendSIR                            := TRUE;
+fbMFCS_SIS_SPOC.Config.Telegrams.SendSNR                            := FALSE;
+fbMFCS_SIS_SPOC.Config.Telegrams.SendTDR                            := TRUE;
+fbMFCS_SIS_SPOC.Config.Telegrams.SendTTC                            := FALSE;
+fbMFCS_SIS_SPOC.Config.Telegrams.SendTTQ                            := FALSE;
+fbMFCS_SIS_SPOC.Config.Telegrams.SendTUR                            := TRUE;
+fbMFCS_SIS_SPOC.Config.Telegrams.SendATR                            := TRUE;
+fbMFCS_SIS_SPOC.Config.Telegrams.SendRTR                            := TRUE;
+fbMFCS_SIS_SPOC.Config.Telegrams.SendERR                            := TRUE;
+fbMFCS_SIS_SPOC.Config.Telegrams.SendRDR                            := TRUE;
+fbMFCS_SIS_SPOC.Config.Telegrams.SendRAC                            := FALSE;
+fbMFCS_SIS_SPOC.Config.Telegrams.SendVIR                            := TRUE;
+fbMFCS_SIS_SPOC.Config.Telegrams.SendISR                            := TRUE;
+
+
+(******************* Communication Parameters for SIS Engine to LOG ************************)
+fbMFCS_LOG.Config.BaseDriver.TCP_Driver.ChannelName                 := 'SIS log';
+fbMFCS_LOG.Config.BaseDriver.TCP_Driver.EnableConnection            := TRUE;
+fbMFCS_LOG.Config.BaseDriver.TCP_Driver.RemoteHost                  := '0.0.0.0';
+fbMFCS_LOG.Config.BaseDriver.TCP_Driver.RemotePort                  := 0;
+fbMFCS_LOG.Config.BaseDriver.TCP_Driver.LocalHost                   := '0.0.0.0';
+fbMFCS_LOG.Config.BaseDriver.TCP_Driver.LocalPort                   := 6000;
+fbMFCS_LOG.Config.BaseDriver.TCP_Driver.Server                      := TRUE;
+fbMFCS_LOG.Config.BaseDriver.TCP_Driver.ConnectTimeout              := T#10S;
+fbMFCS_LOG.Config.BaseDriver.TCP_Driver.ClientRetryInterval         := T#5S;
+fbMFCS_LOG.Config.BaseDriver.TCP_Driver.ServerRetryInterval         := T#1S;
+fbMFCS_LOG.Config.BaseDriver.TCP_Driver.AcceptPollInterval          := T#10S;
+fbMFCS_LOG.Config.BaseDriver.TCP_Driver.EnableDebugMsg              := FALSE;
+
+fbMFCS_LOG.Config.BaseDriver.StartChar                              := '<';
+fbMFCS_LOG.Config.BaseDriver.EndChar                                := '>';
+fbMFCS_LOG.Config.BaseDriver.StationName                            := 'LGCS10';
+fbMFCS_LOG.Config.BaseDriver.PartnerName                            := 'SISLOG';
+fbMFCS_LOG.Config.BaseDriver.DoAutoSync	                            := TRUE;
+fbMFCS_LOG.Config.BaseDriver.EnableDebugMsg	                        := FALSE;
+fbMFCS_LOG.Config.BaseDriver.EnableBufferOverwrite                  := TRUE;
+
+fbMFCS_LOG.Config.MFCS_Channel                                      := E_MFCS_Channel.LOGGING;
+fbMFCS_LOG.Config.BufferLevelWarning                                := 700;
+fbMFCS_LOG.Config.BufferLevelAlarm                                  := 900;
+fbMFCS_LOG.Config.MirrorChannel                                     := E_MFCS_Channel.BEGIN_CHANNEL;
+
+]]></ST>
+    </Implementation>
+    <LineIds Name="F_ConfigCommunication">
+      <LineId Id="3" Count="192" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

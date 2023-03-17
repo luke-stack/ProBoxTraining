@@ -1,0 +1,104 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.4">
+  <POU Name="FB_DistanceMeter" Id="{96331bbf-c9d4-439a-a8bd-71f6462b8892}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK FB_DistanceMeter
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 475083 $
+ *	Revision date	:	$Date: 2021-04-10 12:07:10 +0200 (lör, 10 apr 2021) $
+ *	Last changed by	:	$Author: d7mangc $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/tags/R1.12.0/01_Software/BCF/BCF/JumpStart/20_Product/10_BCF/11_Conv/12_E_Functions/10_Helper/FB_DistanceMeter.TcPOU $
+ *
+ *	Purpose			:	Distance meter based on encoder value
+ *						
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+VAR_INPUT
+	Run					: BOOL;
+	EncoderValue		: WORD;
+	SetPoint			: DINT;
+	PresetDistance		: DINT;
+	Input_TU_DataIndex	: DINT;
+END_VAR
+
+VAR_OUTPUT
+	Q					: BOOL;
+	Distance			: DINT;
+	TU_DataIndex		: DINT;
+END_VAR
+
+VAR
+	Trg			     : BOOL; // Trigger detection for start signal
+	LastEncoderValue : WORD;
+	Inc 			 : INT;
+END_VAR]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[IF Run THEN
+	// Detect start trigger and preset values
+	IF NOT Trg AND Run THEN
+		LastEncoderValue := EncoderValue;
+		Distance := PresetDistance;
+		TU_DataIndex := Input_TU_DataIndex;
+	END_IF
+	
+	// Calculate increment
+	IF EncoderValue >= LastEncoderValue THEN
+		Inc := WORD_TO_INT(EncoderValue - LastEncoderValue);
+	// Handle overflow
+	ELSE
+		Inc := WORD_TO_INT(EncoderValue + 1 + 16#FFFF - LastEncoderValue);
+	END_IF	
+
+	// Update last encoder value
+	LastEncoderValue := EncoderValue;
+	
+	// Update outputs
+	IF NOT Q THEN
+		Distance := Distance + ABS(Inc);
+		IF Distance >= SetPoint THEN
+			Q := TRUE;
+		END_IF
+	END_IF
+ELSE
+	// Reset outputs
+	Q := FALSE;
+	TU_DataIndex := 0;
+END_IF
+
+Trg := Run;]]></ST>
+    </Implementation>
+    <Method Name="M_SetDistance" Id="{ae56b6ca-bbb2-4b36-802a-78e0117a6ac0}">
+      <Declaration><![CDATA[// Changes the current position (distance)
+METHOD PUBLIC M_SetDistance
+
+VAR_INPUT
+	NewDistance 	: DINT	:= 0;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[IF Run THEN
+	Distance := NewDistance;
+	THIS^();
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <LineIds Name="FB_DistanceMeter">
+      <LineId Id="3" Count="31" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_DistanceMeter.M_SetDistance">
+      <LineId Id="3" Count="2" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

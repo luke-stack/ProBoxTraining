@@ -1,0 +1,11 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <DUT Name="ST_HW_OutputsFunctionForks" Id="{6e4f4d10-a8c5-4071-aede-74841fa22be8}">
+    <Declaration><![CDATA[TYPE ST_HW_OutputsFunctionForks :
+STRUCT
+	VCDrive						:ST_HW_OutputsMotionDrive;
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

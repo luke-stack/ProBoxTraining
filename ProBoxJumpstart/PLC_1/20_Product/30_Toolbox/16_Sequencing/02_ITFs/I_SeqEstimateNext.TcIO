@@ -1,0 +1,18 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.12">
+  <Itf Name="I_SeqEstimateNext" Id="{3a9793ac-12e3-495e-99d8-5af2f6e455b0}">
+    <Declaration><![CDATA[/// Sequencing estimate next interface
+INTERFACE I_SeqEstimateNext
+]]></Declaration>
+    <Method Name="M_IsNextInSequence" Id="{0b48b493-0842-4829-a288-bb71714a80b4}">
+      <Declaration><![CDATA[/// Checks if requesting TU is next in sequence
+METHOD M_IsNextInSequence : BOOL // True = Next in Sequence, otherwise FALSE
+VAR_INPUT
+	mTU_Index			: DINT; // Requesting TU Index
+END_VAR
+VAR_IN_OUT
+	mTU_Data			: ST_TU_Data; // Tu Data
+END_VAR]]></Declaration>
+    </Method>
+  </Itf>
+</TcPlcObject>

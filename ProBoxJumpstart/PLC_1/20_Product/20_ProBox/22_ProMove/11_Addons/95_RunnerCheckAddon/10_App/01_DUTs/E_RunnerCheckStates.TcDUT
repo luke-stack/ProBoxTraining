@@ -1,0 +1,18 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <DUT Name="E_RunnerCheckStates" Id="{9b4e2d72-4e2b-4782-951e-a6626dc1c1a0}">
+    <Declaration><![CDATA[{attribute 'qualified_only'}
+{attribute 'strict'}
+TYPE E_RunnerCheckStates :
+(
+	INIT,				// Initializing
+	IDLE,				// Waiting for trig
+	MEASURING,			// Measuring cycle running
+	DATA_AVAIABLE,		// Measuring done and data ready for further handling (IPR-telegram)
+	WAIT_UNTIL_FREE,	// waits for TU to move out.
+	ERROR				
+);
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

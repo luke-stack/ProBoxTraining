@@ -1,0 +1,15 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <DUT Name="ST_ParametersDrive" Id="{b9861997-ea5b-422d-9dd2-2d415dd39d2e}">
+    <Declaration><![CDATA[TYPE ST_ParametersDrive :
+STRUCT
+	//SafetyMaximumVelocity			: INT; // [mm/s]
+	Velocity						: INT; // [mm/s]
+	Acceleration					: INT; // [mm/s2]
+	Deceleration					: INT; // [mm/s2]
+	Jerk							: LREAL; // [mm/s3]
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

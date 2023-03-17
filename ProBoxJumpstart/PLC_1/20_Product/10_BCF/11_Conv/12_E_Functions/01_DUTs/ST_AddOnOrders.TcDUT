@@ -1,0 +1,57 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.4">
+  <DUT Name="ST_AddOnOrders" Id="{384a4354-0329-45d0-a607-f146b821be62}">
+    <Declaration><![CDATA[TYPE ST_AddOnOrders :
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 474969 $
+ *	Revision date	:	$Date: 2021-04-08 19:53:18 +0200 (tor, 08 apr 2021) $
+ *	Last changed by	:	$Author: d7mangc $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/tags/R1.12.0/01_Software/BCF/BCF/JumpStart/20_Product/10_BCF/11_Conv/12_E_Functions/01_DUTs/ST_AddOnOrders.TcDUT $
+ *
+ *	Purpose			:	AddOn orders (output)
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ *  VERSION DATE         INITIALS     DESCRIPTION
+ *  0.0     DD.MM.YYYY   (name)       (explain customized modifications)
+ *
+ **************************************************************************************)
+STRUCT
+  Enable                		: BOOL; // General enable
+  EnableTakeover        		: BOOL; // Enable takeover
+  EnableHandover        		: BOOL; // Enable handover
+  EnableSimultaneousTransport 	: BOOL; // Enable simultaneous transport mode
+  DataReady             		: BOOL; // Process of add-on function is complete
+  DataValid             		: BOOL; // Scanner specific - data valid
+  TU_DataIndex                	: DINT; // TU data index
+  AddOnSensor                 	: BOOL; // Used when zone is configured to use AddOn sensor if not UseOwnSensor
+  UseOwnSensor                	: BOOL; // AddOn forces the use of the own sensor instead of the addonsensor
+  AllowDriveTakeover            : BOOL; // Used to sync the driving motors when slugging
+  AllowDriveHandover            : BOOL; // Used to sync the driving motors when slugging
+END_STRUCT
+END_TYPE]]></Declaration>
+    <ObjectProperties>
+      <XmlArchive>
+        <Data>
+          <o xml:space="preserve" t="UMLStereoTypeContainerObject">
+            <v n="IsType" t="UMLType">BaseArea</v>
+            <v n="Stereotype">""</v>
+            <d n="Stereotypes" t="Hashtable" />
+          </o>
+        </Data>
+        <TypeList>
+          <Type n="Hashtable">System.Collections.Hashtable</Type>
+          <Type n="String">System.String</Type>
+          <Type n="UMLStereoTypeContainerObject">{30250973-b110-4e31-b562-c102e042dca4}</Type>
+          <Type n="UMLType">{0197b136-405a-42ee-bb27-fd08b621d0cf}</Type>
+        </TypeList>
+      </XmlArchive>
+    </ObjectProperties>
+  </DUT>
+</TcPlcObject>

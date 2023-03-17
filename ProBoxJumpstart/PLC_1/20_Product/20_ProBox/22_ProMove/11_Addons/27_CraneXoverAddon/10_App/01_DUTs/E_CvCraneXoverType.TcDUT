@@ -1,0 +1,16 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.12">
+  <DUT Name="E_CvCraneXoverType" Id="{71d4cc0c-fe95-4a96-a9e0-9b74febe2b9d}">
+    <Declaration><![CDATA[{attribute 'qualified_only'}
+{attribute 'strict'}
+TYPE E_CvCraneXoverType :
+(
+	eXOVER_UNKNOWN,	//Not valid, this is used to detect if type was not setup properly
+	eHANDOVER, 		//Function Crane Pickup
+	eTAKEOVER,	  	//Function Crane Deposit
+	eCOMBINATION	//Function Crane Deposit and Crane Pickup
+);
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

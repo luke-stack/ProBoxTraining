@@ -1,0 +1,287 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <POU Name="FB_ProBoxStraightTransportEmulation" Id="{dbf64fb9-177f-43c4-9da1-636ba1883a83}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK FB_ProBoxStraightTransportEmulation EXTENDS FB_FunctionConvEmulation
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 411985 $
+ *	Revision date	:	$Date: 2018-08-09 14:48:51 +0200 (Do, 09 Aug 2018) $
+ *	Last changed by	:	$Author: p8fiscp $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/ProMove/02_Controls/ProBox/03_Implementation/01_DevelopmentProject/01_Software/Not_tested!/ProBox_COE/ProBox_DevProj_v1.0/PLC_1/20_Product/10_App/12_E_Functions/11_ProBox/11_StraightTransport/11_Em $
+ *
+ *	Purpose			:	Emulation ProBox straight transport function with zone logic.
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				19.04.2018		PkF					First Version of ProBox straight emulation
+ *  0.2				14.11.2018		jko					names adapted according convention
+ * 
+ **************************************************************************************)
+ VAR
+	pFunction						: POINTER TO FB_ProBoxStraightTransport; // Address to function
+	rFunction						: REFERENCE TO FB_ProBoxStraightTransport; // Reference to function
+	fbTransportControlEmulation		: ARRAY[1..NUMBER_OF_ZONES_PER_FUNCTION] OF FB_PB_TransportControlEmulation; // Transport control emulation
+	fbEncoder						: FB_PB_Element_Encoder();
+    Sensor                      	: BOOL; // Example sensor on element level
+	ZoneIdx							: INT;
+	ElementDriveRunning				: BOOL; // Feedback drive is running from element
+	ElementSpeed					: INT; // Feedback speed from element	
+	SensorFirst						: BOOL; //test
+	SensorStop						: BOOL; //test
+	EmuSensors						: ARRAY [1..NUMBER_OF_ZONES_PER_FUNCTION] OF BOOL;
+	DebugSensors					: ST_DebugSensors_ProBoxStraightTransportEmulation;
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[(**************************************************************************************************************
+   Initialization
+***************************************************************************************************************)
+A_Init();
+
+(**************************************************************************************************************
+   Update reference
+***************************************************************************************************************)
+A_UpdateReference();
+
+(**************************************************************************************************************
+   Emulation
+***************************************************************************************************************)
+// If emulation function is initialized
+IF FunctionData.Init THEN
+
+	// Update data of real object
+	M_UpdateRealObjectData();
+	
+	// Handle external Subsystem-Subsystem interfaces
+	A_ExternalSTI();
+	
+	// Assign feedback from element
+	IF rFunction.Config.Orientation_Axis_12 = E_Axis_Orientation.Element_12 OR rFunction.Config.Orientation_Axis_12 = E_Axis_Orientation.Element_21 THEN
+		ElementDriveRunning := FunctionBase.rFunctionInterfaceReal.In.Element.State.DriveRunning AND FunctionBase.rFunctionInterfaceReal.Out.FunctionOrders.ReqDriveRun;
+		ElementSpeed := FunctionBase.rFunctionInterfaceReal.In.Element.State.Speed;
+	ELSIF rFunction.Config.Orientation_Axis_12 = E_Axis_Orientation.Element_34 OR rFunction.Config.Orientation_Axis_12 = E_Axis_Orientation.Element_43 THEN
+		ElementDriveRunning := FunctionBase.rFunctionInterfaceReal.In.Element.State.DriveRunning_34 AND FunctionBase.rFunctionInterfaceReal.Out.FunctionOrders.ReqDriveRun_34;
+		ElementSpeed := FunctionBase.rFunctionInterfaceReal.In.Element.State.Speed_34;
+	ELSE
+		ElementDriveRunning := FALSE;
+		ElementSpeed := 0;
+	END_IF
+	
+	//Run encoder positon, 
+//TODO: Move to Element???
+	fbEncoder(	Run:=ElementDriveRunning, 
+				Speed:= ProBoxSystem.EMULATION_SPEED);
+	
+	FOR ZoneIdx := 1 TO rFunction.SettingsFunction.NumberOfZones DO	
+		
+		// Call transport control 
+		fbTransportControlEmulation[ZoneIdx](
+			Param 					:= M_GetTransportControlParam(mZoneNumber := ZoneIdx), // Parameter of transport control
+			PrevTransportData 		:= M_GetPreviousTransportData(mZoneNumber := ZoneIdx), // Previous transport data
+			NextTransportData 		:= M_GetNextTransportData(mZoneNumber := ZoneIdx), // Next transport data	
+			TransportEnable			:= TRUE, // Transport enable	
+			DriveRunning			:= ElementDriveRunning, // 
+			EncoderValue			:= fbEncoder.EncoderValue, //FunctionBase.rFunctionInterfaceReal.In.Element.State.EncoderValue
+			ZoneData 				:= ZoneData[ZoneIdx]); // Zone data
+			
+	END_FOR
+
+A_OverWriteInputs();	
+
+END_IF]]></ST>
+    </Implementation>
+    <Action Name="A_Init" Id="{10fb43b2-d794-44f6-b55a-063ad1539f7a}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_Init
+ * 	FUNCTION	Initialize emulated dummy function
+ **************************************************************************************)
+
+// If dummy function is not initialized
+IF NOT FunctionData.Init Then
+	// Check that linked dummy function number is valid
+	IF eFunctionNumber > E_FunctionNumber.F_BEGIN_FUNCTION AND
+	   eFunctionNumber < E_FunctionNumber.F_END_FUNCTION THEN   
+		
+		// Check if the real module is initialized
+		IF F_IsFunctionInitialized(eFunctionNumber := eFunctionNumber) THEN
+			// Module is initialized
+			FunctionData.Init:= TRUE;
+			
+			// Send debug message
+			DebugMsg := CONCAT('Initialization done. Element Function: ', FunctionRegistry[eFunctionNumber].FunctionName);
+			fbDebugMsg.M_SendInfoMsg(DebugMsg);
+			
+			// Initialize real module
+			F_InitializeFunction(eFunctionNumber := eFunctionNumber);
+		END_IF
+	END_IF
+END_IF
+]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="A_OverWriteInputs" Id="{48e68083-4611-404a-8e6b-5989453fb3b2}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_OverWriteInputs
+ * 	FUNCTION	Overwrite inputs for emulation
+ **************************************************************************************)
+FOR ZoneIdx:=1 TO rFunction.SettingsFunction.NumberOfZones DO
+	ZoneData[ZoneIdx].TransportControlData.TransportParam.ZoneLength := FunctionBase.rSettingsFunctionReal.Zone[ZoneIdx].Length[1];	
+END_FOR
+
+FOR ZoneIdx:=1 TO rFunction.SettingsFunction.NumberOfZones DO
+	EmuSensors[ZoneIdx] :=  fbTransportControlEmulation[ZoneIdx].M_TU_PresentState(
+											mPosition := FunctionBase.rSettingsFunctionReal.Zone[ZoneIdx].Length[1] - FunctionBase.rSettingsFunctionReal.Zone[ZoneIdx].ZoneEndLengthToSide[2],
+											mIndex => FunctionBase.IndexToRemove[ZoneIdx],
+											mLeadingEdgePos => ZoneData[ZoneIdx].TransportControlData.TU_LeadingEdgePos);
+END_FOR
+
+// Set Sensor at first zone
+IF(rFunction.SettingsFunction.NumberOfZones>1 AND rFunction.Settings.TwoSensorFunction) THEN
+	IF(FunctionBase.rSettingsFunctionReal.FlowDirectionREV) THEN
+		// RWD drive direction
+		SensorFirst:= EmuSensors[rFunction.SettingsFunction.NumberOfZones];
+	ELSE
+		// FWD drive direction
+		SensorFirst:= EmuSensors[1];
+	END_IF	
+END_IF
+// Set sensor at last zone
+IF(FunctionBase.rSettingsFunctionReal.FlowDirectionREV) THEN
+	// RWD drive direction
+	SensorStop := EmuSensors[1];
+ELSE
+	// FWD drive direction
+	SensorStop := EmuSensors[rFunction.SettingsFunction.NumberOfZones];
+END_IF
+// Debug sensors or proceed with overwriting inputs
+IF (DebugSensors.EnableSensorDebug) THEN
+	rFunction.HW_Inputs := DebugSensors.HW_Inputs;
+ELSE
+	// Set HW outputs, Keep input if direction is changed.
+	rFunction.HW_Inputs.Sensor_First_12 := rFunction.Config.HW_InputInverted.Sensor_First_12 XOR (SensorFirst AND(NOT FunctionBase.rSettingsFunctionReal.FlowDirectionREV OR rFunction.HW_Inputs.Sensor_First_12));
+	rFunction.HW_Inputs.Sensor_First_21 := rFunction.Config.HW_InputInverted.Sensor_First_21 XOR (SensorFirst AND(FunctionBase.rSettingsFunctionReal.FlowDirectionREV OR rFunction.HW_Inputs.Sensor_First_21));
+	rFunction.HW_Inputs.Sensor_Stop_12 := rFunction.Config.HW_InputInverted.Sensor_Stop_12 XOR(SensorStop AND(NOT FunctionBase.rSettingsFunctionReal.FlowDirectionREV OR rFunction.HW_Inputs.Sensor_Stop_12));
+	rFunction.HW_Inputs.Sensor_Stop_21 := rFunction.Config.HW_InputInverted.Sensor_Stop_21 XOR(SensorStop AND(FunctionBase.rSettingsFunctionReal.FlowDirectionREV OR rFunction.HW_Inputs.Sensor_Stop_21));
+
+	rFunction.HW_Inputs.Sensor_First_12 := rFunction.HW_Inputs.Sensor_First_12 AND rFunction.Config.TwoSensorFunction;
+	rFunction.HW_Inputs.Sensor_Stop_12 := rFunction.HW_Inputs.Sensor_Stop_12;
+
+	// Set extended run stop sensor 10 mm after the normal function stop sensor.
+	IF(rFunction.Config.ExtendedRun.Activated) THEN
+		ZoneIdx:=rFunction.Config.ExtendedRun.FunctionZone;
+		IF(ZoneIdx>0 AND ZoneIdx<=NUMBER_OF_ZONES_PER_FUNCTION) THEN
+			rFunction.HW_Inputs.Sensor_StopExtRun := rFunction.Config.HW_InputInverted.Sensor_StopExtRun XOR (ZoneData[ZoneIdx].TransportControlData.TU_LeadingEdgePos > FunctionBase.rSettingsFunctionReal.Zone[ZoneIdx].Length[1] - FunctionBase.rSettingsFunctionReal.Zone[ZoneIdx].ZoneEndLengthToSide[2] + 10);
+		END_IF
+	END_IF
+END_IF
+]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="A_UpdateReference" Id="{c030c5b1-2db3-446a-90fc-be4fb05e4501}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_UpdateReference
+ * 	FUNCTION	Update reference to real object
+ **************************************************************************************)
+
+// Check valid function number
+IF eFunctionNumber > E_FunctionNumber.F_BEGIN_FUNCTION AND
+   eFunctionNumber < E_FunctionNumber.F_END_FUNCTION THEN
+
+	// Is reference valid  
+	IF __ISVALIDREF(FunctionRegistry[eFunctionNumber].rFunction) THEN
+		// Build address to reference
+		pFunction := ADR(FunctionRegistry[eFunctionNumber].rFunction);
+
+		// If address is possible
+		IF pFunction <> 0 THEN
+			// Build reference to memory
+			rFunction REF= pFunction^;
+		ELSE
+			// Reinitialize module
+			FunctionData.Init:= FALSE;
+		END_IF
+	ELSE
+		// Reinitialize module
+		FunctionData.Init:= FALSE;
+	END_IF
+END_IF
+		]]></ST>
+      </Implementation>
+    </Action>
+    <Method Name="M_GetTU_PresentState" Id="{4e2b71fd-d6e1-4aa1-8573-f133c1a50ffb}">
+      <Declaration><![CDATA[METHOD M_GetTU_PresentState : BOOL
+(**************************************************************************************
+ * 	Application		:	ProBox
+ *	Revision		:	$Revision:  $
+ *	Revision date	:	$Date: $
+ *	Last changed by	:	$Author: q8Hedls $
+ *	URL				:	$URL: $
+ *
+ *	Purpose			:	Get TU present state, overriden from base object
+ *
+ **************************************************************************************)
+VAR_INPUT
+	mZone	 : INT; // Zone number
+	mPosition : UINT; // Position [mm]
+END_VAR
+VAR_OUTPUT
+	mTU_DataIndex : DINT;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[IF(mZone>=1 AND mZone<= NUMBER_OF_ZONES_PER_FUNCTION) THEN
+	M_GetTU_PresentState := fbTransportControlEmulation[mZone].M_TU_PresentState(mPosition := mPosition, mTU_DataIndex => mTU_DataIndex);
+END_IF
+]]></ST>
+      </Implementation>
+    </Method>
+    <ObjectProperties>
+      <XmlArchive>
+        <Data>
+          <o xml:space="preserve" t="UMLStereoTypeContainerObject">
+            <v n="IsType" t="UMLType">BaseArea</v>
+            <v n="Stereotype">""</v>
+            <d n="Stereotypes" t="Hashtable" />
+          </o>
+        </Data>
+        <TypeList>
+          <Type n="Hashtable">System.Collections.Hashtable</Type>
+          <Type n="String">System.String</Type>
+          <Type n="UMLStereoTypeContainerObject">{30250973-b110-4e31-b562-c102e042dca4}</Type>
+          <Type n="UMLType">{0197b136-405a-42ee-bb27-fd08b621d0cf}</Type>
+        </TypeList>
+      </XmlArchive>
+    </ObjectProperties>
+    <LineIds Name="FB_ProBoxStraightTransportEmulation">
+      <LineId Id="3" Count="54" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ProBoxStraightTransportEmulation.A_Init">
+      <LineId Id="2" Count="24" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ProBoxStraightTransportEmulation.A_OverWriteInputs">
+      <LineId Id="2" Count="34" />
+      <LineId Id="61" Count="0" />
+      <LineId Id="42" Count="17" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ProBoxStraightTransportEmulation.A_UpdateReference">
+      <LineId Id="2" Count="26" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ProBoxStraightTransportEmulation.M_GetTU_PresentState">
+      <LineId Id="3" Count="2" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

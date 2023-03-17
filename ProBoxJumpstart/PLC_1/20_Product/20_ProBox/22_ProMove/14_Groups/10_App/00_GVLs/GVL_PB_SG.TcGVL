@@ -1,0 +1,12 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <GVL Name="GVL_PB_SG" Id="{2a875174-0863-45db-b9e4-e232fb5da833}">
+    <Declaration><![CDATA[{attribute 'qualified_only'}
+VAR_GLOBAL
+END_VAR
+VAR_GLOBAL CONSTANT
+	NUMBER_OF_CONTACTORS : INT := 8;
+	NUMBER_OF_AP_PANELS	: INT := 12;
+END_VAR]]></Declaration>
+  </GVL>
+</TcPlcObject>

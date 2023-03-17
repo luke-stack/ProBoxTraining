@@ -1,0 +1,16 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.12">
+  <DUT Name="E_LiftType" Id="{f78a29d5-8086-44e2-8c40-c6c81c737af7}">
+    <Declaration><![CDATA[{attribute 'qualified_only'}
+{attribute 'strict'}
+//Lift type
+TYPE E_LiftType :
+(
+	E_Undefined,
+	E_LiftRoller,			// Lift is assigned to Chain conveyor
+	E_LiftChain				// Lift is assigned to Roller conveyour		
+);
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

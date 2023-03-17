@@ -1,0 +1,745 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <POU Name="FB_FastDoorAddon" Id="{77b33f93-001a-4c35-8a63-7df432e36bc8}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK FB_FastDoorAddon EXTENDS FB_FunctionConv
+VAR_INPUT
+	Config						: ST_CFG_FastDoor; 		// Configuration
+	HW_Inputs					: ST_HW_InputsFastDoor; 	// Hardware inputs
+END_VAR
+
+VAR_OUTPUT	
+	HW_Outputs					: ST_HW_OutputsFastDoor; // Hardware outputs
+END_VAR
+
+VAR
+	Inputs						: ST_InputsFastDoor;  // Function specific inputs
+	Outputs						: ST_OutputsFastDoor; // Function specific outputs  
+	fbAddonErrHandler			: FB_AddOnErrHandler;
+	FastDoorStates				: ST_FastDoorStates;
+	FastDoorData				: ST_FastDoorData; 
+END_VAR
+
+VAR PERSISTENT
+	Settings					: ST_CFG_FastDoor; // Settings - activated configuration 
+END_VAR]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[(**************************************************************************************************************
+   Input mapping
+***************************************************************************************************************)
+A_InputMapping();
+
+(**************************************************************************************************************
+   Initialization
+***************************************************************************************************************)
+A_Init();
+
+(**************************************************************************************************************
+  BCF State control
+***************************************************************************************************************)
+A_StateControl();
+
+(**************************************************************************************************************
+   Error handler
+***************************************************************************************************************)
+A_ErrorHandler();
+fbAddOnErrHandler(AddOnSettingsFunction :=SettingsFunction, AddOnFunctionData:=FunctionData);
+_M_CheckErrors();
+
+(**************************************************************************************************************
+   Process AddOns
+***************************************************************************************************************)
+M_ProcessAddOns();
+
+(**********************************************************************************************************
+   State Handler 
+***********************************************************************************************************)
+_M_FastDoorStates();
+
+(**********************************************************************************************************
+   Control Door 
+***********************************************************************************************************)
+_M_ControlDoor(); 
+
+(**********************************************************************************************************
+   Check Error 
+***********************************************************************************************************)
+_M_CheckErrors();
+
+(**************************************************************************************************************
+   Interface handler out
+***************************************************************************************************************)
+M_ITC_ProcessOut();
+
+(**************************************************************************************************************
+   Output mapping
+***************************************************************************************************************)
+A_OutputMapping();		]]></ST>
+    </Implementation>
+    <Method Name="_M_CheckErrors" Id="{8b99d517-5ceb-4686-a8d8-4ea4e690d79d}">
+      <Declaration><![CDATA[METHOD PRIVATE _M_CheckErrors : BOOL
+VAR_INPUT 
+END_VAR
+
+VAR
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[F_ResetError(FALSE,	FunctionData.ErrorData.ErrorDataSet[2]);
+
+IF NOT Inputs.HW.Ready THEN 
+	F_SetError(
+		ErrorType 	:= E_ErrorType.ERROR,
+		ErrorParam 	:= 'Door ready signal not set',
+		ErrorMsg 	:= E_ErrorConv.DOOR_ERROR,
+		ErrorData 	:= FunctionData.ErrorData.ErrorDataSet[2]);	
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_ControlDoor" Id="{62810f2d-077b-4b83-8f06-e2fd4f93ef5e}">
+      <Declaration><![CDATA[METHOD PRIVATE _M_ControlDoor : BOOL
+
+VAR
+	fbDoorOpenTrigger	: R_TRIG;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+_M_DoorControl(
+	SensorPosDown:= Inputs.HW.Closed, 
+	SensosPosUp:= Inputs.HW.Open, 
+	TimeOutValueDoor:= Settings.TimeoutValueDoor, 
+	OrderPos:= FastDoorData.OrderPos,  
+	DriveUp=> Outputs.HW.OpenDoor, 
+	DriveDown=> Outputs.HW.CloseDoor, 
+	EnableTransport=> FastDoorData.EnableTransport);
+
+	
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_DoorControl" Id="{89384305-67e4-4f50-9684-c42688dff6b0}">
+      <Declaration><![CDATA[METHOD PRIVATE _M_DoorControl : BOOL
+VAR_INPUT
+	SensorPosDown		: BOOL;
+	SensosPosUp			: BOOL; 
+	TimeOutValueDoor	: TIME;
+	OrderPos			: E_DoorPos;
+END_VAR
+
+VAR_OUTPUT
+	DriveUp				: BOOL; 
+	DriveDown			: BOOL;
+	EnableTransport		: BOOL; 
+END_VAR
+
+VAR_INST
+	eState				: E_FastDoorControlStates;
+	eLastState			: E_FastDoorControlStates;
+	fbTimeoutTimer		: TON;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[F_ResetError(FALSE,	FunctionData.ErrorData.ErrorDataSet[1]);
+
+fbTimeoutTimer.IN := FALSE;
+fbTimeoutTimer.PT := TimeOutValueDoor;
+
+CASE eState	OF 
+	
+	(**************************************************************************************************************
+ 	INIT
+	***************************************************************************************************************)
+	E_FastDoorControlStates.INIT:
+		DriveUp := FALSE;
+		DriveDown := FALSE;
+		EnableTransport := FALSE;
+		
+		eLastState := eState;
+		eState := E_FastDoorControlStates.IDLE;	
+
+	(**************************************************************************************************************
+ 	IDLE
+	***************************************************************************************************************)
+	E_FastDoorControlStates.IDLE:
+		
+		IF OrderPos = E_DoorPos.DOWN THEN
+		
+			IF SensorPosDown THEN
+				EnableTransport := TRUE;
+			ELSE
+				EnableTransport := FALSE;
+				eLastState := eState;
+				eState := E_FastDoorControlStates.DOOR_DOWN;
+			END_IF
+		
+		ELSIF OrderPos  = E_DoorPos.UP THEN
+			IF SensosPosUp THEN
+				EnableTransport := TRUE;
+			ELSE
+				EnableTransport := FALSE;
+				eLastState := eState;
+				eState := E_FastDoorControlStates.DOOR_UP;
+			END_IF
+		ELSE
+			EnableTransport := FALSE; 
+		END_IF
+					
+	(**************************************************************************************************************
+ 	DOOR_DOWN
+	***************************************************************************************************************)
+	E_FastDoorControlStates.DOOR_DOWN:
+	
+		IF SensorPosDown THEN 
+			DriveDown := FALSE;
+			eLastState := eState; 
+			eState := E_FastDoorControlStates.IDLE;
+		ELSE
+			fbTimeoutTimer.IN := TRUE;
+			
+			IF fbTimeoutTimer.Q THEN 
+				F_SetError(
+					ErrorType	:= E_ErrorType.ERROR,
+					ErrorParam	:= 'Timeout closing door',
+					ErrorMsg 	:= E_ErrorConv.TIMEOUT_MOVEMENT,
+					ErrorData	:= FunctionData.ErrorData.ErrorDataSet[1]);
+			ELSE
+				DriveDown := TRUE;
+			END_IF
+		END_IF
+
+	(**************************************************************************************************************
+ 	DOOR_UP
+	***************************************************************************************************************)
+	E_FastDoorControlStates.DOOR_UP:
+	
+		IF SensosPosUp THEN 
+			DriveUp := FALSE;
+			eLastState := eState; 
+			eState := E_FastDoorControlStates.IDLE;
+			
+		ELSE
+			fbTimeoutTimer.IN := TRUE; 
+			
+			IF fbTimeoutTimer.Q THEN
+				F_SetError(
+					ErrorType	:= E_ErrorType.ERROR,
+					ErrorParam	:= 'Timeout opening door',
+					ErrorMsg 	:= E_ErrorConv.TIMEOUT_MOVEMENT,
+					ErrorData	:= FunctionData.ErrorData.ErrorDataSet[1]);
+			ELSE
+				DriveUp := TRUE; 
+			END_IF
+			
+		END_IF
+END_CASE
+
+//Call timer 
+fbTimeoutTimer();]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_DoorSide" Id="{8b71b0b1-4444-43c3-ae8f-bf4c82dbd50e}">
+      <Declaration><![CDATA[METHOD PRIVATE _M_DoorSide : BOOL
+VAR_INPUT
+	TrspData					: REFERENCE TO ST_TransportControlData;
+	TrspDataNext				: REFERENCE TO ST_TransportControlData;
+	TrspDataPrev				: REFERENCE TO ST_TransportControlData;
+	Side						: INT; 
+END_VAR
+
+VAR
+	AdjacentSide				: E_FunctionNumber;
+END_VAR
+
+VAR_IN_OUT
+	Error		: ST_ErrorDataSet;  
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[IF NOT __ISVALIDREF(FunctionRegistry[SettingsFunction.FunctionLink.eFunctionNumber].rFunctionInterface) THEN 
+	RETURN;
+END_IF
+
+IF NOT __ISVALIDREF(FunctionRegistry[SettingsFunction.FunctionLink.eFunctionNumber].rSettingsFunction) THEN 
+	RETURN;
+END_IF
+
+IF NOT (Side > 0 AND Side <= 4) THEN
+	F_SetError(
+			ErrorType	:= E_ErrorType.ERROR,
+			ErrorParam	:= 'Door side number not defined',
+			ErrorMsg 	:= E_ErrorConv.CONFIGURATION_ERROR,
+			ErrorData	:= Error);
+END_IF
+
+AdjacentSide := FunctionRegistry[SettingsFunction.FunctionLink.eFunctionNumber].rSettingsFunction.eAdjacentFunctionNumberSide[Side];
+
+IF(( FunctionRegistry[SettingsFunction.FunctionLink.eFunctionNumber].rFunctionInterface.In.eNextFunctionNumber = AdjacentSide AND 
+	TrspData.NumberOfPresentTUs > 0) OR
+	(FunctionRegistry[SettingsFunction.FunctionLink.eFunctionNumber].rFunctionInterface.In.ePrevFunctionNumber = AdjacentSide AND
+	TrspData.NumberOfPresentTUs = 0)) THEN
+	
+	_M_DoorSide := TRUE;
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_FastDoorStates" Id="{5e91031c-efa6-481f-a3b5-00babbaa528e}">
+      <Declaration><![CDATA[METHOD _M_FastDoorStates : BOOL
+
+VAR
+	TrspData					: ST_TransportControlData;
+	TrspDataNext				: ST_TransportControlData;
+	TrspDataPrev				: ST_TransportControlData;
+	ZoneIndexNext				: INT;
+	ZoneIndexPrev				: INT; 
+END_VAR
+
+VAR_INST
+	fbTimerWait		: TON;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[F_ResetError(FALSE,	FunctionData.ErrorData.ErrorDataSet[1]);
+
+TrspData := F_PB_GetTransportControlDataRef(eFunctionNumber	:= SettingsFunction.FunctionLink.eFunctionNumber,
+											ZoneNumber := SettingsFunction.FunctionLink.ZoneNumber);
+											
+F_PB_GetAdjacentFunctionZoneIndex(	CheckFunction:= SettingsFunction.FunctionLink.eFunctionNumber, 
+									ExpectedFunction:= FunctionRegistry[SettingsFunction.FunctionLink.eFunctionNumber].rFunctionInterface.In.eNextFunctionNumber, 
+									RequireNextDefined:= TRUE, 
+									RequirePreviousDefined:= FALSE, 
+									ZoneIndex:= ZoneIndexNext);								
+													
+TrspDataNext := F_PB_GetTransportControlDataRef(eFunctionNumber	:= FunctionRegistry[SettingsFunction.FunctionLink.eFunctionNumber].rFunctionInterface.In.eNextFunctionNumber,
+												ZoneNumber 	:= ZoneIndexNext);
+												
+F_PB_GetAdjacentFunctionZoneIndex(	CheckFunction:= SettingsFunction.FunctionLink.eFunctionNumber, 
+									ExpectedFunction:= FunctionRegistry[SettingsFunction.FunctionLink.eFunctionNumber].rFunctionInterface.In.ePrevFunctionNumber, 
+									RequireNextDefined:= FALSE, 
+									RequirePreviousDefined:= TRUE, 
+									ZoneIndex:= ZoneIndexPrev);								
+													
+TrspDataPrev := F_PB_GetTransportControlDataRef(eFunctionNumber	:= FunctionRegistry[SettingsFunction.FunctionLink.eFunctionNumber].rFunctionInterface.In.ePrevFunctionNumber,
+												ZoneNumber 	:= ZoneIndexPrev);
+
+FastDoorData.DoorSide := _M_DoorSide(TrspData, TrspDataNext, TrspDataPrev, Settings.DoorSide, FunctionData.ErrorData.ErrorDataSet[1]);
+
+fbTimerWait.IN := FALSE; 
+fbTimerWait.PT := Settings.WaitTime;
+
+CASE FastDoorStates.eState OF
+(**************************************************************************************************************
+ INIT
+***************************************************************************************************************)
+	E_FastDoorState.INIT:
+	
+	fbTimerWait.IN := FALSE;
+	Outputs.HW.KeepDoorOpen := FALSE;
+	
+	FastDoorStates.eLastState := FastDoorStates.eState;
+	FastDoorStates.eState := E_FastDoorState.CLOSED;
+
+		
+(**************************************************************************************************************
+ CLOSED
+***************************************************************************************************************)
+	E_FastDoorState.CLOSED:
+	
+	fbTimerWait.IN := FALSE;
+	Outputs.HW.KeepDoorOpen := FALSE;
+	
+	FastDoorData.OrderPos := E_DoorPos.DOWN;
+
+	//Check if transport is on side with door or not
+	//False also when Next or Prev function is not set
+	IF FastDoorData.DoorSide THEN
+		
+		IF( TrspData.NumberOfPresentTUs > 0 AND TrspDataNext.NumberOfPresentTUs = 0) OR
+		  ( TrspData.NumberOfPresentTUs = 0 AND TrspDataPrev.NumberOfPresentTUs > 0) THEN
+		  
+			//Change state
+			FastDoorStates.eLastState := FastDoorStates.eState;
+			FastDoorStates.eState := E_FastDoorState.OPENING;
+		END_IF
+	END_IF
+	
+(**************************************************************************************************************
+ OPENING
+***************************************************************************************************************)
+	E_FastDoorState.OPENING:
+	
+	FastDoorData.OrderPos := E_DoorPos.UP;
+	
+	//When door is opened
+	IF Inputs.HW.Open THEN
+		
+		//Change state
+		FastDoorStates.eLastState := FastDoorStates.eState;
+		FastDoorStates.eState := E_FastDoorState.OPEN;
+	END_IF
+	
+(**************************************************************************************************************
+ OPEN
+***************************************************************************************************************)
+	E_FastDoorState.OPEN:
+	
+	fbTimerWait.IN := TRUE;
+
+	IF fbTimerWait.Q THEN
+		//Change state
+		FastDoorStates.eLastState := FastDoorStates.eState;
+		FastDoorStates.eState := E_FastDoorState.CLOSED;
+	END_IF
+	
+	IF FastDoorData.DoorSide THEN
+		
+		IF( TrspData.NumberOfPresentTUs > 0 AND TrspDataNext.NumberOfPresentTUs = 0) OR
+		  ( TrspData.NumberOfPresentTUs = 0 AND TrspDataPrev.NumberOfPresentTUs > 0) THEN
+		  
+			Outputs.HW.KeepDoorOpen := TRUE;
+			fbTimerWait.IN := FALSE;
+			
+		END_IF 
+	END_IF
+END_CASE
+
+//Call timer 
+fbTimerWait();]]></ST>
+      </Implementation>
+    </Method>
+    <Action Name="A_Init" Id="{2c56a7fa-2048-4bcd-a7e2-816174a123e2}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_Init
+ * 	FUNCTION	Initialize function
+ **************************************************************************************)
+ 
+// Update Registry
+M_UpdateRegistry();
+
+
+// Init ongoing - Wait until init is released (Sequencial startup)
+IF NOT FunctionData.Init AND FunctionData.InitRunning THEN
+	// When the subsystem is started, 
+	// When its released to initialize
+	IF FunctionData.OperationState.Info.SystemReady AND
+	   SettingsFunction.eFunctionNumber < FunctionData.OperationState.InitRelease.eLimitFunctionNumber THEN
+	   
+	   IF M_InitFunction(FALSE) THEN		   
+			// Function initialized - and initialization done
+			FunctionData.Init := TRUE;
+			FunctionData.InitRunning := FALSE;
+			
+			FastDoorStates.eLastState := FastDoorStates.eState;
+			FastDoorStates.eState := E_FastDoorState.INIT;
+			
+			// Set reset cmd
+			FunctionData.ErrorData.Error.ResetError := TRUE;
+			
+			DebugMsg := CONCAT('Initialization done. Function: ', ConfigFunction.FunctionName);
+			fbDebugMsg.M_SendInfoMsg(DebugMsg);
+		END_IF
+	END_IF
+(*
+If the function is not initialized,
+clean all values and wait until init is released
+*)
+ELSIF NOT FunctionData.Init THEN
+	// Reset internal variables
+	FunctionData.OperationState := FunctionBase.PositionStateEmpty;
+
+	// Initiate initialization of all zones
+	(*FOR ZoneIdx := 1 TO SettingsFunction.NumberOfZones DO
+		ZoneData[ZoneIdx].Init := FALSE;
+	END_FOR;*)
+	
+	// Load function specific configuration to settings
+	Settings := Config;
+	
+	// Reset values and load config
+	M_PreInit();	
+	
+	// To start init a valid functionnumber and element link is needed
+	FunctionData.InitRunning := SettingsFunction.eFunctionNumber > 0 AND
+								SettingsFunction.eElementLink > 0;
+								
+								
+END_IF]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="A_InputMapping" Id="{7b66e336-85a3-4313-8d5c-348bf5a65066}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_InputMapping
+ * 	FUNCTION	Input mapping
+ **************************************************************************************)
+ 
+(**************************************************************************************
+   Hardware Inputs
+***************************************************************************************)
+
+Inputs.HW := HW_Inputs;
+
+(**************************************************************************************
+   Element states
+***************************************************************************************)
+// Get status of the corresponding element
+M_GetElementStates(); 
+]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="A_OutputMapping" Id="{58d4c10a-1932-49a1-9989-a7a136362c5b}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_OutputMapping
+ * 	FUNCTION	Output mapping
+ **************************************************************************************)
+ 
+(**************************************************************************************
+   Hardware outputs
+***************************************************************************************)
+HW_Outputs.CloseDoor			:= Outputs.HW.CloseDoor;
+HW_Outputs.KeepDoorOpen			:= Outputs.HW.KeepDoorOpen;
+HW_Outputs.OpenDoor				:= Outputs.HW.OpenDoor;
+HW_Outputs.StopDrive			:= Outputs.HW.StopDrive; 
+		
+(**************************************************************************************
+   Order outputs (Commands to corresponding element)
+***************************************************************************************)
+MEMSET(ADR(FunctionInterface.Out.FunctionOrders),0,SIZEOF(ST_FunctionOrders));
+FunctionInterface.Out.FunctionOrders.Enable 				:= FunctionData.ErrorData.Error.ErrorType = E_ErrorType.NO_ERROR_PENDING;
+
+(**************************************************************************************
+   AddOn outputs
+***************************************************************************************)
+
+FunctionInterface.Out.AddOnOrders.Enable 					:= FunctionData.ErrorData.Error.ErrorType <> E_ErrorType.ERROR;
+FunctionInterface.Out.AddOnOrders.DataReady					:= TRUE;
+
+IF FastDoorData.DoorSide THEN
+	FunctionInterface.Out.AddOnOrders.EnableHandover 			:= FastDoorData.EnableTransport AND Inputs.HW.Open;
+	FunctionInterface.Out.AddOnOrders.EnableTakeover 			:= FastDoorData.EnableTransport AND Inputs.HW.Open;
+ELSE
+	FunctionInterface.Out.AddOnOrders.EnableHandover 			:= TRUE;
+	FunctionInterface.Out.AddOnOrders.EnableTakeover 			:= TRUE;
+END_IF
+
+
+(**************************************************************************************
+   Status outputs
+***************************************************************************************)
+
+//Inhibit stopping for the function when ExtendedRun is driving
+THIS^.InhibitStopping := NOT FastDoorData.EnableTransport; 
+]]></ST>
+      </Implementation>
+    </Action>
+    <LineIds Name="FB_FastDoorAddon">
+      <LineId Id="410" Count="30" />
+      <LineId Id="510" Count="2" />
+      <LineId Id="488" Count="0" />
+      <LineId Id="446" Count="0" />
+      <LineId Id="534" Count="0" />
+      <LineId Id="447" Count="2" />
+      <LineId Id="451" Count="0" />
+      <LineId Id="533" Count="0" />
+      <LineId Id="452" Count="7" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_FastDoorAddon._M_CheckErrors">
+      <LineId Id="9" Count="0" />
+      <LineId Id="116" Count="0" />
+      <LineId Id="5" Count="0" />
+      <LineId Id="124" Count="3" />
+      <LineId Id="117" Count="1" />
+    </LineIds>
+    <LineIds Name="FB_FastDoorAddon._M_ControlDoor">
+      <LineId Id="23" Count="0" />
+      <LineId Id="6" Count="4" />
+      <LineId Id="12" Count="1" />
+      <LineId Id="5" Count="0" />
+      <LineId Id="15" Count="0" />
+      <LineId Id="14" Count="0" />
+      <LineId Id="16" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_FastDoorAddon._M_DoorControl">
+      <LineId Id="124" Count="0" />
+      <LineId Id="117" Count="0" />
+      <LineId Id="119" Count="1" />
+      <LineId Id="22" Count="0" />
+      <LineId Id="5" Count="0" />
+      <LineId Id="26" Count="0" />
+      <LineId Id="28" Count="1" />
+      <LineId Id="27" Count="0" />
+      <LineId Id="23" Count="0" />
+      <LineId Id="30" Count="0" />
+      <LineId Id="32" Count="0" />
+      <LineId Id="36" Count="0" />
+      <LineId Id="147" Count="0" />
+      <LineId Id="146" Count="0" />
+      <LineId Id="145" Count="0" />
+      <LineId Id="37" Count="3" />
+      <LineId Id="35" Count="0" />
+      <LineId Id="41" Count="6" />
+      <LineId Id="61" Count="0" />
+      <LineId Id="52" Count="0" />
+      <LineId Id="48" Count="2" />
+      <LineId Id="54" Count="3" />
+      <LineId Id="62" Count="0" />
+      <LineId Id="58" Count="0" />
+      <LineId Id="53" Count="0" />
+      <LineId Id="59" Count="1" />
+      <LineId Id="64" Count="0" />
+      <LineId Id="51" Count="0" />
+      <LineId Id="67" Count="2" />
+      <LineId Id="65" Count="0" />
+      <LineId Id="70" Count="2" />
+      <LineId Id="74" Count="5" />
+      <LineId Id="83" Count="3" />
+      <LineId Id="81" Count="0" />
+      <LineId Id="87" Count="1" />
+      <LineId Id="82" Count="0" />
+      <LineId Id="73" Count="0" />
+      <LineId Id="89" Count="0" />
+      <LineId Id="91" Count="2" />
+      <LineId Id="66" Count="0" />
+      <LineId Id="94" Count="2" />
+      <LineId Id="100" Count="0" />
+      <LineId Id="98" Count="0" />
+      <LineId Id="101" Count="4" />
+      <LineId Id="108" Count="3" />
+      <LineId Id="106" Count="0" />
+      <LineId Id="112" Count="1" />
+      <LineId Id="107" Count="0" />
+      <LineId Id="99" Count="0" />
+      <LineId Id="97" Count="0" />
+      <LineId Id="24" Count="0" />
+      <LineId Id="116" Count="0" />
+      <LineId Id="115" Count="0" />
+      <LineId Id="114" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_FastDoorAddon._M_DoorSide">
+      <LineId Id="13" Count="2" />
+      <LineId Id="32" Count="2" />
+      <LineId Id="31" Count="0" />
+      <LineId Id="18" Count="1" />
+      <LineId Id="22" Count="3" />
+      <LineId Id="20" Count="1" />
+      <LineId Id="68" Count="1" />
+      <LineId Id="12" Count="0" />
+      <LineId Id="5" Count="0" />
+      <LineId Id="40" Count="0" />
+      <LineId Id="36" Count="0" />
+      <LineId Id="42" Count="0" />
+      <LineId Id="53" Count="0" />
+      <LineId Id="38" Count="0" />
+      <LineId Id="29" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_FastDoorAddon._M_FastDoorStates">
+      <LineId Id="564" Count="1" />
+      <LineId Id="534" Count="0" />
+      <LineId Id="536" Count="0" />
+      <LineId Id="566" Count="0" />
+      <LineId Id="538" Count="0" />
+      <LineId Id="540" Count="5" />
+      <LineId Id="547" Count="2" />
+      <LineId Id="551" Count="5" />
+      <LineId Id="532" Count="0" />
+      <LineId Id="504" Count="1" />
+      <LineId Id="531" Count="0" />
+      <LineId Id="524" Count="1" />
+      <LineId Id="399" Count="0" />
+      <LineId Id="6" Count="0" />
+      <LineId Id="18" Count="1" />
+      <LineId Id="11" Count="0" />
+      <LineId Id="8" Count="0" />
+      <LineId Id="584" Count="0" />
+      <LineId Id="583" Count="0" />
+      <LineId Id="311" Count="0" />
+      <LineId Id="585" Count="0" />
+      <LineId Id="582" Count="0" />
+      <LineId Id="580" Count="0" />
+      <LineId Id="579" Count="0" />
+      <LineId Id="213" Count="0" />
+      <LineId Id="20" Count="1" />
+      <LineId Id="17" Count="0" />
+      <LineId Id="438" Count="0" />
+      <LineId Id="476" Count="0" />
+      <LineId Id="415" Count="0" />
+      <LineId Id="336" Count="0" />
+      <LineId Id="459" Count="0" />
+      <LineId Id="486" Count="0" />
+      <LineId Id="485" Count="0" />
+      <LineId Id="464" Count="1" />
+      <LineId Id="461" Count="0" />
+      <LineId Id="474" Count="0" />
+      <LineId Id="470" Count="0" />
+      <LineId Id="478" Count="0" />
+      <LineId Id="483" Count="0" />
+      <LineId Id="471" Count="2" />
+      <LineId Id="468" Count="0" />
+      <LineId Id="463" Count="0" />
+      <LineId Id="460" Count="0" />
+      <LineId Id="215" Count="3" />
+      <LineId Id="229" Count="0" />
+      <LineId Id="343" Count="0" />
+      <LineId Id="489" Count="0" />
+      <LineId Id="397" Count="0" />
+      <LineId Id="313" Count="0" />
+      <LineId Id="431" Count="0" />
+      <LineId Id="235" Count="0" />
+      <LineId Id="222" Count="0" />
+      <LineId Id="332" Count="0" />
+      <LineId Id="427" Count="0" />
+      <LineId Id="228" Count="0" />
+      <LineId Id="356" Count="4" />
+      <LineId Id="452" Count="0" />
+      <LineId Id="496" Count="0" />
+      <LineId Id="498" Count="3" />
+      <LineId Id="487" Count="0" />
+      <LineId Id="497" Count="0" />
+      <LineId Id="491" Count="1" />
+      <LineId Id="494" Count="0" />
+      <LineId Id="377" Count="0" />
+      <LineId Id="495" Count="0" />
+      <LineId Id="457" Count="0" />
+      <LineId Id="514" Count="0" />
+      <LineId Id="517" Count="0" />
+      <LineId Id="502" Count="1" />
+      <LineId Id="9" Count="0" />
+      <LineId Id="526" Count="0" />
+      <LineId Id="519" Count="0" />
+      <LineId Id="518" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_FastDoorAddon.A_Init">
+      <LineId Id="236" Count="6" />
+      <LineId Id="287" Count="0" />
+      <LineId Id="243" Count="12" />
+      <LineId Id="288" Count="0" />
+      <LineId Id="290" Count="0" />
+      <LineId Id="289" Count="0" />
+      <LineId Id="256" Count="30" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_FastDoorAddon.A_InputMapping">
+      <LineId Id="2" Count="7" />
+      <LineId Id="68" Count="0" />
+      <LineId Id="58" Count="0" />
+      <LineId Id="49" Count="5" />
+      <LineId Id="48" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_FastDoorAddon.A_OutputMapping">
+      <LineId Id="83" Count="10" />
+      <LineId Id="146" Count="0" />
+      <LineId Id="94" Count="5" />
+      <LineId Id="101" Count="3" />
+      <LineId Id="123" Count="0" />
+      <LineId Id="105" Count="0" />
+      <LineId Id="143" Count="0" />
+      <LineId Id="157" Count="0" />
+      <LineId Id="147" Count="0" />
+      <LineId Id="151" Count="0" />
+      <LineId Id="153" Count="3" />
+      <LineId Id="152" Count="0" />
+      <LineId Id="148" Count="0" />
+      <LineId Id="109" Count="3" />
+      <LineId Id="144" Count="1" />
+      <LineId Id="116" Count="0" />
+      <LineId Id="45" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

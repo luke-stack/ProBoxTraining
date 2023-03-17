@@ -1,0 +1,1106 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <POU Name="FB_ProBOXSG" Id="{19eece9e-b13a-43f4-94e0-f4cd65bcb9e5}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK FB_ProBOXSG EXTENDS FB_GroupConv
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$$
+ *	Revision date	:	$$
+ *	Last changed by	:	$$
+ *	URL				:	$$
+ *
+ *	Purpose			:	ProBox Switching group - Controls a group of elements.
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION 
+ **************************************************************************************)
+VAR_INPUT
+	HW_Inputs				: ST_HW_InputsSG_ProBOX; // HW-Inputs 
+	Config					: ST_CFG_ProBOXSG; // Configuration 
+	LocalStopCmd			: BOOL; // Stopping cmd
+END_VAR
+
+VAR_OUTPUT
+	HW_Outputs				: ST_HW_OutputsSG_ProBOX; // HW-Outputs
+	CtrlOut					: ST_CtlrOutProBoxSG; // Summary of input commands from Operator panel(s)
+END_VAR
+
+VAR
+	ProBoxSG_CFG			: ST_CFG_ProBoxSG;
+	Inputs					: ST_SG_Inputs_ProBOX; // Module internal inputs
+	Outputs					: ST_SG_Outputs_ProBOX; // Module Internal outputs
+	ResetFlag				: BOOL; // Flag to detect reset pulse
+	PendingElementError		: BOOL; // An member element is in error state
+	fbStartingDelay			: TON; // Timer for startup delay 
+	fbForcedStopDelay		: TON; // Timer for forcing a group to stop
+	fbResetPulse			: TOF; // Timer for a longer reset pulse
+	fbTrigReset				: R_TRIG; // Reset positive flag
+	i						: INT;
+	ManualModeDelayCnt		: INT; //Delay the Manual Mode  a few cycle in order to send GSR with correct stopped state
+END_VAR
+
+VAR PERSISTENT
+	Settings				: ST_CFG_ProBoxSG; // Settings - Active configuration
+END_VAR
+
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[(**************************************************************************************************************
+   Input mapping
+***************************************************************************************************************)
+A_InputMapping();
+
+
+(**************************************************************************************************************
+   Initialization
+***************************************************************************************************************)
+A_Init();
+
+
+(**************************************************************************************************************
+   Monitoring input signals
+***************************************************************************************************************)
+A_SignalMonitoring();
+
+//Process Emergency State signal
+_M_ProcessEmgState();
+
+
+(**************************************************************************************************************
+   Errorhandler
+***************************************************************************************************************)
+A_ErrorHandler();
+
+
+(**************************************************************************************************************
+  Mode control
+***************************************************************************************************************)
+A_ModeControl();
+
+
+(**************************************************************************************************************
+  State control
+***************************************************************************************************************)
+A_StateControl();
+
+
+(**************************************************************************************************************
+   InterfaceHandlerOut
+***************************************************************************************************************)
+A_InterfaceHandlerOut();
+	
+
+(**************************************************************************************************************
+   Output mapping
+***************************************************************************************************************)	
+A_OutputMapping();
+
+]]></ST>
+    </Implementation>
+    <Method Name="_M_ProcessEmgState" Id="{016e6d72-83ca-46d3-aa25-e0b04bb637ab}">
+      <Declaration><![CDATA[METHOD PRIVATE _M_ProcessEmgState : BOOL
+VAR_INST
+	InternalStopPending 	: BOOL :=TRUE; //has internal error memory flag
+	fbBlink_ExternalStop	: FB_GeneratePulse := (Start := TRUE, PulseTimeOn := T#1S, PulseTimeOff := T#2S); // On 1 sec, off 2 sec
+END_VAR
+VAR
+	InternalStop	: BOOL;
+	ExternalStop	: BOOL;
+	LampState		: BOOL; //Lamp State
+	EmgOk			: BOOL := FALSE;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[InternalStop := NOT Inputs.States.EmgStatus.eInternal OR Inputs.States.EmgStatus.eInternError;
+ExternalStop := NOT Inputs.States.EmgStatus.eExternal;
+
+IF(NOT GroupData.Init) THEN
+	InternalStopPending:=FALSE;
+END_IF
+
+//EMG STOP
+IF(ExternalStop OR InternalStop) THEN			
+	//Internal emg stop is no longer active, but External (safety zone is not acknowledged)	
+	IF(ExternalStop AND InternalStopPending AND NOT InternalStop) THEN
+		LampState := System.fbBlink_500ms.Pulse;	
+	// IF External stop but internal (AK group) is ok
+	ELSIF(ExternalStop AND NOT InternalStop) THEN
+		fbBlink_ExternalStop();
+		LampState := fbBlink_ExternalStop.Pulse;
+	ELSE
+		LampState := TRUE;
+		InternalStopPending := InternalStop; //Set Mem flag
+	END_IF
+
+ELSE	
+	LampState := FALSE;
+	InternalStopPending := FALSE;
+	EmgOk:=TRUE;
+END_IF
+
+
+Inputs.States.EmergencyCircuitOK := EmgOk;
+Outputs.EmgStopStatus := _M_ProcessEmgState := LampState;
+  ]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_ProcessInputs" Id="{550d925b-b0a7-40d3-988f-78fce177b04d}">
+      <Declaration><![CDATA[METHOD PRIVATE _M_ProcessInputs
+
+VAR
+	i,j:INT;
+	iMax:INT;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[	 
+//process inputs and create summary
+//AK
+	Inputs.OpSummary.OpAutoOn		:= HW_Inputs.AK.OpAutoOn;
+	Inputs.OpSummary.OpManAuto		:= HW_Inputs.AK.OpManAuto; //NC
+	Inputs.OpSummary.OpMcOff 		:= HW_Inputs.AK.OpMcOff; //NC
+	Inputs.OpSummary.OpMcOn 		:= HW_Inputs.AK.OpMcOn;
+	Inputs.OpSummary.OpResetError	:= HW_Inputs.AK.OpResetError;
+	Inputs.OpSummary.OpResetSafety	:= HW_Inputs.AK.OpResetSafety;	
+	Inputs.OpSummary.OpEntryReq   	:= HW_Inputs.AK.OpEntryReq; //NC //Hi=Auto, low=Entry
+	Inputs.OpSummary.OpEmgDrive   	:= HW_Inputs.AK.OpEmgDrive AND HW_Inputs.AK.OpManAuto = FALSE; (* and Manual mode*)
+	FOR j:=1 TO 2 DO
+		Inputs.OpSummary.Conv[j].OpDriveCvFwd := HW_Inputs.AK.Conv[j].OpDriveCvFwd AND HW_Inputs.AK.OpManAuto = FALSE; (*Manual mode*) 
+		Inputs.OpSummary.Conv[j].OpDriveCvRev := HW_Inputs.AK.Conv[j].OpDriveCvRev AND HW_Inputs.AK.OpManAuto = FALSE; (*Manual mode*)		
+		Inputs.OpSummary.Conv[j].OpMovePos 	  := HW_Inputs.AK.Conv[j].OpMovePos    AND HW_Inputs.AK.OpManAuto = FALSE; (*Manual mode*)
+		Inputs.OpSummary.Conv[j].OpMoveNeg    := HW_Inputs.AK.Conv[j].OpMoveNeg    AND HW_Inputs.AK.OpManAuto = FALSE; (*Manual mode*)
+	END_FOR	
+	
+
+
+
+//AP
+	iMax :=SEL(Settings.NumberOfAPs<GVL_PB_SG.NUMBER_OF_AP_PANELS, GVL_PB_SG.NUMBER_OF_AP_PANELS, Settings.NumberOfAPs);
+	FOR i:=1 TO iMax DO 
+		Inputs.OpSummary.OpAutoOn		:= Inputs.OpSummary.OpAutoOn 		OR HW_Inputs.AP[i].OpAutoOn;
+		Inputs.OpSummary.OpManAuto		:= Inputs.OpSummary.OpManAuto 		AND HW_Inputs.AP[i].OpManAuto; //NC
+		Inputs.OpSummary.OpMcOff 		:= Inputs.OpSummary.OpMcOff 		AND HW_Inputs.AP[i].OpMcOff; //NC
+		Inputs.OpSummary.OpMcOn 		:= Inputs.OpSummary.OpMcOn			OR HW_Inputs.AP[i].OpMcOn;
+		Inputs.OpSummary.OpResetError	:= Inputs.OpSummary.OpResetError 	OR HW_Inputs.AP[i].OpResetError;
+		Inputs.OpSummary.OpResetSafety  := Inputs.OpSummary.OpResetSafety 	OR HW_Inputs.AP[i].OpResetSafety;		
+		Inputs.OpSummary.OpEntryReq     := Inputs.OpSummary.OpEntryReq     AND HW_Inputs.AP[i].OpEntryReq; //NC, Hi=Auto, low=Entry
+		Inputs.OpSummary.OpEmgDrive     := Inputs.OpSummary.OpEmgDrive     OR (HW_Inputs.AP[i].OpEmgDrive    AND HW_Inputs.AP[i].OpManAuto = FALSE); (*Manual mode*)
+		// manual controls of the carriage only allowed if switch is in manual mode
+		FOR j:=1 TO 2 DO		 
+			Inputs.OpSummary.Conv[j].OpDriveCvFwd := Inputs.OpSummary.Conv[j].OpDriveCvFwd OR (HW_Inputs.AP[i].Conv[j].OpDriveCvFwd AND HW_Inputs.AP[i].OpManAuto = FALSE); (*Manual mode*)
+			Inputs.OpSummary.Conv[j].OpDriveCvRev := Inputs.OpSummary.Conv[j].OpDriveCvRev OR (HW_Inputs.AP[i].Conv[j].OpDriveCvRev AND HW_Inputs.AP[i].OpManAuto = FALSE); (*Manual mode*)
+			Inputs.OpSummary.Conv[j].OpMovePos    := Inputs.OpSummary.Conv[j].OpMovePos    OR (HW_Inputs.AP[i].Conv[j].OpMovePos    AND HW_Inputs.AP[i].OpManAuto = FALSE); (*Manual mode*)
+			Inputs.OpSummary.Conv[j].OpMoveNeg    := Inputs.OpSummary.Conv[j].OpMoveNeg    OR (HW_Inputs.AP[i].Conv[j].OpMoveNeg    AND HW_Inputs.AP[i].OpManAuto = FALSE); (*Manual mode*)
+		END_FOR	
+		
+	END_FOR]]></ST>
+      </Implementation>
+    </Method>
+    <Action Name="A_ErrorHandler" Id="{d6834966-61c8-4f3e-9044-4f1b1703fca1}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_ErrorHandling
+ * 	FUNCTION	Handles group or member errors
+ **************************************************************************************)
+ 
+
+(**************************************************************************************************************
+  Monitor group errors
+***************************************************************************************************************)
+M_MonitorGroupErrors();
+
+
+(**************************************************************************************************************
+  Input group reset
+***************************************************************************************************************)
+
+// Reset command
+IF Inputs.Command.ResetErrorPB AND NOT ResetFlag THEN
+	
+	// If a group reset has to reset member elements as well
+	IF Settings.ResetMemberElements THEN	
+
+		// Forward reset to memeber elements
+		fbGroupManager.M_ResetMemberElements(SettingsGroup.eGroupNumber);
+	END_IF
+		
+	// Reset group itself
+	GroupData.ErrorData.Error.ResetError := TRUE;
+	
+	// Save flag
+	ResetFlag := TRUE;
+	
+// Reset command released
+ELSIF NOT Inputs.Command.ResetErrorPB THEN
+	// Reset flag
+	ResetFlag := FALSE;
+END_IF
+]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="A_Init" Id="{9379726c-4141-4883-8340-fef9ac67aab2}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_Init
+ * 	FUNCTION	Initialize Group
+ **************************************************************************************)
+
+// Update Registry
+M_UpdateRegistry();
+ 
+// Set init flag after one cycle
+IF NOT GroupData.Init AND GroupData.InitRunning THEN
+	// When subsystem is started and initialization is allowed
+	IF GroupData.OperationState.Info.SystemReady AND 
+	   SettingsGroup.eGroupNumber < GroupData.OperationState.InitRelease.eLimitGroup THEN
+	   
+		IF M_InitGroup(FALSE) THEN
+			// Group initialized - and initialization done
+			GroupData.Init := TRUE;
+			GroupData.InitRunning := FALSE;
+			
+			// Set reset cmd
+			GroupData.ErrorData.Error.ResetError := TRUE;
+			
+			DebugMsg := CONCAT('Initialization done. Group: ', ConfigGroup.GroupName);
+			fbDebugMsg.M_SendInfoMsg(DebugMsg);
+		END_IF
+	END_IF
+// If the group is not initialized
+ELSIF NOT GroupData.Init THEN
+	
+	// Reset internal variables
+	ResetFlag := FALSE;
+	PendingElementError := FALSE;
+	fbStartingDelay(IN := FALSE);
+	fbForcedStopDelay(IN := FALSE);
+	GroupData.OperationState := GroupBase.OperationStateEmpty;
+	ITC.Commands.Start := FALSE;
+	ITC.Commands.Stop := FALSE;
+	ITC.Commands.eMode := E_PositionMode.UNKNOWN_MODE;
+	
+	// Load group specific configuration to settings
+	Settings := Config;
+	
+	// Reset values and load config
+	M_PreInit();
+	GroupData.InitRunning := SettingsGroup.eGroupNumber > 0;
+END_IF
+]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="A_InputMapping" Id="{e6088e0d-4e26-4e66-aaa2-46250d30770a}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_InputMapping
+ * 	FUNCTION	Input mapping
+ **************************************************************************************)
+ 
+ 
+(**************************************************************************************************************
+   Hardware Inputs
+***************************************************************************************************************)
+
+//Summarize inputs and set Inputs.OpSummary
+_M_ProcessInputs();
+
+// Mode
+Inputs.Command.AutoMode   			:= Inputs.OpSummary.OpManAuto;//HW_Inputs.ManAutoSW;
+Inputs.Command.ManualMode 			:= NOT Inputs.OpSummary.OpManAuto;
+
+// Control
+Inputs.Command.StartPB 				:=Inputs.OpSummary.OpAutoOn; //HW_Inputs.AutoOnPB;
+Inputs.Command.StopPB  				:= FALSE;
+Inputs.Command.ResetErrorPB			:= Inputs.OpSummary.OpResetError; //HW_Inputs.ResetErrorPB;
+Inputs.Command.ResetEmgPB			:= Inputs.OpSummary.OpResetSafety; //HW_Inputs.ResetEmgergencyPB;
+
+// Signal states							   
+//Inputs.States.EmergencyCircuitOK 	:= HW_Inputs.EmergencyCircuitOK;
+
+	// Fire alarm
+IF Settings.FireAlarmUsed THEN 
+	Inputs.States.FireAlarm				:= NOT HW_Inputs.Diag.FireAlarm;
+ELSE Inputs.States.FireAlarm			:= FALSE;
+END_IF
+	
+	// Checks all connected Main Contactor feedback							   
+FOR i := 1 TO Settings.NumberOfContactors DO
+	IF HW_Inputs.Diag.FeedbackMainContactorOFF[i] THEN
+		Inputs.States.MainContactorOFF :=TRUE;
+		EXIT;
+	ELSE
+		Inputs.States.MainContactorOFF :=FALSE;
+	END_IF
+END_FOR
+
+//Inputs.States.MainContactorOFF   	:= HW_Inputs.MainContactorOFF[K.NumberOfContactors];								   
+
+(**************************************************************************************************************
+   SubsystemManager states
+***************************************************************************************************************)
+// Get Subsystem state
+M_GetSubsystemStates();
+
+(**************************************************************************************************************
+   GroupManager
+***************************************************************************************************************)
+
+// Get group member state
+Inputs.GroupMemberState 			:= fbGroupManager.M_GetGroupMemberState(SettingsGroup.eGroupNumber);
+
+]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="A_InterfaceHandlerOut" Id="{b35f165f-eec9-4c6c-8715-dac0fd1fdb5a}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_InterfaceHandlerOut
+ * 	FUNCTION	Handle outgoing interfaces
+ **************************************************************************************)
+ 
+ 
+ (**************************************************************************************************************
+   ITC Handler Out
+***************************************************************************************************************)
+M_ITC_ProcessOut();]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="A_ModeControl" Id="{82e187ff-232d-4013-a3fa-91de53ddb791}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_ModeControl
+ * 	FUNCTION	Handle group modes
+ **************************************************************************************)
+ 
+// Group mode
+CASE GroupData.OperationState.eMode OF
+
+	(*******************************************************************************
+	  Mode: Unknown 
+	********************************************************************************)
+	E_PositionMode.UNKNOWN_MODE:
+	
+		// Group mode is default Off
+		GroupData.OperationState.eMode 		:= E_PositionMode.OFF_MODE;
+
+	(*******************************************************************************
+	  Mode: OFF
+	********************************************************************************)
+	E_PositionMode.OFF_MODE:
+	
+		// If manual mode is set
+		IF Inputs.Command.ManualMode THEN
+			// Switch to manual mode
+			GroupData.OperationState.eMode := E_PositionMode.MANUAL_MODE;
+			
+		// If semi auto mode is set
+		ELSIF Inputs.Command.SemiAutoMode THEN
+			// Switch to semi auto mode
+			GroupData.OperationState.eMode := E_PositionMode.SEMI_AUTO;
+			
+		// If auto mode is set
+		ELSIF Inputs.Command.AutoMode THEN
+			// Switch to auto mode
+			GroupData.OperationState.eMode := E_PositionMode.AUTO_MODE;
+		END_IF
+
+	(*******************************************************************************
+	  Mode: Manual
+	********************************************************************************)
+	E_PositionMode.MANUAL_MODE:
+	
+		// If manual - stay
+		IF Inputs.Command.ManualMode THEN
+			;
+		// If semi auto mode is set
+		ELSIF Inputs.Command.SemiAutoMode THEN
+			// Switch to semi auto mode
+			GroupData.OperationState.eMode := E_PositionMode.SEMI_AUTO;
+			
+			// Send status report
+			ITC.Commands.StatusReport := TRUE;
+		
+		// If auto is set
+		ELSIF Inputs.Command.AutoMode THEN
+			// Switch mode to "Auto"
+			GroupData.OperationState.eMode := E_PositionMode.AUTO_MODE;
+			
+			// Send status report
+			ITC.Commands.StatusReport := TRUE;
+		ELSE
+			// Switch group off
+			GroupData.OperationState.eMode := E_PositionMode.OFF_MODE;
+			
+			// Send status report
+			ITC.Commands.StatusReport := TRUE;
+		END_IF
+		
+	(*******************************************************************************
+	  Mode: Auto
+	********************************************************************************)
+	E_PositionMode.AUTO_MODE:
+
+		// If mode is switched to manual and group state is stopped (not stopping and not started)
+		IF Inputs.Command.ManualMode THEN			
+			IF(GroupData.OperationState.eState <> E_PositionState.STOPPING AND GroupData.OperationState.eState <> E_PositionState.STARTED) THEN
+				ManualModeDelayCnt:=ManualModeDelayCnt+1;
+				IF(ManualModeDelayCnt>3) THEN				
+					// Switch mode to "Manual"
+					GroupData.OperationState.eMode := E_PositionMode.MANUAL_MODE;
+					// Send status report
+					ITC.Commands.StatusReport := TRUE;
+				END_IF
+			END_IF
+			
+		// If semi auto mode is set
+		ELSIF Inputs.Command.SemiAutoMode THEN
+			// Switch to semi auto mode
+			GroupData.OperationState.eMode := E_PositionMode.SEMI_AUTO;
+			
+			// Send status report
+			ITC.Commands.StatusReport := TRUE;
+		
+		// If auto - stay
+		ELSIF Inputs.Command.AutoMode THEN
+			ManualModeDelayCnt:=0;
+		ELSE
+			// Switch group off
+			GroupData.OperationState.eMode := E_PositionMode.OFF_MODE;
+			
+			// Send status report
+			ITC.Commands.StatusReport := TRUE;
+		END_IF
+			
+	(*******************************************************************************
+	  Mode: Semi Auto
+	********************************************************************************)
+	E_PositionMode.SEMI_AUTO:
+	
+		// If manual is set
+		IF Inputs.Command.ManualMode THEN
+			// Switch mode to "Manual"
+			GroupData.OperationState.eMode := E_PositionMode.MANUAL_MODE;
+			
+			// Send status report
+			ITC.Commands.StatusReport := TRUE;
+			
+		// If semi auto - stay
+		ELSIF Inputs.Command.SemiAutoMode THEN
+			;
+		
+		// If auto is set
+		ELSIF Inputs.Command.AutoMode THEN
+			// Switch mode to "Auto"
+			GroupData.OperationState.eMode := E_PositionMode.AUTO_MODE;
+			
+			// Send status report
+			ITC.Commands.StatusReport := TRUE;
+		ELSE
+			// Switch group off
+			GroupData.OperationState.eMode := E_PositionMode.OFF_MODE;
+			
+			// Send status report
+			ITC.Commands.StatusReport := TRUE;
+		END_IF
+	
+(********************************************************************************
+	Error case
+*********************************************************************************)
+ELSE
+	// Programming error
+	DebugMsg := CONCAT(	'Programming error - Invalid mode: ', 
+						INT_TO_STRING(GroupData.OperationState.eMode));
+		
+	fbDebugMsg.M_SendErrorMsg(DebugMsg);
+END_CASE]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="A_OutputMapping" Id="{934b3834-0842-48e9-b60f-e59bfbe33ca0}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_OutputMapping
+ * 	FUNCTION	Output mapping
+ **************************************************************************************)
+ 
+
+(**************************************************************************************************************
+   Outputs
+***************************************************************************************************************)	
+
+// Group starting warning
+Outputs.GroupIsStarting := (GroupData.OperationState.eState = E_PositionState.STARTING);
+
+// Group starting or already started
+Outputs.GroupStarted := (GroupData.OperationState.eState = E_PositionState.STARTED) OR 
+						((GroupData.OperationState.eState = E_PositionState.STARTING) AND fbBlink_500ms.Pulse);
+
+// Group stopping or already stopped
+Outputs.GroupStopped := (GroupData.OperationState.eState = E_PositionState.STOPPED) OR 
+						((GroupData.OperationState.eState = E_PositionState.STOPPING) AND fbBlink_500ms.Pulse);
+
+// Group or one of its elements is in error state
+Outputs.ErrorPending := (GroupData.ErrorData.ElementErrorPending OR 
+						(GroupData.ErrorData.Error.ErrorType = E_ErrorType.ERROR) OR
+						(GroupData.ErrorData.Error.ErrorType = E_ErrorType.WARNING)) AND fbBlink_500ms.Pulse;
+
+// Reset trigger
+fbTrigReset(CLK := Inputs.Command.ResetErrorPB);
+
+// Extend reset pulse
+fbResetPulse(IN := fbTrigReset.Q, PT := Settings.tResetPulse);
+
+// Reset pulse				
+Outputs.ResetPulse := fbResetPulse.Q;
+
+(**************************************************************************************************************
+   Map Ctrl outputs
+***************************************************************************************************************)
+CtrlOut.OpSummary			:= Inputs.OpSummary; //Summary of Inputs
+
+
+(**************************************************************************************************************
+   Map Hardware outputs
+***************************************************************************************************************)
+
+HW_Outputs.GroupIsStarting	:= Outputs.GroupIsStarting;
+HW_Outputs.GroupStarted 	:= HW_Outputs.AutoOnLamp := Outputs.GroupStarted;
+HW_Outputs.GroupStopped 	:= Outputs.GroupStopped;
+HW_Outputs.ErrorPending 	:= Outputs.ErrorPending;
+HW_Outputs.ResetPulse  	 	:= Outputs.ResetPulse;
+HW_Outputs.MainContactorLamp := NOT Inputs.States.MainContactorOFF;
+HW_Outputs.EmergencyLamp	:= Outputs.EmgStopStatus; 
+
+
+
+]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="A_SignalMonitoring" Id="{4696876a-02f5-4699-a4da-c4b0ced2e1e4}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_SignalMonitoring
+ * 	FUNCTION	Monitoring input signals
+ **************************************************************************************)
+ 
+ // Check for error reset 
+F_ResetError(Reset := FALSE, ErrorData := GroupData.ErrorData.ErrorDataSet[2]);
+F_ResetError(Reset := FALSE, ErrorData := GroupData.ErrorData.ErrorDataSet[3]);
+F_ResetError(Reset := FALSE, ErrorData := GroupData.ErrorData.ErrorDataSet[4]);
+// Supervision of Emergency circuit
+IF NOT Inputs.States.EmergencyCircuitOK THEN
+	// Set error
+	F_SetError(	
+		ErrorType	:= E_ErrorType.ERROR,
+		ErrorParam	:= '',
+		ErrorMsg	:= E_ErrorConv.EMERGENCY_STOP,
+		ErrorData	:= GroupData.ErrorData.ErrorDataSet[1]);
+		
+ELSE
+	// Auto reset
+	F_ResetError(
+		Reset := Settings.AutoResetEmergencyCircuit, 
+		ErrorData := GroupData.ErrorData.ErrorDataSet[1]);
+END_IF
+
+// Supervision of main contactor
+IF Inputs.States.MainContactorOFF THEN
+	// Set error
+	F_SetError(	
+		ErrorType	:= E_ErrorType.ERROR,
+		ErrorParam	:= '',
+		ErrorMsg	:= E_ErrorConv.MAIN_CONTACTOR_OFF,
+		ErrorData	:= GroupData.ErrorData.ErrorDataSet[2]);
+END_IF
+
+
+// Fire alarm
+IF Inputs.States.FireAlarm THEN
+	// Set error
+	F_SetError(
+		ErrorType	:=E_ErrorType.WARNING,
+		ErrorParam	:='',
+		ErrorMsg 	:=E_ErrorConv.FIRE_ALARM,
+		ErrorData	:=GroupData.ErrorData.ErrorDataSet[3]);
+END_IF
+
+// Supervision of  circuit breaker
+IF NOT HW_Inputs.Diag.SupplyCircuitBreaker THEN
+	// Set error
+	F_SetError(	
+		ErrorType	:= E_ErrorType.ERROR,
+		ErrorParam	:= 'Circuit Break error',
+		ErrorMsg	:= E_ErrorConv.CONTROL_VOLTAGE,
+		ErrorData	:= GroupData.ErrorData.ErrorDataSet[4]);
+END_IF
+
+// Supervision of  ASI Device Status
+IF HW_Inputs.Diag.ASI_BusConfigError THEN
+	// Set error
+	F_SetError(	
+		ErrorType	:= E_ErrorType.ERROR,
+		ErrorParam	:= 'AS-i Bus error on Group',
+		ErrorMsg	:= E_ErrorConv.DEVICE_ERROR,
+		ErrorData	:= GroupData.ErrorData.ErrorDataSet[4]);
+END_IF
+
+
+
+//IF Inputs.Command.ResetPB THEN
+//	fbGroupManager.M_ResetMemberElements(SettingsGroup.eGroupNumber);
+//END_IF
+
+
+
+]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="A_StateControl" Id="{15929a23-8edb-435c-8dd7-56d6e4ce2a56}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_StateControl
+ * 	FUNCTION	Handle group states
+ **************************************************************************************)
+
+// Check for error reset
+F_ResetError(Reset := FALSE, ErrorData := GroupData.ErrorData.ErrorDataSet[5]);
+
+// Check for error reset
+F_ResetError(Reset := FALSE, ErrorData := GroupData.ErrorData.ErrorDataSet[3]);
+	
+// Update system info
+GroupData.OperationState.Info := GroupInterface.In.SubsystemState.Info;
+GroupData.OperationState.InitRelease := GroupInterface.In.SubsystemState.InitRelease;
+	 	 
+// Group states
+CASE GroupData.OperationState.eState OF
+
+	(*******************************************************************************
+	  Unknown State 
+	********************************************************************************)
+	E_PositionState.UNKNOWN:
+	
+		// Group state is stopped by default
+		GroupData.OperationState.eLastState := GroupData.OperationState.eState;
+		GroupData.OperationState.eState 	:= E_PositionState.STOPPED;
+		
+		// Send status report
+		ITC.Commands.StatusReport := TRUE;
+		ITC.Commands.Start := FALSE; 
+		ITC.Commands.Stop := FALSE; 
+
+	(*******************************************************************************
+	  Stopped
+	********************************************************************************)
+	E_PositionState.STOPPED:
+		// Reset
+		ITC.Commands.Stop := FALSE;
+
+		// If the current mode is auto
+		IF GroupData.OperationState.eMode = E_PositionMode.AUTO_MODE AND
+           GroupInterface.In.SubsystemState.eState = E_PositionState.STARTED AND
+   		   GroupData.Init THEN
+			
+			// If no error is pending
+			IF GroupData.ErrorData.Error.ErrorType <> E_ErrorType.ERROR THEN
+		
+				// If a start command is active
+				IF Inputs.Command.StartPB OR
+				   Inputs.Command.StartStopPB OR
+				   ITC.Commands.Start THEN
+				   
+				   	// Reset start command
+					ITC.Commands.Start := FALSE; 
+				   
+				   	// If no Stop condition is active
+					IF NOT Inputs.Command.StopPB AND
+					   NOT LocalStopCmd AND
+					   NOT Inputs.StopSubsystem THEN
+					   
+   						// Change state to "Starting"
+					  	GroupData.OperationState.eLastState := GroupData.OperationState.eState;
+					  	GroupData.OperationState.eState		:= E_PositionState.STARTING;
+						
+						// Send status report
+						ITC.Commands.StatusReport := TRUE;
+						
+						// Reset startup delay timer
+						fbStartingDelay(IN:= FALSE);
+				   	END_IF
+				END_IF
+			END_IF
+		ELSE
+			// Reset
+			ITC.Commands.Start := FALSE; 
+		END_IF
+
+		
+	(*******************************************************************************
+	  Stopping
+	********************************************************************************)
+	E_PositionState.STOPPING:
+
+		// Run the ForceStop delay timer 
+		fbForcedStopDelay(IN := TRUE, PT :=Config.tForcedStopDelay);
+
+		// Send info message
+		IF fbForcedStopDelay.Q THEN
+			// Set info
+			F_SetError(	
+				ErrorType	:= E_ErrorType.WARNING,
+				ErrorParam	:= '',
+				ErrorMsg	:= E_ErrorConv.FST_STOP_AFTER_TIMEOUT,
+				ErrorData	:= GroupData.ErrorData.ErrorDataSet[5]);
+		END_IF
+
+		// If all member elements have reported "Stopped", Time is up or an error is active
+		// Subsystem is stopped
+		IF Inputs.GroupMemberState = E_PositionState.STOPPED OR 
+		   GroupData.ErrorData.Error.ErrorType = E_ErrorType.ERROR OR 
+		   GroupInterface.In.SubsystemState.eState = E_PositionState.STOPPED OR
+		   fbForcedStopDelay.Q THEN
+		   
+			// Reset startup delay timer 
+			fbForcedStopDelay(IN := FALSE);
+			
+			// Change state to "Stopped"
+			GroupData.OperationState.eLastState := GroupData.OperationState.eState;
+			GroupData.OperationState.eState		:= E_PositionState.STOPPED;
+			
+			// Send status report
+			ITC.Commands.StatusReport := TRUE;
+		END_IF
+		
+		
+	(*******************************************************************************
+	  Starting
+	********************************************************************************)
+	E_PositionState.STARTING:
+
+		// Run startup delay timer
+		fbStartingDelay(IN := TRUE, PT := Config.tStartupDelay);
+	
+		// If a stop command occures during starting,
+		// mode is not automatic or an error is active
+		IF Inputs.Command.StopPB OR
+		   LocalStopCmd OR
+		   Inputs.StopSubsystem OR
+		   ITC.Commands.Stop OR
+		   GroupData.ErrorData.Error.ErrorType = E_ErrorType.ERROR OR 
+		   GroupInterface.In.SubsystemState.eState <> E_PositionState.STARTED OR
+		   GroupData.OperationState.eMode <> E_PositionMode.AUTO_MODE THEN
+
+			// Change state to "Stopped"
+			GroupData.OperationState.eLastState := GroupData.OperationState.eState;
+			GroupData.OperationState.eState		:= E_PositionState.STOPPED;
+			
+			// Send status report
+			ITC.Commands.StatusReport := TRUE;
+			ITC.Commands.Stop := FALSE;
+
+		// If time is up -> Start group
+		ELSIF fbStartingDelay.Q THEN
+
+			// Change state to "Started"
+			GroupData.OperationState.eLastState := GroupData.OperationState.eState;
+			GroupData.OperationState.eState		:= E_PositionState.STARTED;
+
+			// Send status report
+			ITC.Commands.StatusReport := TRUE;
+		END_IF
+
+		
+	(*******************************************************************************
+	  Started (Online/active/running)
+	********************************************************************************)
+	E_PositionState.STARTED:
+		// Start
+		ITC.Commands.Start := FALSE;
+	
+		// If an error is active
+		IF GroupData.ErrorData.Error.ErrorType = E_ErrorType.ERROR OR
+           GroupInterface.In.SubsystemState.eState = E_PositionState.STOPPED THEN
+	
+			// Change state to "Stopped"
+			GroupData.OperationState.eLastState := GroupData.OperationState.eState;
+			GroupData.OperationState.eState		:= E_PositionState.STOPPED;
+			
+			// Send status report
+			ITC.Commands.StatusReport := TRUE;
+		
+		// If a stop command occures during starting
+		// or mode is not automatic
+		// or Subsystem want to stop
+		// or if a fire alarm is triggered 
+		// or switching over to manual mode (Introduced with ProBox 1.8)
+		ELSIF Inputs.Command.StopPB OR
+			  Inputs.Command.ManualMode OR
+		      LocalStopCmd OR
+		      Inputs.StopSubsystem OR
+			  Inputs.States.FireAlarm OR
+		      ITC.Commands.Stop OR
+			  GroupInterface.In.SubsystemState.eState <> E_PositionState.STARTED OR
+		      GroupData.OperationState.eMode <> E_PositionMode.AUTO_MODE THEN
+
+			// Change state to "Stopping"
+			GroupData.OperationState.eLastState := GroupData.OperationState.eState;
+			GroupData.OperationState.eState		:= E_PositionState.STOPPING;
+			
+			// Send status report
+			ITC.Commands.StatusReport := TRUE;
+			
+			// Reset forced stop delay timer
+			fbForcedStopDelay(IN := FALSE);
+			ITC.Commands.Stop := FALSE;
+		END_IF
+	
+		
+(********************************************************************************
+	Error case
+*********************************************************************************)
+ELSE
+	// Programming error
+	DebugMsg := CONCAT(	'Programming error - Invalid state: ', 
+					   	INT_TO_STRING(GroupData.OperationState.eState));
+		
+	fbDebugMsg.M_SendErrorMsg(DebugMsg);
+END_CASE
+]]></ST>
+      </Implementation>
+    </Action>
+    <Method Name="M_GetEntryRequests" Id="{2a729594-7ccb-43ad-a195-c78bdf840a3a}">
+      <Declaration><![CDATA[//get entry req switch from Cabinets. (Entry Req is NC)
+METHOD PUBLIC M_GetEntryRequests : BOOL
+VAR_Input
+	Index:INT; // index 0 = AK, 1..GVL_PB_SG.NUMBER_OF_AP_PANELS = AP panels
+END_VAR
+VAR	
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+IF(Index=0) THEN
+	M_GetEntryRequests := HW_Inputs.AK.OpEntryReq;
+	RETURN;
+ELSIF(Index>0 AND Index <= GVL_PB_SG.NUMBER_OF_AP_PANELS) THEN
+	M_GetEntryRequests := HW_Inputs.AP[Index].OpEntryReq;
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_SetEmgStatus" Id="{2aaf3a33-1bfe-41eb-ae9a-8d753ddf4d1e}">
+      <Declaration><![CDATA[// Reset Safety Needed
+METHOD PUBLIC M_SetEmgStatus
+VAR_INPUT
+	Status : ST_EmgStatus;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+Inputs.States.EmgStatus := Status;
+
+
+
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_SetEntryReqLed" Id="{4972cfdb-963b-4e41-8f7e-01dce3b63b45}">
+      <Declaration><![CDATA[//Set the HW signal that shall be connected to the LED to indicate status to operator, flashing = Pending, True = Active (solid LED), false = no request, LED OFF
+METHOD PUBLIC M_SetEntryReqLed
+VAR_INPUT
+	Index:INT; 		// The current active index of panels, 0 = AK, 1..GVL_PB_SG.NUMBER_OF_AP_PANELS = AP panels
+	Pending:BOOL;	// entry request is pending
+	Completed:BOOL; // Entry request finilized by MPD (vc or shuttle) 
+END_VAR
+VAR
+	i:INT;
+	TempVal	: BOOL;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[//Set entry req
+//Set output, blink or solid
+FOR i:=0 TO GVL_PB_SG.NUMBER_OF_AP_PANELS DO
+	
+	TempVal := ((M_GetEntryRequests(i)=FALSE (*Switch turned to Entry*)  OR (Index=i AND Pending)) AND fbBlink_500ms.Pulse) OR (Index=i AND Completed);
+	
+	IF(i=0) THEN //AK
+		HW_outputs.AK_EntryReqLed := TempVal;
+	ELSE		
+		HW_outputs.AP_EntryReqLed[i] := TempVal; 
+	END_IF
+
+END_FOR]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_SetEtherCatError" Id="{2a71ae56-f863-4f68-8d0f-8555197ccb01}">
+      <Declaration><![CDATA[//monitor device states.
+METHOD M_SetEtherCatError : BOOL
+VAR_INPUT
+ Index:INT;
+END_VAR
+VAR_IN_OUT
+	SgInput	:ST_HW_InputsSubsystemManager;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[F_ResetError(Reset := FALSE, ErrorData :=GroupData.ErrorData.ErrorDataSet[3]);
+
+
+IF(SgInput.DeviceState[Index]<>8) THEN
+// Set error
+F_SetError(	
+	ErrorType	:= E_ErrorType.ERROR,
+	ErrorParam	:= 'EtherCAT-Device Error',
+	ErrorMsg	:= E_ErrorConv.DEVICE_ERROR,
+	ErrorData	:= GroupData.ErrorData.ErrorDataSet[3]);	
+end_if]]></ST>
+      </Implementation>
+    </Method>
+    <LineIds Name="FB_ProBOXSG">
+      <LineId Id="205" Count="49" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ProBOXSG._M_ProcessEmgState">
+      <LineId Id="75" Count="29" />
+      <LineId Id="37" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ProBOXSG._M_ProcessInputs">
+      <LineId Id="6" Count="0" />
+      <LineId Id="18" Count="0" />
+      <LineId Id="23" Count="0" />
+      <LineId Id="46" Count="4" />
+      <LineId Id="44" Count="0" />
+      <LineId Id="65" Count="0" />
+      <LineId Id="74" Count="0" />
+      <LineId Id="78" Count="0" />
+      <LineId Id="52" Count="0" />
+      <LineId Id="54" Count="0" />
+      <LineId Id="57" Count="0" />
+      <LineId Id="77" Count="0" />
+      <LineId Id="59" Count="0" />
+      <LineId Id="51" Count="0" />
+      <LineId Id="45" Count="0" />
+      <LineId Id="24" Count="1" />
+      <LineId Id="22" Count="0" />
+      <LineId Id="67" Count="0" />
+      <LineId Id="7" Count="0" />
+      <LineId Id="36" Count="4" />
+      <LineId Id="43" Count="0" />
+      <LineId Id="35" Count="0" />
+      <LineId Id="79" Count="0" />
+      <LineId Id="9" Count="0" />
+      <LineId Id="80" Count="0" />
+      <LineId Id="10" Count="0" />
+      <LineId Id="27" Count="0" />
+      <LineId Id="14" Count="0" />
+      <LineId Id="31" Count="1" />
+      <LineId Id="17" Count="0" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ProBOXSG.A_ErrorHandler">
+      <LineId Id="2" Count="36" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ProBOXSG.A_Init">
+      <LineId Id="2" Count="45" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ProBOXSG.A_InputMapping">
+      <LineId Id="60" Count="56" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ProBOXSG.A_InterfaceHandlerOut">
+      <LineId Id="2" Count="8" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ProBOXSG.A_ModeControl">
+      <LineId Id="2" Count="74" />
+      <LineId Id="143" Count="0" />
+      <LineId Id="146" Count="0" />
+      <LineId Id="148" Count="0" />
+      <LineId Id="77" Count="2" />
+      <LineId Id="81" Count="0" />
+      <LineId Id="149" Count="0" />
+      <LineId Id="144" Count="0" />
+      <LineId Id="82" Count="60" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ProBOXSG.A_OutputMapping">
+      <LineId Id="2" Count="33" />
+      <LineId Id="52" Count="0" />
+      <LineId Id="54" Count="1" />
+      <LineId Id="53" Count="0" />
+      <LineId Id="56" Count="0" />
+      <LineId Id="36" Count="12" />
+      <LineId Id="50" Count="1" />
+      <LineId Id="49" Count="0" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ProBOXSG.A_SignalMonitoring">
+      <LineId Id="2" Count="8" />
+      <LineId Id="12" Count="24" />
+      <LineId Id="55" Count="0" />
+      <LineId Id="37" Count="9" />
+      <LineId Id="72" Count="0" />
+      <LineId Id="64" Count="7" />
+      <LineId Id="47" Count="0" />
+      <LineId Id="73" Count="0" />
+      <LineId Id="82" Count="7" />
+      <LineId Id="81" Count="0" />
+      <LineId Id="90" Count="0" />
+      <LineId Id="48" Count="0" />
+      <LineId Id="99" Count="0" />
+      <LineId Id="49" Count="5" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ProBOXSG.A_StateControl">
+      <LineId Id="2" Count="174" />
+      <LineId Id="209" Count="0" />
+      <LineId Id="177" Count="0" />
+      <LineId Id="208" Count="0" />
+      <LineId Id="178" Count="29" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ProBOXSG.M_GetEntryRequests">
+      <LineId Id="25" Count="0" />
+      <LineId Id="24" Count="0" />
+      <LineId Id="17" Count="0" />
+      <LineId Id="28" Count="0" />
+      <LineId Id="20" Count="0" />
+      <LineId Id="8" Count="0" />
+      <LineId Id="15" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ProBOXSG.M_SetEmgStatus">
+      <LineId Id="79" Count="0" />
+      <LineId Id="78" Count="0" />
+      <LineId Id="38" Count="0" />
+      <LineId Id="9" Count="0" />
+      <LineId Id="30" Count="0" />
+      <LineId Id="29" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ProBOXSG.M_SetEntryReqLed">
+      <LineId Id="5" Count="0" />
+      <LineId Id="27" Count="0" />
+      <LineId Id="26" Count="0" />
+      <LineId Id="51" Count="1" />
+      <LineId Id="31" Count="0" />
+      <LineId Id="34" Count="1" />
+      <LineId Id="37" Count="0" />
+      <LineId Id="39" Count="0" />
+      <LineId Id="36" Count="0" />
+      <LineId Id="33" Count="0" />
+      <LineId Id="32" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ProBOXSG.M_SetEtherCatError">
+      <LineId Id="17" Count="0" />
+      <LineId Id="25" Count="1" />
+      <LineId Id="7" Count="0" />
+      <LineId Id="9" Count="5" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

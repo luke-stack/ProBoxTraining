@@ -1,0 +1,22 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <POU Name="FB_HardwareOutputs" Id="{ec90984b-3be2-403d-a066-1c53f5f3e002}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK FB_HardwareOutputs
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[
+;
+// Example
+(*
+Q_11_001_SG := fbSG_001.HW_Outputs;
+Q_11_001_SG_Beacon_Error := fbSG_001.HW_Outputs.ErrorPending;
+Q_11_001_SG_Beacon_Auto := fbSG_001.HW_Outputs.GroupStarted;
+*)
+]]></ST>
+    </Implementation>
+    <LineIds Name="FB_HardwareOutputs">
+      <LineId Id="3" Count="7" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

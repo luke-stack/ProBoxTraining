@@ -1,0 +1,13 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <DUT Name="ST_ForkState" Id="{2db51450-4542-4667-8a8b-1ca8fd8ff964}">
+    <Declaration><![CDATA[//Output to element from function
+TYPE ST_ForkState :
+STRUCT	
+	ForkState			: E_FunctionForkState;	
+	//MotionDone			: BOOL;	
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

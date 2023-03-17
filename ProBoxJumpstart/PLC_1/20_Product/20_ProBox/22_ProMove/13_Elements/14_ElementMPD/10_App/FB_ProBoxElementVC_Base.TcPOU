@@ -1,0 +1,236 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <POU Name="FB_ProBoxElementVC_Base" Id="{97508358-d381-4a45-b82f-e0e4c8802e3c}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK FB_ProBoxElementVC_Base EXTENDS FB_ElementMpdBase
+VAR_INPUT
+END_VAR
+VAR_OUTPUT
+END_VAR
+VAR
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[]]></ST>
+    </Implementation>
+    <Method Name="_M_CheckErrors" Id="{d9e22ad7-1aa5-413e-b121-68627c1f3574}">
+      <Declaration><![CDATA[METHOD PROTECTED _M_CheckErrors : BOOL
+VAR_IN_OUT
+	MpdExternalErrors					: ST_MPD_ExternalErrors;
+	SgGroupRef							: FB_ProBOXSG;	//Reference to Switching group
+END_VAR
+VAR
+	i:INT;
+	UserMsg	: STRING(System.ERROR_PARAM_STRINGLENGTH) := 'Check door at level: ';
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+F_ResetError(FALSE, ElementData.ErrorData.ErrorDataSet[3]);
+
+
+// ----------------------------------------------------
+// Normally open errors
+// ----------------------------------------------------
+
+//Set error if Error hi temp lift resistor
+IF MpdExternalErrors.HighTempResLift THEN
+	
+		F_SetError(	
+			ErrorType	:= E_ErrorType.ERROR,
+			ErrorParam	:= 'Hi temp lift resistor',
+			ErrorMsg	:= E_ErrorConv.DRIVE_ERROR,
+			ErrorData	:= ElementData.ErrorData.ErrorDataSet[3]);	
+END_IF
+
+//Set error if Error hi temp drive resistor
+IF MpdExternalErrors.HighTempResDrive THEN
+	
+		F_SetError(	
+			ErrorType	:= E_ErrorType.ERROR,
+			ErrorParam	:= 'Hi temp drive resistor',
+			ErrorMsg	:= E_ErrorConv.DRIVE_ERROR,
+			ErrorData	:= ElementData.ErrorData.ErrorDataSet[3]);	
+END_IF
+
+//Set error if FrequencyInverterError
+IF MpdExternalErrors.FrequencyInverterError THEN
+	
+		F_SetError(	
+			ErrorType	:= E_ErrorType.ERROR,
+			ErrorParam	:= 'VC Freqency inverter',
+			ErrorMsg	:= E_ErrorConv.DRIVE_ERROR,
+			ErrorData	:= ElementData.ErrorData.ErrorDataSet[3]);
+END_IF
+
+// ----------------------------------------------------
+// Normally closed errors
+// ----------------------------------------------------
+
+//Set error if Error from the belts (Slackwire)
+IF NOT MpdExternalErrors.BeltMonitoring THEN
+	
+		F_SetError(	
+			ErrorType	:= E_ErrorType.ERROR,
+			ErrorParam	:= 'Belt Monitoring Error',
+			ErrorMsg	:= E_ErrorConv.LIMIT_SWITCH_ACTIVE,
+			ErrorData	:= ElementData.ErrorData.ErrorDataSet[3]);	
+END_IF
+
+//Set error if FallBrake occurres
+IF NOT MpdExternalErrors.FallBrake  THEN	
+	F_SetError(	
+			ErrorType	:= E_ErrorType.ERROR,
+			ErrorParam	:= 'FallBrake Has Occurred',
+			ErrorMsg	:= E_ErrorConv.LIMIT_SWITCH_ACTIVE,
+			ErrorData	:= ElementData.ErrorData.ErrorDataSet[3]);	
+END_IF
+
+IF NOT MpdExternalErrors.FallBrakeSpeedRegulator THEN	
+	F_SetError(	
+			ErrorType	:= E_ErrorType.ERROR,
+			ErrorParam	:= 'FallBrake Speedregulator',
+			ErrorMsg	:= E_ErrorConv.LIMIT_SWITCH_ACTIVE,
+			ErrorData	:= ElementData.ErrorData.ErrorDataSet[3]);	
+END_IF
+
+IF NOT MpdExternalErrors.SlackWire THEN	
+	F_SetError(	
+			ErrorType	:= E_ErrorType.ERROR,
+			ErrorParam	:= 'Slack wire limit switch',
+			ErrorMsg	:= E_ErrorConv.LIMIT_SWITCH_ACTIVE,
+			ErrorData	:= ElementData.ErrorData.ErrorDataSet[3]);	
+END_IF
+
+
+//Check doors
+FOR i:=1 TO 32 DO
+	
+	IF( NOT MpdExternalErrors.DoorClosedLevel[i]) THEN
+		UserMsg := CONCAT(UserMsg,TO_STRING(i));
+		F_SetError(	
+				ErrorType	:= E_ErrorType.ERROR,
+				ErrorParam	:= UserMsg,
+				ErrorMsg	:= E_ErrorConv.DOOR_ERROR,
+				ErrorData	:= ElementData.ErrorData.ErrorDataSet[3]);	
+	END_IF
+END_FOR
+
+
+SUPER^._M_CheckMpdErrors(MpdExternalErrors.EndLimit,MpdExternalErrors.HighTempResDrive, SgGroupRef, ElementData.ErrorData.ErrorDataSet[3]);]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_PowerStoreEntry" Id="{2479ecf2-f632-49df-b3fb-f10e1e7c84ef}">
+      <Declaration><![CDATA[//TS panel and Access panel on for same maintenance level works in conjunction with eachother. An TS panel start button can cancel AP panel Entry Request 
+METHOD PUBLIC M_PowerStoreEntry : BOOL
+VAR_INPUT
+	AccessPanel_Index		: INT; 	// Access panel (Level entrance panel) index
+	TS_Panel_Index			: INT; 	// Transfer Station panel index	
+	AbortEntryReq			: BOOL;	// TRUE = Abort a entry request (typically a start button from TS panel will abort a entry request from AP panel)
+	TS_Panel_EntryReq		: BOOL; // TRUE = Make a entry request from an TS panel
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+//Abort Access panel entry request if gate is closed.
+fbEntryRequestCtrl.M_AbortEntryRequest(AccessPanel_Index, AbortEntryReq);
+
+// register the entry request from an TS panel.
+fbEntryRequestCtrl.M_RegisterEntryRequest(TS_Panel_EntryReq,TS_Panel_Index);]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_RequestEntryExtDev" Id="{e435af44-b13b-4e95-b7a5-48b0cc229984}">
+      <Declaration><![CDATA[//Option to apply external condition for desition if the entry is safe for the operator.
+METHOD PUBLIC M_RequestEntryExtDev : BOOL
+VAR_INPUT
+	WaitForExternalDevice	: BOOL;		// wait in Entry pending state for an external device
+	CabinetIndex			: INT;		// the index of the cabinet
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+fbEntryRequestCtrl.M_WaitForExternalDevice(WaitForExternalDevice,CabinetIndex);]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_SetHeightCorrection" Id="{66cc9226-a8c0-41c9-8ba2-9611861292e5}">
+      <Declaration><![CDATA[METHOD PUBLIC M_SetHeightCorrection : BOOL
+VAR_INPUT
+	PickupCondition	: BOOL;		//Condition to start Pickup height compensation
+	DepositCondition : BOOL;	//Condition to start deposit height compensation
+	PickupAdjustment : INT;		//Height to compensate when pickup or deposit. positive or negative value [mm]
+	DepositAdjustment : INT;	//Height to compensate when pickup or deposit. positive or negative value [mm]	
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+fbMpdControl.P_AutoAdjustVcHeight.PickupCondition	:= PickupCondition;
+fbMpdControl.P_AutoAdjustVcHeight.DepositCondition	:= DepositCondition;
+fbMpdControl.P_AutoAdjustVcHeight.PickupAdjustment	:= PickupAdjustment;
+fbMpdControl.P_AutoAdjustVcHeight.DepositAdjustment 	:= DepositAdjustment;
+]]></ST>
+      </Implementation>
+    </Method>
+    <LineIds Name="FB_ProBoxElementVC_Base">
+      <LineId Id="9" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ProBoxElementVC_Base._M_CheckErrors">
+      <LineId Id="15" Count="1" />
+      <LineId Id="171" Count="0" />
+      <LineId Id="133" Count="0" />
+      <LineId Id="121" Count="0" />
+      <LineId Id="135" Count="0" />
+      <LineId Id="134" Count="0" />
+      <LineId Id="170" Count="0" />
+      <LineId Id="122" Count="7" />
+      <LineId Id="120" Count="0" />
+      <LineId Id="137" Count="9" />
+      <LineId Id="136" Count="0" />
+      <LineId Id="148" Count="6" />
+      <LineId Id="147" Count="0" />
+      <LineId Id="130" Count="0" />
+      <LineId Id="168" Count="0" />
+      <LineId Id="131" Count="0" />
+      <LineId Id="21" Count="0" />
+      <LineId Id="132" Count="0" />
+      <LineId Id="169" Count="0" />
+      <LineId Id="32" Count="7" />
+      <LineId Id="20" Count="0" />
+      <LineId Id="44" Count="0" />
+      <LineId Id="46" Count="1" />
+      <LineId Id="49" Count="5" />
+      <LineId Id="68" Count="1" />
+      <LineId Id="71" Count="4" />
+      <LineId Id="67" Count="0" />
+      <LineId Id="178" Count="6" />
+      <LineId Id="177" Count="0" />
+      <LineId Id="187" Count="1" />
+      <LineId Id="156" Count="0" />
+      <LineId Id="158" Count="0" />
+      <LineId Id="189" Count="0" />
+      <LineId Id="167" Count="0" />
+      <LineId Id="191" Count="0" />
+      <LineId Id="159" Count="4" />
+      <LineId Id="157" Count="0" />
+      <LineId Id="190" Count="0" />
+      <LineId Id="155" Count="0" />
+      <LineId Id="83" Count="0" />
+      <LineId Id="43" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ProBoxElementVC_Base.M_PowerStoreEntry">
+      <LineId Id="54" Count="0" />
+      <LineId Id="53" Count="0" />
+      <LineId Id="42" Count="2" />
+      <LineId Id="20" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ProBoxElementVC_Base.M_RequestEntryExtDev">
+      <LineId Id="8" Count="0" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ProBoxElementVC_Base.M_SetHeightCorrection">
+      <LineId Id="20" Count="0" />
+      <LineId Id="19" Count="0" />
+      <LineId Id="21" Count="0" />
+      <LineId Id="18" Count="0" />
+      <LineId Id="17" Count="0" />
+      <LineId Id="22" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

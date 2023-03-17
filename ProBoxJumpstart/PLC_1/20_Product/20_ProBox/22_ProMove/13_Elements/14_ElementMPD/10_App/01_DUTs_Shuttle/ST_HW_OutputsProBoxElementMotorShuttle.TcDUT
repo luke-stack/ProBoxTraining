@@ -1,0 +1,32 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <DUT Name="ST_HW_OutputsProBoxElementMotorShuttle" Id="{5be7355c-a024-4142-b438-79b6a84fa649}">
+    <Declaration><![CDATA[TYPE ST_HW_OutputsProBoxElementMotorShuttle extends ST_HW_OutputsProBoxElementMotor:
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: $
+ *	Revision date	:	$Date: $
+ *	Last changed by	:	$Author: $
+ *	URL				:	$URL: $
+ *
+ *	Purpose			:	Hardware outputs
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				13.04.2018		PkF					First version of outputs for a motor on a element
+ *
+ **************************************************************************************)
+STRUCT
+	TiltUp 		: BOOL;
+	TiltDown 	: BOOL;
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

@@ -1,0 +1,35 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4020.6">
+  <DUT Name="E_Axis_Orientation" Id="{cd096933-7f6c-470d-8dd1-f0d4c3ecefc9}">
+    <Declaration><![CDATA[TYPE E_Axis_Orientation :
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 417092 $
+ *	Revision date	:	$Date: 2018-11-14 12:58:58 +0100 (Mi., 14 Nov 2018) $
+ *	Last changed by	:	$Author: q8aberh $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/ProMove/02_Controls/ProBox/03_Implementation/01_DevelopmentProject/01_Software/ProBox_COE/ProBox_DevProj_v1.0/PLC_1/20_Product/10_App/12_E_Functions/11_ProBox/01_DUTs/E_Axis_Orientation.TcDUT $
+ *
+ *	Purpose			:	orientation of function axis on element 
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				15.06.2018		lca					Example
+ *
+ **************************************************************************************)	
+(
+	IDLE, // Funciton axis is not requested by an element
+	Element_12, // Funciton axis is requested by the element axis 1-2 in the same direction
+	Element_21, // Funciton axis is requested by the element axis 1-2 in the opposite direction
+	Element_34, // Funciton axis is requested by the element axis 3-4 in the same direction
+	Element_43  // Funciton axis is requested by the element axis 3-4 in the opposite direction	
+);
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

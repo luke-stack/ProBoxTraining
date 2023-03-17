@@ -1,0 +1,13 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <DUT Name="ST_InputsRunnerCheck" Id="{ff58ac84-cdbf-4e3f-a262-75d67e906cb8}">
+    <Declaration><![CDATA[// Load stacker HW inputs
+TYPE ST_InputsRunnerCheck :
+STRUCT	
+	HW				: ST_HW_InputsRunnerCheck;	// Hardware inputs
+	CtrlIn			: ST_CtrlInRunnerCheck;		// ser function control inputs	
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

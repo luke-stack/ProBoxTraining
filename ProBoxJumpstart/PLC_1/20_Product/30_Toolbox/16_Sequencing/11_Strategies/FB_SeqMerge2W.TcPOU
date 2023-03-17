@@ -1,0 +1,283 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.12">
+  <POU Name="FB_SeqMerge2W" Id="{86732cf8-7e7a-411f-ae00-320c894873e5}" SpecialFunc="None">
+    <Declaration><![CDATA[/// Sequence strategy Merge 2-Way
+/// This strategy is able to ensure sequencing from two branches.
+/// Remark: Decision can take multiple cycles, check busy and reset FB before new request.
+/// Uses recursive calls - User has to ensure to not generate a loop (Tested up to 350 jumps)
+FUNCTION_BLOCK FB_SeqMerge2W IMPLEMENTS I_BranchCheckpoint
+(************************************************************************************** 
+* 	Application 		: BoxControl Framework 
+* 	Revision 			: $Revision: 404877 $ 
+* 	Revision date 		: $Date: 2018-04-26 14:10:34 +0200 (Thu, 26 Apr 2018) $ 
+* 	Last changed by 	: $Author: b7ernsb $ 
+* 	URL 				: $URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/21_Projects/BCF_2.0/trunk/BCF/BCF/JumpStart/20_Product/10_App/12_E_Functions/10_Lib/10_Conv/FB_FunctionConv.TcPOU $ 
+* ------------------------------------------------------------------------------------ 
+* 	© Swisslog AG 
+* 	Swisslog is not liable for any usage of this source code that is not agreed 
+* 	on between Swisslog and the other party. The mandatory legal liability remains 
+* 	unaffected. 
+* ------------------------------------------------------------------------------------ 
+* 	Revision History: 
+* 
+* 	VERSION 		DATE 			INITIALS 			DESCRIPTION 
+* 	0.1 			01.05.2018 		mbo 				Created.
+* 
+**************************************************************************************)
+VAR_INPUT
+	Execute					: BOOL; // Requires rising edge for new request
+	CheckpointID			: STRING(5); // Checkpoint ID, used to identify location of TUs
+	TU_PresentA				: BOOL; // A TU is present on branch A
+	TU_IndexA				: DINT; // Waiting TU data index A
+	TU_PresentB 			: BOOL; // A TU is present on branch B
+	TU_IndexB				: DINT; // Waiting TU data index B
+	iBranchA				: I_BranchCheckpoint; // Previous decision point on this branch
+	iBranchB				: I_BranchCheckpoint; // Previous decision point on this branch
+	iEstimateNextServiceA	: I_SeqEstimateNext; // Service to estimate possible next in order to save calculation time (optional)
+	iEstimateNextServiceB	: I_SeqEstimateNext; // Service to estimate possible next in order to save calculation time (optional)
+	EnableWarningA			: BOOL; // When enabled, warning is active if a TU is waiting, RisingEdge restarts Timer
+	EnableWarningB			: BOOL; // When enabled, warning is active if a TU is waiting, RisingEdge restarts Timer
+END_VAR
+
+VAR_IN_OUT 
+	TU_Table				: ARRAY[0..Conveyor.NUMBER_OF_TU_DATA] OF ST_TU_Data; // TU Table
+END_VAR
+
+VAR_OUTPUT
+	Busy					: BOOL; // Process ongoing
+	Error					: BOOL; // Error during process
+	ReleaseA				: BOOL; // Release TU on branch A
+	ReleaseB				: BOOL; // Release TU on branch B
+	TimeoutWaitA			: BOOL; // Warning, TU is waiting longer than P_WarningTime
+	TimeoutWaitB			: BOOL; // Warning, TU is waiting longer than P_WarningTime
+END_VAR
+
+VAR
+	fbBranchA				: FB_SeqBranch; // Branch A 
+	fbBranchB				: FB_SeqBranch; // Branch B
+	UpdateCheckpointID		: BOOL; // Enable update ceckpoint IDs of waiting Tus
+	WarningTime				: TIME := SequencingParameter.DEFAULT_WARNING_TIME; // Time after a warning gets reported.
+	fbWarnA					: TON; // Timer warning A
+	fbWarnB					: TON; // Timer warning B
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[// Check inputs
+IF TU_IndexA < 0 OR TU_IndexB < 0 THEN
+	Error := TRUE;
+	RETURN;
+END_IF
+
+// Initialize values
+Error := FALSE;
+
+// If branch A is configured, update waiting TU with Checkpoint ID
+IF iBranchA <> 0 AND UpdateCheckpointID THEN
+	F_UpdateCheckpointID(
+		Enable := TU_PresentA AND TU_IndexA > 0,
+		CheckpointID := iBranchA.P_CheckpointID,
+		TU_Data := TU_Table[TU_IndexA]);
+END_IF
+
+// If branch B is configured, update waiting TU with Checkpoint ID
+IF iBranchB <> 0 AND UpdateCheckpointID THEN
+	F_UpdateCheckpointID(
+		Enable := TU_PresentB AND TU_IndexB > 0,
+		CheckpointID := iBranchB.P_CheckpointID,
+		TU_Data := TU_Table[TU_IndexB]);	
+END_IF
+
+fbBranchA(
+	Execute:= Execute, 
+	TU_Present:= TU_PresentA, 
+	TU_Index:= TU_IndexA, 
+	Branch:= iBranchA, 
+	iEstimateNextService:= iEstimateNextServiceA, 
+	Release=> ReleaseA, 
+	TU_Table:= TU_Table);
+	
+fbBranchB(
+	Execute:= Execute, 
+	TU_Present:= TU_PresentB, 
+	TU_Index:= TU_IndexB, 
+	Branch:= iBranchB, 
+	iEstimateNextService:= iEstimateNextServiceB, 
+	Release=> ReleaseB, 
+	TU_Table:= TU_Table);
+	
+Busy := fbBranchA.Busy OR fbBranchB.Busy;
+Error := fbBranchA.Error OR fbBranchB.Error;
+
+fbWarnA(IN := EnableWarningA AND TU_PresentA, PT := WarningTime);
+fbWarnB(IN := EnableWarningB AND TU_PresentB, PT := WarningTime);
+
+TimeoutWaitA := fbWarnA.Q;
+TimeoutWaitB := fbWarnB.Q;]]></ST>
+    </Implementation>
+    <Method Name="M_IsOnBranches" Id="{3149aeb4-1fcf-4c22-be1f-63cb770f3b5a}">
+      <Declaration><![CDATA[/// Searches if a checkpoint can be found on a specific branch
+/// Returns true if found, false = not found
+METHOD M_IsOnBranches : BOOL
+VAR_INPUT
+	mRecursive	: BOOL := FALSE; // Search recursive through the whole tree
+END_VAR
+VAR_IN_OUT CONSTANT
+	// Last checkpoint id	
+	mCheckpointID	: STRING(5);
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+IF mCheckpointID = '' THEN
+	M_IsOnBranches := FALSE;
+	RETURN;
+END_IF
+
+IF mCheckpointID = P_CheckpointID THEN
+	M_IsOnBranches := TRUE;
+	RETURN;
+END_IF
+
+// When its requested that its branches are checked as well
+IF mRecursive THEN
+	IF iBranchA <> 0 THEN
+		 IF iBranchA.M_IsOnBranches(TRUE, mCheckpointId) THEN;
+			M_IsOnBranches := TRUE;
+			RETURN;
+		END_IF
+	END_IF
+	
+	IF iBranchB <> 0 THEN
+		IF iBranchB.M_IsOnBranches(TRUE, mCheckpointId) THEN;
+			M_IsOnBranches := TRUE;
+			RETURN;
+		END_IF
+	END_IF
+END_IF
+
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_Reset" Id="{9b5bb63e-6606-4704-85a3-5f17b34764af}">
+      <Declaration><![CDATA[METHOD M_Reset : BOOL
+VAR_INPUT
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[fbBranchA.M_Reset();
+fbBranchB.M_Reset();]]></ST>
+      </Implementation>
+    </Method>
+    <Property Name="P_CheckpointID" Id="{ee900caa-dbf9-4d71-912d-a3051bef551c}">
+      <Declaration><![CDATA[/// Identifier for checkpoint
+{attribute 'monitoring' := 'call'}
+{attribute 'suppress_wrn_C0410'}
+PROPERTY P_CheckpointID : REFERENCE TO STRING(5)
+]]></Declaration>
+      <Get Name="Get" Id="{2bbdd515-4946-4ae9-9db7-18873bf0f142}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[P_CheckpointID REF= CheckpointID;]]></ST>
+        </Implementation>
+      </Get>
+    </Property>
+    <Property Name="P_EntriesPerCycle" Id="{7c797433-dc5d-49dd-a8b9-1472af050bab}">
+      <Declaration><![CDATA[/// TU Entries scanned per cycle
+PROPERTY P_EntriesPerCycle : DINT // Default 600]]></Declaration>
+      <Get Name="Get" Id="{93c5c0e6-dd06-4bda-bfd1-88dbc4adc509}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[P_EntriesPerCycle := fbBranchA.P_EntriesPerCycle;]]></ST>
+        </Implementation>
+      </Get>
+      <Set Name="Set" Id="{ce058983-81f1-46d8-8428-1616fd595802}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[fbBranchA.P_EntriesPerCycle := P_EntriesPerCycle;
+fbBranchB.P_EntriesPerCycle := P_EntriesPerCycle;]]></ST>
+        </Implementation>
+      </Set>
+    </Property>
+    <Property Name="P_UpdateCheckpointID" Id="{87a0765e-639f-4b07-82c1-285bed6794fd}">
+      <Declaration><![CDATA[/// When enabled, Checkpoint ID of waiting TUs is updated automatically with previous Branch ID
+PROPERTY P_UpdateCheckpointID : BOOL]]></Declaration>
+      <Get Name="Get" Id="{4b2cdbfa-cec3-4f1f-ac59-82f7f4c0a4bf}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[P_UpdateCheckpointID := UpdateCheckpointID;]]></ST>
+        </Implementation>
+      </Get>
+      <Set Name="Set" Id="{998587c4-b176-49b1-b03a-05664d8d8e48}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[UpdateCheckpointID := P_UpdateCheckpointID;]]></ST>
+        </Implementation>
+      </Set>
+    </Property>
+    <Property Name="P_WarningTime" Id="{8e0b2aec-d52e-48b7-93e1-72c5d130f487}">
+      <Declaration><![CDATA[/// Time after Warning gets reported
+PROPERTY P_WarningTime : TIME]]></Declaration>
+      <Get Name="Get" Id="{fb2ac30e-2627-47c9-afa8-914e537d8d96}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[P_WarningTime := WarningTime;]]></ST>
+        </Implementation>
+      </Get>
+      <Set Name="Set" Id="{35e65ee9-3975-466c-a78c-923fa4fb85fd}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[WarningTime := P_WarningTime;]]></ST>
+        </Implementation>
+      </Set>
+    </Property>
+    <LineIds Name="FB_SeqMerge2W">
+      <LineId Id="3" Count="49" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_SeqMerge2W.M_IsOnBranches">
+      <LineId Id="3" Count="9" />
+      <LineId Id="40" Count="0" />
+      <LineId Id="38" Count="0" />
+      <LineId Id="13" Count="13" />
+      <LineId Id="39" Count="0" />
+      <LineId Id="27" Count="0" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_SeqMerge2W.P_CheckpointID.Get">
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_SeqMerge2W.P_EntriesPerCycle.Get">
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_SeqMerge2W.P_EntriesPerCycle.Set">
+      <LineId Id="2" Count="0" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_SeqMerge2W.P_UpdateCheckpointID.Get">
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_SeqMerge2W.P_UpdateCheckpointID.Set">
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_SeqMerge2W.P_WarningTime.Get">
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_SeqMerge2W.P_WarningTime.Set">
+      <LineId Id="2" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

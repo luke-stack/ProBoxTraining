@@ -1,0 +1,560 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <POU Name="FB_RejectPanelAddon" Id="{69ae4383-cf9b-41cf-b859-e76c091fee58}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK FB_RejectPanelAddon EXTENDS FB_FunctionConv
+
+VAR_INPUT
+	Config					: ST_CFG_RejectPanel;
+	CtrlIn					: ST_CtrlInRejectPanel;
+    HW_Inputs				: ST_HW_InputsRejectPanel;
+END_VAR
+
+VAR_OUTPUT
+	HW_Outputs				: ST_HW_OutputsRejectPanel;
+	CtrlOut					: ST_CtrlOutRejectPanel;
+
+END_VAR
+
+VAR
+	Inputs					: ST_InputsRejectPanel;
+	Outputs					: ST_OutputsRejectPanel;
+	RejectPanelState		: ST_RejectPanelStates;
+	IndexNo					: DINT ;
+	MaxProfileValue			: ST_MaxProfileValues;
+	ProfileInformation		: ST_Profile;
+	fb_AddOnErrHandler		: FB_AddOnErrHandler;
+END_VAR
+
+VAR PERSISTENT
+	Settings				: ST_CFG_RejectPanel;
+
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[(**************************************************************************************************************
+   Input mapping
+***************************************************************************************************************)
+A_InputMapping();
+
+(**************************************************************************************************************
+   Initialization
+***************************************************************************************************************)
+A_Init();
+
+(**************************************************************************************************************
+   State control 
+***************************************************************************************************************)
+A_StateControl();
+
+(**************************************************************************************************************
+   Error handler
+***************************************************************************************************************)
+A_ErrorHandler();
+fb_AddOnErrHandler(AddOnSettingsFunction :=SettingsFunction, AddOnFunctionData:=FunctionData);
+(**************************************************************************************************************
+   Infeed states
+***************************************************************************************************************)
+A_RejectPanelStates();
+
+(**************************************************************************************************************
+   Interface handler out
+***************************************************************************************************************)
+M_ITC_ProcessOut();
+
+(**************************************************************************************************************
+   Output mapping
+***************************************************************************************************************)
+A_OutputMapping();
+
+
+]]></ST>
+    </Implementation>
+    <Action Name="A_Init" Id="{761af027-1980-485f-9ac6-02a8f7cda105}">
+      <Implementation>
+        <ST><![CDATA[// Update Registry
+M_UpdateRegistry();
+
+IF NOT FunctionData.Init AND FunctionData.InitRunning THEN
+	// When the subsystem is started, 
+	// and its released to initialize
+	IF FunctionData.OperationState.Info.SystemReady AND
+	   SettingsFunction.eFunctionNumber < FunctionData.OperationState.InitRelease.eLimitFunctionNumber THEN
+	   
+	   IF M_InitFunction(FALSE) THEN
+			// Function initialized - and initialization done
+			FunctionData.Init := TRUE;
+			FunctionData.InitRunning := FALSE;
+			
+			RejectPanelState.eLastState := RejectPanelState.eState;
+			RejectPanelState.eState := E_RejectPanelState.INIT;
+
+
+			Inputs.DestinationFunction	:= SettingsFunction.FunctionLink.eFunctionNumber;
+			Inputs.DestinationZone		:= SettingsFunction.FunctionLink.ZoneNumber;
+			
+			// Set reset cmd
+			FunctionData.ErrorData.Error.ResetError := TRUE;
+			
+			DebugMsg := CONCAT('Initialization done. Function: ', ConfigFunction.FunctionName);
+			fbDebugMsg.M_SendInfoMsg(DebugMsg);
+		END_IF
+	END_IF
+	ELSIF NOT FunctionData.Init THEN
+	RejectPanelState.eLastState := RejectPanelState.eState;
+	RejectPanelState.eState := E_RejectPanelState.INIT;
+	
+	FunctionData.OperationState := FunctionBase.PositionStateEmpty;
+	
+	Settings := Config;
+	
+	M_PreInit();
+	
+	FunctionData.InitRunning := SettingsFunction.eFunctionNumber > 0 AND
+								SettingsFunction.eElementLink > 0;
+	
+END_IF]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="A_InputMapping" Id="{29c7e1b7-dd74-411a-8422-c74c04f77ad4}">
+      <Implementation>
+        <ST><![CDATA[Inputs.DepallatizerBtnEnable := HW_Inputs.DepallatizerBtnEnable;
+Inputs.ProfileBtnEnable		 := HW_Inputs.ProfileBtnEnable;
+Inputs.RejectBtnEnable		 := HW_Inputs.RejectBtnEnable;
+Inputs.WrapperBtnEnable      := HW_Inputs.WrapperBtnEnable;
+Inputs.DestinationFunction	 := CtrlIn.DestinationFunction;
+Inputs.DestinationZone		 := CtrlIn.DestinationZone;
+Inputs.DisableRejectPanel	 := CtrlIn.DisableRejectPanel; 
+Inputs.OkToEnterPallet		 := CtrlIn.OkToEnterPallet; 
+Inputs.TransportData := F_GetTransportControlData(
+							eFunctionNumber	:= SettingsFunction.FunctionLink.eFunctionNumber,
+							ZoneNumber 		:= SettingsFunction.FunctionLink.ZoneNumber);
+							
+(**************************************************************************************
+   Element states
+***************************************************************************************)
+// Get status of the corresponding element
+M_GetElementStates(); 
+
+
+(**************************************************************************************
+   AddOn states
+***************************************************************************************)
+// Get status of all corresponding AddOn functions and store it in FunctionInterface.In.AddOnOrder
+M_GetAddOnOrder();]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="A_OutputMapping" Id="{fcd1411f-1f4c-4550-869d-9c15a6984536}">
+      <Implementation>
+        <ST><![CDATA[
+(**************************************************************************************
+   Hardware outputs configuration
+***************************************************************************************)
+HW_Outputs.HeightError					:= Outputs.HeightError;
+HW_Outputs.WeightError					:= Outputs.WeightError;
+HW_Outputs.NintyDegProfileLeftError	:= Outputs.NintyDegProfileLeftError;
+HW_Outputs.NintyDegProfileFrontError		:= Outputs.NintyDegProfileFrontError;
+HW_Outputs.NintyDegProfileRearError		:= Outputs.NintyDegProfileRearError;
+HW_Outputs.NintyDegProfileRightError	:= Outputs.NintyDegProfileRightError;
+HW_Outputs.OneEightyDegProfileFrontError	:= Outputs.OneEightyDegProfileFrontError;
+HW_Outputs.OneEightyDegProfileLeftError	:= Outputs.OneEightyDegProfileLeftError;
+HW_Outputs.OneEightyDegProfileRearError	:= Outputs.OneEightyDegProfileRearError;
+HW_Outputs.OneEightyDegProfileRightError	:= Outputs.OneEightyDegProfileRightError;
+HW_Outputs.TwoSeventyDegProfileLeftError		:= Outputs.TwoSeventyDegProfileLeftError;
+HW_Outputs.TwoSeventyDegProfileRightError		:= Outputs.TwoSeventyDegProfileRightError;
+HW_Outputs.TwoSeventyDegProfileFrontError	:= Outputs.TwoSeventyDegProfileFrontError;
+HW_Outputs.TwoSeventyDegProfileRearError	:= Outputs.TwoSeventyDegProfileRearError;
+HW_Outputs.ZeroDegProfileFrontError	:= Outputs.ZeroDegProfileFrontError;
+HW_Outputs.ZeroDegProfileLeftError	:= Outputs.ZeroDegProfileLeftError;
+HW_Outputs.ZeroDegProfileRearError	:= Outputs.ZeroDegProfileRearError;
+HW_Outputs.ZeroDegProfileRightError	:= Outputs.ZeroDegProfileRightError;
+HW_Outputs.ProfileBtnShow				:= Outputs.ProfileBtnShow;
+HW_Outputs.RejectBtnShow				:= Outputs.RejectBtnShow;
+HW_Outputs.WrapperBtnShow				:= Outputs.WrapperBtnShow;
+HW_Outputs.DepallatizerBtnShow			:= Outputs.DepallatizerBtnShow;
+HW_Outputs.DirectionEnableLongSide		:= Outputs.DirectionEnableLongSide;
+HW_Outputs.DirectionEnableShortSide		:= Outputs.DirectionEnableShortSide;
+HW_Outputs.LabelReadError				:= Outputs.LabelReadError;
+HW_Outputs.RunnerError					:= Outputs.RunnerError;
+HW_Outputs.TunnelError					:= Outputs.TunnelError;
+HW_Outputs.WindowNo[2]					:= Outputs.WindowNo[2];
+CtrlOut.PalletRejected					:= Outputs.PalletRejected;
+HW_Outputs.PalletOrientationNintyDeg:= Outputs.PalletOrientationNintyDeg;
+HW_Outputs.PalletOrientationOneEightyDeg:= Outputs.PalletOrientationOneEightyDeg;
+HW_Outputs.PalletOrientationTwoSeventyDeg:= Outputs.PalletOrientationTwoSeventyDeg;
+HW_Outputs.PalletOrientationZeroDeg:= Outputs.PalletOrientationZeroDeg;
+
+(**************************************************************************************
+   Order outputs (Commands to corresponding element)
+***************************************************************************************)
+// Drive run not needed
+FunctionInterface.Out.FunctionOrders.ReqDriveRun := FALSE;
+
+// Allow element to drive
+FunctionInterface.Out.FunctionOrders.Enable := TRUE;
+FunctionInterface.Out.FunctionOrders.Enable_34 := TRUE;
+  
+(**************************************************************************************
+   AddOn outputs
+***************************************************************************************)
+FunctionInterface.Out.AddOnOrders.Enable := FunctionData.ErrorData.Error.ErrorType <> E_ErrorType.ERROR;
+FunctionInterface.Out.AddOnOrders.EnableHandover := TRUE ;
+FunctionInterface.Out.AddOnOrders.EnableTakeover:=TRUE;
+
+
+
+]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="A_RejectPanelStates" Id="{cf3037a7-d0fb-4df1-9b17-87c6477e8789}">
+      <Implementation>
+        <ST><![CDATA[CASE RejectPanelState.eState OF
+(**************************************************************************************************************
+   INIT
+***************************************************************************************************************)
+	E_RejectPanelState.INIT:
+	Outputs.WindowNo[2]:= 11;
+	MaxProfileValue.Max_Height:= Config.MaxprofileValues.Max_Height ;
+	MaxProfileValue.Max_ProfileFront:=Config.MaxprofileValues.Max_ProfileFront;
+	MaxProfileValue.Max_ProfileLeft:=Config.MaxprofileValues.Max_ProfileLeft;
+	MaxProfileValue.Max_ProfileRear:=Config.MaxprofileValues.Max_ProfileRear;
+	MaxProfileValue.Max_ProfileRight:=Config.MaxprofileValues.Max_ProfileRight;
+	MaxProfileValue.Max_Weight:=Config.MaxprofileValues.Max_Weight; 
+	
+	
+	
+		// If no error is pending
+	IF FunctionData.ErrorData.Error.ErrorType <> E_ErrorType.ERROR AND
+		FunctionInterface.In.Element.OperationState.eState = E_PositionState.STARTED THEN
+			// Change state
+		IF NOT Inputs.TransportData.Occupied THEN
+				RejectPanelState.eLastState := RejectPanelState.eState;
+				RejectPanelState.eState := E_RejectPanelState.EMPTY;
+			
+		ELSE
+			// Error state
+			RejectPanelState.eLastState := RejectPanelState.eState;
+			RejectPanelState.eState := E_RejectPanelState.ERROR;
+		END_IF	
+   END_IF			
+(**************************************************************************************************************
+   EMPTY
+***************************************************************************************************************)	
+	E_RejectPanelState.EMPTY:
+	
+   
+   IF inputs.OkToEnterPallet THEN
+	  Outputs.WindowNo[2]:= 13;
+	ELSE
+	  Outputs.WindowNo[2]:= 12;
+   END_IF
+   
+	Outputs.HeightError 						:= FALSE;// Height 
+	Outputs.NintyDegProfileFrontError				:= FALSE; // Profile left 
+	Outputs.NintyDegProfileLeftError			:= FALSE; // Profile right 
+	Outputs.NintyDegProfileRearError				:= FALSE; // Profile front 
+	Outputs.NintyDegProfileRightError				:= FALSE; // Profile rear
+	Outputs.OneEightyDegProfileFrontError		:= FALSE; // Profile left 
+	Outputs.OneEightyDegProfileLeftError		:= FALSE; // Profile right 
+	Outputs.OneEightyDegProfileRearError		:= FALSE; // Profile front 
+	Outputs.OneEightyDegProfileRightError		:= FALSE; // Profile rear
+	Outputs.TwoSeventyDegProfileFrontError			:= FALSE; // Profile left 
+	Outputs.TwoSeventyDegProfileLeftError		:= FALSE; // Profile right 
+	Outputs.TwoSeventyDegProfileRearError			:= FALSE; // Profile front 
+	Outputs.TwoSeventyDegProfileRightError		:= FALSE; // Profile rear
+	Outputs.ZeroDegProfileFrontError			:= FALSE; // Profile left 
+	Outputs.ZeroDegProfileLeftError				:= FALSE; // Profile right 
+	Outputs.ZeroDegProfileRearError				:= FALSE; // Profile front 
+	Outputs.ZeroDegProfileRightError			:= FALSE; // Profile rear
+	Outputs.TunnelError							:= FALSE; // Tunnel 
+	Outputs.RunnerError							:= FALSE; // Runner 
+	Outputs.WeightError							:= FALSE; // Weight 
+	Outputs.RejectBtnShow						:= FALSE;
+    Outputs.ProfileBtnShow						:= FALSE;
+	Outputs.WrapperBtnShow  					:= FALSE;
+	Outputs.DepallatizerBtnShow 				:= FALSE;
+	Outputs.DirectionEnableShortSide 			:= FALSE;
+	Outputs.DirectionEnableLongSide	  			:= FALSE;
+	IF(Inputs.TransportData.TU_DataIndex >0 AND NOT Inputs.DisableRejectPanel)THEN
+				RejectPanelState.eLastState := RejectPanelState.eState;
+				RejectPanelState.eState := E_RejectPanelState.OCCUPIED;
+	END_IF
+
+(**************************************************************************************************************
+   OCCUPIED
+***************************************************************************************************************)
+	E_RejectPanelState.OCCUPIED:
+	 
+   IndexNo := Inputs.TransportData.TU_DataIndex;
+   //F_PB_SetPalletOrientation(Config.ePalletOrientation,IndexNo); // Call function to change data according to change in orientation.
+   ProfileInformation.Height:=TU_DataTable[IndexNo].Profile.Height;
+   ProfileInformation.ProfileFront:=TU_DataTable[IndexNo].Profile.ProfileFront;
+   ProfileInformation.ProfileLeft:=TU_DataTable[IndexNo].Profile.ProfileLeft;
+   ProfileInformation.ProfileRear:=TU_DataTable[IndexNo].Profile.ProfileRear;
+   ProfileInformation.ProfileRight:=TU_DataTable[IndexNo].Profile.ProfileRight;
+   ProfileInformation.Runner:=TU_DataTable[IndexNo].Profile.Runner;
+   ProfileInformation.Tunnel:=TU_DataTable[IndexNo].Profile.Tunnel;
+   ProfileInformation.Weight:=TU_DataTable[IndexNo].Profile.Weight;
+  
+   F_PalletEvaluation(Config.ePalletOrientation,ProfileInformation, Inputs.TransportData.TU_DataIndex,MaxProfileValue,Outputs);
+	Outputs.WindowNo[2]:= 10;
+	
+   IF F_PalletEvaluation(Config.ePalletOrientation,ProfileInformation, Inputs.TransportData.TU_DataIndex,MaxProfileValue,Outputs) THEN
+	   Outputs.PalletRejected:= TRUE;
+   ELSE
+	   Outputs.PalletRejected:= FALSE;
+   END_IF
+
+   
+   M_FeatureEnable(Config.ePalletOrientation);
+	
+
+   IF Inputs.TransportData.TU_DataIndex =0 THEN
+				RejectPanelState.eLastState := RejectPanelState.eState;
+				RejectPanelState.eState := E_RejectPanelState.INIT;
+    END_IF
+
+
+
+(**************************************************************************************************************
+ERROR
+***************************************************************************************************************)
+	E_RejectPanelState.ERROR:	
+	Outputs.HeightError 					:= FALSE;// Height 
+	Outputs.NintyDegProfileFrontError		:= FALSE; // Profile left 
+	Outputs.NintyDegProfileLeftError		:= FALSE; // Profile right 
+	Outputs.NintyDegProfileRearError		:= FALSE; // Profile front 
+	Outputs.NintyDegProfileRightError		:= FALSE; // Profile rear
+	Outputs.OneEightyDegProfileFrontError		:= FALSE; // Profile left 
+	Outputs.OneEightyDegProfileLeftError		:= FALSE; // Profile right 
+	Outputs.OneEightyDegProfileRearError		:= FALSE; // Profile front 
+	Outputs.OneEightyDegProfileRightError		:= FALSE; // Profile rear
+	Outputs.TwoSeventyDegProfileFrontError		:= FALSE; // Profile left 
+	Outputs.TwoSeventyDegProfileLeftError		:= FALSE; // Profile right 
+	Outputs.TwoSeventyDegProfileRearError		:= FALSE; // Profile front 
+	Outputs.TwoSeventyDegProfileRightError		:= FALSE; // Profile rear
+	Outputs.ZeroDegProfileFrontError		:= FALSE; // Profile left 
+	Outputs.ZeroDegProfileLeftError		:= FALSE; // Profile right 
+	Outputs.ZeroDegProfileRearError		:= FALSE; // Profile front 
+	Outputs.ZeroDegProfileRightError		:= FALSE; // Profile rear
+	Outputs.TunnelError						:= FALSE; // Tunnel 
+	Outputs.RunnerError						:= FALSE; // Runner 
+	Outputs.WeightError						:= FALSE; // Weight 
+	Outputs.RejectBtnShow					:= FALSE;
+    Outputs.ProfileBtnShow					:= FALSE;
+	Outputs.WrapperBtnShow  				:= FALSE;
+	Outputs.DepallatizerBtnShow 			:= FALSE;
+	Outputs.DirectionEnableShortSide 		:= FALSE;
+	Outputs.DirectionEnableLongSide	  		:= FALSE;
+	
+	
+	IF FunctionData.ErrorData.Error.ErrorType <> E_ErrorType.ERROR THEN
+			// Go back to init
+			RejectPanelState.eLastState 	:= RejectPanelState.eState;
+			RejectPanelState.eState 		:= E_RejectPanelState.INIT;
+	END_IF
+END_CASE]]></ST>
+      </Implementation>
+    </Action>
+    <Method Name="M_FeatureEnable" Id="{96d537aa-6903-4078-8107-fb34b8ff0c7a}">
+      <Declaration><![CDATA[METHOD M_FeatureEnable : BOOL
+VAR_INPUT
+	_eOrientationPallet : E_PalletOrientation;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[IF  Outputs.ZeroDegProfileFrontError OR Outputs.ZeroDegProfileLeftError OR Outputs.ZeroDegProfileRearError OR Outputs.ZeroDegProfileRightError 
+OR Outputs.NintyDegProfileLeftError OR Outputs.NintyDegProfileFrontError OR Outputs.NintyDegProfileRearError OR Outputs.NintyDegProfileRightError  
+OR Outputs.OneEightyDegProfileFrontError OR Outputs.OneEightyDegProfileLeftError OR Outputs.OneEightyDegProfileRearError OR Outputs.OneEightyDegProfileRightError 
+OR Outputs.TwoSeventyDegProfileLeftError OR Outputs.TwoSeventyDegProfileRightError OR Outputs.TwoSeventyDegProfileFrontError OR Outputs.TwoSeventyDegProfileRearError OR Outputs.HeightError OR Outputs.WeightError OR Outputs.LabelReadError OR Outputs.RunnerError OR Outputs.TunnelError THEN
+	Outputs.ProfileBtnShow:=TRUE;
+	Outputs.WrapperBtnShow:=TRUE;
+	Outputs.RejectBtnShow:=TRUE;
+	Outputs.DepallatizerBtnShow:=TRUE;
+ELSE
+	Outputs.ProfileBtnShow:=FALSE;
+	Outputs.WrapperBtnShow:=FALSE;
+	Outputs.RejectBtnShow:=FALSE;
+	Outputs.DepallatizerBtnShow:=FALSE;
+END_IF
+
+IF _eOrientationPallet = E_PalletOrientation.OrientationNinty THEN
+	Outputs.PalletOrientationNintyDeg:= TRUE;
+ELSIF _eOrientationPallet = E_PalletOrientation.OrientationOneEighty THEN
+	Outputs.PalletOrientationOneEightyDeg:= TRUE;
+ELSIF _eOrientationPallet = E_PalletOrientation.OrientationTwoSeventy THEN
+	Outputs.PalletOrientationTwoSeventyDeg:= TRUE;
+ELSIF _eOrientationPallet = E_PalletOrientation.OrientationZero THEN
+	Outputs.PalletOrientationZeroDeg:= TRUE;
+ELSE
+	Outputs.PalletOrientationNintyDeg:= FALSE;
+	Outputs.PalletOrientationOneEightyDeg:= FALSE;
+	Outputs.PalletOrientationTwoSeventyDeg:= FALSE;
+	Outputs.PalletOrientationZeroDeg:= FALSE;
+END_IF
+
+IF Inputs.RejectBtnEnable THEN
+	IF Inputs.TransportData.eTransportState = E_TransportState.OCCUPIED THEN
+	// Load TU data index
+		IF IndexNo > 0 THEN
+						// Update new TU Data set
+						TU_DataTable[IndexNo].DataSet.DataPresent := TRUE;
+						TU_DataTable[IndexNo].DataSet.NumberOfDest	:= 0; // We set this to zero otherwise BCF will delete the destination if no TTC is set
+						TU_DataTable[IndexNo].Destination[1].eFunctionNumber := Config.DestinationReject; // Need to Give Function number manually to destination 
+						TU_DataTable[IndexNo].Destination[1].ZoneNumber := Config.DestinationRejectZone;		
+		ELSE
+						// Error, no free index
+						F_SetError(
+							ErrorType 	:= E_ErrorType.ERROR,
+							ErrorParam 	:= ' No TU Data found',
+							ErrorMsg 	:= E_ErrorConv.NO_FREE_TU_DATA_SET,
+							ErrorData 	:= FunctionData.ErrorData.ErrorDataSet[1]);
+						
+						// Go to "ERROR"
+						RejectPanelState.eLastState := RejectPanelState.eState;
+						RejectPanelState.eState := E_RejectPanelState.ERROR;
+          END_IF
+    END_IF
+END_IF
+
+IF Inputs.ProfileBtnEnable THEN
+	IF Inputs.TransportData.eTransportState = E_TransportState.OCCUPIED THEN
+	// create the TU Data Index
+		IF IndexNo > 0 THEN
+						// Update new TU Data set
+						TU_DataTable[IndexNo].DataSet.DataPresent := TRUE;
+						TU_DataTable[IndexNo].DataSet.NumberOfDest	:= 0; // We set this to zero otherwise BCF will delete the destination if no TTC is set
+						TU_DataTable[IndexNo].Destination[1].eFunctionNumber := Config.DestinationProfileCheck; // Need to Give Function number manually to destination 
+						TU_DataTable[IndexNo].Destination[1].ZoneNumber := Config.DestinationProfileZone;		
+		ELSE
+						// Error, no free index
+						F_SetError(
+							ErrorType 	:= E_ErrorType.ERROR,
+							ErrorParam 	:= ' No TU Data found',
+							ErrorMsg 	:= E_ErrorConv.NO_FREE_TU_DATA_SET,
+							ErrorData 	:= FunctionData.ErrorData.ErrorDataSet[1]);
+						
+						// Go to "ERROR"
+						RejectPanelState.eLastState := RejectPanelState.eState;
+						RejectPanelState.eState := E_RejectPanelState.ERROR;
+		END_IF
+	END_IF
+END_IF
+
+IF Inputs.WrapperBtnEnable THEN
+	IF Inputs.TransportData.eTransportState = E_TransportState.OCCUPIED THEN
+	// create the TU Data Index
+		IF IndexNo > 0 THEN
+							// Update new TU Data set
+						TU_DataTable[IndexNo].DataSet.DataPresent := TRUE;
+						TU_DataTable[IndexNo].DataSet.NumberOfDest	:= 0; // We set this to zero otherwise BCF will delete the destination if no TTC is set
+						TU_DataTable[IndexNo].Destination[1].eFunctionNumber := Config.DestinationWrapper; // Need to Give Function number manually to destination 
+						TU_DataTable[IndexNo].Destination[1].ZoneNumber := Config.DestinationWrapperZone;		
+		ELSE
+						// Error, no free index
+						F_SetError(
+							ErrorType 	:= E_ErrorType.ERROR,
+							ErrorParam 	:= ' No TU Data found',
+							ErrorMsg 	:= E_ErrorConv.NO_FREE_TU_DATA_SET,
+							ErrorData 	:= FunctionData.ErrorData.ErrorDataSet[1]);
+						
+						// Go to "ERROR"
+						RejectPanelState.eLastState := RejectPanelState.eState;
+						RejectPanelState.eState := E_RejectPanelState.ERROR;
+		END_IF
+	END_IF
+END_IF
+
+IF Inputs.DepallatizerBtnEnable THEN
+	IF Inputs.TransportData.eTransportState = E_TransportState.OCCUPIED THEN
+// create the TU Data Index
+		IF IndexNo > 0 THEN
+						// Update new TU Data set
+						TU_DataTable[IndexNo].DataSet.DataPresent := TRUE;
+						TU_DataTable[IndexNo].DataSet.NumberOfDest	:= 0; // We set this to zero otherwise BCF will delete the destination if no TTC is set
+						TU_DataTable[IndexNo].Destination[1].eFunctionNumber := Config.DestinationDepallatizer; // Need to Give Function number manually to destination 
+						TU_DataTable[IndexNo].Destination[1].ZoneNumber := Config.DestinationDepallatizerZone;		
+		ELSE
+						// Error, no free index
+						F_SetError(
+							ErrorType 	:= E_ErrorType.ERROR,
+							ErrorParam 	:= ' No TU Data found',
+							ErrorMsg 	:= E_ErrorConv.NO_FREE_TU_DATA_SET,
+							ErrorData 	:= FunctionData.ErrorData.ErrorDataSet[1]);
+						
+						// Go to "ERROR"
+						RejectPanelState.eLastState := RejectPanelState.eState;
+						RejectPanelState.eState := E_RejectPanelState.ERROR;
+		END_IF
+	END_IF
+END_IF
+
+]]></ST>
+      </Implementation>
+    </Method>
+    <LineIds Name="FB_RejectPanelAddon">
+      <LineId Id="3" Count="35" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_RejectPanelAddon.A_Init">
+      <LineId Id="2" Count="40" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_RejectPanelAddon.A_InputMapping">
+      <LineId Id="3" Count="0" />
+      <LineId Id="20" Count="6" />
+      <LineId Id="5" Count="14" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_RejectPanelAddon.A_OutputMapping">
+      <LineId Id="54" Count="0" />
+      <LineId Id="31" Count="1" />
+      <LineId Id="4" Count="0" />
+      <LineId Id="33" Count="6" />
+      <LineId Id="5" Count="1" />
+      <LineId Id="41" Count="0" />
+      <LineId Id="98" Count="2" />
+      <LineId Id="104" Count="0" />
+      <LineId Id="101" Count="2" />
+      <LineId Id="97" Count="0" />
+      <LineId Id="44" Count="0" />
+      <LineId Id="96" Count="0" />
+      <LineId Id="46" Count="7" />
+      <LineId Id="106" Count="0" />
+      <LineId Id="105" Count="0" />
+      <LineId Id="109" Count="0" />
+      <LineId Id="111" Count="1" />
+      <LineId Id="110" Count="0" />
+      <LineId Id="40" Count="0" />
+      <LineId Id="7" Count="6" />
+      <LineId Id="107" Count="0" />
+      <LineId Id="14" Count="8" />
+      <LineId Id="30" Count="0" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_RejectPanelAddon.A_RejectPanelStates">
+      <LineId Id="162" Count="144" />
+      <LineId Id="130" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_RejectPanelAddon.M_FeatureEnable">
+      <LineId Id="128" Count="3" />
+      <LineId Id="5" Count="11" />
+      <LineId Id="136" Count="0" />
+      <LineId Id="138" Count="2" />
+      <LineId Id="142" Count="5" />
+      <LineId Id="149" Count="0" />
+      <LineId Id="148" Count="0" />
+      <LineId Id="141" Count="0" />
+      <LineId Id="17" Count="20" />
+      <LineId Id="116" Count="0" />
+      <LineId Id="39" Count="1" />
+      <LineId Id="117" Count="0" />
+      <LineId Id="41" Count="22" />
+      <LineId Id="118" Count="0" />
+      <LineId Id="64" Count="22" />
+      <LineId Id="119" Count="0" />
+      <LineId Id="87" Count="2" />
+      <LineId Id="91" Count="20" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

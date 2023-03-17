@@ -1,0 +1,617 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <POU Name="FB_LoopControl" Id="{c943c7e1-836f-4ecb-b579-771ab6450bfb}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK PUBLIC FB_LoopControl
+VAR_INPUT
+	MaxTUsInLoop 			: INT:=30;
+	AutoTracking			: BOOL:=TRUE;		//Default TRUE. Auto disables adjasent sides that do not set nextFunction to the DTU.
+	InputTransferUnits		: ARRAY [0..GVL_STRATEGIES.MAX_TRANSFERUNITS] OF E_FunctionNumber;	//Array with all transfer units that has an input funciton connected
+END_VAR
+VAR_IN_OUT
+	FunctionsInLoop			: ARRAY [*] OF E_FunctionNumber;	//Array with all functions in the loop (variable array length)
+	InputFunctionsToLoop	: ARRAY [*] OF E_FunctionNumber;	//Array with all functions in the loop excluding InputTransferUnits (variable array length)	
+END_VAR
+VAR_OUTPUT
+	TuCountInLoop 				: INT;
+	LoopIsFull					: BOOL;
+END_VAR
+VAR CONSTANT		
+	NUMBER_OF_ADJACENT_SIDES	: INT := 4;
+END_VAR
+VAR	
+	_Init					: BOOL := FALSE;
+	_InitRunning			: BOOL := FALSE;	
+	_fbDTUMergingCtrl		: ARRAY [0..GVL_STRATEGIES.MAX_TRANSFERUNITS] OF FB_DTU_MergingControl;
+	_Disables				: ARRAY [0..GVL_STRATEGIES.MAX_TRANSFERUNITS,1..NUMBER_OF_ADJACENT_SIDES] OF BOOL;
+	_fbInFeedFunctionFifo	: FB_MergingFiFo;
+	_StabilityCnt			: INT;
+	_OverrideFunction		: E_FunctionNumber:=E_FunctionNumber.F_BEGIN_FUNCTION;
+	//_ExternalFunction		: E_FunctionNumber:=E_FunctionNumber.F_BEGIN_FUNCTION; //possible additional external function to consider for an DTU
+END_VAR
+
+VAR_TEMP
+	i:DINT;
+	TUsInLoop				: INT;
+	DTU_Disables			: ARRAY [0..GVL_STRATEGIES.MAX_TRANSFERUNITS,1..4] OF BOOL;
+	DTU_NotReady			: BOOL;
+	DTU_FunctionNumb		: E_FunctionNumber;
+END_VAR]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[_M_Init();
+//IF(NOT _Init) THEN RETURN; END_IF
+
+//check if loop is full
+TUsInLoop 		:=_M_CountTUsInLoop();
+TuCountInLoop 	:= TUsInLoop;
+LoopIsFull 		:= TUsInLoop >= MaxTUsInLoop;
+
+//set prioirty (FIFO) for all input functions
+FOR i:=LOWER_BOUND(InputFunctionsToLoop,1) TO UPPER_BOUND(InputFunctionsToLoop,1) BY 1 DO
+	IF(InputFunctionsToLoop=0) THEN 
+		EXIT; //pointer to array invalid, exit for loop
+	ELSIF( InputFunctionsToLoop[i]<= E_FunctionNumber.F_BEGIN_FUNCTION OR InputFunctionsToLoop[i]>=E_FunctionNumber.F_END_FUNCTION) THEN
+		EXIT; //no more functions to run
+	ELSE
+		DTU_NotReady := _M_CheckInfeedFunction(InputFunctionsToLoop[i],DTU_FuncNumb=>DTU_FunctionNumb);
+		IF(AutoTracking) THEN
+			_fbInFeedFunctionFifo.CompareNextFunc := DTU_FunctionNumb;
+		ELSE
+			_fbInFeedFunctionFifo.CompareNextFunc := E_FunctionNumber.F_BEGIN_FUNCTION; //Auto tracking is off
+		END_IF
+		_fbInFeedFunctionFifo(FunctionNumber:=InputFunctionsToLoop[i],Disable := DTU_NotReady);		
+	END_IF
+END_FOR
+
+//If loop is full disable all input functions for DTU's
+//If Loop is almost full, disable all but the most prioritized input function for DTU's
+//Stability counter of 20 cycles added, just to be sure that if a transport from infeed function has started, it shall continue before choosing a new override function.
+//TODO: Add dead lock protection, ie if the TU on OverrideFunction is not moved, then choose another input function. 
+IF( TUsInLoop>= (MaxTUsInLoop-1)) THEN
+	IF( TUsInLoop = (MaxTUsInLoop-1) AND _StabilityCnt >20) THEN	
+		_OverrideFunction:=_fbInFeedFunctionFifo.ePrevFunctionNumber;
+		_StabilityCnt:=0;
+	ELSE
+		_OverrideFunction:= F_BEGIN_FUNCTION;
+	END_IF	
+	_M_DisableInputFunctions(DTU_Disables:=DTU_Disables, OverrideInputFunction:=_OverrideFunction);
+END_IF
+IF(_StabilityCnt<=20) THEN
+	_StabilityCnt:=_StabilityCnt+1;
+END_IF
+
+//Run each transfer unit Merging fifo control
+FOR i:=0 TO GVL_STRATEGIES.MAX_TRANSFERUNITS BY 1 DO
+	_fbDTUMergingCtrl[i](FunctionNumber:= InputTransferUnits[i],
+						 DisableSide1:=_Disables[i,1] OR DTU_Disables[i,1],
+						 DisableSide2:=_Disables[i,2] OR DTU_Disables[i,2],
+						 DisableSide3:=_Disables[i,3] OR DTU_Disables[i,3],
+						 DisableSide4:=_Disables[i,4] OR DTU_Disables[i,4],
+						 AutoTracking:=AutoTracking	);
+END_FOR
+]]></ST>
+    </Implementation>
+    <Method Name="_M_CheckInfeedFunction" Id="{81e8db79-1734-4990-b50a-91771f6a39d7}">
+      <Declaration><![CDATA[//Check DTU is ready,
+//Return TRUE = Not Ready
+//Return FALSE = Ready
+METHOD PRIVATE _M_CheckInfeedFunction : BOOL
+VAR_INPUT	
+	InputFunctionToLoop  : E_FunctionNumber;
+END_VAR
+VAR_OUTPUT
+	DTU_FuncNumb	: E_FunctionNumber;
+END_VAR
+VAR
+	i				: INT;		
+	Disable			: BOOL;	
+	DTU_Ix			: INT;
+	DTU_Side		: INT;
+	ElementNumber	: E_ElementNumber;
+	ExternalFunc	:BOOL; //The Function is a external Function assigned with M_SetExternalFunction
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+//CheckInfeedFunction
+
+//Check if infeed function should be disabled
+//Disable input function, ie set function to not available in FIFO
+//Disabling input function if:
+// -User has disabled the side on where the input function is located
+// -DTU is occupied
+// -DTU is in error.
+// -DTU is disabled (by SIS telegram)
+// 
+DTU_FuncNumb:=0;
+
+// Find the DTU and the side on the DTU where the input function is oriented.
+FOR i:=0 TO GVL_STRATEGIES.MAX_TRANSFERUNITS BY 1 DO	
+	IF(_fbDTUMergingCtrl[i].M_FindAdjacentSide(InputFunctionToLoop,SideIndex=>DTU_Side, ExternalFunction=>ExternalFunc)) THEN
+		DTU_FuncNumb := _fbDTUMergingCtrl[i].FunctionNumber;
+		DTU_Ix := i;				
+		EXIT;
+	END_IF	
+END_FOR
+
+
+//if DTU was found
+IF(DTU_FuncNumb>E_FunctionNumber.F_BEGIN_FUNCTION AND DTU_Ix >= 0 AND DTU_Ix <= GVL_STRATEGIES.MAX_TRANSFERUNITS) THEN
+	
+	//Check if user has disabled the side on DTU where the infeed function is attached to
+	Disable:=_Disables[DTU_Ix,DTU_Side];
+	
+	//Check if DTU already is occupied
+	Disable:= Disable OR F_PB_GetTransportControlDataRef(DTU_FuncNumb,1).DataPresent;// OR F_PB_GetTransportControlDataRef(DTU,1).Occupied;
+	
+	//Check DTU has no active errors in element, functon or zones
+	ElementNumber := FunctionRegistry[DTU_FuncNumb].rSettingsFunction.eElementLink;
+	IF(__ISVALIDREF(ElementRegistry[ElementNumber].rElementData))THEN
+		IF( ElementRegistry[ElementNumber].rElementData.ErrorData.FunctionErrorPending OR 
+			ElementRegistry[ElementNumber].rElementData.ErrorData.ErrorState = E_ErrorState.ERROR) THEN
+			Disable :=TRUE; //Error is present
+		END_IF	
+	END_IF	
+
+	//Check if DTU is enabled
+	Disable := Disable OR NOT F_CheckAllEnabled(DTU_FuncNumb);
+END_IF
+
+//Note, the MergingFifo control will check the infeed function if it self is operating, ie no error, enabled, ready to handover TU 
+
+IF(ExternalFunc) THEN
+	DTU_FuncNumb := E_FunctionNumber.F_BEGIN_FUNCTION;
+END_IF
+_M_CheckInfeedFunction:=Disable;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_CountTUsInLoop" Id="{b3f8b7ba-0216-4a8e-b373-3856ba46eba5}">
+      <Declaration><![CDATA[METHOD PRIVATE _M_CountTUsInLoop : int
+VAR_INPUT
+END_VAR
+VAR
+	i:DINT;
+	j:INT;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+//count TU's for functions in "FunctionsInLoop" array
+IF(FunctionsInLoop<>0) THEN	 //check pointer to array is valid 
+	FOR i:=LOWER_BOUND(FunctionsInLoop,1) TO UPPER_BOUND(FunctionsInLoop,1) BY 1 DO	
+		FOR j:=1 TO NUMBER_OF_ZONES_PER_FUNCTION BY 1 DO  //iterate through all zones		
+			_M_CountTUsInLoop := _M_CountTUsInLoop + DINT_TO_INT(F_PB_GetTransportControlDataRef(FunctionsInLoop[i],j).NumberOfPresentTUs);		
+		END_FOR
+	END_FOR
+END_IF
+
+//count TU's for functions in "InputTransferUnits" array
+FOR i:=0 TO  GVL_STRATEGIES.MAX_TRANSFERUNITS BY 1 DO			
+	IF(InputTransferUnits[i] <> E_FunctionNumber.F_BEGIN_FUNCTION) THEN
+		_M_CountTUsInLoop := _M_CountTUsInLoop + DINT_TO_INT(F_PB_GetTransportControlDataRef(InputTransferUnits[i],1(*onee zone only for DTUs*)).NumberOfPresentTUs);		
+	END_IF
+END_FOR 
+
+//check that the inputTransferUnits are not in the FunctionsInLoop. ie mistake when entering functions in declaration of array variables 
+IF(FunctionsInLoop<>0) THEN	//check pointer to array is valid
+	FOR i:=LOWER_BOUND(FunctionsInLoop,1) TO UPPER_BOUND(FunctionsInLoop,1) BY 1 DO	
+		FOR j:=0 TO GVL_STRATEGIES.MAX_TRANSFERUNITS BY 1 DO  //iterate through DTU's
+			IF(FunctionsInLoop[i] =  InputTransferUnits[j]) THEN //yes, we have a bad configuration,(Input DTU also registered in functions in the loop) not a big deal, but we need to adjust the TU counter 		
+				_M_CountTUsInLoop := _M_CountTUsInLoop - DINT_TO_INT(F_PB_GetTransportControlDataRef(InputTransferUnits[j],1(*onee zone only for DTUs*)).NumberOfPresentTUs);
+			END_IF		
+		END_FOR
+	END_FOR
+END_IF
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_DisableInputFunctions" Id="{2582d905-1aab-49e7-99b9-328ca471d3dc}">
+      <Declaration><![CDATA[METHOD PRIVATE _M_DisableInputFunctions : BOOL
+VAR_INPUT	
+	OverrideInputFunction 	: E_FunctionNumber;
+END_VAR
+VAR_IN_OUT
+	DTU_Disables			:ARRAY [0..GVL_STRATEGIES.MAX_TRANSFERUNITS,1..4] OF BOOL;
+END_VAR
+VAR
+	i:INT;
+	j:INT;
+	k:DINT;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+// Find the transfer unit where the inputfunctions belong to and disable the adjasent side
+// If loop is almost full, it is possible to override the disable flag for an input function.
+
+FOR i:=0 TO GVL_STRATEGIES.MAX_TRANSFERUNITS BY 1 DO	
+	IF( InputTransferUnits[i]> 0 AND InputTransferUnits[i] < E_FunctionNumber.F_BEGIN_EXTERN_FUNCTION AND
+		__ISVALIDREF(FunctionRegistry[InputTransferUnits[i]].rSettingsFunction)) THEN 
+	
+		FOR j:=1 TO NUMBER_OF_ADJACENT_SIDES BY 1 DO
+			FOR k:=LOWER_BOUND(InputFunctionsToLoop,1) TO UPPER_BOUND(InputFunctionsToLoop,1) BY 1 DO
+				IF(InputFunctionsToLoop=0) THEN EXIT; END_IF //pointer to array invalid, exit for loop
+				IF(FunctionRegistry[InputTransferUnits[i]].rSettingsFunction.eAdjacentFunctionNumberSide[j] = InputFunctionsToLoop[k])THEN					
+					DTU_Disables[i,j] := OverrideInputFunction <> InputFunctionsToLoop[k];
+				END_IF
+			END_FOR 
+		END_FOR
+	END_IF
+	
+END_FOR]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_Init" Id="{a10a1594-3f07-4bbc-8fc7-5dedcee50c19}">
+      <Declaration><![CDATA[METHOD _M_Init : BOOL
+VAR_INPUT
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[IF(NOT MainConv.Init) THEN
+	_Init:=FALSE;	
+	_InitRunning := FALSE;
+END_IF
+
+IF(NOT _Init AND _InitRunning) THEN
+	_M_SanityCheck();	
+	_init:=TRUE;
+	_InitRunning := FALSE;
+	
+ELSIF(NOT _init) THEN
+	_InitRunning:=TRUE;	
+	//MainConv.fbDebugMsg.M_SendInfoMsg('Loop control init'); //Debug 	
+END_IF
+
+
+
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_SanityCheck" Id="{7dc0dc09-f066-4533-b36b-02edc9f60eb7}">
+      <Declaration><![CDATA[(*
+	Name: SanityCheck
+	Description: 
+		- Check that input functions are actually connected to a DTU
+		- Check that all sides of a DTU is included in either loop functions or inputs to the loop functions
+*)
+METHOD PRIVATE _M_SanityCheck : BOOL
+VAR
+	i,j,k : DINT;
+	InputDTUFound		: BOOL;				// An input DTU is found
+	InputFuncFound		: BOOL;				// An input function is found
+	LoopFuncFound		: BOOL;				// A loop function is found
+	InputCheckValid		: BOOL := TRUE;	// Check at input has valid preliminary conditions
+	InputDTUCheckValid	: BOOL := TRUE;	// Check at input DTU has valid preliminary conditions	
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+
+// Check that input functions are actually connected to a DTU
+FOR i:=LOWER_BOUND(InputFunctionsToLoop,1) TO UPPER_BOUND(InputFunctionsToLoop,1) BY 1 DO
+	IF(__ISVALIDREF(FunctionRegistry[InputFunctionsToLoop[i]].rSettingsFunction) AND __ISVALIDREF(FunctionRegistry[InputFunctionsToLoop[i]].rFunctionData)) THEN		
+		InputDTUFound	:= FALSE;
+		
+		FOR j:=0 TO GVL_STRATEGIES.MAX_TRANSFERUNITS BY 1 DO
+			InputDTUFound := _fbDTUMergingCtrl[j].M_FindAdjacentSide(InputFunctionsToLoop[i]);				
+			// Match found, end further check at input function
+			IF(InputDTUFound) THEN EXIT; END_IF
+		END_FOR
+				
+		// Match not found for an input function, raise error
+		IF(NOT InputDTUFound) THEN
+			InputCheckValid := FALSE;
+			F_SetError(
+				ErrorType 	:= E_ErrorType.ERROR,
+				ErrorParam 	:= 'Loop input not connected to Input DTU',
+				ErrorMsg 	:= E_ErrorConv.CONFIGURATION_ERROR,
+				ErrorData 	:= FunctionRegistry[InputFunctionsToLoop[i]].rFunctionData.ErrorData.ExternalError);
+		END_IF
+	END_IF
+END_FOR
+
+
+// Check that all sides of a DTU is included in either loop functions or inputs to the loop functions
+FOR i:=0 TO GVL_STRATEGIES.MAX_TRANSFERUNITS BY 1 DO
+	IF(__ISVALIDREF(FunctionRegistry[InputTransferUnits[i]].rSettingsFunction) AND __ISVALIDREF(FunctionRegistry[InputTransferUnits[i]].rFunctionData)) THEN
+		InputFuncFound := FALSE;
+		LoopFuncFound := FALSE;
+		// Loop all adjacent sides
+		FOR j:=1 TO 4 BY 1 DO
+			// Find loop function on adjacent sides
+			FOR k:=LOWER_BOUND(FunctionsInLoop,1) TO UPPER_BOUND(FunctionsInLoop,1) BY 1 DO
+				IF(FunctionsInLoop[k] <> F_BEGIN_FUNCTION) THEN
+					IF(FunctionRegistry[InputTransferUnits[i]].rSettingsFunction.eAdjacentFunctionNumberSide[j] = FunctionsInLoop[k]) THEN
+						LoopFuncFound := TRUE;
+						EXIT;
+					END_IF
+				END_IF
+			END_FOR
+			// Find Input function on adjacent sides
+			FOR k:=LOWER_BOUND(InputFunctionsToLoop,1) TO UPPER_BOUND(InputFunctionsToLoop,1) BY 1 DO
+				IF(InputFunctionsToLoop[k] <> F_BEGIN_FUNCTION) THEN
+					IF(FunctionRegistry[InputTransferUnits[i]].rSettingsFunction.eAdjacentFunctionNumberSide[j] = InputFunctionsToLoop[k]) THEN
+						InputFuncFound := TRUE;
+						EXIT;
+					END_IF
+				END_IF
+			END_FOR
+		END_FOR
+		// No matches found for a DTU, raise error
+		IF(NOT(LoopFuncFound OR InputFuncFound)) THEN
+			InputDTUCheckValid := FALSE;
+			F_SetError(
+				ErrorType 	:= E_ErrorType.ERROR,
+				ErrorParam 	:= 'Input DTU not connected to loop or loop input',
+				ErrorMsg 	:= E_ErrorConv.CONFIGURATION_ERROR,
+				ErrorData 	:= FunctionRegistry[InputTransferUnits[i]].rFunctionData.ErrorData.ExternalError);
+		// Only loop functions were not found, raise error
+		ELSIF(NOT LoopFuncFound) THEN
+			InputDTUCheckValid := FALSE;
+			F_SetError(
+				ErrorType 	:= E_ErrorType.ERROR,
+				ErrorParam 	:= 'Input DTU not connected to loop',
+				ErrorMsg 	:= E_ErrorConv.CONFIGURATION_ERROR,
+				ErrorData 	:= FunctionRegistry[InputTransferUnits[i]].rFunctionData.ErrorData.ExternalError);
+		// Only input functions were not found, raise error
+		ELSIF(NOT InputFuncFound) THEN
+			InputDTUCheckValid := FALSE;
+			F_SetError(
+				ErrorType 	:= E_ErrorType.ERROR,
+				ErrorParam 	:= 'Input DTU not connected to loop input',
+				ErrorMsg 	:= E_ErrorConv.CONFIGURATION_ERROR,
+				ErrorData 	:= FunctionRegistry[InputTransferUnits[i]].rFunctionData.ErrorData.ExternalError);
+		END_IF
+	END_IF
+END_FOR
+
+_M_SanityCheck := InputCheckValid AND InputDTUCheckValid;
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_DisableAdjasentSide" Id="{842528ac-2934-4eee-af9e-a9a9b01fe7dc}">
+      <Declaration><![CDATA[METHOD PUBLIC M_DisableAdjasentSide
+VAR_INPUT
+	FunctionNumber 	: E_FunctionNumber;	// The transfer function number to witch the side is to be disabled.
+	DisableSide1	: BOOL;				// Optionally Disable adjacent side 1. if adjacent side is not used, then it is NOT mandatory to disable.  
+	DisableSide2	: BOOL;				// Optionally Disable adjacent side 2. if adjacent side is not used, then it is NOT mandatory to disable.
+	DisableSide3	: BOOL;				// Optionally Disable adjacent side 3. if adjacent side is not used, then it is NOT mandatory to disable.
+	DisableSide4	: BOOL;				// Optionally Disable adjacent side 4. if adjacent side is not used, then it is NOT mandatory to disable.
+END_VAR
+VAR
+	i:INT;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+FOR i:=0 TO GVL_STRATEGIES.MAX_TRANSFERUNITS BY 1 DO	
+	
+	IF(InputTransferUnits[i] = FunctionNumber) THEN
+		_Disables[i,1] := DisableSide1;
+		_Disables[i,2] := DisableSide2;
+		_Disables[i,3] := DisableSide3;
+		_Disables[i,4] := DisableSide4;
+		EXIT;  //Quit
+	END_IF
+END_FOR]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_GetPreviusFunction" Id="{fde0aaba-6dbd-4bd9-8867-350bab6864cf}">
+      <Declaration><![CDATA[METHOD PUBLIC M_GetPreviusFunction : E_FunctionNumber
+VAR_INPUT
+	FunctionNumber 	: E_FunctionNumber;	// The transfer function number to witch the prefered previus function shuld be returned.
+END_VAR
+VAR
+	i:INT;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+M_GetPreviusFunction:=E_FunctionNumber.F_BEGIN_FUNCTION;
+
+FOR i:=0 TO GVL_STRATEGIES.MAX_TRANSFERUNITS BY 1 DO	
+		IF(_fbDTUMergingCtrl[i].FunctionNumber = FunctionNumber) THEN
+ 			M_GetPreviusFunction :=_fbDTUMergingCtrl[i].ePrevFunctionNumber;
+			EXIT;		
+		END_IF
+END_FOR]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_SetExternalFunction" Id="{69dd0363-8f47-439d-a2eb-73d224510eb8}">
+      <Declaration><![CDATA[//Add an additional function as a adjacent side
+//Normally used for DTU's with extended function on axis 3.
+//Only activeated during init
+METHOD PUBLIC M_SetExternalFunction : BOOL
+VAR_INPUT
+	DtuFunctionNumber 	: E_FunctionNumber;	// The transfer function number to witch to set the external function.
+	ExternalFunction	: E_FunctionNumber; // The External function to add as a "adjacent side"
+	ExternalFunctionSide:INT; // The Side of the external function
+END_VAR
+
+VAR
+	i:int;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+IF(_init) THEN RETURN; END_IF
+
+FOR i:=0 TO GVL_STRATEGIES.MAX_TRANSFERUNITS BY 1 DO		
+	IF(_fbDTUMergingCtrl[i].FunctionNumber = DtuFunctionNumber) THEN
+		_fbDTUMergingCtrl[i].M_SetExternalFunction(ExternalFunction,ExternalFunctionSide);		
+		EXIT;  //Quit
+	END_IF
+END_FOR]]></ST>
+      </Implementation>
+    </Method>
+    <LineIds Name="FB_LoopControl">
+      <LineId Id="454" Count="0" />
+      <LineId Id="447" Count="0" />
+      <LineId Id="337" Count="0" />
+      <LineId Id="202" Count="3" />
+      <LineId Id="207" Count="3" />
+      <LineId Id="468" Count="0" />
+      <LineId Id="211" Count="2" />
+      <LineId Id="470" Count="0" />
+      <LineId Id="507" Count="1" />
+      <LineId Id="510" Count="1" />
+      <LineId Id="509" Count="0" />
+      <LineId Id="402" Count="1" />
+      <LineId Id="214" Count="0" />
+      <LineId Id="217" Count="3" />
+      <LineId Id="473" Count="0" />
+      <LineId Id="221" Count="10" />
+      <LineId Id="270" Count="0" />
+      <LineId Id="370" Count="0" />
+      <LineId Id="235" Count="4" />
+      <LineId Id="32" Count="0" />
+      <LineId Id="43" Count="2" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_LoopControl._M_CheckInfeedFunction">
+      <LineId Id="147" Count="11" />
+      <LineId Id="229" Count="0" />
+      <LineId Id="159" Count="1" />
+      <LineId Id="213" Count="0" />
+      <LineId Id="166" Count="0" />
+      <LineId Id="200" Count="0" />
+      <LineId Id="168" Count="0" />
+      <LineId Id="171" Count="2" />
+      <LineId Id="201" Count="0" />
+      <LineId Id="174" Count="24" />
+      <LineId Id="234" Count="1" />
+      <LineId Id="58" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_LoopControl._M_CountTUsInLoop">
+      <LineId Id="58" Count="0" />
+      <LineId Id="24" Count="0" />
+      <LineId Id="11" Count="0" />
+      <LineId Id="6" Count="0" />
+      <LineId Id="16" Count="0" />
+      <LineId Id="14" Count="0" />
+      <LineId Id="9" Count="0" />
+      <LineId Id="5" Count="0" />
+      <LineId Id="18" Count="0" />
+      <LineId Id="57" Count="0" />
+      <LineId Id="25" Count="0" />
+      <LineId Id="20" Count="0" />
+      <LineId Id="26" Count="0" />
+      <LineId Id="22" Count="1" />
+      <LineId Id="17" Count="0" />
+      <LineId Id="54" Count="2" />
+      <LineId Id="37" Count="1" />
+      <LineId Id="42" Count="0" />
+      <LineId Id="39" Count="0" />
+      <LineId Id="44" Count="0" />
+      <LineId Id="40" Count="1" />
+      <LineId Id="36" Count="0" />
+      <LineId Id="30" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_LoopControl._M_DisableInputFunctions">
+      <LineId Id="40" Count="0" />
+      <LineId Id="7" Count="0" />
+      <LineId Id="43" Count="0" />
+      <LineId Id="13" Count="1" />
+      <LineId Id="27" Count="1" />
+      <LineId Id="22" Count="0" />
+      <LineId Id="31" Count="0" />
+      <LineId Id="37" Count="0" />
+      <LineId Id="55" Count="0" />
+      <LineId Id="30" Count="0" />
+      <LineId Id="35" Count="0" />
+      <LineId Id="34" Count="0" />
+      <LineId Id="39" Count="0" />
+      <LineId Id="32" Count="0" />
+      <LineId Id="41" Count="0" />
+      <LineId Id="15" Count="0" />
+      <LineId Id="10" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_LoopControl._M_Init">
+      <LineId Id="6" Count="1" />
+      <LineId Id="24" Count="0" />
+      <LineId Id="9" Count="0" />
+      <LineId Id="30" Count="0" />
+      <LineId Id="29" Count="0" />
+      <LineId Id="34" Count="2" />
+      <LineId Id="31" Count="1" />
+      <LineId Id="25" Count="0" />
+      <LineId Id="19" Count="0" />
+      <LineId Id="15" Count="0" />
+      <LineId Id="26" Count="2" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_LoopControl._M_SanityCheck">
+      <LineId Id="240" Count="0" />
+      <LineId Id="235" Count="0" />
+      <LineId Id="129" Count="0" />
+      <LineId Id="14" Count="0" />
+      <LineId Id="91" Count="0" />
+      <LineId Id="48" Count="0" />
+      <LineId Id="241" Count="0" />
+      <LineId Id="254" Count="3" />
+      <LineId Id="276" Count="0" />
+      <LineId Id="260" Count="0" />
+      <LineId Id="49" Count="0" />
+      <LineId Id="44" Count="0" />
+      <LineId Id="236" Count="0" />
+      <LineId Id="66" Count="4" />
+      <LineId Id="46" Count="0" />
+      <LineId Id="112" Count="0" />
+      <LineId Id="24" Count="0" />
+      <LineId Id="278" Count="0" />
+      <LineId Id="277" Count="0" />
+      <LineId Id="130" Count="0" />
+      <LineId Id="132" Count="0" />
+      <LineId Id="164" Count="0" />
+      <LineId Id="200" Count="0" />
+      <LineId Id="218" Count="0" />
+      <LineId Id="136" Count="1" />
+      <LineId Id="155" Count="8" />
+      <LineId Id="140" Count="1" />
+      <LineId Id="148" Count="0" />
+      <LineId Id="151" Count="3" />
+      <LineId Id="150" Count="0" />
+      <LineId Id="143" Count="0" />
+      <LineId Id="139" Count="0" />
+      <LineId Id="171" Count="1" />
+      <LineId Id="237" Count="0" />
+      <LineId Id="174" Count="4" />
+      <LineId Id="202" Count="0" />
+      <LineId Id="196" Count="0" />
+      <LineId Id="238" Count="0" />
+      <LineId Id="204" Count="4" />
+      <LineId Id="210" Count="1" />
+      <LineId Id="239" Count="0" />
+      <LineId Id="213" Count="4" />
+      <LineId Id="182" Count="0" />
+      <LineId Id="165" Count="0" />
+      <LineId Id="134" Count="0" />
+      <LineId Id="194" Count="0" />
+      <LineId Id="184" Count="0" />
+      <LineId Id="95" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_LoopControl.M_DisableAdjasentSide">
+      <LineId Id="11" Count="0" />
+      <LineId Id="17" Count="0" />
+      <LineId Id="20" Count="0" />
+      <LineId Id="30" Count="1" />
+      <LineId Id="33" Count="2" />
+      <LineId Id="32" Count="0" />
+      <LineId Id="36" Count="0" />
+      <LineId Id="13" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_LoopControl.M_GetPreviusFunction">
+      <LineId Id="24" Count="0" />
+      <LineId Id="7" Count="0" />
+      <LineId Id="25" Count="0" />
+      <LineId Id="8" Count="0" />
+      <LineId Id="21" Count="0" />
+      <LineId Id="23" Count="0" />
+      <LineId Id="22" Count="0" />
+      <LineId Id="18" Count="0" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_LoopControl.M_SetExternalFunction">
+      <LineId Id="10" Count="0" />
+      <LineId Id="5" Count="0" />
+      <LineId Id="12" Count="1" />
+      <LineId Id="15" Count="0" />
+      <LineId Id="23" Count="0" />
+      <LineId Id="20" Count="1" />
+      <LineId Id="11" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

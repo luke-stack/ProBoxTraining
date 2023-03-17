@@ -1,0 +1,79 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.4">
+  <POU Name="F_StringFromTimestruct" Id="{7fea51cf-29bd-4e0a-bfa6-c1fab08969d0}" SpecialFunc="None">
+    <Declaration><![CDATA[// converts structure TIMESTR to string 'hh.mm.ss.mmm'
+FUNCTION PUBLIC F_StringFromTimestruct : POINTER TO BYTE
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		  :	$Revision: 461868 $
+ *	Revision date	:	$Date: 1979-01-09 14:35:13 +0200 (Di., 09 Jan 1979) $
+ *	Last changed by	:	$Author: b7lipim $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/branches/R1.x/01_Software/BCF/BCF/JumpStart/20_Product/10_BCF/10_Base/11_Com/12_DebugMsg/00_GVLs/DebugTextBlocks.TcGVL $
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ *  VERSION DATE         INITIALS     DESCRIPTION
+ *  0.0     DD.MM.YYYY   (name)       (explain customized modifications)
+ *
+ **************************************************************************************)
+
+(********************************************************************************************************************************)
+VAR_INPUT
+  DestStart             : POINTER TO BYTE                  := 0;     // = ADR(MyString)                    -> start position to concat
+  DestEnd               : POINTER TO BYTE                  := 0;     // = ADR(MyString) + SIZEOF(MyString) -> buffer/string end
+  (*----------------------------------------------------------------------------------------------------------------------------*)
+  TimeStruct            : TIMESTRUCT;
+  ShowMs                : BOOL                             := FALSE; // HI = shows milliseconds
+END_VAR
+
+(********************************************************************************************************************************)
+VAR
+  DestWork             : POINTER TO BYTE                  := 0;
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[
+(********************************************************************************************************************************)
+(** check inputs ****************************************************************************************************************)
+IF   (DestStart = 0)         THEN  F_StringFromTimestruct:= 0;          RETURN;
+ELSIF(DestEnd   = 0)         THEN  F_StringFromTimestruct:= DestStart;  RETURN;
+ELSIF(DestStart >= DestEnd)  THEN  F_StringFromTimestruct:= DestStart;  RETURN;
+END_IF
+
+DestWork:= DestStart;
+
+
+
+
+(********************************************************************************************************************************)
+(** convert *********************************************************************************************************************)
+DestWork:= F_StringFromWord( DestStart:= DestWork,  DestEnd:= DestEnd,  Value:= TimeStruct.wHour,    Length:= 2  );
+DestWork:= F_StringCopy    ( DestStart:= DestWork,  DestEnd:= DestEnd,  Source:= ADR(':')  );
+DestWork:= F_StringFromWord( DestStart:= DestWork,  DestEnd:= DestEnd,  Value:= TimeStruct.wMinute,  Length:= 2  );
+DestWork:= F_StringCopy    ( DestStart:= DestWork,  DestEnd:= DestEnd,  Source:= ADR(':')  );
+DestWork:= F_StringFromWord( DestStart:= DestWork,  DestEnd:= DestEnd,  Value:= TimeStruct.wSecond,  Length:= 2  );
+
+IF(ShowMs = TRUE)
+THEN
+  DestWork:= F_StringCopy    ( DestStart:= DestWork,  DestEnd:= DestEnd,  Source:= ADR(':')  );
+  DestWork:= F_StringFromWord( DestStart:= DestWork,  DestEnd:= DestEnd,  Value:= TimeStruct.wMilliseconds,  Length:= 3  );
+END_IF
+
+
+
+
+(********************************************************************************************************************************)
+(** done ************************************************************************************************************************)
+F_StringFromTimestruct:= DestWork;]]></ST>
+    </Implementation>
+    <LineIds Name="F_StringFromTimestruct">
+      <LineId Id="3" Count="31" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

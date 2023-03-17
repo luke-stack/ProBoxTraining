@@ -1,0 +1,61 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <POU Name="F_PB_GetAdjacentFunctionZoneIndex" Id="{b830e20c-558c-4fe0-81c4-5fdb583f6b52}" SpecialFunc="None">
+    <Declaration><![CDATA[//Get the Zone index of a adjecent function.
+//Return: TRUE if conditions are met and ZoneIndex is valid. FALSE: conditions not met. 
+FUNCTION F_PB_GetAdjacentFunctionZoneIndex : BOOL
+VAR_INPUT
+	CheckFunction			: E_FunctionNumber; // The adjacent function number
+	ExpectedFunction		: E_FunctionNumber;	// The function that the adjecent function shall be compared with		
+	RequireNextDefined		:BOOL;				// Require that the CheckFunction has defined next towards the CheckFunction function
+	RequirePreviousDefined	:BOOL;				// Require that the CheckFunction function has defined previous towards the CheckFunction function
+END_VAR
+VAR_IN_OUT
+	ZoneIndex	: INT;	
+END_VAR
+VAR
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[	F_PB_GetAdjacentFunctionZoneIndex:=FALSE;
+	ZoneIndex:=0;
+		
+	//Sanity check
+	IF(ExpectedFunction =0) THEN RETURN; END_IF
+	IF(CheckFunction =0) THEN RETURN; END_IF
+	IF(NOT __ISVALIDREF(FunctionRegistry[CheckFunction].rSettingsFunction)) THEN RETURN; END_IF
+	IF(NOT __ISVALIDREF(FunctionRegistry[CheckFunction].rFunctionInterface)) THEN RETURN; END_IF
+	IF(NOT __ISVALIDREF(FunctionRegistry[ExpectedFunction].rFunctionInterface)) THEN RETURN; END_IF
+	
+	//check that F_Handover has defined F_Takever as its next function
+	IF(RequireNextDefined AND FunctionRegistry[CheckFunction].rFunctionInterface.In.eNextFunctionNumber <> ExpectedFunction) THEN
+		RETURN; //the handover function has not set next towards the takeover function.
+	END_IF
+	//Check that F_Takeover has define F_Handover as its previous function
+	IF(RequirePreviousDefined AND FunctionRegistry[CheckFunction].rFunctionInterface.In.ePrevFunctionNumber <> ExpectedFunction) THEN
+		RETURN; //the handover function has not set next towards the takeover function.
+	END_IF			
+
+	IF( FunctionRegistry[CheckFunction].rSettingsFunction.eAdjacentFunctionNumberSide[1] = ExpectedFunction OR
+		FunctionRegistry[CheckFunction].rSettingsFunction.eAdjacentFunctionNumberSide[3] = ExpectedFunction) THEN
+		ZoneIndex := 1;
+		F_PB_GetAdjacentFunctionZoneIndex:=TRUE;
+		
+	ELSIF(FunctionRegistry[CheckFunction].rSettingsFunction.eAdjacentFunctionNumberSide[2] = ExpectedFunction OR
+		  FunctionRegistry[CheckFunction].rSettingsFunction.eAdjacentFunctionNumberSide[4] = ExpectedFunction) THEN
+		
+		IF(FunctionRegistry[CheckFunction].rSettingsFunction.NumberOfZones<= Conveyor.NUMBER_OF_ZONES_PER_FUNCTION) THEN
+			ZoneIndex := FunctionRegistry[CheckFunction].rSettingsFunction.NumberOfZones;
+			F_PB_GetAdjacentFunctionZoneIndex:=TRUE;
+		END_IF
+	END_IF
+		
+	
+]]></ST>
+    </Implementation>
+    <LineIds Name="F_PB_GetAdjacentFunctionZoneIndex">
+      <LineId Id="332" Count="33" />
+      <LineId Id="7" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

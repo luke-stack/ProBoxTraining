@@ -1,0 +1,76 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.4">
+  <POU Name="FB_Encoder" Id="{29cbe78c-9251-4a49-9f7c-3865dbf24333}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK FB_Encoder
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 475083 $
+ *	Revision date	:	$Date: 2021-04-10 12:07:10 +0200 (lör, 10 apr 2021) $
+ *	Last changed by	:	$Author: d7mangc $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/tags/R1.12.0/01_Software/BCF/BCF/JumpStart/30_Toolbox/99_Misc/FB_Encoder.TcPOU $
+ *
+ *	Purpose			:	Simple encoder
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+VAR_INPUT
+	Speed			: REAL		:= 0.0;		// Speed [mm/s]
+	Run				: BOOL		:= FALSE;	// Run command
+	Resolution		: INT		:= 1;		// Encoder Resolution [Inc/mm]
+END_VAR
+
+VAR_OUTPUT
+	EncoderValue	: WORD		:= 0;		// Encoder value [Inc]
+END_VAR
+
+VAR
+	TimeTick		: TIME		:= T#0S;		// Timestamp last calculation
+	Position		: LREAL		:= 0;			// Current encoder position
+	CalcSpeed		: LREAL		:= 0;			// Current used speed to calculate
+	LastSpeed		: LREAL		:= 0;			// Speed from last cycle
+	Temp			: LREAL		:= 0;			// Aux value to calculate
+	Inc				: LREAL		:= 0;			// Change in increments in this cycle
+	CycleTime		: LREAL		:= 0;			// Current cycle time in seconds
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[// Get current cycle time
+CycleTime := TIME_TO_LREAL( F_GetTimeMsDiff(TimeTick) ) / 1_000; // ms -> s
+TimeTick  := F_GetTimeMsTick();
+
+// Simulation at standstill -> no counting
+IF NOT Run THEN
+	CalcSpeed:= 0;
+ELSE
+	CalcSpeed:= ABS(Speed);
+END_IF
+
+// Calculate increment based on speed and resolution
+Temp := (CalcSpeed - LastSpeed); 
+Temp := (Temp / 2) + CalcSpeed;
+
+LastSpeed := CalcSpeed;
+
+// Update encoder value
+Inc      := (Temp * Resolution * CycleTime);
+Position := Position + Inc;
+
+// Update output value as word
+EncoderValue:= LREAL_TO_WORD(Position); // Cut off at 2^16
+]]></ST>
+    </Implementation>
+    <LineIds Name="FB_Encoder">
+      <LineId Id="491" Count="22" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

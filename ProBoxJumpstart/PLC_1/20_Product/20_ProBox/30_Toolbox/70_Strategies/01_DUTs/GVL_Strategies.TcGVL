@@ -1,0 +1,10 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.12">
+  <GVL Name="GVL_Strategies" Id="{05c3fd9d-a3ef-47a8-b193-45d767c44bdb}">
+    <Declaration><![CDATA[{attribute 'qualified_only'}
+VAR_GLOBAL
+	CONSTANT	 
+	 MAX_TRANSFERUNITS		: INT := 30;	
+END_VAR]]></Declaration>
+  </GVL>
+</TcPlcObject>

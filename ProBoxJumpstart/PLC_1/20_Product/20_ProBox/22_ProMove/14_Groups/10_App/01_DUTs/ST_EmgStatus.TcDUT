@@ -1,0 +1,14 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <DUT Name="ST_EmgStatus" Id="{abd619a7-4a38-46e7-b022-d90fa3888909}">
+    <Declaration><![CDATA[TYPE ST_EmgStatus :
+STRUCT
+	eInternal		: BIT; // Own group emg circuit is OK
+	eInternError	: BIT; // Internal safety group has error 
+	eExternal		: BIT; // External group or safety zone circuit is OK
+	//eExternError	: BIT; // external safety group has error 
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

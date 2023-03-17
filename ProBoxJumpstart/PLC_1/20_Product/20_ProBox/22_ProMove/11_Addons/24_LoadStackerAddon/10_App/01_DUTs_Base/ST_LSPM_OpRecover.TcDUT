@@ -1,0 +1,13 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.4">
+  <DUT Name="ST_LSPM_OpRecover" Id="{f0e1c20f-9a47-4d06-a64a-6ebaa9fe6618}">
+    <Declaration><![CDATA[//Operator recover structure
+TYPE ST_LSPM_OpRecover :
+STRUCT
+	OpControlRequired	: BOOL;	//Operator controlling the forks is required. Sub functions -> Set to true when recovering is needed
+	OpControlCorrected	: BOOL;	//Operator corrected height error. _M_StateControl -> Set to TRUE when error recovered
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

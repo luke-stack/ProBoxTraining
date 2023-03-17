@@ -1,0 +1,2027 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.4">
+  <POU Name="FB_SluggingAddOn" Id="{34864e89-4871-4966-9834-3909988d16cb}" SpecialFunc="None">
+    <Declaration><![CDATA[/// controls slugging and deslugging as addon over several zones
+FUNCTION_BLOCK PUBLIC FINAL FB_SluggingAddOn EXTENDS FB_FunctionConv IMPLEMENTS I_StateMachineTextCallback, I_SluggingAddOn
+(**************************************************************************************
+ *  Application     :   BoxControl Framework
+ *  Revision date   :   $Date: 2021-04-10 12:07:10 +0200 (lör, 10 apr 2021) $
+ *  Author          :   CDC
+ * ------------------------------------------------------------------------------------
+ *  © Swisslog AG
+ *  Swisslog is not liable for any usage of this source code that is not agreed 
+ *  on between Swisslog and the other party. The mandatory legal liability remains 
+ *  unaffected.
+ * ------------------------------------------------------------------------------------
+ *  Revision History: 
+ *
+ *  VERSION DATE         INITIALS     DESCRIPTION
+ *  0.0     DD.MM.YYYY   (name)       (explain customized modifications)
+ *
+ **************************************************************************************)
+VAR_STAT CONSTANT
+	MAX_ZONES	: UINT	:= 20;  // maximum number of zones
+END_VAR
+
+VAR_INPUT
+	Config		: ST_SluggingAddOn_Config;
+END_VAR
+
+VAR
+	eDirection		: E_SluggingAddOnDirections	:= E_SluggingAddOnDirections.None_Disabled;		// direction/enabling of control
+	//-- enabling & direction control --------------------------------------------------------------------------------------------
+	eCurrent		: E_SluggingAddOnDirections	:= E_SluggingAddOnDirections.None_Disabled;		// current working direction
+	FirstZone		: UINT;     // slugging   -> first index (seen in travel direction) in array _AddOnOrders
+	LastZone		: UINT;     // deslugging -> last  index (seen in travel direction) in array _AddOnOrders
+	TailPosition	: UINT;     // <> 0 -> position of the train tail in array _AddOnOrders
+	HeadPosition	: UINT;     // <> 0 -> position of the train head in array _AddOnOrders
+	//-- info & summary ----------------------------------------------------------------------------------------------------------
+	fbSummary		: FB_SluggingAddOn_Summary();	// train summary
+	AddOnOrders	    : ARRAY[0..MAX_ZONES] OF ST_SluggingAddOnOrder_Zone;	// add on orders for each zone ([0] for empty V_SluggingAddOn)
+	Creation		: BOOL;     // train is being build
+	Destroying		: BOOL;     // train is being destroyed
+	Moving			: BOOL;     // train is being moved
+    
+	fbStateMachine	: FB_StateMachine(mName:= 'slugging state', mStateTextCallback:= THIS^);
+	eState			: E_SluggingAddOnStates	:= E_SluggingAddOnStates.Initialization;
+    fbEmulateSensor : FB_EmulateSensor;  // Generates emulated sensor signals for the transport control(s) 
+    
+	TakeTimestamp	: TIME;     // time stamp for take timeout
+	TakeTimeout	    : TIME;     // time to take timeout
+	TailToMove		: UINT;     // position of the current tail to be moved
+	Releasable		: BOOL;     // train is releasable via calling M_ReleaseTrain()
+	ReleaseActive	: BOOL;     // manually release the train
+
+	Loop			: ULINT;
+END_VAR    
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[Loop:= Loop + 1;
+
+(**************************************************************************************************************
+   Input mapping
+***************************************************************************************************************)
+M_GetElementStates();
+M_GetAddOnOrder();
+
+(**************************************************************************************************************
+   Initialization
+***************************************************************************************************************)
+M_Init();
+
+(**************************************************************************************************************
+   State control
+***************************************************************************************************************)
+A_StateControl();
+M_GetTrainSummary();
+M_RunStates();
+M_EmulateSensors();
+
+(**************************************************************************************************************
+   Error handler
+***************************************************************************************************************)
+A_ErrorHandler();
+
+(**************************************************************************************************************
+   Process AddOns
+***************************************************************************************************************)
+M_ProcessAddOns();
+
+(**************************************************************************************************************
+   Interface handler out
+***************************************************************************************************************)
+M_ITC_ProcessOut();
+
+(**************************************************************************************************************
+   Output mapping
+***************************************************************************************************************)
+// -> done directly in state machine	]]></ST>
+    </Implementation>
+    <Folder Name="_private" Id="{cc223b93-f568-4b56-8276-b541ab957c93}" />
+    <Method Name="M_AllowModeAllDrives" Id="{0c801836-6e44-4714-b07e-f6d311982a54}" FolderPath="_private\">
+      <Declaration><![CDATA[/// Set if takeover and handover for the all zones are allowed to drive the conveyor, depends on the zone config
+METHOD PRIVATE M_AllowModeAllDrives
+(**************************************************************************************
+ *  Application     :   BoxControl Framework
+ *  Revision date   :   $Date: 2021-04-10 12:07:10 +0200 (lör, 10 apr 2021) $
+ *  Author          :   CDC
+ * ------------------------------------------------------------------------------------
+ *  © Swisslog AG
+ *  Swisslog is not liable for any usage of this source code that is not agreed 
+ *  on between Swisslog and the other party. The mandatory legal liability remains 
+ *  unaffected.
+ * ------------------------------------------------------------------------------------
+ *  Revision History: 
+ *
+ *  VERSION DATE         INITIALS     DESCRIPTION
+ *  0.0     DD.MM.YYYY   (name)       (explain customized modifications)
+ *
+ **************************************************************************************)
+VAR_INPUT
+    mSetTo : BOOL;
+END_VAR
+VAR
+    Start   : UINT;
+    End     : UINT;
+    i       : UINT;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[IF eState = E_SluggingAddOnStates.Disabled THEN
+    Start := 0;
+    End := fbSummary.P_NbrOfZones;
+ELSE
+    Start := FirstZone;
+    End := LastZone;
+END_IF
+
+FOR i:= Start TO End DO
+   AddOnOrders[i].AllowDriveHandover := mSetTo;
+   AddOnOrders[i].AllowDriveTakeover := mSetTo;
+END_FOR]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_AllowModeSingleDrive" Id="{23a3444f-d87b-4f41-9492-de0cfcd6fc51}" FolderPath="_private\">
+      <Declaration><![CDATA[/// Set if takeover and handover for the given zone are allowed to drive the conveyor
+METHOD PRIVATE M_AllowModeSingleDrive
+(**************************************************************************************
+ *  Application     :   BoxControl Framework
+ *  Revision date   :   $Date: 2021-04-10 12:07:10 +0200 (lör, 10 apr 2021) $
+ *  Author          :   CDC
+ * ------------------------------------------------------------------------------------
+ *  © Swisslog AG
+ *  Swisslog is not liable for any usage of this source code that is not agreed 
+ *  on between Swisslog and the other party. The mandatory legal liability remains 
+ *  unaffected.
+ * ------------------------------------------------------------------------------------
+ *  Revision History: 
+ *
+ *  VERSION DATE         INITIALS     DESCRIPTION
+ *  0.0     DD.MM.YYYY   (name)       (explain customized modifications)
+ *
+ **************************************************************************************)
+VAR_INPUT
+    mTakeover : BOOL;
+    mHandover : BOOL;
+    mCtrlZoneNum : UINT;
+END_VAR
+VAR
+    Start   : UINT;
+    End     : UINT;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[IF eState = E_SluggingAddOnStates.Disabled THEN
+    Start := 0;
+    End := fbSummary.P_NbrOfZones;
+ELSE
+    Start := FirstZone;
+    End := LastZone;
+END_IF
+
+IF Start <= mCtrlZoneNum AND mCtrlZoneNum <= END THEN
+    AddOnOrders[mCtrlZoneNum].AllowDriveTakeover := mTakeover;
+    AddOnOrders[mCtrlZoneNum].AllowDriveHandover := mHandover;
+END_IF
+
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_CloseAddonLinks" Id="{0d7e2865-db5a-4bb3-9460-aa050fb39d01}" FolderPath="_private\">
+      <Declaration><![CDATA[/// removes itself from the listed zones as addon
+METHOD PRIVATE M_CloseAddonLinks
+(**************************************************************************************
+ *  Application     :   BoxControl Framework
+ *  Revision date   :   $Date: 2021-04-10 12:07:10 +0200 (lör, 10 apr 2021) $
+ *  Author          :   CDC
+ * ------------------------------------------------------------------------------------
+ *  © Swisslog AG
+ *  Swisslog is not liable for any usage of this source code that is not agreed 
+ *  on between Swisslog and the other party. The mandatory legal liability remains 
+ *  unaffected.
+ * ------------------------------------------------------------------------------------
+ *  Revision History: 
+ *
+ *  VERSION DATE         INITIALS     DESCRIPTION
+ *  0.0     DD.MM.YYYY   (name)       (explain customized modifications)
+ *
+ **************************************************************************************)
+VAR
+	Idx			        : UINT;
+	eFunctionNumber		: E_FunctionNumber;
+	ZoneNumber        	: DINT;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[FOR Idx:= 1 TO MAX_ZONES DO
+
+	eFunctionNumber:= Config.ControlledZones[Idx].eFunctionNumber;
+	ZoneNumber     := Config.ControlledZones[Idx].ZoneNumber;
+
+	IF  eFunctionNumber = 0
+	 OR ZoneNumber      = 0 THEN
+		CONTINUE;
+	END_IF
+
+	// close AddOn link
+	IF __ISVALIDREF(FunctionRegistry[eFunctionNumber].rFunction) THEN
+		FunctionRegistry[eFunctionNumber].rFunction.M_CloseAddOnLink(eAddOnNumber := SettingsFunction.eFunctionNumber);
+	END_IF
+
+	// delete data
+	AddOnOrders[Idx].eFunctionNumber     := 0;
+	AddOnOrders[Idx].ZoneNumber          := 0;
+	AddOnOrders[Idx].ZoneName            := '';
+	AddOnOrders[Idx].Enable              := TRUE;
+	AddOnOrders[Idx].EnableTakeover      := TRUE;
+	AddOnOrders[Idx].EnableHandover      := TRUE;
+END_FOR
+
+FirstZone         := 0;
+LastZone          := 0;
+fbSummary.P_NbrOfZones:= 0;
+
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_CreateAddonLinks" Id="{c98c9897-d2a5-41b0-9704-5a67fad65765}" FolderPath="_private\">
+      <Declaration><![CDATA[/// adds itself to the listed zones as addon
+METHOD PRIVATE M_CreateAddonLinks: BOOL
+(**************************************************************************************
+ *  Application     :   BoxControl Framework
+ *  Revision date   :   $Date: 2021-04-10 12:07:10 +0200 (lör, 10 apr 2021) $
+ *  Author          :   CDC
+ * ------------------------------------------------------------------------------------
+ *  © Swisslog AG
+ *  Swisslog is not liable for any usage of this source code that is not agreed 
+ *  on between Swisslog and the other party. The mandatory legal liability remains 
+ *  unaffected.
+ * ------------------------------------------------------------------------------------
+ *  Revision History: 
+ *
+ *  VERSION DATE         INITIALS     DESCRIPTION
+ *  0.0     DD.MM.YYYY   (name)       (explain customized modifications)
+ *
+ **************************************************************************************)
+VAR
+	Idx						: UINT;
+	NbrOfZones				: UINT;
+	//---------------------------------------------------------------------------------------------------------------------------
+	eFunctionNumber			: E_FunctionNumber;			// function number
+	ZoneNumber        		: DINT;			// zone number
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[NbrOfZones:= 0;
+
+FOR Idx:= 1 TO MAX_ZONES DO
+
+	// config data valid?
+	eFunctionNumber:= Config.ControlledZones[Idx].eFunctionNumber;
+	ZoneNumber     := Config.ControlledZones[Idx].ZoneNumber;
+	IF eFunctionNumber = 0 OR ZoneNumber = 0 THEN
+	    CONTINUE;
+	END_IF
+
+	// references valid?
+	IF NOT __ISVALIDREF(FunctionRegistry[eFunctionNumber].rFunction) THEN
+    	CONTINUE;
+	ELSIF NOT __ISVALIDREF(FunctionRegistry[eFunctionNumber].Zone[ZoneNumber].refZoneData) THEN
+    	CONTINUE;
+	END_IF
+
+	// zone initialized?
+	IF NOT FunctionRegistry[eFunctionNumber].Zone[ZoneNumber].refZoneData.Init
+	THEN
+		M_CreateAddonLinks:= FALSE;
+		RETURN;
+	END_IF
+
+	// count it
+	NbrOfZones:= NbrOfZones + 1;
+
+	// build local data
+	AddOnOrders[NbrOfZones].eFunctionNumber     := eFunctionNumber;
+	AddOnOrders[NbrOfZones].ZoneNumber          := ZoneNumber;
+	AddOnOrders[NbrOfZones].ZoneName            := FunctionRegistry[eFunctionNumber].Zone[ZoneNumber].ZoneName;
+	AddOnOrders[NbrOfZones].TransportControlData REF= FunctionRegistry[eFunctionNumber].Zone[ZoneNumber].refZoneData.TransportControlData;
+	AddOnOrders[NbrOfZones].FunctionInterface    REF= FunctionRegistry[eFunctionNumber].rFunction.FunctionInterface;
+	AddOnOrders[NbrOfZones].Enable              := TRUE;
+	AddOnOrders[NbrOfZones].EnableTakeover      := TRUE;
+	AddOnOrders[NbrOfZones].EnableHandover      := TRUE;
+
+	// create AddOn link
+	FunctionRegistry[eFunctionNumber].rFunction.M_CreateAddOnLink(eAddOnNumber:= SettingsFunction.eFunctionNumber,	// myself as controller
+																  ZoneNumber  := DINT_TO_INT(ZoneNumber));			// destination zone to be controlled
+END_FOR
+
+FirstZone         := 0;  // will be determined later
+LastZone          := 0;  // will be determined later
+fbSummary.P_NbrOfZones:= NbrOfZones;
+
+M_CreateAddonLinks:= TRUE;
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_DisableTakeoverFromFirstToTail" Id="{9f9fe846-5bf5-42bb-9751-21be34358b35}" FolderPath="_private\">
+      <Declaration><![CDATA[/// disables all takeovers from first up to (including) train's tail position
+METHOD PRIVATE M_DisableTakeoverFromFirstToTail
+(**************************************************************************************
+ *  Application     :   BoxControl Framework
+ *  Revision date   :   $Date: 2021-04-10 12:07:10 +0200 (lör, 10 apr 2021) $
+ *  Author          :   CDC
+ * ------------------------------------------------------------------------------------
+ *  © Swisslog AG
+ *  Swisslog is not liable for any usage of this source code that is not agreed 
+ *  on between Swisslog and the other party. The mandatory legal liability remains 
+ *  unaffected.
+ * ------------------------------------------------------------------------------------
+ *  Revision History: 
+ *
+ *  VERSION DATE         INITIALS     DESCRIPTION
+ *  0.0     DD.MM.YYYY   (name)       (explain customized modifications)
+ *
+ **************************************************************************************)
+VAR
+	Idx		: INT;
+	Start	: INT;
+	End		: INT;
+	Step	: INT;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[// determine step/direction
+IF FirstZone < LastZone THEN
+	Step:= +1;
+ELSIF FirstZone > LastZone THEN
+	Step:= -1;
+ELSE
+	RETURN;  // no check here
+END_IF
+
+// prepare
+Start := UINT_TO_INT(FirstZone);
+End   := UINT_TO_INT(LastZone);
+
+// set zones (always in travel direction)
+FOR Idx:= Start TO End BY Step DO
+
+	AddOnOrders[Idx].EnableTakeover:= FALSE;
+
+	// stopp if tails position reached
+	IF TailPosition = INT_TO_UINT(Idx) THEN
+		EXIT;
+	END_IF
+END_FOR]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_EmulateSensors" Id="{bb6c4beb-1e6f-419c-9790-abe4f01ffbae}" FolderPath="_private\">
+      <Declaration><![CDATA[/// Selects which sensor to use for slugging zones
+METHOD PRIVATE M_EmulateSensors : BOOL
+(**************************************************************************************
+ *  Application     :   BoxControl Framework
+ *  Revision date   :   $Date: 2021-04-10 12:07:10 +0200 (lör, 10 apr 2021) $
+ *  Author          :   CDC
+ * ------------------------------------------------------------------------------------
+ *  © Swisslog AG
+ *  Swisslog is not liable for any usage of this source code that is not agreed 
+ *  on between Swisslog and the other party. The mandatory legal liability remains 
+ *  unaffected.
+ * ------------------------------------------------------------------------------------
+ *  Revision History: 
+ *
+ *  VERSION DATE         INITIALS     DESCRIPTION
+ *  0.0     DD.MM.YYYY   (name)       (explain customized modifications)
+ *
+ **************************************************************************************)
+VAR
+    i : UINT;
+    eEmulateMode        : E_SensorEmulateModes;
+    eThisFunctionNumber : E_FunctionNumber;
+    ThisZoneNumber      : DINT;
+    
+    DisableUsePrevious  : BOOL;
+    DisableUseNext      : BOOL;
+    DisableUse          : BOOL;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[(*
+Checks depeding on this zone should the virtual sensor derived from the FE position be used or last or first sensor on the slugging conveyor
+
+When slugging is disabled we have to always generate the signal based on the FE position data as there is no guarantee of TU residing on the first or on 
+the last zone of the conveyor where the physical sensors are located at.
+*)
+
+FOR i := FirstZone TO LastZone DO
+    
+    eThisFunctionNumber := AddOnOrders[i].eFunctionNumber;
+    ThisZoneNumber := AddOnOrders[i].ZoneNumber;    
+    eEmulateMode := E_SensorEmulateModes.VIRTUAL;
+    
+	// Disable use prev/next if zone is outside of the train
+    DisableUseNext := i < TailPosition;    
+    DisableUsePrevious := i > HeadPosition;
+	
+	// Prevent immediate occupied for head position
+	IF i = HeadPosition THEN
+		IF eState = E_SluggingAddOnStates.Create_StartMove OR eState = E_SluggingAddOnStates.Create_AddTU THEN
+			DisableUsePrevious := TRUE;
+		END_IF
+	END_IF
+    
+    IF eState <> E_SluggingAddOnStates.Disabled THEN 
+		// If head position is last zone use next
+      	IF HeadPosition = LastZone THEN
+            eEmulateMode :=  E_SensorEmulateModes.NEXT;
+            DisableUse := DisableUseNext;
+		// Elsif tail position is first zone use previous
+        ELSIF TailPosition = FirstZone THEN
+            eEmulateMode := E_SensorEmulateModes.PREVIOUS;
+            DisableUse := DisableUsePrevious;
+        END_IF
+    END_IF
+    
+    AddOnOrders[i].AddOnSensor := fbEmulateSensor.M_GetSensorStatus(eEmulateMode, eThisFunctionNumber, ThisZoneNumber) AND NOT DisableUse;
+END_FOR]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_GetNextFromZone" Id="{e5bd7a8b-27bb-475a-8fa3-c0d43ec33157}">
+      <Declaration><![CDATA[/// returns the proper adjacent side from the zone according to the selected direction 
+METHOD PUBLIC M_GetNextFromZone : E_FunctionNumber
+(**************************************************************************************
+ *  Application     :   BoxControl Framework
+ *  Revision date   :   $Date: 2021-04-10 12:07:10 +0200 (lör, 10 apr 2021) $
+ *  Author          :   CDC
+ * ------------------------------------------------------------------------------------
+ *  © Swisslog AG
+ *  Swisslog is not liable for any usage of this source code that is not agreed 
+ *  on between Swisslog and the other party. The mandatory legal liability remains 
+ *  unaffected.
+ * ------------------------------------------------------------------------------------
+ *  Revision History: 
+ *
+ *  VERSION DATE         INITIALS     DESCRIPTION
+ *  0.0     DD.MM.YYYY   (name)       (explain customized modifications)
+ *
+ **************************************************************************************)
+VAR_INPUT
+	FunctionNumber	: E_FunctionNumber;
+	ZoneNumber		: DINT;
+END_VAR
+
+VAR
+	i					: UINT;
+	meFunctionNumber	: E_FunctionNumber	:= E_FunctionNumber.F_BEGIN_FUNCTION;
+	mZoneNumber		    : DINT;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[// search for zone
+FOR i:= 1 TO fbSummary.P_NbrOfZones DO
+
+	meFunctionNumber:= AddOnOrders[i].eFunctionNumber;
+	mZoneNumber    := AddOnOrders[i].ZoneNumber;
+
+	// found?
+    IF meFunctionNumber = FunctionNumber
+       AND mZoneNumber = ZoneNumber THEN
+       
+        // get appropriate adjacent side
+        CASE eCurrent OF
+            E_SluggingAddOnDirections.None_Disabled:
+                    M_GetNextFromZone:= E_FunctionNumber.F_BEGIN_FUNCTION;
+            E_SluggingAddOnDirections.Forward:
+                    M_GetNextFromZone:= FunctionRegistry[meFunctionNumber].rFunction.ConfigFunction.eAdjacentFunctionNumberSide[2];
+            E_SluggingAddOnDirections.Reverse:
+                    M_GetNextFromZone:= FunctionRegistry[meFunctionNumber].rFunction.ConfigFunction.eAdjacentFunctionNumberSide[1];
+        ELSE
+            M_GetNextFromZone:= E_FunctionNumber.F_BEGIN_FUNCTION;
+        END_CASE
+        
+	    RETURN;        
+    END_IF
+END_FOR
+
+// not found
+M_GetNextFromZone:= E_FunctionNumber.F_BEGIN_FUNCTION;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_GetNextTakeoverState" Id="{b0efef16-1709-4e81-9019-2283de0dd97f}" FolderPath="_private\">
+      <Declaration><![CDATA[/// return next (from last zone) takeover state
+METHOD PRIVATE M_GetNextTakeoverState : E_TakeOverState
+(**************************************************************************************
+ *  Application     :   BoxControl Framework
+ *  Revision date   :   $Date: 2021-04-10 12:07:10 +0200 (lör, 10 apr 2021) $
+ *  Author          :   CDC
+ * ------------------------------------------------------------------------------------
+ *  © Swisslog AG
+ *  Swisslog is not liable for any usage of this source code that is not agreed 
+ *  on between Swisslog and the other party. The mandatory legal liability remains 
+ *  unaffected.
+ * ------------------------------------------------------------------------------------
+ *  Revision History: 
+ *
+ *  VERSION DATE         INITIALS     DESCRIPTION
+ *  0.0     DD.MM.YYYY   (name)       (explain customized modifications)
+ *
+ **************************************************************************************)
+VAR
+	eNext		: E_FunctionNumber;
+	ZoneNumber	: DINT;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+// just to be safe (shall never happen)
+IF LastZone = 0 THEN
+	M_GetNextTakeoverState:= E_TakeOverState.UNDEFINED;
+	RETURN;
+END_IF
+
+// next valid?
+eNext      := AddOnOrders[LastZone].FunctionInterface.In.eNextFunctionNumber;
+ZoneNumber:= 1;
+
+IF eNext = 0 THEN
+	M_GetNextTakeoverState:= E_TakeOverState.UNDEFINED;
+	RETURN;
+END_IF
+
+// references valid?
+IF 	  NOT __ISVALIDREF(FunctionRegistry[eNext].rFunction)THEN
+	M_GetNextTakeoverState:= E_TakeOverState.UNDEFINED;
+	RETURN;
+
+ELSIF NOT __ISVALIDREF(FunctionRegistry[eNext].Zone[ZoneNumber].refZoneData)	THEN
+	M_GetNextTakeoverState:= E_TakeOverState.UNDEFINED;
+	RETURN;
+
+ELSIF NOT __ISVALIDREF(FunctionRegistry[eNext].rFunctionInterface)THEN
+	M_GetNextTakeoverState:= E_TakeOverState.UNDEFINED;
+	RETURN;
+
+// has myself as prev?
+ELSIF FunctionRegistry[eNext].rFunctionInterface.In.ePrevFunctionNumber <> AddOnOrders[LastZone].eFunctionNumber	THEN
+	M_GetNextTakeoverState:= E_TakeOverState.UNDEFINED;
+	RETURN;
+END_IF
+
+
+// return data
+M_GetNextTakeoverState:= FunctionRegistry[eNext].Zone[ZoneNumber].refZoneData.TransportControlData.eTakeOverState;
+
+
+
+
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_GetOutAddOnOrders" Id="{305c9a65-37f8-4dc6-88b9-919f7609a589}" FolderPath="_private\">
+      <Declaration><![CDATA[/// returns the orders to control a linked function/zone
+METHOD PROTECTED M_GetOutAddOnOrders : ST_AddOnOrders
+(**************************************************************************************
+ *  Application     :   BoxControl Framework
+ *  Revision date   :   $Date: 2021-04-10 12:07:10 +0200 (lör, 10 apr 2021) $
+ *  Author          :   CDC
+ * ------------------------------------------------------------------------------------
+ *  © Swisslog AG
+ *  Swisslog is not liable for any usage of this source code that is not agreed 
+ *  on between Swisslog and the other party. The mandatory legal liability remains 
+ *  unaffected.
+ * ------------------------------------------------------------------------------------
+ *  Revision History: 
+ *
+ *  VERSION DATE         INITIALS     DESCRIPTION
+ *  0.0     DD.MM.YYYY   (name)       (explain customized modifications)
+ *
+ **************************************************************************************)
+VAR_INPUT
+	eFunctionNumber	: E_FunctionNumber;	// Function number to be controlled
+	ZoneNumber		: INT;	// zone number to be controlled
+END_VAR
+
+VAR
+	Idx : WORD;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[M_GetOutAddOnOrders:= FunctionInterface.Out.AddOnOrders;
+
+FOR Idx:= 1 TO MAX_ZONES DO
+	IF AddOnOrders[Idx].eFunctionNumber = eFunctionNumber
+	    AND AddOnOrders[Idx].ZoneNumber = ZoneNumber THEN
+        
+		M_GetOutAddOnOrders.Enable        := AddOnOrders[Idx].Enable;
+		M_GetOutAddOnOrders.EnableTakeover:= AddOnOrders[Idx].EnableTakeover;
+		M_GetOutAddOnOrders.EnableHandover:= AddOnOrders[Idx].EnableHandover;
+		M_GetOutAddOnOrders.EnableSimultaneousTransport:= AddOnOrders[Idx].EnableSimultaneousTransport;
+		M_GetOutAddOnOrders.DataReady     := FALSE;	// not used here
+		M_GetOutAddOnOrders.DataValid     := FALSE;	// not used here
+		M_GetOutAddOnOrders.TU_DataIndex  := 0;		// not used here
+        M_GetOutAddOnOrders.AddOnSensor   := AddOnOrders[Idx].AddOnSensor;
+        M_GetOutAddOnOrders.AllowDriveTakeover  := AddOnOrders[Idx].AllowDriveTakeover;
+        M_GetOutAddOnOrders.AllowDriveHandover  := AddOnOrders[Idx].AllowDriveHandover;
+		RETURN;
+	END_IF
+END_FOR
+
+// not found -> all enabled
+M_GetOutAddOnOrders.Enable        := TRUE; // General enable
+M_GetOutAddOnOrders.EnableTakeover:= TRUE; // Enable takeover
+M_GetOutAddOnOrders.EnableHandover:= TRUE; // Enable Handover
+M_GetOutAddOnOrders.DataReady   := FALSE;	// not used here
+M_GetOutAddOnOrders.DataValid   := FALSE;	// not used here
+M_GetOutAddOnOrders.TU_DataIndex:= 0;       // not used here
+M_GetOutAddOnOrders.AddOnSensor := FALSE;   // not used here]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_GetPrevFromZone" Id="{e359f778-802a-4c80-bf2b-15d3ebeec7e3}">
+      <Declaration><![CDATA[/// returns the proper adjacent side from the zone according to the selected direction 
+METHOD PUBLIC M_GetPrevFromZone : E_FunctionNumber
+(**************************************************************************************
+ *  Application     :   BoxControl Framework
+ *  Revision date   :   $Date: 2021-04-10 12:07:10 +0200 (lör, 10 apr 2021) $
+ *  Author          :   CDC
+ * ------------------------------------------------------------------------------------
+ *  © Swisslog AG
+ *  Swisslog is not liable for any usage of this source code that is not agreed 
+ *  on between Swisslog and the other party. The mandatory legal liability remains 
+ *  unaffected.
+ * ------------------------------------------------------------------------------------
+ *  Revision History: 
+ *
+ *  VERSION DATE         INITIALS     DESCRIPTION
+ *  0.0     DD.MM.YYYY   (name)       (explain customized modifications)
+ *
+ **************************************************************************************)
+VAR_INPUT
+	FunctionNumber	: E_FunctionNumber;
+	ZoneNumber		: DINT;
+END_VAR
+
+VAR
+	i					: UINT;
+	meFunctionNumber	: E_FunctionNumber;
+	mZoneNumber		    : DINT;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[// search for zone
+FOR i:= 1 TO fbSummary.P_NbrOfZones DO
+
+	meFunctionNumber:= AddOnOrders[i].eFunctionNumber;
+	mZoneNumber    := AddOnOrders[i].ZoneNumber;
+
+	// found?
+    IF meFunctionNumber = FunctionNumber
+       AND mZoneNumber = ZoneNumber THEN
+       
+        // get appropriate adjacent side
+        CASE eCurrent OF
+            E_SluggingAddOnDirections.None_Disabled:
+                    M_GetPrevFromZone:= E_FunctionNumber.F_BEGIN_FUNCTION;
+            E_SluggingAddOnDirections.Forward:
+                    M_GetPrevFromZone:= FunctionRegistry[meFunctionNumber].rFunction.ConfigFunction.eAdjacentFunctionNumberSide[1];
+            E_SluggingAddOnDirections.Reverse:
+                    M_GetPrevFromZone:= FunctionRegistry[meFunctionNumber].rFunction.ConfigFunction.eAdjacentFunctionNumberSide[2];
+        ELSE
+            M_GetPrevFromZone:= E_FunctionNumber.F_BEGIN_FUNCTION;
+        END_CASE
+        
+	    RETURN;        
+    END_IF
+END_FOR
+
+// not found
+M_GetPrevFromZone:= E_FunctionNumber.F_BEGIN_FUNCTION;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_GetPrevHandoverState" Id="{89755a02-6ff6-443c-9075-99da654badc9}" FolderPath="_private\">
+      <Declaration><![CDATA[/// return previous (from first zone) handover state
+METHOD PRIVATE M_GetPrevHandoverState : E_HandOverState
+(**************************************************************************************
+ *  Application     :   BoxControl Framework
+ *  Revision date   :   $Date: 2021-04-10 12:07:10 +0200 (lör, 10 apr 2021) $
+ *  Author          :   CDC
+ * ------------------------------------------------------------------------------------
+ *  © Swisslog AG
+ *  Swisslog is not liable for any usage of this source code that is not agreed 
+ *  on between Swisslog and the other party. The mandatory legal liability remains 
+ *  unaffected.
+ * ------------------------------------------------------------------------------------
+ *  Revision History: 
+ *
+ *  VERSION DATE         INITIALS     DESCRIPTION
+ *  0.0     DD.MM.YYYY   (name)       (explain customized modifications)
+ *
+ **************************************************************************************)
+VAR
+	ePrev		: E_FunctionNumber;
+	ZoneNumber	: DINT;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+// just to be safe (shall never happen)
+IF FirstZone = 0 THEN
+	M_GetPrevHandoverState:= E_HandOverState.UNDEFINED;
+	RETURN;
+END_IF
+
+// prev valid?
+ePrev      := AddOnOrders[FirstZone].FunctionInterface.In.ePrevFunctionNumber;
+ZoneNumber:= 1;
+
+IF ePrev = 0 THEN
+	M_GetPrevHandoverState:= E_HandOverState.UNDEFINED;
+	RETURN;
+END_IF
+
+// references valid?
+IF NOT __ISVALIDREF(FunctionRegistry[ePrev].rFunction) THEN
+	M_GetPrevHandoverState:= E_HandOverState.UNDEFINED;
+	RETURN;
+
+ELSIF NOT __ISVALIDREF(FunctionRegistry[ePrev].Zone[ZoneNumber].refZoneData) THEN
+	M_GetPrevHandoverState:= E_HandOverState.UNDEFINED;
+	RETURN;
+
+ELSIF NOT __ISVALIDREF(FunctionRegistry[ePrev].rFunctionInterface) THEN
+	M_GetPrevHandoverState:= E_HandOverState.UNDEFINED;
+	RETURN;
+
+// has myself as next?
+ELSIF FunctionRegistry[ePrev].rFunctionInterface.In.eNextFunctionNumber <> AddOnOrders[FirstZone].eFunctionNumber THEN
+	M_GetPrevHandoverState:= E_HandOverState.UNDEFINED;
+	RETURN;
+END_IF
+
+// return data
+M_GetPrevHandoverState:= FunctionRegistry[ePrev].Zone[ZoneNumber].refZoneData.TransportControlData.eHandOverState;
+
+
+
+
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_GetStateText" Id="{b962fecf-92c1-41c6-81dd-49545e479715}" FolderPath="_private\">
+      <Declaration><![CDATA[/// forwards state text to FB_StateMachine
+METHOD PUBLIC M_GetStateText : A_StateText
+(**************************************************************************************
+ *  Application     :   BoxControl Framework
+ *  Revision date   :   $Date: 2021-04-10 12:07:10 +0200 (lör, 10 apr 2021) $
+ *  Author          :   CDC
+ * ------------------------------------------------------------------------------------
+ *  © Swisslog AG
+ *  Swisslog is not liable for any usage of this source code that is not agreed 
+ *  on between Swisslog and the other party. The mandatory legal liability remains 
+ *  unaffected.
+ * ------------------------------------------------------------------------------------
+ *  Revision History: 
+ *
+ *  VERSION DATE         INITIALS     DESCRIPTION
+ *  0.0     DD.MM.YYYY   (name)       (explain customized modifications)
+ *
+ **************************************************************************************)
+VAR_INPUT
+	StateMachine    : POINTER TO FB_StateMachine;		// requesting state machine instance
+	StateNbr		: UINT;		// state number which text is requested
+END_VAR
+
+VAR
+	eStateEnum	: E_SluggingAddOnStates := E_SluggingAddOnStates.Initialization;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[eStateEnum:= StateNbr;
+M_GetStateText  := TO_STRING(eStateEnum);
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_GetTrainSummary" Id="{26d48022-b72f-4396-9be2-a081bfc4cf69}" FolderPath="_private\">
+      <Declaration><![CDATA[/// updates train's summary
+METHOD PRIVATE M_GetTrainSummary
+(**************************************************************************************
+ *  Application     :   BoxControl Framework
+ *  Revision date   :   $Date: 2021-04-10 12:07:10 +0200 (lör, 10 apr 2021) $
+ *  Author          :   CDC
+ * ------------------------------------------------------------------------------------
+ *  © Swisslog AG
+ *  Swisslog is not liable for any usage of this source code that is not agreed 
+ *  on between Swisslog and the other party. The mandatory legal liability remains 
+ *  unaffected.
+ * ------------------------------------------------------------------------------------
+ *  Revision History: 
+ *
+ *  VERSION DATE         INITIALS     DESCRIPTION
+ *  0.0     DD.MM.YYYY   (name)       (explain customized modifications)
+ *
+ **************************************************************************************)
+VAR
+	Idx     : INT;
+	Start	: INT;
+	End		: INT;
+	Step	: INT;
+	Length	: UINT;
+	Tail	: UINT;
+	Head	: UINT;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[// Determine step/direction
+IF NOT FunctionData.Init THEN
+	RETURN;  // No check here
+ELSIF FirstZone < LastZone THEN
+	Step:= +1;
+ELSIF FirstZone > LastZone THEN
+    Step:= -1;
+ELSE
+	RETURN;  // No check here
+END_IF
+
+// Prepare
+Length:= 0;
+Tail  := 0;
+Head  := 0;
+Start := UINT_TO_INT(FirstZone);
+End   := UINT_TO_INT(LastZone);
+
+// Check zones (always in travel direction)
+FOR Idx:= Start TO End BY Step DO
+	IF AddOnOrders[Idx].TransportControlData.NumberOfPresentTUs > 0 OR
+       AddOnOrders[Idx].TransportControlData.Occupied THEN
+		// Count
+		Length:= Length + 1;
+		// Set head
+		Head:= INT_TO_UINT(Idx);
+		// Set tail
+		IF Tail = 0 THEN
+			IF AddOnOrders[Idx].TransportControlData.NumberOfPresentTUs > 0 THEN	
+				Tail:= INT_TO_UINT(Idx);
+			END_IF
+		END_IF
+	END_IF
+END_FOR
+
+// If no tail is found, set tail to hed
+IF Tail = 0 THEN
+	Tail:= Head;
+END_IF
+
+// Update train length
+fbSummary.P_Length:= Length;
+HeadPosition  := Head;
+TailPosition  := Tail;
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_Init" Id="{574b910a-87f1-4322-bade-6936c4618435}" FolderPath="_private\">
+      <Declaration><![CDATA[/// initialization
+METHOD PRIVATE M_Init
+(**************************************************************************************
+ *  Application     :   BoxControl Framework
+ *  Revision date   :   $Date: 2021-04-10 12:07:10 +0200 (lör, 10 apr 2021) $
+ *  Author          :   CDC
+ * ------------------------------------------------------------------------------------
+ *  © Swisslog AG
+ *  Swisslog is not liable for any usage of this source code that is not agreed 
+ *  on between Swisslog and the other party. The mandatory legal liability remains 
+ *  unaffected.
+ * ------------------------------------------------------------------------------------
+ *  Revision History: 
+ *
+ *  VERSION DATE         INITIALS     DESCRIPTION
+ *  0.0     DD.MM.YYYY   (name)       (explain customized modifications)
+ *
+ **************************************************************************************)]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[// Update Registry
+M_UpdateRegistry();
+ 
+
+// Init ongoing - Wait until init is released (Sequencial startup)
+IF NOT FunctionData.Init AND FunctionData.InitRunning THEN
+	// When the subsystem is started, 
+	// When its released to initialize
+	IF FunctionData.OperationState.Info.SystemReady AND
+	   SettingsFunction.eFunctionNumber < FunctionData.OperationState.InitRelease.eLimitFunctionNumber THEN
+	   
+	   IF M_InitFunction(FALSE) THEN
+			// Create addon link
+			IF NOT M_CreateAddonLinks() THEN
+				RETURN;
+			END_IF
+
+			// Function initialized - and initialization done
+			FunctionData.Init := TRUE;
+			FunctionData.InitRunning := FALSE;
+			
+			// Set reset cmd
+			FunctionData.ErrorData.Error.ResetError := TRUE;
+			
+			DebugMsg := CONCAT('Initialization done. Function: ', ConfigFunction.FunctionName);
+			fbDebugMsg.M_SendInfoMsg(DebugMsg);
+		END_IF
+	END_IF
+(*
+If the function is not initialized,
+clean all values and wait until init is released
+*)
+ELSIF NOT FunctionData.Init THEN
+	// Reset internal variables
+	FunctionData.OperationState := FunctionBase.PositionStateEmpty;
+
+	// Reset values and load config
+	M_PreInit();
+	
+	// Close AddOn links
+	M_CloseAddonLinks();
+
+	// To start init a valid functionnumber and element link is needed
+	FunctionData.InitRunning := ConfigFunction.eFunctionNumber > 0 AND
+								ConfigFunction.eElementLink > 0;
+END_IF
+
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_ReleaseTrain" Id="{753d7a3e-5a90-4168-a575-db3c5ee061f5}">
+      <Declaration><![CDATA[/// manually releases the train (if possible)
+METHOD PUBLIC M_ReleaseTrain
+(**************************************************************************************
+ *  Application     :   BoxControl Framework
+ *  Revision date   :   $Date: 2021-04-10 12:07:10 +0200 (lör, 10 apr 2021) $
+ *  Author          :   CDC
+ * ------------------------------------------------------------------------------------
+ *  © Swisslog AG
+ *  Swisslog is not liable for any usage of this source code that is not agreed 
+ *  on between Swisslog and the other party. The mandatory legal liability remains 
+ *  unaffected.
+ * ------------------------------------------------------------------------------------
+ *  Revision History: 
+ *
+ *  VERSION DATE         INITIALS     DESCRIPTION
+ *  0.0     DD.MM.YYYY   (name)       (explain customized modifications)
+ *
+ **************************************************************************************)
+VAR_INPUT
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[IF Releasable THEN
+	ReleaseActive:= TRUE;
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_RunStates" Id="{4cad873c-bc5c-4c5d-b492-3e0f07653bd3}" FolderPath="_private\">
+      <Declaration><![CDATA[// runs all states
+METHOD PRIVATE M_RunStates
+(**************************************************************************************
+ *  Application     :   BoxControl Framework
+ *  Revision date   :   $Date: 2021-04-10 12:07:10 +0200 (lör, 10 apr 2021) $
+ *  Author          :   CDC
+ * ------------------------------------------------------------------------------------
+ *  © Swisslog AG
+ *  Swisslog is not liable for any usage of this source code that is not agreed 
+ *  on between Swisslog and the other party. The mandatory legal liability remains 
+ *  unaffected.
+ * ------------------------------------------------------------------------------------
+ *  Revision History: 
+ *
+ *  VERSION DATE         INITIALS     DESCRIPTION
+ *  0.0     DD.MM.YYYY   (name)       (explain customized modifications)
+ *
+ **************************************************************************************)
+VAR
+	Reason	: STRING[127];
+    i       : INT;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[(** initialization **************************************************************************************************************)
+eState:= fbStateMachine.P_State;
+CASE eState OF
+E_SluggingAddOnStates.Initialization:
+
+	Creation  := FALSE;
+	Destroying:= FALSE;
+	Moving    := FALSE;
+
+
+	IF FunctionData.Init THEN
+		fbStateMachine.P_SisNbr:= ConfigFunction.FunctionName;
+		fbStateMachine.M_SetState(mState:= E_SluggingAddOnStates.Disabled,
+								mReason:= 'initialisation done');
+	END_IF
+
+(** disabled ********************************************************************************************************************)
+E_SluggingAddOnStates.Disabled:
+
+	IF fbStateMachine.P_Entering THEN
+		//delete first/last
+		eCurrent  := E_SluggingAddOnDirections.None_Disabled;
+		FirstZone:= 0;
+		LastZone := 0;
+		//enable standard behaviour
+		M_SetAddOnOrders(Enable       := TRUE,
+						EnableTakeover:= TRUE,
+						EnableHandover:= TRUE,
+						EnableSimultaneousTransport:= FALSE);
+		
+        //allow element to run drive 
+		FunctionInterface.Out.FunctionOrders.ReqDriveRun := FALSE;  // Drive run not needed
+		FunctionInterface.Out.FunctionOrders.Enable      := TRUE;   // Allow element to drive
+		FunctionInterface.Out.FunctionOrders.Enable      := TRUE;   // Allow element to drive
+		FunctionInterface.Out.FunctionOrders.Enable_34   := TRUE;   // Allow element to drive
+        
+        // Enable handover and takeover to drive the drive of the element/function with the transport control, depends on zone config
+        THIS^.M_AllowModeAllDrives(TRUE);
+         
+		// No slug if disabled 
+		fbSummary.P_Length:= 0;	TailPosition:= 0;
+
+		Creation  := FALSE;
+		Destroying:= FALSE;
+		Moving    := FALSE;
+	END_IF
+
+	IF eDirection <> E_SluggingAddOnDirections.None_Disabled THEN
+		fbStateMachine.M_SetState(mState:= E_SluggingAddOnStates.CheckSituation,
+								mReason:= CONCAT('direction set to ', TO_STRING(eDirection)));
+	END_IF
+
+(** checks current situation (related to direction) *****************************************************************************)
+E_SluggingAddOnStates.CheckSituation:
+	IF fbStateMachine.P_Entering THEN
+		// Determine first/last 
+		IF    eDirection = E_SluggingAddOnDirections.Forward THEN
+            FirstZone:= 1;
+            LastZone:= fbSummary.P_NbrOfZones;
+		ELSIF eDirection = E_SluggingAddOnDirections.Reverse THEN
+            FirstZone:= fbSummary.P_NbrOfZones;
+        	LastZone:= 1;
+		ELSE
+            FirstZone:= 0;
+			LastZone:= 0;
+		END_IF
+		// Store direction
+		eCurrent:= eDirection;
+		// Rebuild train summary
+		M_GetTrainSummary();  // because _First/LastZone has changed
+
+		Creation  := FALSE;
+		Destroying:= FALSE;
+		Moving    := FALSE;
+	END_IF
+
+	// Just to be safe (should never happen) 
+	IF FirstZone = 0 OR FirstZone > MAX_ZONES OR LastZone  = 0  OR  LastZone  > MAX_ZONES THEN
+		eDirection:= E_SluggingAddOnDirections.None_Disabled;
+
+		fbStateMachine.M_SetState1(mMsgType := E_DebugMsgType.ERROR,
+									mState := E_SluggingAddOnStates.Disabled,
+									mReason:= 'no configured zones');
+
+	// Disabled 
+	ELSIF eDirection = E_SluggingAddOnDirections.None_Disabled THEN
+		fbStateMachine.M_SetState(mState:= E_SluggingAddOnStates.Disabled,
+								mReason:= 'slugging disabled');
+
+	// Direction changed
+	ELSIF eDirection <> eCurrent THEN
+		fbStateMachine.M_ReEntry(mReason:= CONCAT('direction changed to ', TO_STRING(eDirection)));
+
+	// Train area full
+	ELSIF fbSummary.P_Full THEN
+		IF Config.EnableSyncronousOperation THEN
+	        fbStateMachine.M_SetState(mState:= E_SluggingAddOnStates.Full_StartCycle,
+                                              mReason:= 'train area full');
+		ELSE
+            fbStateMachine.M_SetState(mState:= E_SluggingAddOnStates.Destroy_WaitTU,
+                                              mReason:= 'train area full');
+		END_IF
+
+	// Train area empty
+	ELSIF fbSummary.P_Empty THEN
+		fbStateMachine.M_SetState(mState:= E_SluggingAddOnStates.Create_WaitPrev,
+								mReason:= 'train area empty');
+
+	// First zone occupied
+	ELSIF AddOnOrders[FirstZone].TransportControlData.Occupied THEN
+		fbStateMachine.M_SetState(mState:= E_SluggingAddOnStates.Create_WaitPrev,
+								mReason:= 'first zone occupied');
+
+	// Last zone occupied 
+	ELSIF AddOnOrders[LastZone].TransportControlData.Occupied THEN
+		fbStateMachine.M_SetState(mState:= E_SluggingAddOnStates.Destroy_WaitTU,
+								mReason:= 'last zone occupied');
+
+	// Else 
+	ELSE
+		fbStateMachine.M_SetState(mState:= E_SluggingAddOnStates.Shift_StartMove,
+								mReason:= 'TUs scattered in area');
+	END_IF
+
+
+(** Create: wait prev ready for handover ****************************************************************************************)
+E_SluggingAddOnStates.Create_WaitPrev:
+	IF fbStateMachine.P_Entering THEN
+		// Enable/disable transportations
+		M_SetAddOnOrders(Enable       := TRUE,
+						EnableTakeover:= FALSE,
+						EnableHandover:= FALSE,
+						EnableSimultaneousTransport:= TRUE);
+		AddOnOrders[FirstZone].EnableTakeover:= TRUE;
+        
+        // While building the slug, allow only takover drive of the first zone to drive the common conveyor
+        THIS^.M_AllowModeAllDrives(FALSE);
+        THIS^.M_AllowModeSingleDrive(TRUE, FALSE, FirstZone);
+
+		Creation  := TRUE;
+		Destroying:= FALSE;
+		Moving    := FALSE;
+		// Take timeout starts here 
+		TakeTimestamp:= F_GetTimeMsTick();
+		// Manual release 
+		Releasable   := FALSE;
+		ReleaseActive:= FALSE;
+	END_IF
+
+	// Calculate remaining time till timeout
+	IF AddOnOrders[FirstZone].TransportControlData.NumberOfPresentTUs = 0 THEN
+		Releasable	  := FALSE;
+		ReleaseActive:= FALSE;
+		TakeTimeout  := T#0S; // run timeout only if TU present
+	ELSE
+		Releasable:= TRUE;
+		TakeTimeout:= F_GetTimeRemain(Duration  := Config.TakeTimeout,
+										Timestamp:= TakeTimestamp);
+	END_IF
+    
+	// -> disabled 
+	IF eDirection = E_SluggingAddOnDirections.None_Disabled THEN
+		fbStateMachine.M_SetState(mState:= E_SluggingAddOnStates.Disabled,
+								mReason:= 'slugging disabled');
+
+	// -> direction changed 
+	ELSIF eDirection <> eCurrent THEN
+		fbStateMachine.M_SetState(mState:= E_SluggingAddOnStates.Disabled,
+								mReason:= CONCAT('direction changed to ', TO_STRING(eDirection)));
+
+	// -> prev handover ready
+	ELSIF M_GetPrevHandoverState() = E_HandOverState.READY THEN
+		fbSummary.P_TUs:= fbSummary.P_TUs + 1;
+
+		IF fbSummary.P_Length = 0 THEN
+			fbSummary.P_Trains:= fbSummary.P_Trains + 1;
+		END_IF
+
+		fbStateMachine.M_SetState(mState:= E_SluggingAddOnStates.Create_StartMove,
+								mReason:= 'prev ready for handover');
+
+	// TODO: -> TU added/removed without transportation 
+
+	// -> manual release
+	ELSIF ReleaseActive THEN
+		fbStateMachine.M_SetState(mState:= E_SluggingAddOnStates.Shift_StartMove,
+								mReason:= 'manually released');
+
+	// -> wait timeout & first zone (already) occupied
+	ELSIF AddOnOrders[FirstZone].TransportControlData.NumberOfPresentTUs <> 0	// check only if TU is present
+	      AND Config.TakeTimeout <> T#0S AND TakeTimeout = T#0S THEN
+		
+        Reason:= 'take timeout';
+		Reason:= CONCAT(Reason, DebugTextBlocks.TIMEOUT);
+		Reason:= CONCAT(Reason, TIME_TO_STRING(Config.TakeTimeout));
+
+		fbStateMachine.M_SetState(mState:= E_SluggingAddOnStates.Shift_StartMove,
+								mReason:= Reason);
+	END_IF
+
+	IF fbStateMachine.P_Exiting THEN
+		Releasable	  := FALSE;
+		ReleaseActive:= FALSE;
+		TakeTimeout:= T#0S;
+	END_IF
+
+(** create: wait start moving ***************************************************************************************************)
+E_SluggingAddOnStates.Create_StartMove:
+	IF fbStateMachine.P_Entering THEN
+		// enable/disable transportations 
+		M_SetAddOnOrders(Enable       := TRUE,
+						EnableTakeover:= TRUE,
+						EnableHandover:= TRUE,
+						EnableSimultaneousTransport:= TRUE);
+
+		Creation  := TRUE;
+		Destroying:= FALSE;
+		Moving    := FALSE;
+	END_IF
+
+	// -> disabled
+	IF eDirection = E_SluggingAddOnDirections.None_Disabled THEN
+		fbStateMachine.M_SetState(mState:= E_SluggingAddOnStates.Disabled,
+								mReason:= 'slugging disabled');
+
+	// -> direction changed
+	ELSIF eDirection <> eCurrent THEN
+		fbStateMachine.M_SetState(mState:= E_SluggingAddOnStates.Disabled,
+								mReason:= CONCAT('direction changed to ', TO_STRING(eDirection)));
+
+	// -> prev handover not ready (anymore)
+	ELSIF M_GetPrevHandoverState() = E_HandOverState.IDLE THEN
+		fbStateMachine.M_SetState(mState:= E_SluggingAddOnStates.Create_WaitPrev,
+								mReason:= 'prev not ready for handover (anymore)');
+
+	// -> transportation (takeover) starts
+	ELSIF M_GetPrevHandoverState() = E_HandOverState.ACTIVE THEN
+		Reason:= 'TU incoming';
+		Reason:= CONCAT(Reason,  F_CreateTU_DataString(AddOnOrders[FirstZone].TransportControlData.TU_DataIndex));
+        
+		fbStateMachine.M_SetState(mState:= E_SluggingAddOnStates.Create_AddTU,
+								mReason:= Reason);
+	END_IF
+
+
+(** create: taking over TU from prev ********************************************************************************************)
+E_SluggingAddOnStates.Create_AddTU:
+	IF fbStateMachine.P_Entering THEN
+
+		M_SetAddOnOrders(Enable       := TRUE,
+						EnableTakeover:= FALSE,	// movement already started
+						EnableHandover:= FALSE, // -> switch off as early as possible
+						EnableSimultaneousTransport:= TRUE);
+
+		Creation  := TRUE;
+		Destroying:= FALSE;
+		Moving    := FALSE;
+	END_IF
+
+	// transportation (takeover) done
+	IF AddOnOrders[FirstZone].TransportControlData.eTakeOverState = E_TakeOverState.IDLE THEN
+		// train not yet full
+		IF NOT fbSummary.P_Full THEN
+			// last zone not occupied (shall be normal transition)
+			IF AddOnOrders[LastZone].TransportControlData.NumberOfPresentTUs = 0 THEN
+				fbStateMachine.M_SetState(mState:= E_SluggingAddOnStates.Create_WaitPrev,
+										mReason:= 'train not yet full');
+			// sync operation enabled
+			ELSIF Config.EnableSyncronousOperation THEN
+				fbStateMachine.M_SetState(mState:= E_SluggingAddOnStates.Full_StartCycle,
+										mReason:= 'train full');
+			ELSE
+				fbStateMachine.M_SetState(mState:= E_SluggingAddOnStates.Destroy_WaitTU,
+									mReason:= 'last zone already occupied');
+			END_IF
+
+		// Sync operation enabled
+		ELSIF Config.EnableSyncronousOperation THEN
+			fbStateMachine.M_SetState(mState:= E_SluggingAddOnStates.Full_StartCycle,
+									mReason:= 'train full');
+
+		ELSE
+			fbStateMachine.M_SetState(mState:= E_SluggingAddOnStates.Destroy_WaitTU,
+									mReason:= 'train full');
+		END_IF
+	END_IF
+
+(** full: start new cycle (needed for take timeout) *****************************************************************************)
+E_SluggingAddOnStates.Full_StartCycle:
+
+	IF fbStateMachine.P_Entering THEN
+		M_SetAddOnOrders(Enable       := TRUE,
+						EnableTakeover:= FALSE,
+						EnableHandover:= FALSE,
+						EnableSimultaneousTransport:= TRUE);
+
+		Creation  := TRUE;
+		Destroying:= TRUE;
+		Moving    := TRUE;
+		// take timeout starts here 
+		TakeTimestamp:= F_GetTimeMsTick();
+	END_IF
+
+	// -> disabled
+	IF eDirection = E_SluggingAddOnDirections.None_Disabled THEN
+		fbStateMachine.M_SetState(mState:= E_SluggingAddOnStates.Disabled,
+								mReason:= 'slugging disabled');
+
+	// -> direction changed
+	ELSIF eDirection <> eCurrent THEN
+		fbStateMachine.M_SetState(mState:= E_SluggingAddOnStates.Disabled,
+								mReason:= CONCAT('direction changed to ', TO_STRING(eDirection)));
+
+	// -> syncronous operation not enabled (anymore)
+	ELSIF NOT Config.EnableSyncronousOperation THEN
+		fbStateMachine.M_SetState(mState:= E_SluggingAddOnStates.Destroy_WaitTU,
+								mReason:= 'snychronous operation disabled');
+
+	//TODO: TU added/removed without transportation 
+    //	ELSIF NOT _Summary.Full THEN
+
+	ELSE
+		fbStateMachine.M_SetState(mState:= E_SluggingAddOnStates.Full_WaitNext,
+								mReason:= 'start new full train cycle');
+	END_IF
+
+(** full: wait next ready for takeover ******************************************************************************************)
+E_SluggingAddOnStates.Full_WaitNext:
+	IF fbStateMachine.P_Entering THEN
+
+		M_SetAddOnOrders(Enable       := TRUE,
+						EnableTakeover:= FALSE,
+						EnableHandover:= FALSE,
+						EnableSimultaneousTransport:= TRUE);
+
+		Creation  := TRUE;
+		Destroying:= TRUE;
+		Moving    := TRUE;
+	END_IF
+
+	// calculate remaining time till timeout
+	TakeTimeout:= F_GetTimeRemain(Duration  := Config.TakeTimeout,
+									Timestamp:= TakeTimestamp);
+
+	// -> disabled 
+	IF eDirection = E_SluggingAddOnDirections.None_Disabled THEN
+		fbStateMachine.M_SetState(mState:= E_SluggingAddOnStates.Disabled,
+								mReason:= 'slugging disabled');
+
+	// -> direction changed
+	ELSIF eDirection <> eCurrent THEN
+		fbStateMachine.M_SetState(mState:= E_SluggingAddOnStates.Disabled,
+								mReason:= CONCAT('direction changed to ', TO_STRING(eDirection)));
+
+	// -> next takeover ready
+	ELSIF M_GetNextTakeoverState() = E_TakeOverState.READY THEN
+		fbStateMachine.M_SetState(mState:= E_SluggingAddOnStates.Full_WaitPrev,
+								mReason:= 'next ready for takeover');
+
+	// -> syncronous operation not enabled (anymore)
+	ELSIF NOT Config.EnableSyncronousOperation THEN
+		fbStateMachine.M_SetState(mState:= E_SluggingAddOnStates.Destroy_WaitTU,
+								mReason:= 'snychronous operation disabled');
+
+	//TODO: -> TU added/removed without transportation
+	// ELSIF NOT fbSummary.P_Full THEN
+	END_IF
+
+(** full: wait prev ready for handover ******************************************************************************************)
+E_SluggingAddOnStates.Full_WaitPrev:
+	//-- ENTRY -------------------------------------------------------------------------------------------------------------------
+	IF fbStateMachine.P_Entering THEN
+        
+		M_SetAddOnOrders(Enable       := TRUE,
+						EnableTakeover:= FALSE,
+						EnableHandover:= FALSE,
+						EnableSimultaneousTransport:= TRUE);
+		AddOnOrders[FirstZone].EnableTakeover:= TRUE;
+
+		Creation  := TRUE;
+		Destroying:= TRUE;
+		Moving    := TRUE;
+
+		Releasable	  := TRUE;
+		ReleaseActive:= FALSE;
+	END_IF
+
+
+	// Calculate remaining time till timeout
+	TakeTimeout:= F_GetTimeRemain(Duration  := Config.TakeTimeout,
+									Timestamp:= TakeTimestamp);
+
+	// -> disabled
+	IF eDirection = E_SluggingAddOnDirections.None_Disabled THEN
+
+		fbStateMachine.M_SetState(mState:= E_SluggingAddOnStates.Disabled,
+								mReason:= 'slugging disabled');
+
+	// -> direction changed
+	ELSIF eDirection <> eCurrent THEN
+
+		fbStateMachine.M_SetState(mState:= E_SluggingAddOnStates.Disabled,
+								mReason:= CONCAT('direction changed to ', TO_STRING(eDirection)));
+
+	// -> next takeover not ready (anymore)
+	ELSIF M_GetNextTakeoverState() <> E_TakeOverState.READY THEN
+		fbStateMachine.M_SetState(mState:= E_SluggingAddOnStates.Full_WaitNext,
+								mReason:= 'next not ready for takeover (anymore)');
+
+	// -> prev handover ready
+	ELSIF M_GetPrevHandoverState() = E_HandOverState.READY THEN
+		fbSummary.P_TUs:= fbSummary.P_TUs + 1;
+
+		fbStateMachine.M_SetState(mState:= E_SluggingAddOnStates.Full_StartMove,
+								mReason:= 'prev ready for handover');
+
+	// -> wait timeout
+	ELSIF Config.TakeTimeout <> T#0S  // is option
+	  AND TakeTimeout = T#0S THEN
+		Reason:= 'take timeout';
+		Reason:= CONCAT(Reason, DebugTextBlocks.TIMEOUT);
+		Reason:= CONCAT(Reason, TIME_TO_STRING(Config.TakeTimeout));
+
+		fbStateMachine.M_SetState(mState:= E_SluggingAddOnStates.Destroy_WaitTU,
+								mReason:= Reason);
+
+	// -> manual release
+	ELSIF ReleaseActive THEN
+		fbStateMachine.M_SetState(mState:= E_SluggingAddOnStates.Destroy_WaitTU,
+								mReason:= 'manually released');
+
+	// -> syncronous operation not enabled (anymore)
+	ELSIF NOT Config.EnableSyncronousOperation THEN
+		fbStateMachine.M_SetState(mState:= E_SluggingAddOnStates.Destroy_WaitTU,
+								mReason:= 'snychronous operation disabled');
+
+	//TODO: -> TU added/removed without transportation
+	//ELSIF NOT fbSummary.P_Full THEN  //###todo
+        
+	END_IF
+
+	IF fbStateMachine.P_Exiting THEN
+		Releasable	  := FALSE;
+		ReleaseActive:= FALSE;
+		TakeTimeout  := T#0S;
+	END_IF
+
+(** full: wait train starts to move *********************************************************************************************)
+E_SluggingAddOnStates.Full_StartMove:
+
+	IF fbStateMachine.P_Entering THEN
+
+		M_SetAddOnOrders(Enable       := TRUE,
+						EnableTakeover:= TRUE,
+						EnableHandover:= TRUE,
+						EnableSimultaneousTransport:= TRUE);
+
+		Creation  := TRUE;
+		Destroying:= TRUE;
+		Moving    := TRUE;
+	END_IF
+
+	// -> disabled
+	IF eDirection = E_SluggingAddOnDirections.None_Disabled THEN
+		fbStateMachine.M_SetState(mState:= E_SluggingAddOnStates.Disabled,
+								mReason:= 'slugging disabled');
+
+	// -> direction changed
+	ELSIF eDirection <> eCurrent THEN
+		fbStateMachine.M_SetState(mState:= E_SluggingAddOnStates.Disabled,
+								mReason:= CONCAT('direction changed to ', TO_STRING(eDirection)));
+
+	// -> transportation (takeover) starts
+	ELSIF AddOnOrders[FirstZone].TransportControlData.eTakeOverState = E_TakeOverState.ACTIVE THEN
+		Reason:= 'TU incoming';
+		Reason:= CONCAT(Reason,  F_CreateTU_DataString(AddOnOrders[FirstZone].TransportControlData.TU_DataIndex));
+
+		fbStateMachine.M_SetState(mState:= E_SluggingAddOnStates.Full_MoveTrain,
+								mReason:= Reason);
+	END_IF
+
+(** full: move train & taking over from prev & handing over to next *************************************************************)
+E_SluggingAddOnStates.Full_MoveTrain:
+
+	IF fbStateMachine.P_Entering THEN
+
+		M_SetAddOnOrders(Enable       := TRUE,
+						EnableTakeover:= FALSE,	// movement already started
+						EnableHandover:= FALSE, // -> switch off as early as possible
+						EnableSimultaneousTransport:= TRUE);
+
+		Creation  := TRUE;
+		Destroying:= TRUE;
+		Moving    := TRUE;
+	END_IF
+
+	// -> disabled 
+	IF eDirection = E_SluggingAddOnDirections.None_Disabled THEN
+		fbStateMachine.M_SetState(mState:= E_SluggingAddOnStates.Disabled,
+								mReason:= 'slugging disabled');
+
+    // -> direction changed
+	ELSIF eDirection <> eCurrent THEN
+
+		fbStateMachine.M_SetState(mState:= E_SluggingAddOnStates.Disabled,
+								mReason:= CONCAT('direction changed to ', TO_STRING(eDirection)));
+
+	// -> slug finished moving one zone
+	ELSIF AddOnOrders[FirstZone].TransportControlData.eHandOverState = E_HandOverState.IDLE THEN
+		fbStateMachine.M_SetState(mState:= E_SluggingAddOnStates.Full_StartCycle,
+								mReason:= 'transportation done');
+	END_IF
+
+
+
+
+(** Shift slug: moving to end **************************************************************************************************)
+E_SluggingAddOnStates.Shift_StartMove:
+
+	IF fbStateMachine.P_Entering THEN
+
+		M_SetAddOnOrders(Enable       := TRUE,
+						EnableTakeover:= TRUE,
+						EnableHandover:= TRUE,
+						EnableSimultaneousTransport:= TRUE);
+		M_DisableTakeoverFromFirstToTail();				
+        
+        THIS^.M_AllowModeAllDrives(TRUE);
+        
+
+		Creation  := FALSE;
+		Destroying:= FALSE;
+		Moving    := TRUE;
+
+		TailToMove:= TailPosition;
+	END_IF
+
+	// -> disabled
+	IF eDirection = E_SluggingAddOnDirections.None_Disabled THEN
+		fbStateMachine.M_SetState(mState:= E_SluggingAddOnStates.Disabled,
+								mReason:= 'slugging disabled');
+
+	// -> direction changed
+	ELSIF eDirection <> eCurrent THEN
+		fbStateMachine.M_SetState(mState:= E_SluggingAddOnStates.Disabled,
+								mReason:= CONCAT('direction changed to ', TO_STRING(eDirection)));
+
+	// -> train is already empty
+	ELSIF fbSummary.P_Empty THEN
+		fbStateMachine.M_SetState(mState:= E_SluggingAddOnStates.Create_WaitPrev,
+								mReason:= 'train is already empty');
+
+	// -> just to be safe (shall never happen)
+	ELSIF TailToMove = 0 THEN
+		eDirection:= E_SluggingAddOnDirections.None_Disabled;
+
+		fbStateMachine.M_SetState1(mMsgType := E_DebugMsgType.ERROR,
+									mState := E_SluggingAddOnStates.CheckSituation,
+									mReason:= 'invalid internal value');
+
+	// -> tail started to move (TU/data moved to next) 
+	ELSIF AddOnOrders[TailToMove].TransportControlData.NumberOfPresentTUs = 0 THEN
+		fbStateMachine.M_SetState(mState:= E_SluggingAddOnStates.Shift_MoveTrain,
+								mReason:= 'tail starts moving');
+
+	// -> tail position changed
+	ELSIF TailToMove <> TailPosition THEN
+		fbStateMachine.M_ReEntry(mReason:= 'tail position changed');
+	END_IF
+
+
+(** Shift train: moving train one zone forward **********************************************************************************)
+E_SluggingAddOnStates.Shift_MoveTrain:
+
+	IF fbStateMachine.P_Entering THEN
+
+		M_SetAddOnOrders(Enable       := TRUE,
+						EnableTakeover:= FALSE,	// movement already started
+						EnableHandover:= FALSE, // -> switch off as early as possible
+						EnableSimultaneousTransport:= TRUE);
+                        
+		M_DisableTakeoverFromFirstToTail();
+		Creation  := FALSE;
+		Destroying:= FALSE;
+		Moving    := TRUE;
+	END_IF
+
+	// -> disabled 
+	IF eDirection = E_SluggingAddOnDirections.None_Disabled THEN
+		fbStateMachine.M_SetState(mState:= E_SluggingAddOnStates.Disabled,
+								mReason:= 'slugging disabled');
+
+	// -> direction changed 
+	ELSIF eDirection <> eCurrent THEN
+		fbStateMachine.M_SetState(mState:= E_SluggingAddOnStates.Disabled,
+								mReason:= CONCAT('direction changed to ', TO_STRING(eDirection)));
+
+	// -> train is already empty
+	ELSIF fbSummary.P_Empty THEN
+		fbStateMachine.M_SetState(mState:= E_SluggingAddOnStates.Create_WaitPrev,
+								mReason:= 'train empty');
+
+	// -> tail finished moving one zone (slug tail handover finished)
+	ELSIF AddOnOrders[TailToMove].TransportControlData.eHandOverState = E_HandOverState.IDLE THEN
+		TailToMove:= 0;
+		//-- train head arriving at the end? ----------
+		IF AddOnOrders[LastZone].TransportControlData.NumberOfPresentTUs = 0 THEN
+            fbStateMachine.M_SetState(mState:= E_SluggingAddOnStates.Shift_StartMove,
+                                      mReason:= 'tail arrived at next zone');
+		ELSE
+            fbStateMachine.M_SetState(mState:= E_SluggingAddOnStates.Destroy_WaitTU,
+                                      mReason:= 'head arrived at last zone');
+		END_IF
+	END_IF
+
+
+(** destroy: wait TU at last zone ***********************************************************************************************)
+E_SluggingAddOnStates.Destroy_WaitTU:
+
+	IF fbStateMachine.P_Entering THEN
+		M_SetAddOnOrders(Enable       := TRUE,
+						EnableTakeover:= TRUE,
+						EnableHandover:= TRUE,
+						EnableSimultaneousTransport:= TRUE);
+		AddOnOrders[FirstZone].EnableTakeover:= FALSE;				
+        AddOnOrders[LastZone].EnableHandover:= FALSE;
+        
+		M_DisableTakeoverFromFirstToTail();
+
+		Creation  := FALSE;
+		Destroying:= TRUE;
+		Moving    := FALSE;
+	END_IF
+    THIS^.M_AllowModeSingleDrive(TRUE, FALSE, LastZone);
+
+	// -> disabled 
+	IF eDirection = E_SluggingAddOnDirections.None_Disabled THEN
+
+		fbStateMachine.M_SetState(mState:= E_SluggingAddOnStates.Disabled,
+								mReason:= 'slugging disabled');
+
+	// -> direction changed 
+	ELSIF eDirection <> eCurrent THEN
+		fbStateMachine.M_SetState(mState:= E_SluggingAddOnStates.Disabled,
+								mReason:= CONCAT('direction changed to ', TO_STRING(eDirection)));
+
+	// -> last zone occupied
+	ELSIF AddOnOrders[LastZone].TransportControlData.Occupied THEN
+           
+		fbStateMachine.M_SetState(mState:= E_SluggingAddOnStates.Destroy_WaitNext,
+								mReason:= 'last zone occupied');
+
+	ELSIF fbSummary.P_Empty THEN
+		fbStateMachine.M_SetState(mState:= E_SluggingAddOnStates.Create_WaitPrev,
+								mReason:= 'train empty');
+	END_IF
+
+
+(** destroy: wait next ready for takeover ***************************************************************************************)
+E_SluggingAddOnStates.Destroy_WaitNext:
+
+	IF fbStateMachine.P_Entering THEN
+		M_SetAddOnOrders(Enable       := TRUE,
+						EnableTakeover:= TRUE,
+						EnableHandover:= TRUE,
+						EnableSimultaneousTransport:= TRUE);
+		AddOnOrders[FirstZone].EnableTakeover:= FALSE;				
+		AddOnOrders[LastZone].EnableHandover:= TRUE;
+
+		THIS^.M_DisableTakeoverFromFirstToTail();
+        //THIS^.M_AllowModeSingleDrive(TRUE, TRUE, LastZone);
+		Creation  := FALSE;
+		Destroying:= TRUE;
+		Moving    := FALSE;
+	END_IF
+
+	// -> disabled
+	IF eDirection = E_SluggingAddOnDirections.None_Disabled THEN
+		fbStateMachine.M_SetState(mState:= E_SluggingAddOnStates.Disabled,
+								mReason:= 'slugging disabled');
+
+	// -> direction changed
+	ELSIF eDirection <> eCurrent THEN
+		fbStateMachine.M_SetState(mState:= E_SluggingAddOnStates.Disabled,
+								mReason:= CONCAT('direction changed to ', TO_STRING(eDirection)));
+
+	// -> next takeover ready
+	ELSIF M_GetNextTakeoverState() = E_TakeOverState.READY THEN
+		fbStateMachine.M_SetState(mState:= E_SluggingAddOnStates.Destroy_StartMove,
+								mReason:= 'next ready for takeover');
+
+	// -> TU (manually) removed
+	ELSIF NOT AddOnOrders[LastZone].TransportControlData.Occupied THEN
+		IF fbSummary.P_Empty THEN
+            fbStateMachine.M_SetState(mState:= E_SluggingAddOnStates.Create_WaitPrev,
+                                     mReason:= 'TU manually removed');
+		ELSE 
+            fbStateMachine.M_SetState(mState:= E_SluggingAddOnStates.Shift_StartMove,
+                                      mReason:= 'TU manually removed');
+		END_IF
+
+	// -> syncronous operation enabled & train (still) full
+	ELSIF Config.EnableSyncronousOperation
+	      AND fbSummary.P_Full THEN
+		fbStateMachine.M_SetState(mState:= E_SluggingAddOnStates.Full_WaitNext,
+								mReason:= 'syncronous operation enabled');
+	END_IF
+
+(** destroy: wait start moving **************************************************************************************************)
+E_SluggingAddOnStates.Destroy_StartMove:
+	IF fbStateMachine.P_Entering THEN
+		M_SetAddOnOrders(Enable       := TRUE,
+						EnableTakeover:= TRUE,
+						EnableHandover:= TRUE,
+						EnableSimultaneousTransport:= TRUE);
+		AddOnOrders[FirstZone].EnableTakeover:= FALSE;
+        
+        THIS^.M_DisableTakeoverFromFirstToTail();
+        
+        THIS^.M_AllowModeAllDrives(TRUE);
+
+		Creation  := FALSE;
+		Destroying:= TRUE;
+		Moving    := FALSE;
+	END_IF
+
+	// -> disabled
+	IF eDirection = E_SluggingAddOnDirections.None_Disabled THEN
+        fbStateMachine.M_SetState(mState:= E_SluggingAddOnStates.Disabled,
+								mReason:= 'slugging disabled');
+
+	// -> direction changed
+	ELSIF eDirection <> eCurrent THEN
+		fbStateMachine.M_SetState(mState:= E_SluggingAddOnStates.Disabled,
+								mReason:= CONCAT('direction changed to ', TO_STRING(eDirection)));
+
+	// -> transportation (handover) starts
+	ELSIF AddOnOrders[LastZone].TransportControlData.eHandOverState = E_HandOverState.ACTIVE THEN
+		fbStateMachine.M_SetState(mState:= E_SluggingAddOnStates.Destroy_RemoveTU,
+								mReason:= 'transportation starts');
+	END_IF
+
+
+(** destroy: remove train (handing over to next) ********************************************************************************)
+E_SluggingAddOnStates.Destroy_RemoveTU:
+	IF fbStateMachine.P_Entering THEN
+
+		M_SetAddOnOrders(Enable       := TRUE,
+						EnableTakeover:= TRUE,	// movement already started
+						EnableHandover:= FALSE, // -> switch off as early as possible
+						EnableSimultaneousTransport:= TRUE);
+        AddOnOrders[FirstZone].EnableTakeover:= FALSE;
+		Creation  := FALSE;
+		Destroying:= TRUE;
+		Moving    := FALSE;
+	END_IF
+
+	// -> disabled
+	IF eDirection = E_SluggingAddOnDirections.None_Disabled THEN
+		fbStateMachine.M_SetState(mState:= E_SluggingAddOnStates.Disabled,
+								mReason:= 'slugging disabled');
+
+	// -> direction changed
+	ELSIF eDirection <> eCurrent THEN
+		fbStateMachine.M_SetState(mState:= E_SluggingAddOnStates.Disabled,
+								mReason:= CONCAT('direction changed to ', TO_STRING(eDirection)));
+
+	// -> transportation done
+	ELSIF AddOnOrders[LastZone].TransportControlData.eHandOverState = E_HandOverState.IDLE THEN
+          
+	    IF fbSummary.P_Empty THEN
+        	fbStateMachine.M_SetState(mState:= E_SluggingAddOnStates.Create_WaitPrev,
+                                      mReason:= 'transportation done');
+		ELSE
+            fbStateMachine.M_SetState(mState:= E_SluggingAddOnStates.Destroy_WaitTU,
+                                      mReason:= 'transportation done');
+		END_IF
+	END_IF
+
+(** unknown *********************************************************************************************************************)
+ELSE
+	fbStateMachine.M_SetState1(mMsgType := E_DebugMsgType.ERROR,
+								mState := E_SluggingAddOnStates.Initialization,
+								mReason:= 'invalid internal state');
+END_CASE
+
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_SetAddOnOrders" Id="{63efd8c7-8283-41e7-8094-55126bfca551}" FolderPath="_private\">
+      <Declaration><![CDATA[/// set all add on orders
+METHOD PRIVATE M_SetAddOnOrders
+(**************************************************************************************
+ *  Application     :   BoxControl Framework
+ *  Revision date   :   $Date: 2021-04-10 12:07:10 +0200 (lör, 10 apr 2021) $
+ *  Author          :   CDC
+ * ------------------------------------------------------------------------------------
+ *  © Swisslog AG
+ *  Swisslog is not liable for any usage of this source code that is not agreed 
+ *  on between Swisslog and the other party. The mandatory legal liability remains 
+ *  unaffected.
+ * ------------------------------------------------------------------------------------
+ *  Revision History: 
+ *
+ *  VERSION DATE         INITIALS     DESCRIPTION
+ *  0.0     DD.MM.YYYY   (name)       (explain customized modifications)
+ *
+ **************************************************************************************)
+VAR_INPUT
+	Enable				        : BOOL  := TRUE;
+	EnableTakeover		        : BOOL  := TRUE;
+	EnableHandover		        : BOOL  := TRUE;
+	EnableSimultaneousTransport	: BOOL  := TRUE;
+END_VAR
+
+VAR
+	Idx	: UINT;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[FOR Idx:= 1 TO MAX_ZONES DO
+
+	AddOnOrders[Idx].Enable         := Enable;
+	AddOnOrders[Idx].EnableTakeover := EnableTakeover;
+	AddOnOrders[Idx].EnableHandover := EnableHandover;  
+	AddOnOrders[Idx].EnableSimultaneousTransport := EnableSimultaneousTransport;
+
+END_FOR
+]]></ST>
+      </Implementation>
+    </Method>
+    <Property Name="P_Direction" Id="{ab8a647b-93e8-4cef-98b2-bc6b93e67b65}">
+      <Declaration><![CDATA[/// direction/enabling of control
+{attribute 'monitoring' := 'call'}
+PROPERTY PUBLIC P_Direction : E_SluggingAddOnDirections
+(**************************************************************************************
+ *  Application     :   BoxControl Framework
+ *  Revision date   :   $Date: 2021-04-10 12:07:10 +0200 (lör, 10 apr 2021) $
+ *  Author          :   CDC
+ * ------------------------------------------------------------------------------------
+ *  © Swisslog AG
+ *  Swisslog is not liable for any usage of this source code that is not agreed 
+ *  on between Swisslog and the other party. The mandatory legal liability remains 
+ *  unaffected.
+ * ------------------------------------------------------------------------------------
+ *  Revision History: 
+ *
+ *  VERSION DATE         INITIALS     DESCRIPTION
+ *  0.0     DD.MM.YYYY   (name)       (explain customized modifications)
+ *
+ **************************************************************************************)]]></Declaration>
+      <Get Name="Get" Id="{d809eb29-ed02-41d5-96bc-e9b5eacdc739}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[P_Direction:= eDirection;]]></ST>
+        </Implementation>
+      </Get>
+      <Set Name="Set" Id="{8f63ef01-0671-421b-80f5-4ad77f95dd68}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[// change?
+IF P_Direction = eDirection THEN
+  RETURN;
+END_IF
+
+
+// yes, then process it
+eDirection:= P_Direction;
+
+THIS^();  // perform state change]]></ST>
+        </Implementation>
+      </Set>
+    </Property>
+    <Property Name="P_Releasable" Id="{98a90d8b-5210-491b-a67b-c9ac43952b06}">
+      <Declaration><![CDATA[/// train is releaseable via calling M_ReleaseTrain()
+{attribute 'monitoring' := 'call'}
+PROPERTY PUBLIC P_Releasable : BOOL
+(**************************************************************************************
+ *  Application     :   BoxControl Framework
+ *  Revision date   :   $Date: 2021-04-10 12:07:10 +0200 (lör, 10 apr 2021) $
+ *  Author          :   CDC
+ * ------------------------------------------------------------------------------------
+ *  © Swisslog AG
+ *  Swisslog is not liable for any usage of this source code that is not agreed 
+ *  on between Swisslog and the other party. The mandatory legal liability remains 
+ *  unaffected.
+ * ------------------------------------------------------------------------------------
+ *  Revision History: 
+ *
+ *  VERSION DATE         INITIALS     DESCRIPTION
+ *  0.0     DD.MM.YYYY   (name)       (explain customized modifications)
+ *
+ **************************************************************************************)]]></Declaration>
+      <Get Name="Get" Id="{74d3ee5d-42c6-4148-bce8-9c4b00f767ee}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[P_Releasable:= Releasable;]]></ST>
+        </Implementation>
+      </Get>
+    </Property>
+    <Property Name="P_Summary" Id="{3bf29358-9ef4-49d6-bd14-7c352b4f0f29}">
+      <Declaration><![CDATA[/// train summary
+{attribute 'monitoring' := 'call'}
+PROPERTY PUBLIC P_Summary : I_SluggingAddOn_Summary
+(**************************************************************************************
+ *  Application     :   BoxControl Framework
+ *  Revision date   :   $Date: 2021-04-10 12:07:10 +0200 (lör, 10 apr 2021) $
+ *  Author          :   CDC
+ * ------------------------------------------------------------------------------------
+ *  © Swisslog AG
+ *  Swisslog is not liable for any usage of this source code that is not agreed 
+ *  on between Swisslog and the other party. The mandatory legal liability remains 
+ *  unaffected.
+ * ------------------------------------------------------------------------------------
+ *  Revision History: 
+ *
+ *  VERSION DATE         INITIALS     DESCRIPTION
+ *  0.0     DD.MM.YYYY   (name)       (explain customized modifications)
+ *
+ **************************************************************************************)]]></Declaration>
+      <Get Name="Get" Id="{65612196-f090-47d3-be4e-4def5daf54bf}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[P_Summary:= fbSummary;]]></ST>
+        </Implementation>
+      </Get>
+    </Property>
+    <LineIds Name="FB_SluggingAddOn">
+      <LineId Id="3" Count="38" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_SluggingAddOn.M_AllowModeAllDrives">
+      <LineId Id="3" Count="10" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_SluggingAddOn.M_AllowModeSingleDrive">
+      <LineId Id="3" Count="12" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_SluggingAddOn.M_CloseAddonLinks">
+      <LineId Id="3" Count="27" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_SluggingAddOn.M_CreateAddonLinks">
+      <LineId Id="3" Count="47" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_SluggingAddOn.M_DisableTakeoverFromFirstToTail">
+      <LineId Id="3" Count="21" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_SluggingAddOn.M_EmulateSensors">
+      <LineId Id="57" Count="15" />
+      <LineId Id="114" Count="0" />
+      <LineId Id="130" Count="0" />
+      <LineId Id="119" Count="0" />
+      <LineId Id="126" Count="2" />
+      <LineId Id="115" Count="0" />
+      <LineId Id="73" Count="13" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_SluggingAddOn.M_GetNextFromZone">
+      <LineId Id="3" Count="26" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_SluggingAddOn.M_GetNextTakeoverState">
+      <LineId Id="3" Count="41" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_SluggingAddOn.M_GetOutAddOnOrders">
+      <LineId Id="3" Count="26" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_SluggingAddOn.M_GetPrevFromZone">
+      <LineId Id="3" Count="26" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_SluggingAddOn.M_GetPrevHandoverState">
+      <LineId Id="3" Count="40" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_SluggingAddOn.M_GetStateText">
+      <LineId Id="3" Count="1" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_SluggingAddOn.M_GetTrainSummary">
+      <LineId Id="3" Count="43" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_SluggingAddOn.M_Init">
+      <LineId Id="3" Count="46" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_SluggingAddOn.M_ReleaseTrain">
+      <LineId Id="3" Count="1" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_SluggingAddOn.M_RunStates">
+      <LineId Id="2420" Count="785" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_SluggingAddOn.M_SetAddOnOrders">
+      <LineId Id="3" Count="7" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_SluggingAddOn.P_Direction.Get">
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_SluggingAddOn.P_Direction.Set">
+      <LineId Id="3" Count="8" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_SluggingAddOn.P_Releasable.Get">
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_SluggingAddOn.P_Summary.Get">
+      <LineId Id="2" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

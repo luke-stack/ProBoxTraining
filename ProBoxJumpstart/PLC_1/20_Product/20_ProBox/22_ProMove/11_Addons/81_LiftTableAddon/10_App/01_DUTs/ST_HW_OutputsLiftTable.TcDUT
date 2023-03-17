@@ -1,0 +1,13 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <DUT Name="ST_HW_OutputsLiftTable" Id="{4e55bf5f-6d5d-492f-88bb-defc772954de}">
+    <Declaration><![CDATA[TYPE ST_HW_OutputsLiftTable :
+STRUCT
+	LiftUp			: BOOL; //Output signal used to drive lift up
+	LiftDown		: BOOL; //Output signal used to drive lift down
+	StartTransport	: BOOL; //Output signal to lamp, used to indicate start transport
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

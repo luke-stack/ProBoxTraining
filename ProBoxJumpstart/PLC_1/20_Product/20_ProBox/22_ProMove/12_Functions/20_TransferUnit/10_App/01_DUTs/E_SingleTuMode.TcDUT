@@ -1,0 +1,20 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.4">
+  <DUT Name="E_SingleTuMode" Id="{1990fe52-dd85-4b43-9831-6ee35140bf02}">
+    <Declaration><![CDATA[{attribute 'qualified_only'}
+{attribute 'strict'}
+//Single TU mode selection of how to restrict the takover of the transfer unit and slave unit functions in order to remove the risk of having 2 TU's on the chain or on rollers if transfer unit has extendd functions on axis 1-2.
+//Note.
+//SingleTuMode34 mode will allow DTU to takover on axis 1-2 if slave element's functions are occupied
+//SingleTuMode mode will not allow takoever on axis 1-2 or 3-4 if slave element's functions are occupied
+TYPE E_SingleTuMode:
+(
+	NoRestrictions,		// No restrictions
+	SingleTuMode12,		// Single TU mode on axis 1-2. Transferunit and extended functions will inhibit Takover if any functions already occupied on axis 1-2/2-1.
+	SingleTuMode34,		// Single TU mode on axis 3-4. Transferunit and Slave element's extended functions will inhibit Takover if any functions already occupied on axis 3-4/4-3.
+	SingleTuMode		// Single TU mode on both axis. Takeover inhibited for Transfer unit and extended functions and Slave element's extended functions if any function on both axis is occuped.	
+);
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

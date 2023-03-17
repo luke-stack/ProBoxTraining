@@ -1,0 +1,44 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.12">
+  <DUT Name="ST_HW_OutputsRejectPanel" Id="{50de875a-a2e3-4119-a646-64b5b8d6a784}">
+    <Declaration><![CDATA[TYPE ST_HW_OutputsRejectPanel :
+STRUCT
+	HeightError							: BOOL;           		// Hight Error Signal To dispay on reject panel
+	PalletOrientationZeroDeg			: BOOL;
+	PalletOrientationOneEightyDeg		: BOOL;
+	PalletOrientationNintyDeg			: BOOL;
+	PalletOrientationTwoSeventyDeg		: BOOL;
+	ZeroDegProfileLeftError				: BOOL;                  // LeftErrorShortSide Error Signal To dispay on reject panel
+	ZeroDegProfileRightError			: BOOL;                  // RightErrorShortSide Error Signal To dispay on reject panel
+	ZeroDegProfileFrontError			: BOOL;                  // FrontErrorShortSide Error Signal To dispay on reject panel
+	ZeroDegProfileRearError				: BOOL;                  // RearErrorShortSide Error Signal To dispay on reject panel
+	NintyDegProfileLeftError			: BOOL;                  // LeftErrorLongSide Error Signal To dispay on reject panel
+	NintyDegProfileRightError			: BOOL;                  // RightErrorLongSide Error Signal To dispay on reject panel
+	NintyDegProfileFrontError			: BOOL;                  // FrontErrorLongSide Error Signal To dispay on reject panel
+	NintyDegProfileRearError			: BOOL;                  // RearErrorLongSide Error Signal To dispay on reject panel
+	OneEightyDegProfileLeftError		: BOOL;
+	OneEightyDegProfileRightError		: BOOL;
+	OneEightyDegProfileFrontError		: BOOL;
+	OneEightyDegProfileRearError		: BOOL;
+	TwoSeventyDegProfileLeftError		: BOOL;
+	TwoSeventyDegProfileRightError		: BOOL;
+	TwoSeventyDegProfileFrontError		: BOOL;
+	TwoSeventyDegProfileRearError		: BOOL;
+	TunnelError							: BOOL;                  // TunnelError Error Signal To dispay on reject panel
+	RunnerError							: BOOL;                  // RunnerError Error Signal To dispay on reject panel
+	WeightError							: BOOL;                  // WeightError Error Signal To dispay on reject panel
+	LabelReadError						: BOOL;                  // LabelReadError Error Signal To dispay on reject panel
+	
+//Button Enable also graphic design enable/disable signals imported at rject panel 
+	RejectBtnShow						: BOOL;                  // RejectBtnShow Signal To dispay on reject panel
+    ProfileBtnShow		    			: BOOL;                  // ProfileBtnShow Signal To dispay on reject panel
+	WrapperBtnShow  					: BOOL;                  // WrapperBtnShow  Signal To dispay on reject panel
+	DepallatizerBtnShow     			: BOOL;                  // DepallatizerBtnShow Signal To dispay on reject panel
+	DirectionEnableShortSide      		: BOOL;                  // DirectionEnableShortSide Signal To dispay direction of pallet on reject panel
+	DirectionEnableLongSide    			: BOOL;                  // DirectionEnableLongSide Signal To dispay direction of pallet  on reject panel
+	WindowNo							: ARRAY [1..10] OF  INT; //  WindowNo Signal To change windows on dispay of reject panel
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

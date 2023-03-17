@@ -1,0 +1,99 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.18">
+  <Itf Name="I_WindowTrackingListener" Id="{6d5d1f6c-66c3-464c-adce-455d88fb5de4}">
+    <Declaration><![CDATA[/// Window tracking listener 
+INTERFACE I_WindowTrackingListener EXTENDS __System.IQueryInterface 
+]]></Declaration>
+    <Method Name="M_TrackingShiftingCompletedEvent" Id="{2fcaa5a2-7f4d-456e-86f7-b124d3c630f9}">
+      <Declaration><![CDATA[/// Shifting completed event
+METHOD M_TrackingShiftingCompletedEvent
+VAR_INPUT
+	mAbsolutePosition		: UDINT; // Absolute shifting start position [mm]
+	mDistance				: UDINT; // Distance [mm] to be shifted
+	mWindowIndex			: UINT; // Absolute position as window index on tracking
+	mWindowsToShift			: UINT; // Distance to be shifted in amount of windows
+END_VAR
+]]></Declaration>
+    </Method>
+    <Method Name="M_TrackingShiftingInitiatedEvent" Id="{3f6d6be3-ee42-4e5a-b8d2-8a872120200d}">
+      <Declaration><![CDATA[/// Shifting initiated event
+METHOD M_TrackingShiftingInitiatedEvent
+VAR_INPUT
+	mAbsolutePosition		: UDINT; // Absolute shifting start position [mm]
+	mDistance				: UDINT; // Distance [mm] to be shifted
+	mWindowIndex			: UINT; // Absolute position as window index on tracking
+	mWindowsToShift			: UINT; // Distance to be shifted in amount of windows
+END_VAR
+]]></Declaration>
+    </Method>
+    <Method Name="M_TrackingTU_AddedEvent" Id="{13ace5c4-3051-451c-9937-b7b864a4d8ca}">
+      <Declaration><![CDATA[/// Window tracking allocated new zone
+METHOD M_TrackingTU_AddedEvent
+VAR_INPUT
+	mTrackingZoneIndex	: UINT; // New Zone index 
+	mTrackingZoneData	: ST_WindowTrackingZone; // Data of deleted zone
+END_VAR
+]]></Declaration>
+    </Method>
+    <Method Name="M_TrackingTU_DeletedEvent" Id="{4134f1ae-2537-45e9-8f05-f34ee91fd1f9}">
+      <Declaration><![CDATA[/// Window tracking deleted this zone
+METHOD M_TrackingTU_DeletedEvent
+VAR_INPUT
+	mTrackingZoneIndex	: UINT; // Deleted zone index
+	mTrackingZoneData	: ST_WindowTrackingZone; // Data of deleted zone
+END_VAR
+]]></Declaration>
+    </Method>
+    <Method Name="M_TrackingZoneAddedEvent" Id="{28b66ec0-a8a9-4a32-a5e1-3bb26dc71fb7}">
+      <Declaration><![CDATA[/// Window tracking allocated new zone
+METHOD M_TrackingZoneAddedEvent
+VAR_INPUT
+	mTrackingZoneIndex	: UINT; // New Zone index 
+	mTrackingZoneData	: ST_WindowTrackingZone; // Data of deleted zone
+END_VAR
+]]></Declaration>
+    </Method>
+    <Method Name="M_TrackingZoneDeletedEvent" Id="{3d80beb2-b2c3-4a3c-b5a0-828415e6ff1a}">
+      <Declaration><![CDATA[/// Window tracking deleted this zone
+METHOD M_TrackingZoneDeletedEvent
+VAR_INPUT
+	mTrackingZoneIndex	: UINT; // Deleted zone index
+	mTrackingZoneData	: ST_WindowTrackingZone; // Data of deleted zone
+END_VAR
+]]></Declaration>
+    </Method>
+    <Method Name="M_TrackingZoneEnlargedEvent" Id="{2ca6b073-ca8e-44f2-b1c6-a748233df1c7}">
+      <Declaration><![CDATA[/// A zone was enlarged event
+METHOD M_TrackingZoneEnlargedEvent
+VAR_INPUT
+	mTrackingZoneIndex	: UINT; // Enlarged Zone index 
+END_VAR
+VAR_IN_OUT
+	mOldTrackingZoneData : ST_WindowTrackingZone; // Zone data before modification
+	mNewTrackingZoneData : ST_WindowTrackingZone; // Zone data after modification
+END_VAR
+]]></Declaration>
+    </Method>
+    <Method Name="M_TrackingZoneMovedEvent" Id="{06d6b50b-5485-4d23-89f9-237539383eba}">
+      <Declaration><![CDATA[/// Window tracking moved this zone
+METHOD M_TrackingZoneMovedEvent
+VAR_INPUT
+	mTrackingZoneIndex	: UINT; // Deleted zone index
+	mTrackingZoneData	: ST_WindowTrackingZone; // Data of deleted zone
+END_VAR
+]]></Declaration>
+    </Method>
+    <Method Name="M_TrackingZoneShortenedEvent" Id="{60e0af03-fc0b-4103-bfe1-5b773afad386}">
+      <Declaration><![CDATA[/// A zone was shortened event
+METHOD M_TrackingZoneShortenedEvent
+VAR_INPUT
+	mTrackingZoneIndex	: UINT; // Shortened Zone index 
+END_VAR
+VAR_IN_OUT
+	mOldTrackingZoneData : ST_WindowTrackingZone; // Zone data before modification
+	mNewTrackingZoneData : ST_WindowTrackingZone; // Zone data after modification
+END_VAR
+]]></Declaration>
+    </Method>
+  </Itf>
+</TcPlcObject>

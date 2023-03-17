@@ -1,0 +1,96 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project Crc="4054346161" DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003" ToolsVersion="4.0">
+  <PropertyGroup>
+    <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
+    <SchemaVersion>2.0</SchemaVersion>
+    <ProjectGuid>{2dde2ce8-8780-49dc-9e85-0fb6d0cbe037}</ProjectGuid>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>TwinCAT3SafePlcProject</RootNamespace>
+    <AssemblyName>TwinCAT3SafePlcProject</AssemblyName>
+    <FileUpgradeFlags />
+    <UpgradeBackupLocation />
+    <OldToolsVersion>2.0</OldToolsVersion>
+    <TargetSystem>EL6900</TargetSystem>
+    <ProgrammingLanguage>Graphical Editor</ProgrammingLanguage>
+    <Worker>q8ottoc</Worker>
+    <IntProjName>SafePLC_1</IntProjName>
+    <IsNewCreated>false</IsNewCreated>
+    <SPlcProjVersion>1.7.0.0</SPlcProjVersion>
+    <Name>SafePLC_1</Name>
+    <NextSdsId>3</NextSdsId>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)' == 'Release' ">
+    <DebugSymbols>false</DebugSymbols>
+    <OutputPath>bin\Release\</OutputPath>
+    <EnableUnmanagedDebugging>false</EnableUnmanagedDebugging>
+    <CodeAnalysisRuleSet>AllRules.ruleset</CodeAnalysisRuleSet>
+  </PropertyGroup>
+  <ItemGroup>
+    <None Include="Default\Alias Devices\Run.sds" />
+    <None Include="Default\Default.sal" />
+    <None Include="Default\Default.sal.diagram">
+      <Visible>false</Visible>
+      <DependentUpon>Default\Default.sal</DependentUpon>
+    </None>
+    <None Include="GVLs\Default.sgvl" />
+    <None Include="TargetSystemConfig.xml">
+      <Visible>false</Visible>
+    </None>
+    <None Include="User FBs\FB_Belt_Monitoring_HighLifter.ufb" />
+    <None Include="User FBs\FB_Belt_Monitoring_HighLifter.ufb.diagram">
+      <Visible>false</Visible>
+      <DependentUpon>User FBs\FB_Belt_Monitoring_HighLifter.ufb</DependentUpon>
+    </None>
+    <None Include="User FBs\FB_LowLift.ufb" />
+    <None Include="User FBs\FB_LowLift.ufb.diagram">
+      <Visible>false</Visible>
+      <DependentUpon>User FBs\FB_LowLift.ufb</DependentUpon>
+    </None>
+    <None Include="User FBs\FB_MC_2_Contactors.ufb" />
+    <None Include="User FBs\FB_MC_2_Contactors.ufb.diagram">
+      <Visible>false</Visible>
+      <DependentUpon>User FBs\FB_MC_2_Contactors.ufb</DependentUpon>
+    </None>
+    <None Include="User FBs\FB_MC_3_Contactors.ufb" />
+    <None Include="User FBs\FB_MC_3_Contactors.ufb.diagram">
+      <Visible>false</Visible>
+      <DependentUpon>User FBs\FB_MC_3_Contactors.ufb</DependentUpon>
+    </None>
+    <None Include="User FBs\FB_MC_4_Contactors.ufb" />
+    <None Include="User FBs\FB_MC_4_Contactors.ufb.diagram">
+      <Visible>false</Visible>
+      <DependentUpon>User FBs\FB_MC_4_Contactors.ufb</DependentUpon>
+    </None>
+    <None Include="User FBs\FB_MC_5_Contactors.ufb" />
+    <None Include="User FBs\FB_MC_5_Contactors.ufb.diagram">
+      <Visible>false</Visible>
+      <DependentUpon>User FBs\FB_MC_5_Contactors.ufb</DependentUpon>
+    </None>
+    <None Include="User FBs\FB_MC_6_Contactors.ufb" />
+    <None Include="User FBs\FB_MC_6_Contactors.ufb.diagram">
+      <Visible>false</Visible>
+      <DependentUpon>User FBs\FB_MC_6_Contactors.ufb</DependentUpon>
+    </None>
+    <None Include="User FBs\FB_Shuttle.ufb" />
+    <None Include="User FBs\FB_Shuttle.ufb.diagram">
+      <Visible>false</Visible>
+      <DependentUpon>User FBs\FB_Shuttle.ufb</DependentUpon>
+    </None>
+    <None Include="User FBs\FB_VerticalConv.ufb" />
+    <None Include="User FBs\FB_VerticalConv.ufb.diagram">
+      <Visible>false</Visible>
+      <DependentUpon>User FBs\FB_VerticalConv.ufb</DependentUpon>
+    </None>
+    <None Include="User FBs\SafeTorqeOFF_VC.ufb" />
+    <None Include="User FBs\SafeTorqeOFF_VC.ufb.diagram">
+      <Visible>false</Visible>
+      <DependentUpon>User FBs\SafeTorqeOFF_VC.ufb</DependentUpon>
+    </None>
+  </ItemGroup>
+  <ItemGroup>
+    <Folder Include="Default" />
+    <Folder Include="Default\Alias Devices" />
+    <Folder Include="GVLs" />
+    <Folder Include="User FBs" />
+  </ItemGroup>
+</Project>

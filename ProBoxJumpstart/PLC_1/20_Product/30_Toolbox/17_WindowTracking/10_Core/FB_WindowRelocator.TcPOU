@@ -1,0 +1,210 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.12">
+  <POU Name="FB_WindowRelocator" Id="{df2e5841-b64a-447a-8f1f-117bbfa53fc1}" SpecialFunc="None">
+    <Declaration><![CDATA[/// Handle relocation order in window tracking
+{attribute 'no_explicit_call' := 'do not call this POU directly'} 
+FUNCTION_BLOCK FB_WindowRelocator
+(************************************************************************************** 
+* 	Application 		: BoxControl Framework 
+* 	Revision 			: $Revision: 408723 $ 
+* 	Revision date 		: $Date: 2018-06-27 13:49:08 +0200 (Wed, 27 Jun 2018) $ 
+* 	Last changed by 	: $Author: b7bolm $ 
+* 	URL 				: $URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/21_Projects/BCF_2.0/trunk/BCF/BCF/JumpStart/20_Product/10_App/12_E_Functions/10_Lib/10_Conv/FB_FunctionList.TcPOU $ 
+* ------------------------------------------------------------------------------------ 
+* 	© Swisslog AG 
+* 	Swisslog is not liable for any usage of this source code that is not agreed 
+* 	on between Swisslog and the other party. The mandatory legal liability remains 
+* 	unaffected. 
+* ------------------------------------------------------------------------------------ 
+* 	Revision History: 
+* 
+* 	VERSION 		DATE 			INITIALS 			DESCRIPTION 
+* 	0.1 			31.08.2018 		b7bolm 				First implementation
+* 
+**************************************************************************************)
+VAR
+	Buffer  				: ARRAY[0..ENTRIES * UINT_TO_INT(SIZEOF(ST_WindowTrackingReloc))] OF BYTE; // Stack buffer
+	fbReallocStack			: FB_MemStackBuffer; // Stack buffer LIFO
+END_VAR
+VAR CONSTANT
+	ENTRIES 				: INT := 300; // Maximum index to store in buffer
+	STACK_BUFFER_ERROR		: UINT := 1; // Error id for stack buffer
+	MAX_NUMBER_OF_WINDOWS 	: UINT := WindowTracking.MAX_NUMBER_OF_WINDOWS;
+	MAX_NUMBER_OF_ZONES		: UINT := MAX_NUMBER_OF_WINDOWS/2;
+END_VAR]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[;]]></ST>
+    </Implementation>
+    <Method Name="M_Reset" Id="{d3fa241b-8720-42ce-888c-7902f3811d82}">
+      <Declaration><![CDATA[/// Clears all active orders
+METHOD M_Reset : BOOL // Returns true if successful, otherwise false
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[M_Reset := FALSE;
+
+fbReallocStack.A_Reset( 
+	pBuffer 	:= ADR(Buffer), 
+	cbBuffer 	:= SIZEOF(Buffer));
+	
+IF fbReallocStack.bOk THEN
+	M_Reset := TRUE;
+END_IF
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_RetrieveLastEntry" Id="{b5cae5ce-97b5-4705-9b1f-308b5c640f72}">
+      <Declaration><![CDATA[/// Returns last entred order
+METHOD M_RetrieveLastEntry : BOOL // Returns true if an order could be successful retrieved.
+VAR_INPUT
+	mpData		: POINTER TO ST_WindowTrackingReloc; // Pointer to data variable
+	mDataSize	: UINT; // Size of data variable
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[M_RetrieveLastEntry := FALSE;
+
+IF fbReallocStack.nCount > 0 THEN
+	// Retrieve and remove last
+	fbReallocStack.A_Pop( 
+		pBuffer 	:= ADR(buffer), 
+		cbBuffer 	:= SIZEOF(buffer), 
+		pRead 		:= mpData, 
+		cbRead 		:= mDataSize);
+		
+	IF fbReallocStack.bOk THEN
+		M_RetrieveLastEntry := TRUE;
+	END_IF
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_ScheduleRelocation" Id="{247fea31-65f8-47e8-8363-85f24185f890}">
+      <Declaration><![CDATA[/// Schedules a new reallocation of a window in WindowTracking
+METHOD M_ScheduleRelocation : BOOL // Returns true, if reallocation was successful.
+VAR_INPUT
+	mZoneIndex				: UINT; // Zone index to reallocate
+	mTargetWindow 			: UINT; // Target window to which the zone should be reallocated
+	mMaxWindowIndex 		: UINT; // Maximum window index
+	mrWindowTable			: REFERENCE TO ARRAY[1..MAX_NUMBER_OF_WINDOWS] OF ST_WindowTrackingWindow;
+	mrZoneTable				: REFERENCE TO ARRAY[1..MAX_NUMBER_OF_ZONES] OF ST_WindowTrackingZone;
+END_VAR
+VAR_OUTPUT
+	mBlockingZoneIndex 		: UINT;
+	mBlockingEndWindowIndex : UINT;
+	mErrorId				: UINT;
+END_VAR
+VAR_INST
+	RelocOrder				: ST_WindowTrackingReloc; // Scheduled order
+	RelocationPossible  	: BOOL; // Conditions allow reallocation 
+	WindowLength 			: UINT; // Window length [windows] of a zone
+END_VAR
+VAR
+	mIdx 					: UINT; // Iterator
+	mWindowIndex 			: UINT; // Windes index iterator
+	mTargetZoneIndex 		: UINT; // Target zone index
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[M_ScheduleRelocation := FALSE;
+MEMSET(ADR(RelocOrder), 0, SIZEOF(RelocOrder));
+RelocationPossible := TRUE;
+mBlockingZoneIndex := 0;
+mErrorId := 0;
+
+IF mZoneIndex = 0 OR
+   mTargetWindow = 0 OR
+   NOT __ISVALIDREF(mrWindowTable) OR
+   NOT __ISVALIDREF(mrZoneTable) THEN
+   RETURN;
+END_IF
+
+IF mrZoneTable[mZoneIndex].ZoneEndWindowIndex > mrZoneTable[mZoneIndex].ZoneStartWindowIndex THEN
+	WindowLength := mrZoneTable[mZoneIndex].ZoneEndWindowIndex - mrZoneTable[mZoneIndex].ZoneStartWindowIndex + 1;
+ELSE
+	WindowLength := mrZoneTable[mZoneIndex].ZoneEndWindowIndex + mMaxWindowIndex - mrZoneTable[mZoneIndex].ZoneStartWindowIndex + 1;
+END_IF
+
+mWindowIndex := mTargetWindow;
+
+FOR mIdx := 1 TO WindowLength DO
+
+	// Correct border overflow
+	IF mWindowIndex > mMaxWindowIndex THEN
+		mWindowIndex := mWindowIndex - mMaxWindowIndex;
+	END_IF
+
+	// Check if target window has already a reserved zone
+	IF mrWindowTable[mWindowIndex].ZoneIndex <> 0 AND
+        mrWindowTable[mWindowIndex].ZoneIndex <> mZoneIndex THEN
+		// Store Zone index of target window
+		mTargetZoneIndex := mrWindowTable[mWindowIndex].ZoneIndex;
+	
+		// Check if zone is allowed to be overwritten
+		// - no physical TU is present
+		// - shifting is not inhibited
+		IF NOT mrZoneTable[mTargetZoneIndex].TU_Present AND
+		   NOT mrZoneTable[mTargetZoneIndex].InhibitShifting THEN
+		   // Window is possible to be overwritten, check others
+		   ;
+		ELSE
+			RelocationPossible := FALSE;
+			mBlockingZoneIndex := mTargetZoneIndex;
+			mBlockingEndWindowIndex := mrZoneTable[mTargetZoneIndex].ZoneEndWindowIndex;
+			EXIT;
+		END_IF
+	END_IF
+	
+	mWindowIndex := mWindowIndex + 1;
+END_FOR
+
+IF RelocationPossible THEN	
+	RelocOrder.ZoneIndex := mZoneIndex;
+	RelocOrder.TargetWindow := mTargetWindow;
+	
+	fbReallocStack.A_Push( 
+		pBuffer 	:= ADR(Buffer),
+		cbBuffer 	:= SIZEOF(Buffer),
+		pWrite 		:= ADR(RelocOrder),
+		cbWrite 	:= SIZEOF(RelocOrder));
+		
+	IF fbReallocStack.bOk THEN
+		M_ScheduleRelocation := TRUE;
+	ELSE
+		mErrorId := STACK_BUFFER_ERROR;
+		M_ScheduleRelocation := FALSE;	
+	END_IF
+END_IF
+]]></ST>
+      </Implementation>
+    </Method>
+    <Property Name="P_Count" Id="{7770572f-dc1c-46a2-a4b2-e95614796626}">
+      <Declaration><![CDATA[/// Amount of available reallocation orders
+{attribute 'monitoring' := 'call'}
+PROPERTY P_Count : UDINT // Number of entries]]></Declaration>
+      <Get Name="Get" Id="{523c36fa-84d3-40a7-ab8a-f3ab59d80761}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[P_Count := fbReallocStack.nCount;]]></ST>
+        </Implementation>
+      </Get>
+    </Property>
+    <LineIds Name="FB_WindowRelocator">
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_WindowRelocator.M_Reset">
+      <LineId Id="3" Count="7" />
+      <LineId Id="2" Count="0" />
+      <LineId Id="13" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_WindowRelocator.M_RetrieveLastEntry">
+      <LineId Id="45" Count="12" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_WindowRelocator.M_ScheduleRelocation">
+      <LineId Id="265" Count="68" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_WindowRelocator.P_Count.Get">
+      <LineId Id="2" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

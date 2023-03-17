@@ -1,0 +1,16 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.4">
+  <DUT Name="ST_CFG_MotorTransfer" Id="{a92c9716-28fe-488c-9ebd-4e2a1464f7a3}">
+    <Declaration><![CDATA[//Configuration parameters when transfering an TU to/from the crain on conveyour chain/rollers.
+TYPE ST_CFG_MotorTransfer :
+STRUCT
+	EnableMotorTransferTU		: BOOL:=FALSE; //Default FALSE, transfer TU to crane by transfer over the CV-chain	
+	HandoverMotorDir			: E_DriveDirection := E_DriveDirection.FWD;  //Default FWD, Run motor directon on handover
+	TakeoverMotorDir			: E_DriveDirection := E_DriveDirection.FWD;  //Default FWD, Run motor direction on takeover
+	MotorSpeed					: E_ProBoxMotorSpeed:= E_ProBoxMotorSpeed.NORMAL;	//Transfer speed
+	MotorDriveTimeout			: TIME:=T#20S; //Timeout during transfering TU to/from crane
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

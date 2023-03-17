@@ -1,0 +1,1766 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.4">
+  <POU Name="FB_ElementConv" Id="{7d164db1-9d97-429f-b381-7fe07047509e}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK FB_ElementConv EXTENDS FB_BaseObject
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 404529 $
+ *	Revision date	:	$Date: 2020-11-19 15:59:09 +0100 (tor, 19 nov 2020) $
+ *	Last changed by	:	$Author: b7bolm $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/trunk/01_Software/BCF/BCF/JumpStart/20_Product/10_App/13_Elements/10_Lib/10_Conv/FB_ElementConv.TcPOU $
+ *
+ *	Purpose			:	Base element.
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+VAR_INPUT
+	ConfigElement			: ST_CFG_Element; // Base element configuration 
+	InhibitStopping			: BOOL; // Inhibit state change from Stopping to stop in order to finish an ongoing action
+END_VAR
+
+VAR
+	ElementBase				: ST_ElementBase; // Summary of variables used by framework
+END_VAR
+
+VAR PERSISTENT
+	ITC						: ST_ITC_Element; // ITC				
+	ElementData				: ST_ElementData; // Element data - external ready only 
+	ElementInterface		: ST_ElementInterface; // Element interface - external read/write 
+	SettingsElement			: ST_CFG_Element; // Base element settings 
+END_VAR]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[(**************************************************************************************************************
+   Element - Body never called!
+***************************************************************************************************************)
+;]]></ST>
+    </Implementation>
+    <Action Name="A_StateControl" Id="{a651bd47-ab3f-4b3d-90e6-bdcc478648cc}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_StateControl
+ * 	FUNCTION	Handles internal states and mode
+ **************************************************************************************)
+ 
+(**************************************************************************************
+   System state
+***************************************************************************************)
+ // Update mode
+ ElementData.OperationState.Info := ElementInterface.In.GroupState.Info;
+ ElementData.OperationState.InitRelease := ElementInterface.In.GroupState.InitRelease;
+ 
+(**************************************************************************************
+   Element mode
+***************************************************************************************)
+ // Update mode
+ ElementData.OperationState.eMode := ElementInterface.In.GroupState.eMode;
+ 
+(**************************************************************************************
+   Element states
+***************************************************************************************)
+CASE ElementData.OperationState.eState OF
+	
+	(**************************************************************************************
+   		UNKNOWN state
+	***************************************************************************************)
+	E_PositionState.UNKNOWN:
+		// Update internal state
+		ElementData.OperationState.eLastState := ElementData.OperationState.eState;
+		ElementData.OperationState.eState 	  := E_PositionState.STOPPED;	
+
+   	(**************************************************************************************
+   		STOPPED state
+	***************************************************************************************)
+	E_PositionState.STOPPED:
+		// Wait until group is started and element is initialized
+		IF ElementInterface.In.GroupState.eState = E_PositionState.STARTED AND
+		   ElementInterface.In.GroupState.eMode = E_PositionMode.AUTO_MODE AND
+		   ElementData.Init THEN
+			// Update internal state
+			ElementData.OperationState.eLastState := ElementData.OperationState.eState;
+			ElementData.OperationState.eState := E_PositionState.STARTING;		
+		END_IF
+		
+	(**************************************************************************************
+   		STOPPING state
+	***************************************************************************************)
+	E_PositionState.STOPPING:
+		// Initialize	
+		ElementBase.FunctionStopped := TRUE;
+	
+		// Check if already all functions are stopped
+		FOR ElementBase.Idx := 1 TO NUMBER_OF_FUNCTIONS_PER_ELEMENT DO
+			// Function is valid 
+			IF ElementData.MemberList.FunctionList[ElementBase.Idx].eFunctionNumber <> E_FunctionNumber.F_BEGIN_FUNCTION THEN
+				// Get element function data
+				ElementBase.MemberState := F_GetFunctionOperationState(
+										eFunctionNumber := ElementData.MemberList.FunctionList[ElementBase.Idx].eFunctionNumber);
+				
+				// Compare function state to commanded state
+				IF ElementBase.MemberState.eState <> E_PositionState.STOPPED THEN
+					// Not all functions are stopped -> exit loop
+					ElementBase.FunctionStopped := FALSE;
+					EXIT;
+				END_IF
+			ELSE
+				// Otherwise stop searching
+				EXIT;
+			END_IF
+		END_FOR
+
+		// Check that function and own element is stopped
+		IF ElementInterface.In.GroupState.eState = E_PositionState.STOPPED OR 
+		   ElementInterface.In.GroupState.eMode <> E_PositionMode.AUTO_MODE OR 
+           (ElementBase.FunctionStopped AND NOT InhibitStopping) THEN
+			// Goto Stopped
+			ElementData.OperationState.eLastState := ElementData.OperationState.eState;
+			ElementData.OperationState.eState := E_PositionState.STOPPED;
+		END_IF
+			
+	(**************************************************************************************
+   		STARTING state
+	***************************************************************************************)
+	E_PositionState.STARTING:
+		IF ElementInterface.In.GroupState.eState <> E_PositionState.STARTED OR 
+           ElementInterface.In.GroupState.eMode <> E_PositionMode.AUTO_MODE THEN
+		   	// Update internal state
+			ElementData.OperationState.eLastState := ElementData.OperationState.eState;
+			ElementData.OperationState.eState := E_PositionState.STOPPED;	
+		ELSE
+			// Update internal state
+			ElementData.OperationState.eLastState := ElementData.OperationState.eState;
+			ElementData.OperationState.eState := E_PositionState.STARTED;	
+		END_IF
+		
+	(**************************************************************************************
+   		STARTED state
+	***************************************************************************************)
+	E_PositionState.STARTED:
+		IF ElementInterface.In.GroupState.eState = E_PositionState.STOPPING AND
+           ElementInterface.In.GroupState.eMode = E_PositionMode.AUTO_MODE THEN
+			// Update internal state
+			ElementData.OperationState.eLastState := ElementData.OperationState.eState;
+			ElementData.OperationState.eState := E_PositionState.STOPPING;	
+		ELSIF ElementInterface.In.GroupState.eState <> E_PositionState.STARTED OR 
+              ElementInterface.In.GroupState.eMode <> E_PositionMode.AUTO_MODE THEN
+			// Update internal state
+			ElementData.OperationState.eLastState := ElementData.OperationState.eState;
+			ElementData.OperationState.eState := E_PositionState.STOPPED;	
+		END_IF
+		
+ELSE
+	// Programming error
+	DebugMsg := CONCAT(	'Programming error - Invalid state: ',INT_TO_STRING(ElementData.OperationState.eState));
+	fbDebugMsg.M_SendErrorMsg(DebugMsg);
+END_CASE
+]]></ST>
+      </Implementation>
+    </Action>
+    <Method Name="M_CloseElementLink" Id="{5976ed76-0e6a-40c2-a494-3ced5d0d00fe}">
+      <Declaration><![CDATA[METHOD M_CloseElementLink : BOOL
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 404529 $
+ *	Revision date	:	$Date: 2020-11-19 15:59:09 +0100 (tor, 19 nov 2020) $
+ *	Last changed by	:	$Author: b7bolm $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/trunk/01_Software/BCF/BCF/JumpStart/20_Product/10_App/13_Elements/10_Lib/10_Conv/FB_ElementConv.TcPOU $
+ *
+ *	Purpose			:	Close link between Function and Element
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+VAR_INPUT
+	meFunctionNumber		: E_FunctionNumber; // Connected function number
+END_VAR
+
+VAR
+	mIdx				: INT; // Iterator
+	mNextSlot			: INT; // Next slot
+	mOldFunctionList	: ARRAY [1 .. NUMBER_OF_FUNCTIONS_PER_ELEMENT] OF ST_FunctionEntry; // Old function list
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[// Initialize
+M_CloseElementLink := FALSE;
+mNextSlot := 1;
+
+// Check if element link is valid
+IF meFunctionNumber > E_FunctionNumber.F_BEGIN_FUNCTION AND 
+   meFunctionNumber < E_FunctionNumber.F_END_FUNCTION THEN
+   
+   	// Go trough all slots
+   	FOR mIdx := 1 TO NUMBER_OF_FUNCTIONS_PER_ELEMENT DO
+		
+		// Search registred function number
+		IF ElementData.MemberList.FunctionList[mIdx].eFunctionNumber = meFunctionNumber THEN
+   			// Remove function 
+			ElementData.MemberList.FunctionList[mIdx].eFunctionNumber := E_FunctionNumber.F_BEGIN_FUNCTION;
+			
+			// Element link closing was successfull
+			M_CloseElementLink := TRUE;
+			EXIT;
+		END_IF
+   	END_FOR
+	
+	// Store old function list
+	mOldFunctionList := ElementData.MemberList.FunctionList;
+	
+	// Remove gaps in function list
+   	FOR mIdx := 1 TO NUMBER_OF_FUNCTIONS_PER_ELEMENT DO
+		// If list index has a valid function number
+		IF mOldFunctionList[mIdx].eFunctionNumber <> E_FunctionNumber.F_BEGIN_FUNCTION THEN
+			// Store function in current list
+			ElementData.MemberList.FunctionList[mNextSlot].eFunctionNumber := mOldFunctionList[mIdx].eFunctionNumber;
+			
+			// Update index of current list
+			mNextSlot := mNextSlot + 1;
+		END_IF
+   	END_FOR
+	
+	// Clear list
+   	FOR mNextSlot := mNextSlot TO NUMBER_OF_FUNCTIONS_PER_ELEMENT DO
+		// Clear entry
+		ElementData.MemberList.FunctionList[mNextSlot].eFunctionNumber := E_FunctionNumber.F_BEGIN_FUNCTION;
+   	END_FOR
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_CloseSlaveLink" Id="{1d867503-c512-4f7b-a4a6-722627b1c78a}">
+      <Declaration><![CDATA[METHOD M_CloseSlaveLink : BOOL
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 404529 $
+ *	Revision date	:	$Date: 2020-11-19 15:59:09 +0100 (tor, 19 nov 2020) $
+ *	Last changed by	:	$Author: b7bolm $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/trunk/01_Software/BCF/BCF/JumpStart/20_Product/10_App/13_Elements/10_Lib/10_Conv/FB_ElementConv.TcPOU $
+ *
+ *	Purpose			:	Close Slave link - Only a master can close a slave connection.
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+VAR_INPUT
+	eMasterElementNumber		: E_ElementNumber; // Element number of master element				
+END_VAR
+
+VAR
+	mEmptyStates				: ST_ElementState; // Empty states
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[// Initialize
+M_CloseSlaveLink := FALSE;
+
+// If calling master corresponds to current master
+IF ElementData.MemberList.ElementList.Master.eElementNumber = eMasterElementNumber THEN
+		
+	// Clear master information
+	ElementData.MemberList.ElementList.Master.eElementNumber := E_ElementNumber.E_BEGIN_ELEMENT;
+	
+	// Clear slave interface
+	ElementInterface.In.ElementStates.Master := mEmptyStates;
+	
+	// Slave link closed
+	M_CloseSlaveLink := TRUE;
+	
+// If calling master corresponds to current master of axis 1-2
+ELSIF ElementData.MemberList.ElementList.Master_12.eElementNumber = eMasterElementNumber THEN
+		
+	// Clear master information
+	ElementData.MemberList.ElementList.Master_12.eElementNumber := E_ElementNumber.E_BEGIN_ELEMENT;
+	
+	// Clear slave interface
+	ElementInterface.In.ElementStates.Master_12 := mEmptyStates;
+	
+	// Slave link closed
+	M_CloseSlaveLink := TRUE;
+	
+// If calling master corresponds to current master of axis 3-4
+ELSIF ElementData.MemberList.ElementList.Master_34.eElementNumber = eMasterElementNumber THEN
+		
+	// Clear master information
+	ElementData.MemberList.ElementList.Master_34.eElementNumber := E_ElementNumber.E_BEGIN_ELEMENT;
+	
+	// Clear slave interface
+	ElementInterface.In.ElementStates.Master_34 := mEmptyStates;
+	
+	// Slave link closed
+	M_CloseSlaveLink := TRUE;
+	
+ELSE
+	// Master tried to close a connection of another slave
+	DebugMsg := CONCAT('M_CloseSlaveLink - Master tried to close wrong slave. Call Master Index ', INT_TO_STRING(eMasterElementNumber));
+	DebugMsg := CONCAT(DebugMsg, ' Currently set Master Index: ');
+	DebugMsg := CONCAT(DebugMsg, INT_TO_STRING(ElementData.MemberList.ElementList.Master.eElementNumber));
+	fbDebugMsg.M_SendErrorMsg(mMessage := DebugMsg);
+END_IF
+
+
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_CreateElementLink" Id="{a673c495-bd09-42ad-b7df-c695a84e3510}">
+      <Declaration><![CDATA[METHOD M_CreateElementLink : BOOL
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 404529 $
+ *	Revision date	:	$Date: 2020-11-19 15:59:09 +0100 (tor, 19 nov 2020) $
+ *	Last changed by	:	$Author: b7bolm $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/trunk/01_Software/BCF/BCF/JumpStart/20_Product/10_App/13_Elements/10_Lib/10_Conv/FB_ElementConv.TcPOU $
+ *
+ *	Purpose			:	Register function in element.
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+VAR_INPUT
+	meFunctionNumber		: E_FunctionNumber; // Connecting function number
+END_VAR
+
+VAR
+	mIdx				: INT; // Iterator
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[// Initialize
+M_CreateElementLink := FALSE;
+
+// Check if element link is valid
+IF meFunctionNumber > E_FunctionNumber.F_BEGIN_FUNCTION AND 
+   meFunctionNumber < E_FunctionNumber.F_END_FUNCTION THEN
+   
+   	// Go trough all slots
+   	FOR mIdx := 1 TO NUMBER_OF_FUNCTIONS_PER_ELEMENT DO
+		
+		// Search for free or an already registred slot for the desired function
+		IF ElementData.MemberList.FunctionList[mIdx].eFunctionNumber = E_FunctionNumber.F_BEGIN_FUNCTION OR 
+		   ElementData.MemberList.FunctionList[mIdx].eFunctionNumber = meFunctionNumber THEN
+   			// Register function
+			ElementData.MemberList.FunctionList[mIdx].eFunctionNumber := meFunctionNumber;
+			
+			// Registration was successfull
+			M_CreateElementLink := TRUE;
+			EXIT;
+		END_IF
+   	END_FOR
+	
+	// If error occured during registration
+	IF NOT M_CreateElementLink THEN
+		// No free slot found
+		DebugMsg := 'No free function registration slot found.';
+		fbDebugMsg.M_SendErrorMsg(DebugMsg);
+	END_IF
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_CreateSlaveLink" Id="{3371c449-fef4-447a-b9f4-f6f24406e93b}">
+      <Declaration><![CDATA[METHOD M_CreateSlaveLink : BOOL
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 404529 $
+ *	Revision date	:	$Date: 2020-11-19 15:59:09 +0100 (tor, 19 nov 2020) $
+ *	Last changed by	:	$Author: b7bolm $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/trunk/01_Software/BCF/BCF/JumpStart/20_Product/10_App/13_Elements/10_Lib/10_Conv/FB_ElementConv.TcPOU $
+ *
+ *	Purpose			:	Create Slave link - A master can request with this method
+ *						to establishe a slave connection.
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+VAR_INPUT
+	eMasterElementNumber		: E_ElementNumber; // Element number of master element				
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[// Initialize
+M_CreateSlaveLink := FALSE;
+
+// Check valid element number
+IF eMasterElementNumber > E_ElementNumber.E_BEGIN_ELEMENT AND
+   eMasterElementNumber < E_ElementNumber.E_END_ELEMENT THEN
+	
+	// Is element number not equal to slave number
+	IF eMasterElementNumber <> SettingsElement.eElementNumber THEN
+		// Is master element free or equal to the corresponding one
+		IF eMasterElementNumber = SettingsElement.eMasterElementNumber AND 
+		   (ElementData.MemberList.ElementList.Master.eElementNumber = E_ElementNumber.E_BEGIN_ELEMENT OR
+		   ElementData.MemberList.ElementList.Master.eElementNumber = eMasterElementNumber) THEN
+			
+			// Save master element in slave
+			ElementData.MemberList.ElementList.Master.eElementNumber := eMasterElementNumber;
+			
+  			// Slave link connected
+			M_CreateSlaveLink := TRUE;
+		// Is master element free or equal to the corresponding one Axis 1 - 2	
+		ELSIF  eMasterElementNumber = SettingsElement.eMasterElementNumber_12 AND 
+		   (ElementData.MemberList.ElementList.Master_12.eElementNumber = E_ElementNumber.E_BEGIN_ELEMENT OR
+		   ElementData.MemberList.ElementList.Master_12.eElementNumber = eMasterElementNumber) THEN
+			
+			// Save master element in slave
+			ElementData.MemberList.ElementList.Master_12.eElementNumber := eMasterElementNumber;
+			
+  			// Slave link connected
+			M_CreateSlaveLink := TRUE;
+
+		// Is master element free or equal to the corresponding one Axis 3 - 4
+		ELSIF eMasterElementNumber = SettingsElement.eMasterElementNumber_34 AND 
+		   (ElementData.MemberList.ElementList.Master_34.eElementNumber = E_ElementNumber.E_BEGIN_ELEMENT OR
+		   ElementData.MemberList.ElementList.Master_34.eElementNumber = eMasterElementNumber) THEN
+			
+			// Save master element in slave
+			ElementData.MemberList.ElementList.Master_34.eElementNumber := eMasterElementNumber;
+			
+  			// Slave link connected
+			M_CreateSlaveLink := TRUE;
+
+			
+		ELSE
+			// Master already defined
+			DebugMsg := CONCAT('M_CreateSlaveLink - Cannot add second Master(', INT_TO_STRING(eMasterElementNumber));
+			DebugMsg := CONCAT(DebugMsg, ') to slave : ');
+			DebugMsg := CONCAT(DebugMsg, SettingsElement.ElementName);
+			fbDebugMsg.M_SendErrorMsg(mMessage := DebugMsg);
+		END_IF
+	ELSE
+		// Master and slave cannot be the same element 
+		DebugMsg := CONCAT('M_CreateSlaveLink - Master and slave cannot be the same element: ', SettingsElement.ElementName);
+		fbDebugMsg.M_SendErrorMsg(mMessage := DebugMsg);	
+	END_IF
+ELSE
+	// Master number invalid
+	DebugMsg := CONCAT('M_CreateSlaveLink - Master number invalid. Index: ', INT_TO_STRING(eMasterElementNumber));
+	fbDebugMsg.M_SendErrorMsg(mMessage := DebugMsg);
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_GetElementOrders" Id="{94240b8a-fb9c-414b-b727-b9932d768998}">
+      <Declaration><![CDATA[METHOD PROTECTED M_GetElementOrders 
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 404529 $
+ *	Revision date	:	$Date: 2020-11-19 15:59:09 +0100 (tor, 19 nov 2020) $
+ *	Last changed by	:	$Author: b7bolm $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/trunk/01_Software/BCF/BCF/JumpStart/20_Product/10_App/13_Elements/10_Lib/10_Conv/FB_ElementConv.TcPOU $
+ *
+ *	Purpose			:	Copy all orders from each function in the function list to 
+ *						internal variables.
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+VAR
+	mIdx		: INT;	// Iterator
+	meFunctionNumber : E_FunctionNumber; 
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+// Go trough all functions
+FOR mIdx := 1 TO NUMBER_OF_FUNCTIONS_PER_ELEMENT DO
+	IF ElementData.MemberList.FunctionList[mIdx].eFunctionNumber > E_FunctionNumber.F_BEGIN_FUNCTION THEN
+		// Copy function orders to internal data
+		meFunctionNumber := ElementData.MemberList.FunctionList[mIdx].eFunctionNumber;
+		
+		IF __ISVALIDREF(FunctionRegistry[meFunctionNumber].rFunctionInterface) AND
+           F_IsFunctionInitialized(meFunctionNumber) THEN
+			// Return element orders
+			ElementInterface.In.FunctionOrders[mIdx] := FunctionRegistry[meFunctionNumber].rFunctionInterface.Out.FunctionOrders;
+		ELSE
+			ElementInterface.In.FunctionOrders[mIdx] := ElementBase.FunctionOrdersEmpty;
+		END_IF
+	ELSE
+		EXIT;
+	END_IF
+END_FOR]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_InitElement" Id="{768cdb07-6ad6-49c2-9cb3-58a68741e462}">
+      <Declaration><![CDATA[METHOD M_InitElement : BOOL
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 404529 $
+ *	Revision date	:	$Date: 2020-11-19 15:59:09 +0100 (tor, 19 nov 2020) $
+ *	Last changed by	:	$Author: b7bolm $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/trunk/01_Software/BCF/BCF/JumpStart/20_Product/10_App/13_Elements/10_Lib/10_Conv/FB_ElementConv.TcPOU $
+ *
+ *	Purpose			:	Initialize base functionality of element.
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+VAR_INPUT
+	mReset					: BOOL; // Reset init flag
+END_VAR
+VAR
+	mName					: T_MaxString; // Alpha numeric string only
+	mSlaveLinkOk			: BOOL; // Link to slave link established
+	eSlaveElementNumber		: E_ElementNumber; // Slave enum
+	mEmptyStates			: ST_ElementState; // Empty states
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+// If the init command was an external command
+IF mReset THEN
+	// Inform the bottom element to initialize
+	ElementData.Init := FALSE;
+	// Reset values and load config
+	M_PreInit();
+ELSE
+	(**************************************************************************************
+   		Initialize & Register
+	***************************************************************************************)
+	// Load basic configuration to settings
+	SettingsElement := ConfigElement;
+	
+	// Remove non alpha numeric signs
+	mName := F_ReduceToAlphaNumeric(InputString := SettingsElement.ElementName);
+	
+	// Update Registry reference with HashCode
+	ElementRegistry[SettingsElement.eElementNumber].HashCode := F_CreateHashCode(mName);
+	
+	// Update Registry reference with Name
+	ElementRegistry[SettingsElement.eElementNumber].ElementName := SettingsElement.ElementName;
+
+	// If a slave element is configured
+	IF SettingsElement.eSlaveElementNumber <> E_ElementNumber.E_BEGIN_ELEMENT THEN
+	   
+		// Get registry of the slave element
+		eSlaveElementNumber :=  SettingsElement.eSlaveElementNumber;
+		
+		// Is this reference valid
+		IF __ISVALIDREF(ElementRegistry[eSlaveElementNumber].rElement) THEN
+			// Create slave link
+			mSlaveLinkOk := ElementRegistry[eSlaveElementNumber].rElement.M_CreateSlaveLink(
+								eMasterElementNumber := SettingsElement.eElementNumber);
+								
+			// If link creation was succesful				
+			IF mSlaveLinkOk THEN
+				// Store slave element
+				ElementData.MemberList.ElementList.Slave.eElementNumber := SettingsElement.eSlaveElementNumber;
+			END_IF
+		END_IF
+	END_IF
+
+	
+	// If a slave element is configured for axis 1-2
+	IF SettingsElement.eSlaveElementNumber_12 <> E_ElementNumber.E_BEGIN_ELEMENT THEN
+	   
+		// Get registry of the slave element
+		eSlaveElementNumber :=  SettingsElement.eSlaveElementNumber_12;
+		
+		// Is this reference valid
+		IF __ISVALIDREF(ElementRegistry[eSlaveElementNumber].rElement) THEN
+			// Create slave link
+			mSlaveLinkOk := ElementRegistry[eSlaveElementNumber].rElement.M_CreateSlaveLink(
+								eMasterElementNumber := SettingsElement.eElementNumber);
+								
+			// If link creation was succesful				
+			IF mSlaveLinkOk THEN
+				// Store slave element
+				ElementData.MemberList.ElementList.Slave_12.eElementNumber := SettingsElement.eSlaveElementNumber_12;
+			END_IF
+		END_IF
+	END_IF
+	
+	
+	// If a slave element is configured for axis 3-4
+	IF SettingsElement.eSlaveElementNumber_34 <> E_ElementNumber.E_BEGIN_ELEMENT THEN
+	   
+		// Get registry of the slave element
+		eSlaveElementNumber :=  SettingsElement.eSlaveElementNumber_34;
+		
+		// Is this reference valid
+		IF __ISVALIDREF(ElementRegistry[eSlaveElementNumber].rElement) THEN
+			// Create slave link
+			mSlaveLinkOk := ElementRegistry[eSlaveElementNumber].rElement.M_CreateSlaveLink(
+								eMasterElementNumber := SettingsElement.eElementNumber);
+								
+			// If link creation was succesful				
+			IF mSlaveLinkOk THEN
+				// Store slave element
+				ElementData.MemberList.ElementList.Slave_34.eElementNumber := SettingsElement.eSlaveElementNumber_34;
+			END_IF
+		END_IF
+	END_IF	
+	
+	// Reset element states Master / Slave
+	ElementInterface.In.ElementStates.Slave := mEmptyStates;
+	ElementInterface.In.ElementStates.Master := mEmptyStates;
+	M_InitElement := TRUE;
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_ITC_ECQ" Id="{a7d61674-026e-419e-9e3c-6c410b92ce64}">
+      <Declaration><![CDATA[METHOD PRIVATE M_ITC_ECQ : BOOL
+VAR_INPUT
+	meChannelSrc		: E_MFCS_CHANNEL; // Number of the source 
+	mpData				: PVOID; // Data  pointer 
+	mLen				: UDINT; // Data length
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[// Map data
+F_BlockCopy(
+	pSrc:= mpData, 
+	LenSrc:= mLen, 
+	pDest:= ADR(ElementBase.ECQ), 
+	LenDest:= SIZEOF(ElementBase.ECQ));
+	
+// Validate control code
+CASE ElementBase.ECQ.Code OF
+	(*******************************************************************************
+		No code
+	********************************************************************************)
+	E_ITC_ElementControlCode.NO_CODE:
+		// No code received
+		// Message procesed successfully
+		ElementBase.eReturnCode := E_ErrorConv.NO_ERROR_CODE;		
+		
+	(*******************************************************************************
+		Reset error
+	********************************************************************************)
+	E_ITC_ElementControlCode.RESET_ERROR:
+		// Reset group
+		ElementData.ErrorData.Error.ResetError := TRUE;
+		// Message procesed successfully
+		ElementBase.eReturnCode := E_ErrorConv.NO_ERROR_CODE;
+			
+	(*******************************************************************************
+	  Initialize
+	********************************************************************************)
+	E_ITC_ElementControlCode.INITIALIZE:
+		// Initialize element
+		M_InitElement(TRUE);
+		// Message procesed successfully
+		ElementBase.eReturnCode := E_ErrorConv.NO_ERROR_CODE;
+		
+	(*******************************************************************************
+	  Enable
+	********************************************************************************)
+	E_ITC_ElementControlCode.ENABLE:
+		// Set external element enable
+		ElementInterface.In.ElementEnable := DINT_TO_BOOL(ElementBase.ECQ.Variable);
+		// Message procesed successfully
+		ElementBase.eReturnCode := E_ErrorConv.NO_ERROR_CODE;	
+
+	(*******************************************************************************
+	  Set Variable
+	********************************************************************************)
+	E_ITC_ElementControlCode.SET_VARIABLE:
+		// Set variable
+		ITC.Variable := ElementBase.ECQ.Variable;
+		// Message procesed successfully
+		ElementBase.eReturnCode := E_ErrorConv.NO_ERROR_CODE;
+
+	(*******************************************************************************
+	  Set Error
+	********************************************************************************)
+	E_ITC_ElementControlCode.SET_ERROR:
+		// Set error 
+		ElementData.ErrorData.Error.ErrorType := E_ErrorType.ERROR;
+		ElementData.ErrorData.Error.ErrorParam := '';
+		ElementData.ErrorData.Error.ErrorCode.Conv := DINT_TO_INT(ElementBase.ECQ.Variable);
+		
+		// Push status update
+		ITC.Commands.StatusReport := TRUE;
+		
+		// Message procesed successfully
+		ElementBase.eReturnCode := E_ErrorConv.NO_ERROR_CODE;
+		
+ELSE
+	// Unrecognised ControlRequest message received 
+	DebugMsg := CONCAT('M_ITC_HandleBufferMessages - Unknown control code received: ', INT_TO_STRING(ElementBase.ECQ.Code));
+	fbDebugMsg.M_SendErrorMsg(mMessage := DebugMsg);
+	
+	// Report wrong value
+	ElementBase.eReturnCode := E_ErrorConv.WRONG_VALUE;
+	
+END_CASE
+
+F_ITC_SendECR(
+	eChannelSrc	:= meChannelSrc, 
+	ElementName	:= F_ReduceToAlphaNumeric(SettingsElement.ElementName), 
+	Code		:= ElementBase.ECQ.Code, 
+	Variable	:= ElementBase.ECQ.Variable, 
+	eReturnCode	:= ElementBase.eReturnCode);]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_ITC_ESQ" Id="{0b31f347-51cc-494b-ae1d-27d6d9485196}">
+      <Declaration><![CDATA[METHOD PRIVATE M_ITC_ESQ : BOOL
+VAR_INPUT
+	meChannelSrc		: E_MFCS_CHANNEL; // Number of the source 
+	mpData				: PVOID; // Data  pointer 
+	mLen				: UDINT; // Data length
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[// Map data
+F_BlockCopy(
+	pSrc:= mpData, 
+	LenSrc:= mLen, 
+	pDest:= ADR(ElementBase.ESQ), 
+	LenDest:= SIZEOF(ElementBase.ESQ));
+	
+F_ITC_SendESR(
+	eChannelSrc		:= meChannelSrc, 
+	ElementName		:= F_ReduceToAlphaNumeric(SettingsElement.ElementName), 
+	eState			:= ElementData.OperationState.eState, 
+	Enabled			:= ElementInterface.In.ElementEnable, 
+	eErrorState		:= ElementData.ErrorData.ErrorState, 
+	eErrorCode		:= ElementData.ErrorData.Error.ErrorCode.Conv, 
+	eErrorType		:= ElementData.ErrorData.Error.ErrorType, 
+	ErrorInformation:= ElementData.ErrorData.Error.ErrorParam, 
+	Variable		:= ITC.Variable, 
+	eReturnCode		:= E_ErrorConv.NO_ERROR_CODE);		]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_ITC_MCQ" Id="{aa809ff5-47e0-446b-92a1-6b0bc57dcfba}">
+      <Declaration><![CDATA[METHOD PRIVATE M_ITC_MCQ : BOOL
+VAR_INPUT
+	meChannelSrc		: E_MFCS_CHANNEL; // Number of the source 
+	mpData				: PVOID; // Data  pointer 
+	mLen				: UDINT; // Data length
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[// Map data
+F_BlockCopy(
+	pSrc:= mpData, 
+	LenSrc:= mLen, 
+	pDest:= ADR(ElementBase.MCQ), 
+	LenDest:= SIZEOF(ElementBase.MCQ));
+	
+// If position is in manual mode
+IF ElementData.OperationState.eMode = E_PositionMode.MANUAL_MODE THEN
+	// Update command when speed enabled
+	IF ITC.ManualMotion.Speed.Enable THEN
+		// Update speed - 0 = slow, 1 = fast
+		ITC.ManualMotion.Speed.Fast := ElementBase.MCQ.Speed;
+	ELSE
+		ITC.ManualMotion.Speed.Fast := FALSE;
+	END_IF
+	
+	ITC.ManualMotion.Axis[1].Forward.Selected := ElementBase.MCQ.Axis1Fwd AND 
+												 ITC.ManualMotion.Axis[1].Forward.Enable;
+	ITC.ManualMotion.Axis[1].Reverse.Selected := ElementBase.MCQ.Axis1Rev AND 
+												 ITC.ManualMotion.Axis[1].Reverse.Enable;
+	
+	ITC.ManualMotion.Axis[2].Forward.Selected := ElementBase.MCQ.Axis2Fwd AND 
+												 ITC.ManualMotion.Axis[2].Forward.Enable;
+	ITC.ManualMotion.Axis[2].Reverse.Selected := ElementBase.MCQ.Axis2Rev AND 
+												 ITC.ManualMotion.Axis[2].Reverse.Enable;
+	
+	ITC.ManualMotion.Axis[3].Forward.Selected := ElementBase.MCQ.Axis3Fwd AND 
+												 ITC.ManualMotion.Axis[3].Forward.Enable;
+	ITC.ManualMotion.Axis[3].Reverse.Selected := ElementBase.MCQ.Axis3Rev AND 
+												 ITC.ManualMotion.Axis[3].Reverse.Enable;
+	
+	ITC.ManualMotion.Axis[4].Forward.Selected := ElementBase.MCQ.Axis4Fwd AND 
+												 ITC.ManualMotion.Axis[4].Forward.Enable;
+	ITC.ManualMotion.Axis[4].Reverse.Selected := ElementBase.MCQ.Axis4Rev AND 
+												 ITC.ManualMotion.Axis[4].Reverse.Enable;
+	
+	ITC.ManualMotion.Axis[5].Forward.Selected := ElementBase.MCQ.Axis5Fwd AND 
+												 ITC.ManualMotion.Axis[5].Forward.Enable;
+	ITC.ManualMotion.Axis[5].Reverse.Selected := ElementBase.MCQ.Axis5Rev AND 
+												 ITC.ManualMotion.Axis[5].Reverse.Enable;
+	
+	ITC.ManualMotion.Axis[6].Forward.Selected := ElementBase.MCQ.Axis6Fwd AND 
+												 ITC.ManualMotion.Axis[6].Forward.Enable;
+	ITC.ManualMotion.Axis[6].Reverse.Selected := ElementBase.MCQ.Axis6Rev AND 
+												 ITC.ManualMotion.Axis[6].Reverse.Enable;
+
+	ITC.ManualMotion.Button[1].Selected := ElementBase.MCQ.Button1 AND
+										   ITC.ManualMotion.Button[1].Enable;
+
+	ITC.ManualMotion.Button[2].Selected := ElementBase.MCQ.Button2 AND
+										   ITC.ManualMotion.Button[2].Enable;
+ELSE
+	// Element not in manual mode
+	ElementBase.eReturnCode := E_ErrorConv.WRONG_MODE;
+END_IF
+
+// Check code if a report needs to be sent
+IF ElementBase.MCQ.Code = 2 OR
+   ElementBase.MCQ.Code = 0 OR
+   ElementBase.eReturnCode <> 0 THEN
+   
+   F_ITC_SendMCR(
+		eChannelSrc	:= meChannelSrc, 
+		Position	:= F_ReduceToAlphaNumeric(SettingsElement.ElementName), 
+		Code		:= ElementBase.MCQ.Code, 
+		Mode		:= ElementData.OperationState.eMode, 
+		Speed		:= ITC.ManualMotion.Speed, 
+		Axis		:= ITC.ManualMotion.Axis, 
+		Button		:= ITC.ManualMotion.Button, 
+		eReturnCode	:= ElementBase.eReturnCode);
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_ITC_ProcessMsg" Id="{c4b4ed0d-90b7-43ca-9342-293f2873a364}">
+      <Declaration><![CDATA[METHOD M_ITC_ProcessMsg : BOOL
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 404529 $
+ *	Revision date	:	$Date: 2020-11-19 15:59:09 +0100 (tor, 19 nov 2020) $
+ *	Last changed by	:	$Author: b7bolm $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/trunk/01_Software/BCF/BCF/JumpStart/20_Product/10_App/13_Elements/10_Lib/10_Conv/FB_ElementConv.TcPOU $
+ *
+ *	Purpose			:	Handle incoming group ITC messages.
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+VAR_INPUT
+	meChannelSrc		: E_MFCS_CHANNEL; // Number of the source 
+	mMsgType			: INT; // Message type
+	mpData				: PVOID; // Data  pointer 
+	mLen				: UDINT; // Data length
+END_VAR
+
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[// Initialize
+M_ITC_ProcessMsg := TRUE;
+
+// Validate inputs
+IF mpData > 0 AND
+   mLen > 0 THEN
+	
+	// Map enum
+	ElementBase.eMsgType := mMsgType;
+
+	// Validate message type
+	CASE ElementBase.eMsgType OF
+		(*******************************************************************************
+		  Status request message
+		********************************************************************************)
+		E_ITC_MsgTypeConv.ELEMENT_STATUS_REQUEST:
+			M_ITC_ESQ(meChannelSrc := meChannelSrc, mpData := mpData, mLen := mLen);
+				
+		(*******************************************************************************
+		  Control request message
+		********************************************************************************)
+		E_ITC_MsgTypeConv.ELEMENT_CONTROL_REQUEST:
+			M_ITC_ECQ(meChannelSrc := meChannelSrc, mpData := mpData, mLen := mLen);
+				
+		(*******************************************************************************
+		  Manual Control request
+		********************************************************************************)
+		E_ITC_MsgTypeConv.MANUAL_CONTROL_REQUEST:
+			M_ITC_MCQ(meChannelSrc := meChannelSrc, mpData := mpData, mLen := mLen);
+						
+		(*******************************************************************************
+		  Data Aquisition Request 
+		********************************************************************************)
+		E_ITC_MsgTypeConv.DATA_ACQUISITION_REQUEST:
+			M_ITC_DAQ(meChannelSrc := meChannelSrc, mpData := mpData, mLen := mLen);
+		(*******************************************************************************
+		  Gathered Data Request 
+		********************************************************************************)
+		E_ITC_MsgTypeConv.GATHERED_DATA_REQUEST:
+		
+			M_ITC_GDQ(meChannelSrc := meChannelSrc, mpData := mpData, mLen := mLen);
+			
+		(*******************************************************************************
+		  Visualization information request
+		********************************************************************************)			
+		E_ITC_MsgTypeConv.VISUALIZATION_INFORMATION_REQUEST:
+			M_ITC_VIQ(meChannelSrc := meChannelSrc, mpData := mpData, mLen := mLen);
+				
+
+	ELSE
+		// Unknown ITC message type received
+		DebugMsg := CONCAT('M_ITC_HandleBufferMessages - Unknown message type received: ', INT_TO_STRING(mMsgType));
+		fbDebugMsg.M_SendErrorMsg(mMessage := DebugMsg);
+	END_CASE
+END_IF
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_ITC_ProcessOut" Id="{1fede8a7-93b8-43eb-80ea-b18637d55295}">
+      <Declaration><![CDATA[METHOD PROTECTED M_ITC_ProcessOut
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 404529 $
+ *	Revision date	:	$Date: 2020-11-19 15:59:09 +0100 (tor, 19 nov 2020) $
+ *	Last changed by	:	$Author: b7bolm $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/trunk/01_Software/BCF/BCF/JumpStart/20_Product/10_App/13_Elements/10_Lib/10_Conv/FB_ElementConv.TcPOU $
+ *
+ *	Purpose			:	Element ITC out interface
+ *						Handles internally set ITC commands.
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+VAR
+	mNoError			: BOOL; // No error during processing
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+(*******************************************************************************
+	Status Report 
+********************************************************************************)
+// If a time request request is active
+IF ITC.Commands.StatusReport THEN
+	mNoError :=  F_ITC_SendESR(
+					eChannelSrc		:= 0, 
+					ElementName		:= F_ReduceToAlphaNumeric(SettingsElement.ElementName), 
+					eState			:= ElementData.OperationState.eState, 
+					Enabled			:= ElementInterface.In.ElementEnable, 
+					eErrorState		:= ElementData.ErrorData.ErrorState, 
+					eErrorCode		:= ElementData.ErrorData.Error.ErrorCode.Conv, 
+					eErrorType		:= ElementData.ErrorData.Error.ErrorType, 
+					ErrorInformation:= ElementData.ErrorData.Error.ErrorParam, 
+					Variable		:= ITC.Variable, 
+					eReturnCode		:= E_ErrorConv.NO_ERROR_CODE);
+
+	// If sending was successfull
+	IF mNoError THEN
+		// Reset flag
+		ITC.Commands.StatusReport := FALSE;
+	ELSE
+		// Sending failed
+		DebugMsg := 'M_ITC_ProcessOut - Forwarding status report to ITC manager failed.';
+		fbDebugMsg.M_SendErrorMsg(mMessage := DebugMsg);
+	END_IF
+END_IF
+
+(*******************************************************************************
+	Status report: No error  
+********************************************************************************)
+// If a time request request is active
+IF ITC.Commands.NoErrorReport THEN
+
+	mNoError :=  F_ITC_SendESR(
+					eChannelSrc		:= 0, 
+					ElementName		:= F_ReduceToAlphaNumeric(SettingsElement.ElementName), 
+					eState			:= ElementData.OperationState.eState, 
+					Enabled			:= ElementInterface.In.ElementEnable, 
+					eErrorState		:= E_ErrorState.OPERATIONAL, 
+					eErrorCode		:= E_ErrorConv.NO_ERROR_CODE, 
+					eErrorType		:= E_ErrorType.NO_ERROR_PENDING, 
+					ErrorInformation:= '', 
+					Variable		:= ITC.Variable, 
+					eReturnCode		:= E_ErrorConv.NO_ERROR_CODE);
+	
+	// If sending was successfull
+	IF mNoError THEN
+		// Reset flag
+		ITC.Commands.NoErrorReport := FALSE;
+	ELSE
+		// Sending failed
+		DebugMsg := 'M_ITC_ProcessOut - Forwarding status report to ITC manager failed.';
+		fbDebugMsg.M_SendErrorMsg(mMessage := DebugMsg);
+	END_IF
+END_IF
+
+
+(*******************************************************************************
+	Control Report 
+********************************************************************************)
+// If a control report msg request is active
+IF ITC.Commands.ControlReport THEN
+
+	mNoError := F_ITC_SendECR(
+					eChannelSrc	:= 0, 
+					ElementName	:= F_ReduceToAlphaNumeric(SettingsElement.ElementName), 
+					Code		:= 0, 
+					Variable	:= ITC.Variable, 
+					eReturnCode	:= E_ErrorConv.NO_ERROR_CODE);
+
+	// If sending was successfull
+	IF mNoError THEN
+		// Reset flag
+		ITC.Commands.ControlReport := FALSE;
+	ELSE
+		// Sending failed
+		DebugMsg := 'M_ITC_ProcessOut - Forwarding control report to ITC manager failed.';
+		fbDebugMsg.M_SendErrorMsg(mMessage := DebugMsg);
+	END_IF
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_MonitorElementErrors" Id="{40ed45a6-4e8e-4c8a-8b05-d8b85e6d88c4}">
+      <Declaration><![CDATA[///Monitor element errors - Verify error handling and report new errors.
+METHOD PROTECTED M_MonitorElementErrors : BOOL
+(**************************************************************************************
+ * Application   : BoxControl Framework
+ * Revision date : $Date: 2020-11-19 15:59:09 +0100 (tor, 19 nov 2020) $
+ * Author        : CDC
+ * ------------------------------------------------------------------------------------
+ * © Swisslog AG * Swisslog is not liable for any usage of this source code that is not agreed
+ * on between Swisslog and the other party. The mandatory legal liability remains * unaffected.
+ * ------------------------------------------------------------------------------------
+ * Project revision history:
+ *
+ * VERSION DATE         INITIALS     DESCRIPTION
+ * 0.0     DD.MM.YYYY   name       	 explain customized modifications
+ *
+ **************************************************************************************)
+VAR
+	mDataSetIdx				: INT; // Temporary data set index
+	mIdx					: INT; // Iterator
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************************************
+   Element error handling
+***************************************************************************************************************)
+
+// Store current data set index
+mDataSetIdx := ElementData.ErrorData.DataSetIdx;
+
+// Check if an error is stored
+IF mDataSetIdx > 0 THEN
+	
+	// If error type has changed - its gone or type has changed
+	IF ElementData.ErrorData.ErrorDataSet[mDataSetIdx].ErrorType <> 
+	   ElementData.ErrorData.Error.ErrorType THEN
+		
+		// If the stored error type was "ERROR"
+		IF ElementData.ErrorData.Error.ErrorType = E_ErrorType.ERROR 
+		   OR ElementData.ErrorData.Error.ErrorType = E_ErrorType.WARNING THEN
+			// Send error is gone
+			ITC.Commands.NoErrorReport := TRUE;
+		END_IF
+		
+		// Reset stored data index
+		ElementData.ErrorData.DataSetIdx := 0;		
+				
+		// Reset Message
+		ElementData.ErrorData.Error.ResetError 	:= FALSE;
+		ElementData.ErrorData.Error.ErrorType 		:= NO_ERROR_PENDING;
+		ElementData.ErrorData.Error.ErrorCode.Conv	:= E_ErrorConv.NO_ERROR_CODE;
+		ElementData.ErrorData.Error.ErrorParam 	:= '';
+	END_IF
+	
+// Check if an external error is stored
+ELSIF ElementData.ErrorData.ExternalError.ErrorType > E_ErrorType.NO_ERROR_PENDING THEN
+	// If error type has changed - its gone or type has changed
+	IF ElementData.ErrorData.ExternalError.ErrorType <> 
+	   ElementData.ErrorData.Error.ErrorType THEN
+	   
+		// If the stored error type was "ERROR"
+		IF ElementData.ErrorData.Error.ErrorType = E_ErrorType.ERROR
+		   OR ElementData.ErrorData.Error.ErrorType = E_ErrorType.WARNING  THEN
+			// Send error is gone
+			ITC.Commands.NoErrorReport := TRUE;
+		END_IF
+		
+		// Reset Message
+		ElementData.ErrorData.Error.ResetError 	:= FALSE;
+		ElementData.ErrorData.Error.ErrorType 	:= NO_ERROR_PENDING;
+		ElementData.ErrorData.Error.ErrorCode.Conv:= E_ErrorConv.NO_ERROR_CODE;
+		ElementData.ErrorData.Error.ErrorParam 	:= '';
+	END_IF
+END_IF
+	
+(**************************************************************************************************************
+   Check for new or higher prioritized message
+***************************************************************************************************************)
+// Loop trough all errors 
+FOR mIdx := 1 TO NUMBER_OF_ERROR_SETS DO
+	// Detect new or higher prioritized error message
+	IF ElementData.ErrorData.ErrorDataSet[mIdx].ErrorType > 
+	   ElementData.ErrorData.Error.ErrorType THEN
+		
+		// Store index of current data set
+		ElementData.ErrorData.DataSetIdx := mIdx;
+		
+		// Update error
+		ElementData.ErrorData.Error.ErrorCode.Conv := ElementData.ErrorData.ErrorDataSet[mIdx].ErrorCode.Conv;
+		ElementData.ErrorData.Error.ErrorParam := ElementData.ErrorData.ErrorDataSet[mIdx].ErrorParam;
+		ElementData.ErrorData.Error.ErrorType := ElementData.ErrorData.ErrorDataSet[mIdx].ErrorType;
+		
+		// Send Report
+		ITC.Commands.StatusReport := TRUE;
+	END_IF
+	
+	// Check is an error is ongoing and a reset command is set
+	IF ElementData.ErrorData.Error.ResetError AND 
+       ElementData.ErrorData.ErrorDataSet[mIdx].ErrorType <> NO_ERROR_PENDING THEN
+	   
+		// Reset current error data set
+		ElementData.ErrorData.ErrorDataSet[mIdx].ResetError := TRUE;
+	END_IF
+END_FOR
+
+
+// Check external error slot
+IF ElementData.ErrorData.ExternalError.ErrorType > ElementData.ErrorData.Error.ErrorType THEN
+	// Reset lower prioritized previous errors
+	mDataSetIdx := 0;
+	
+	// Update error
+	ElementData.ErrorData.Error.ErrorCode.Conv := ElementData.ErrorData.ExternalError.ErrorCode.Conv;
+	ElementData.ErrorData.Error.ErrorParam := ElementData.ErrorData.ExternalError.ErrorParam;
+	ElementData.ErrorData.Error.ErrorType := ElementData.ErrorData.ExternalError.ErrorType;
+
+	// Send Report
+	ITC.Commands.StatusReport := TRUE;
+END_IF
+
+// Check is an external error is ongoing and a reset command is set
+IF ElementData.ErrorData.Error.ResetError AND 
+   ElementData.ErrorData.ExternalError.ErrorType <> NO_ERROR_PENDING THEN
+   
+	// Reset current error data set
+	ElementData.ErrorData.ExternalError.ResetError := TRUE;
+END_IF
+
+
+// If reset command is set
+IF ElementData.ErrorData.Error.ResetError THEN
+	
+	// If the stored error type was "ERROR"
+	IF ElementData.ErrorData.Error.ErrorType = E_ErrorType.ERROR THEN
+		// Send error is gone
+		ITC.Commands.NoErrorReport := TRUE;
+	END_IF
+	
+	// Reset stored data index
+	ElementData.ErrorData.DataSetIdx := 0;	
+
+	// Reset Message
+	ElementData.ErrorData.Error.ResetError 	:= FALSE;
+	ElementData.ErrorData.Error.ErrorType 		:= NO_ERROR_PENDING;
+	ElementData.ErrorData.Error.ErrorCode.Conv	:= E_ErrorConv.NO_ERROR_CODE;
+	ElementData.ErrorData.Error.ErrorParam 	:= '';
+END_IF
+
+
+(**************************************************************************************************************
+   Element error state
+***************************************************************************************************************)
+
+// If element is in error state
+IF ElementData.ErrorData.Error.ErrorType = E_ErrorType.ERROR THEN
+	// Set error state - ERROR
+	ElementData.ErrorData.ErrorState := E_ErrorState.ERROR;
+	
+// If element is in warning state
+ELSIF ElementData.ErrorData.Error.ErrorType = E_ErrorType.WARNING THEN
+	// Set error state - WARNING
+	ElementData.ErrorData.ErrorState := E_ErrorState.WARNING;
+
+// If element has no error or an info is pending
+ELSIF ElementData.ErrorData.Error.ErrorType = E_ErrorType.NO_ERROR_PENDING OR 
+	  ElementData.ErrorData.Error.ErrorType = E_ErrorType.INFO  THEN
+	// Set error state - Operational
+	ElementData.ErrorData.ErrorState := E_ErrorState.OPERATIONAL;
+
+ELSE
+	// Otherwise -> Unknown
+	ElementData.ErrorData.ErrorState := E_ErrorState.UNKNOWN;
+END_IF
+
+
+(**************************************************************************************************************
+   Monitor functions
+***************************************************************************************************************)
+// Reset
+ElementData.ErrorData.FunctionErrorPending := FALSE;
+
+// Go through all functions
+FOR mIdx := 1 TO NUMBER_OF_FUNCTIONS_PER_ELEMENT DO
+
+	// Valild number
+	IF ElementData.MemberList.FunctionList[mIdx].eFunctionNumber > E_FunctionNumber.F_BEGIN_FUNCTION AND
+	   ElementData.MemberList.FunctionList[mIdx].eFunctionNumber < E_FunctionNumber.F_END_FUNCTION THEN
+	
+		// Is function is in error state or an underlaying zone
+		IF F_IsFunctionErrorPending(eFunctionNumber := ElementData.MemberList.FunctionList[mIdx].eFunctionNumber) THEN
+			// Set error flag
+			ElementData.ErrorData.FunctionErrorPending := TRUE;
+			EXIT;
+		END_IF
+	ELSE
+		// End reached
+		EXIT;
+	END_IF
+END_FOR
+
+
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_PreInit" Id="{5b8a0c12-61f0-4f82-a8ed-8fd46afab4d2}">
+      <Declaration><![CDATA[METHOD M_PreInit : BOOL
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 404529 $
+ *	Revision date	:	$Date: 2020-11-19 15:59:09 +0100 (tor, 19 nov 2020) $
+ *	Last changed by	:	$Author: b7bolm $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/trunk/01_Software/BCF/BCF/JumpStart/20_Product/10_App/13_Elements/10_Lib/10_Conv/FB_ElementConv.TcPOU $
+ *
+ *	Purpose			:	Preinitialize 
+ *						Clears values and load settings
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+VAR
+	eSlaveElementNumber		: E_ElementNumber; // Slave enum
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+	Unregister
+***************************************************************************************)
+
+// Check if slave link has changed
+IF SettingsElement.eSlaveElementNumber <> ConfigElement.eSlaveElementNumber AND
+   SettingsElement.eSlaveElementNumber > E_ElementNumber.E_BEGIN_ELEMENT THEN
+	
+	// Close old slave link
+	eSlaveElementNumber :=  SettingsElement.eSlaveElementNumber;
+	
+	// Is this reference valid
+	IF __ISVALIDREF(ElementRegistry[eSlaveElementNumber].rElement) THEN
+		// Close slave link
+		ElementRegistry[eSlaveElementNumber].rElement.M_CloseSlaveLink(eMasterElementNumber := SettingsElement.eElementNumber);
+		
+		// Clear slave number
+		ElementData.MemberList.ElementList.Slave.eElementNumber := E_ElementNumber.E_BEGIN_ELEMENT;
+	END_IF
+END_IF
+
+
+// Check if slave link has changed for slave axis 123
+IF SettingsElement.eSlaveElementNumber_12 <> ConfigElement.eSlaveElementNumber_12 AND
+   SettingsElement.eSlaveElementNumber_12 > E_ElementNumber.E_BEGIN_ELEMENT THEN
+	
+	// Close old slave link
+	eSlaveElementNumber :=  SettingsElement.eSlaveElementNumber_12;
+	
+	// Is this reference valid
+	IF __ISVALIDREF(ElementRegistry[eSlaveElementNumber].rElement) THEN
+		// Close slave link
+		ElementRegistry[eSlaveElementNumber].rElement.M_CloseSlaveLink(eMasterElementNumber := SettingsElement.eSlaveElementNumber_12);
+		
+		// Clear slave number
+		ElementData.MemberList.ElementList.Slave_12.eElementNumber := E_ElementNumber.E_BEGIN_ELEMENT;
+	END_IF
+END_IF
+
+
+
+// Check if slave link has changed for slave axis 123
+IF SettingsElement.eSlaveElementNumber_34 <> ConfigElement.eSlaveElementNumber_34 AND
+   SettingsElement.eSlaveElementNumber_34 > E_ElementNumber.E_BEGIN_ELEMENT THEN
+	
+	// Close old slave link
+	eSlaveElementNumber :=  SettingsElement.eSlaveElementNumber_34;
+	
+	// Is this reference valid
+	IF __ISVALIDREF(ElementRegistry[eSlaveElementNumber].rElement) THEN
+		// Close slave link
+		ElementRegistry[eSlaveElementNumber].rElement.M_CloseSlaveLink(eMasterElementNumber := SettingsElement.eSlaveElementNumber_34);
+		
+		// Clear slave number
+		ElementData.MemberList.ElementList.Slave_34.eElementNumber := E_ElementNumber.E_BEGIN_ELEMENT;
+	END_IF
+END_IF
+(**************************************************************************************
+	Load number to identify
+***************************************************************************************)
+SettingsElement := ConfigElement;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_ResetError" Id="{355a8777-f8d0-4a6f-bb7a-3d5208b84f8d}">
+      <Declaration><![CDATA[METHOD M_ResetError : BOOL
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 404529 $
+ *	Revision date	:	$Date: 2020-11-19 15:59:09 +0100 (tor, 19 nov 2020) $
+ *	Last changed by	:	$Author: b7bolm $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/trunk/01_Software/BCF/BCF/JumpStart/20_Product/10_App/13_Elements/10_Lib/10_Conv/FB_ElementConv.TcPOU $
+ *
+ *	Purpose			:	Reset element errors.
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+VAR_INPUT
+	mResetMembers			: BOOL; // Reset member function
+END_VAR
+ 
+VAR
+	mIdx					: INT; // Iterator
+	meFunctionNumber		: E_FunctionNumber; // Function number
+	mFunctionData			: ST_FunctionData; // Function data
+	mFunctionErrorData		: ST_FunctionErrorStruct; // Function error data
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+// If the element is in error
+IF ElementData.ErrorData.Error.ErrorType <> E_ErrorType.NO_ERROR_PENDING THEN
+	// Send reset
+	ElementData.ErrorData.Error.ResetError := TRUE;
+END_IF
+
+// If member functions need to be resetted as well
+IF mResetMembers THEN
+	FOR mIdx := 1 TO NUMBER_OF_FUNCTIONS_PER_ELEMENT DO
+		
+		// Get function	
+		meFunctionNumber := ElementData.MemberList.FunctionList[mIdx].eFunctionNumber;
+	
+		// Get function data	
+		mFunctionErrorData := F_GetFunctionErrorData(eFunctionNumber := meFunctionNumber);
+	
+		// Is function is in error state or an underlaying zone
+		IF mFunctionErrorData.Error.ErrorType = E_ErrorType.ERROR OR
+		   mFunctionErrorData.ZoneErrorPending THEN
+			// Reset
+			F_ResetFunctionError(
+				eFunctionNumber := meFunctionNumber,
+				ZoneNumber 		:= 0,
+				ResetAll 		:= TRUE);
+		END_IF
+	END_FOR
+END_IF
+
+M_ResetError := TRUE;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_ResetExternalError" Id="{a436f789-9f0b-402c-bd69-c12a4ac43554}">
+      <Declaration><![CDATA[METHOD M_ResetExternalError : BOOL
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 404529 $
+ *	Revision date	:	$Date: 2020-11-19 15:59:09 +0100 (tor, 19 nov 2020) $
+ *	Last changed by	:	$Author: b7bolm $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/trunk/01_Software/BCF/BCF/JumpStart/20_Product/10_App/13_Elements/10_Lib/10_Conv/FB_ElementConv.TcPOU $
+ *
+ *	Purpose			:	Reset external error
+ *						
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+ VAR_INPUT
+	mReset		: BOOL; // Force reset
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[// Initialize
+M_ResetExternalError := FALSE;
+
+// Reset error if ResetError command or reset command is set 
+IF ElementData.ErrorData.ExternalError.ResetError OR mReset THEN
+	// Clear error
+	ElementData.ErrorData.ExternalError.ResetError 		:= FALSE; 
+	ElementData.ErrorData.ExternalError.ErrorType 		:= NO_ERROR_PENDING;
+	ElementData.ErrorData.ExternalError.ErrorCode.Conv	:= E_ErrorConv.NO_ERROR_CODE;
+	ElementData.ErrorData.ExternalError.ErrorParam 		:= '';
+	M_ResetExternalError 								:= TRUE;
+END_IF
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_SetExternalError" Id="{7ec4913b-dd88-44a7-a266-63f684f7641e}">
+      <Declaration><![CDATA[METHOD M_SetExternalError : BOOL
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 404529 $
+ *	Revision date	:	$Date: 2020-11-19 15:59:09 +0100 (tor, 19 nov 2020) $
+ *	Last changed by	:	$Author: b7bolm $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/trunk/01_Software/BCF/BCF/JumpStart/20_Product/10_App/13_Elements/10_Lib/10_Conv/FB_ElementConv.TcPOU $
+ *
+ *	Purpose			:	Set error
+ *						Wrapped to a function to improve debugging and readability.
+ *						
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+ VAR_INPUT
+	mErrorType		: E_ErrorType; // Error message type
+	mErrorParam		: STRING(System.ERROR_PARAM_STRINGLENGTH); // Error parameter
+	mErrorCode		: INT; // Error message
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[// Initialize
+M_SetExternalError := FALSE;
+
+// Check that the values are valid
+IF mErrorType > E_ErrorType.NO_ERROR_PENDING AND mErrorCode > E_ErrorConv.NO_ERROR_CODE THEN
+
+	ElementData.ErrorData.ExternalError.ErrorCode.Conv := mErrorCode;
+	ElementData.ErrorData.ExternalError.ErrorType := mErrorType;
+	ElementData.ErrorData.ExternalError.ErrorParam := mErrorParam;
+
+	M_SetExternalError := TRUE;
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_UpdateMasterSlaveStates" Id="{83a7affe-6701-449c-b129-9e9d9f7c8fbf}">
+      <Declaration><![CDATA[METHOD M_UpdateMasterSlaveStates
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 404529 $
+ *	Revision date	:	$Date: 2020-11-19 15:59:09 +0100 (tor, 19 nov 2020) $
+ *	Last changed by	:	$Author: b7bolm $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/trunk/01_Software/BCF/BCF/JumpStart/20_Product/10_App/13_Elements/10_Lib/10_Conv/FB_ElementConv.TcPOU $
+ *
+ *	Purpose			:	Returns master states if a Master slave link is established.
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+VAR
+	meMasterElementNumber	: E_ElementNumber; // Master element number
+	meSlaveElementNumber	: E_ElementNumber; // Slave element number
+	mEmptyStruct			: ST_ElementState; 
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[// Initialize
+ElementInterface.In.ElementStates.Master := mEmptyStruct;
+ElementInterface.In.ElementStates.Slave := mEmptyStruct;
+
+// Check if a valid master is available
+IF ElementData.MemberList.ElementList.Master.eElementNumber > E_ElementNumber.E_BEGIN_ELEMENT AND
+   ElementData.MemberList.ElementList.Master.eElementNumber < E_ElementNumber.E_END_ELEMENT THEN
+   
+     meMasterElementNumber := ElementData.MemberList.ElementList.Master.eElementNumber;
+ 
+   // Check reference is valid
+   IF __ISVALIDREF(ElementRegistry[meMasterElementNumber].rElementInterface) THEN
+	   
+   		// Return element interface
+   		ElementInterface.In.ElementStates.Master := ElementRegistry[meMasterElementNumber].rElementInterface.Out.State;
+   END_IF			
+END_IF
+
+// Check if a valid slave is available
+IF ElementData.MemberList.ElementList.Slave.eElementNumber > E_ElementNumber.E_BEGIN_ELEMENT AND
+   ElementData.MemberList.ElementList.Slave.eElementNumber < E_ElementNumber.E_END_ELEMENT THEN
+   
+    meSlaveElementNumber := ElementData.MemberList.ElementList.Slave.eElementNumber;
+
+   // Check reference is valid
+   IF __ISVALIDREF(ElementRegistry[meSlaveElementNumber].rElementInterface) THEN
+   		// Return element interface
+   		ElementInterface.In.ElementStates.Slave := ElementRegistry[meSlaveElementNumber].rElementInterface.Out.State;
+   END_IF
+END_IF
+
+
+// Initialize axis 1-2
+ElementInterface.In.ElementStates.Master_12 := mEmptyStruct;
+ElementInterface.In.ElementStates.Slave_12 := mEmptyStruct;
+
+// Check if a valid master is available
+IF ElementData.MemberList.ElementList.Master_12.eElementNumber > E_ElementNumber.E_BEGIN_ELEMENT AND
+   ElementData.MemberList.ElementList.Master_12.eElementNumber < E_ElementNumber.E_END_ELEMENT THEN
+   
+     meMasterElementNumber := ElementData.MemberList.ElementList.Master_12.eElementNumber;
+ 
+   // Check reference is valid
+   IF __ISVALIDREF(ElementRegistry[meMasterElementNumber].rElementInterface) THEN
+	   
+   		// Return element interface
+   		ElementInterface.In.ElementStates.Master_12 := ElementRegistry[meMasterElementNumber].rElementInterface.Out.State;
+   END_IF			
+END_IF
+
+// Check if a valid slave is available
+IF ElementData.MemberList.ElementList.Slave_12.eElementNumber > E_ElementNumber.E_BEGIN_ELEMENT AND
+   ElementData.MemberList.ElementList.Slave_12.eElementNumber < E_ElementNumber.E_END_ELEMENT THEN
+   
+    meSlaveElementNumber := ElementData.MemberList.ElementList.Slave_12.eElementNumber;
+
+   // Check reference is valid
+   IF __ISVALIDREF(ElementRegistry[meSlaveElementNumber].rElementInterface) THEN
+   		// Return element interface
+   		ElementInterface.In.ElementStates.Slave_12 := ElementRegistry[meSlaveElementNumber].rElementInterface.Out.State;
+   END_IF
+END_IF
+
+
+// Initialize axis 3-4
+ElementInterface.In.ElementStates.Master_34 := mEmptyStruct;
+ElementInterface.In.ElementStates.Slave_34 := mEmptyStruct;
+
+// Check if a valid master is available
+IF ElementData.MemberList.ElementList.Master_34.eElementNumber > E_ElementNumber.E_BEGIN_ELEMENT AND
+   ElementData.MemberList.ElementList.Master_34.eElementNumber < E_ElementNumber.E_END_ELEMENT THEN
+   
+     meMasterElementNumber := ElementData.MemberList.ElementList.Master_34.eElementNumber;
+ 
+   // Check reference is valid
+   IF __ISVALIDREF(ElementRegistry[meMasterElementNumber].rElementInterface) THEN
+	   
+   		// Return element interface
+   		ElementInterface.In.ElementStates.Master_34 := ElementRegistry[meMasterElementNumber].rElementInterface.Out.State;
+   END_IF			
+END_IF
+
+// Check if a valid slave is available
+IF ElementData.MemberList.ElementList.Slave_34.eElementNumber > E_ElementNumber.E_BEGIN_ELEMENT AND
+   ElementData.MemberList.ElementList.Slave_34.eElementNumber < E_ElementNumber.E_END_ELEMENT THEN
+   
+    meSlaveElementNumber := ElementData.MemberList.ElementList.Slave_34.eElementNumber;
+
+   // Check reference is valid
+   IF __ISVALIDREF(ElementRegistry[meSlaveElementNumber].rElementInterface) THEN
+   		// Return element interface
+   		ElementInterface.In.ElementStates.Slave_34 := ElementRegistry[meSlaveElementNumber].rElementInterface.Out.State;
+   END_IF
+END_IF
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_UpdateRegistry" Id="{46147457-6756-4210-9ab4-fcaef0f485b5}">
+      <Declaration><![CDATA[METHOD M_UpdateRegistry
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 404529 $
+ *	Revision date	:	$Date: 2020-11-19 15:59:09 +0100 (tor, 19 nov 2020) $
+ *	Last changed by	:	$Author: b7bolm $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/trunk/01_Software/BCF/BCF/JumpStart/20_Product/10_App/13_Elements/10_Lib/10_Conv/FB_ElementConv.TcPOU $
+ *
+ *	Purpose			:	Update registry information
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+VAR_INPUT
+END_VAR
+VAR
+	mIdx	: INT;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+IF ConfigElement.eElementNumber > E_ElementNumber.E_BEGIN_ELEMENT THEN
+
+	ElementRegistry[ConfigElement.eElementNumber].rElementData REF= ElementData;
+	ElementRegistry[ConfigElement.eElementNumber].rElementInterface REF= ElementInterface;
+	ElementRegistry[ConfigElement.eElementNumber].rSettingsElement REF= SettingsElement;
+	
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <ObjectProperties>
+      <XmlArchive>
+        <Data>
+          <o xml:space="preserve" t="UMLStereoTypeContainerObject">
+            <v n="IsType" t="UMLType">BaseArea</v>
+            <v n="Stereotype">""</v>
+            <d n="Stereotypes" t="Hashtable" />
+          </o>
+        </Data>
+        <TypeList>
+          <Type n="Hashtable">System.Collections.Hashtable</Type>
+          <Type n="String">System.String</Type>
+          <Type n="UMLStereoTypeContainerObject">{30250973-b110-4e31-b562-c102e042dca4}</Type>
+          <Type n="UMLType">{0197b136-405a-42ee-bb27-fd08b621d0cf}</Type>
+        </TypeList>
+      </XmlArchive>
+    </ObjectProperties>
+    <LineIds Name="FB_ElementConv">
+      <LineId Id="3" Count="2" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ElementConv.A_StateControl">
+      <LineId Id="2" Count="115" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ElementConv.M_CloseElementLink">
+      <LineId Id="3" Count="41" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ElementConv.M_CloseSlaveLink">
+      <LineId Id="3" Count="47" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ElementConv.M_CreateElementLink">
+      <LineId Id="3" Count="27" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ElementConv.M_CreateSlaveLink">
+      <LineId Id="3" Count="57" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ElementConv.M_GetElementOrders">
+      <LineId Id="3" Count="16" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ElementConv.M_InitElement">
+      <LineId Id="3" Count="88" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ElementConv.M_ITC_ECQ">
+      <LineId Id="3" Count="82" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ElementConv.M_ITC_ESQ">
+      <LineId Id="3" Count="16" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ElementConv.M_ITC_MCQ">
+      <LineId Id="3" Count="70" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ElementConv.M_ITC_ProcessMsg">
+      <LineId Id="3" Count="54" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ElementConv.M_ITC_ProcessOut">
+      <LineId Id="3" Count="80" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ElementConv.M_MonitorElementErrors">
+      <LineId Id="3" Count="177" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ElementConv.M_PreInit">
+      <LineId Id="3" Count="59" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ElementConv.M_ResetError">
+      <LineId Id="3" Count="28" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ElementConv.M_ResetExternalError">
+      <LineId Id="3" Count="11" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ElementConv.M_SetExternalError">
+      <LineId Id="3" Count="10" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ElementConv.M_UpdateMasterSlaveStates">
+      <LineId Id="3" Count="93" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ElementConv.M_UpdateRegistry">
+      <LineId Id="3" Count="6" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

@@ -1,0 +1,51 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <POU Name="FB_TableLiftControl" Id="{a5d5bf68-bf49-4c73-b8c6-8cfd02e13c1b}" SpecialFunc="None">
+    <Declaration><![CDATA[// To add operator inputs to FB_LiftControl 
+FUNCTION_BLOCK FB_TableLiftControl EXTENDS FB_LowLiftControl
+VAR_INPUT
+	UserUp	 		: BOOL; //Drive up signal from operator
+	UserDown 		: BOOL; //Drive down signal from operator
+	OperatorPanel	: BOOL; //Operator panel enabled
+	Operatormode	: BOOL; //Operator mode, operator can only control lift when suitable
+END_VAR
+VAR_OUTPUT
+END_VAR
+VAR
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[
+//Uses the same control as the lowlift with some signals added
+//the same emu as the lowlift can be used 
+
+IF OperatorPanel AND Operatormode THEN
+	//If no button is pressed when Operator panel and operator mode is enabled, force state to idle
+	IF NOT (UserUp OR UserDown) THEN 
+		SUPER^.eLastState := eState;
+		SUPER^.eState := E_States_LowLiftControl.IDLE;
+	ELSIF UserUp THEN
+		SUPER^.OrderPos := E_Positions_LowLiftControl.UP;
+	ELSIF UserDown THEN
+		SUPER^.OrderPos := E_Positions_LowLiftControl.DOWN;
+	END_IF
+END_IF
+
+SUPER^(ErrorData := ErrorData);
+]]></ST>
+    </Implementation>
+    <LineIds Name="FB_TableLiftControl">
+      <LineId Id="71" Count="2" />
+      <LineId Id="23" Count="0" />
+      <LineId Id="54" Count="0" />
+      <LineId Id="100" Count="0" />
+      <LineId Id="80" Count="2" />
+      <LineId Id="85" Count="2" />
+      <LineId Id="83" Count="0" />
+      <LineId Id="78" Count="1" />
+      <LineId Id="36" Count="0" />
+      <LineId Id="35" Count="0" />
+      <LineId Id="37" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

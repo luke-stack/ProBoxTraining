@@ -1,0 +1,749 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <POU Name="FB_FunctionForks" Id="{15f5d2b1-e3e9-49bf-adbb-81b8c3301b58}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK FB_FunctionForks EXTENDS FB_StraightBase
+VAR_INPUT
+	Config					: ST_CFG_FunctionForks;
+	HW_Inputs		 		: ST_HW_InputsFunctionFork; // Hardware inputs
+END_VAR
+VAR_OUTPUT
+	HW_Outputs				: ST_HW_OutputsFunctionForks;
+	CtrlOut					: ST_CtrlOutFunctionForks;	
+END_VAR
+VAR	
+	Inputs					: ST_InputsFunctionForks;
+	Outputs					: ST_OutputsFunctionForks;
+	fbTransportControl 		: FB_ProBoxTransportControl;
+	fbElementInterface		: FB_ElementForkInterface;	
+	fbMPDMover				: FB_DriveMover; 		//Handlings moving forks via ABB or SEW
+	ZoneIdx					: INT; // Iterator
+	//Private
+	_FunctionForkData		: ST_FunctionForkData;
+	_DebugPrint				: BOOL;
+END_VAR
+
+VAR PERSISTENT
+	Settings				: ST_CFG_FunctionForks; // Settings - activated configuration 
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[(**************************************************************************************************************
+   Input mapping
+***************************************************************************************************************)
+A_InputMapping();
+
+(**************************************************************************************************************
+   Initialization
+***************************************************************************************************************)
+A_Init();
+
+(**************************************************************************************************************
+   External Subsystem transport interface
+***************************************************************************************************************)
+M_ExternalSTI();
+
+(**************************************************************************************************************
+   State control
+***************************************************************************************************************)
+A_StateControl();
+
+(**************************************************************************************************************
+   Error handler
+***************************************************************************************************************)
+A_ErrorHandler();
+
+(**************************************************************************************************************
+   Process AddOns
+***************************************************************************************************************)
+M_ProcessAddOns();
+
+(**************************************************************************************************************
+   Manual control
+***************************************************************************************************************)
+M_ManualControl();
+
+(**************************************************************************************************************
+   Call TransportControl
+***************************************************************************************************************)
+_M_TransportControl();	
+
+
+// Call methods needed for Fork functionality
+F_ResetError(FALSE, FunctionData.ErrorData.ErrorDataSet[2]); //Fork control errors
+F_ResetError(FALSE, FunctionData.ErrorData.ErrorDataSet[3]); //Motion errors
+_M_RegisterFunction();
+_M_ForkMover();
+_M_ForkControl();
+_M_DetermineForkPosition();
+_M_Emulation(MotionRunning:=CtrlOut.MotionRunning);
+
+
+(**********************************************************************************************************
+   Transport link
+***********************************************************************************************************)
+_M_TransportLink();
+
+(**************************************************************************************************************
+   Interface handler out
+***************************************************************************************************************)
+M_ITC_ProcessOut();
+
+(**************************************************************************************************************
+   Output mapping
+***************************************************************************************************************)
+A_OutputMapping();	]]></ST>
+    </Implementation>
+    <Method Name="_M_CheckDesiredPosition" Id="{32e1e08d-2313-445b-8395-477b59454433}">
+      <Declaration><![CDATA[//Check position to if is within hysterisis boundaries
+METHOD PRIVATE _M_CheckDesiredPosition : BOOL
+VAR_INPUT
+	DesiredPos			: DINT; //the desired shuttle position to check if is within hysterisis boundaries
+END_VAR
+VAR
+	MaxVal,MinVal : DINT;	
+END_VAR
+VAR CONSTANT
+	EncoderHysterisis : INT := 5;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+MaxVal := DesiredPos + (EncoderHysterisis);
+MinVal := DesiredPos - (EncoderHysterisis);
+
+_M_CheckDesiredPosition := 	(_FunctionForkData.ActualPosValue <= MaxVal) AND 
+							(_FunctionForkData.ActualPosValue >= MinVal);
+
+	]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_DetermineForkPosition" Id="{5f3c70f1-7399-474b-8e52-90feb3d02981}">
+      <Declaration><![CDATA[METHOD PRIVATE _M_DetermineForkPosition : BOOL
+VAR_INPUT
+END_VAR
+VAR
+	PreviousForkState 		: E_FunctionForkState;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[// check position
+PreviousForkState := Outputs.ForkStatus.ForkState;
+
+//Check home position sensor.
+IF( NOT Inputs.HW.SensorForkCenter AND Outputs.ForkStatus.ForkState = E_FunctionForkState.E_CENTER) THEN
+	F_SetError(	
+			ErrorType	:= E_ErrorType.ERROR,
+			ErrorParam	:= 'Home position not detected by sensor',
+			ErrorMsg	:= E_ErrorConv.INCORRECT_SENSOR_SIGNAL,
+			ErrorData	:= FunctionData.ErrorData.ErrorDataSet[2]);	
+END_IF
+
+
+//Set fork state
+IF(_M_CheckDesiredPosition(Settings.EncoderHomePosValue) AND _FunctionForkData.Locked //AND   AND _FunctionForkData.RequestMove(* AND Inputs.ForkRequest.OrderFork = E_FunctionForkOrder.E_ORDER_CENTER*) 
+	(* AND SensorForkCenter*)) THEN
+	Outputs.ForkStatus.ForkState := E_FunctionForkState.E_CENTER;
+	
+ELSIF(_M_CheckDesiredPosition(_FunctionForkData.RequestPosValue) AND _FunctionForkData.Locked AND  _FunctionForkData.RequestMove AND Inputs.ForkRequest.OrderFork = E_FunctionForkOrder.E_ORDER_RIGHT) THEN
+	Outputs.ForkStatus.ForkState := E_FunctionForkState.E_RIGHT_COMPLETE;
+	
+ELSIF(_M_CheckDesiredPosition(_FunctionForkData.RequestPosValue) AND _FunctionForkData.Locked AND _FunctionForkData.RequestMove AND Inputs.ForkRequest.OrderFork = E_FunctionForkOrder.E_ORDER_LEFT) THEN
+	Outputs.ForkStatus.ForkState := E_FunctionForkState.E_LEFT_COMPLETE;		
+	
+ELSIF(NOT _FunctionForkData.Locked AND _FunctionForkData.RequestMove AND Inputs.ForkRequest.OrderFork <> E_FunctionForkOrder.E_ORDER_UNKNOWN) THEN
+	Outputs.ForkStatus.ForkState := E_FunctionForkState.E_MOVING;
+	
+ELSE
+	Outputs.ForkStatus.ForkState := E_FunctionForkState.E_UNKNOWN;			
+END_IF
+	
+
+
+//debug print
+IF(_DebugPrint AND PreviousForkState <> Outputs.ForkStatus.ForkState) THEN
+	fbDebugMsg.M_SendInfoMsg(CONCAT('Fork State: ',TO_STRING(Outputs.ForkStatus.ForkState)));
+END_IF
+	
+
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_Emulation" Id="{f9e831a8-4e6e-4ea3-91b9-5673708fdb90}">
+      <Declaration><![CDATA[METHOD PRIVATE _M_Emulation : BOOL
+VAR_IN_OUT
+	MotionRunning : BOOL;
+END_VAR
+VAR
+	LastCyclePos : DINT;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+IF(NOT ProBoxSystem.EMULATION_ENABLED) THEN
+	RETURN;
+END_IF
+
+LastCyclePos := _FunctionForkData.ActualPosValue;
+
+//emulate moving...
+//consider speed?? MPD_Config.DriveCFG.DriveParameter[_MPD.DriveParameterIndex].Velocity/(1000/10(*10 ms CycleTime*))
+IF(_FunctionForkData.RequestMove AND _M_IsErrorActive() = FALSE) THEN		
+	IF( _FunctionForkData.ActualPosValue < _FunctionForkData.RequestPosValue) THEN _FunctionForkData.ActualPosValue := _FunctionForkData.ActualPosValue+3;	END_IF
+	IF( _FunctionForkData.ActualPosValue > _FunctionForkData.RequestPosValue) THEN _FunctionForkData.ActualPosValue := _FunctionForkData.ActualPosValue-3;	END_IF		
+					
+	//check if desired position is within limits
+	_FunctionForkData.Locked := _M_CheckDesiredPosition(_FunctionForkData.RequestPosValue);	
+END_IF	
+IF(FunctionInterface.In.Element.OperationState.eMode  = E_PositionMode.MANUAL_MODE) THEN
+	IF(Inputs.ForkRequest.ManualControl.Op_Fork_Right) THEN		_FunctionForkData.ActualPosValue := _FunctionForkData.ActualPosValue+3;	END_IF
+	IF(Inputs.ForkRequest.ManualControl.Op_Fork_Left) THEN		_FunctionForkData.ActualPosValue := _FunctionForkData.ActualPosValue-3;	END_IF
+END_IF
+
+//SensorForkCenter
+
+MotionRunning := (_FunctionForkData.ActualPosValue <> LastCyclePos);
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_ForkControl" Id="{fdb96897-ac4d-45c7-a7bc-5c74d96faee6}">
+      <Declaration><![CDATA[METHOD PRIVATE _M_ForkControl : BOOL
+VAR_INPUT
+END_VAR
+VAR
+	PreviusRequestOrder			: E_FunctionForkOrder; //Toggle request Move to motion	
+END_VAR
+VAR_INST	
+	ForkState					: INT;	
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+//------------------------------------------------------------------------
+//Check PD is free
+IF(Inputs.ForkRequest.CheckPdFree AND Inputs.HW.Sensor_TU_PD_Present) THEN
+	F_SetError(	
+			ErrorType	:= E_ErrorType.ERROR,
+			ErrorParam	:= 'TS positoin not free',
+			ErrorMsg	:= E_ErrorConv.INCORRECT_SENSOR_SIGNAL,
+			ErrorData	:= FunctionData.ErrorData.ErrorDataSet[2]);	
+END_IF
+
+
+//------------------------------------------------------------------------
+PreviusRequestOrder := Inputs.ForkRequest.OrderFork;
+	
+CASE ForkState OF
+	0: //Idle
+		IF(	FunctionData.OperationState.eState = E_PositionState.STARTED AND FunctionData.OperationState.eMode = E_PositionMode.AUTO_MODE AND			
+			NOT _M_IsErrorActive() ) THEN
+			
+			IF(Inputs.ForkRequest.OrderFork = E_FunctionForkOrder.E_ORDER_CENTER AND Outputs.ForkStatus.ForkState <> E_FunctionForkState.E_CENTER) THEN
+				ForkState:=30;
+			ELSIF(Inputs.ForkRequest.OrderFork = E_FunctionForkOrder.E_ORDER_LEFT AND Outputs.ForkStatus.ForkState <> E_FunctionForkState.E_LEFT_COMPLETE) THEN
+				ForkState:=20;
+			ELSIF(Inputs.ForkRequest.OrderFork = E_FunctionForkOrder.E_ORDER_RIGHT AND Outputs.ForkStatus.ForkState <> E_FunctionForkState.E_RIGHT_COMPLETE) THEN
+				ForkState:=10;
+			END_IF
+			
+		END_IF
+		_FunctionForkData.RequestMove := FALSE;		
+		
+		
+	10: //move positive direction = Right
+		_FunctionForkData.RequestMove := TRUE;
+		_FunctionForkData.RequestPosValue := Settings.EncoderHomePosValue + Inputs.ForkRequest.ForkStroke; 	
+		
+		IF(Inputs.ForkRequest.OrderFork <> E_FunctionForkOrder.E_ORDER_RIGHT) THEN
+			ForkState:=0;
+		END_IF
+		
+			
+	20: //Move negative direction = Left
+		_FunctionForkData.RequestMove := TRUE;
+		_FunctionForkData.RequestPosValue := Settings.EncoderHomePosValue + Inputs.ForkRequest.ForkStroke;
+		
+		IF(Inputs.ForkRequest.OrderFork <> E_FunctionForkOrder.E_ORDER_LEFT) THEN
+			ForkState:=0;
+		END_IF
+	
+	30: //move home to center
+		_FunctionForkData.RequestMove := TRUE;
+		_FunctionForkData.RequestPosValue := Settings.EncoderHomePosValue; // todo replace with config value for this position.
+		//IF(_FunctionForkData.Locked) THEN
+		IF(Inputs.ForkRequest.OrderFork <> E_FunctionForkOrder.E_ORDER_CENTER OR
+			_FunctionForkData.Locked (*exit center state in orded to go back to idle*)) THEN			
+			ForkState:=0;
+		END_IF		
+		
+	ELSE
+		F_SetError(
+				ErrorType	:= E_ErrorType.ERROR,
+				ErrorParam	:= 'sequence error',
+				ErrorMsg	:= E_ErrorConv.SOFTWARE_ERROR,
+				ErrorData	:= FunctionData.ErrorData.ErrorDataSet[3]);
+						
+END_CASE
+
+	
+//Debug print
+IF(_DebugPrint AND PreviusRequestOrder <> Inputs.ForkRequest.OrderFork) THEN
+	fbDebugMsg.M_SendInfoMsg(CONCAT('Function Fork Order: ',TO_STRING(Inputs.ForkRequest.OrderFork)));
+END_IF
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_ForkMover" Id="{3981544d-e70b-42b5-aa59-45563a19f35c}">
+      <Declaration><![CDATA[METHOD PRIVATE _M_ForkMover : BOOL
+VAR_INPUT
+END_VAR
+VAR
+	MoviDriveManual		: ST_MoviDriveManual;
+	RequestedPosition	: DINT;
+	
+END_VAR
+
+
+VAR CONSTANT
+	DriveParameterIndex : INT := 1;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+//manual control
+MoviDriveManual.DriveFwd := Inputs.ForkRequest.ManualControl.Op_Fork_Right;
+MoviDriveManual.DriveRev := Inputs.ForkRequest.ManualControl.Op_Fork_Left;
+MoviDriveManual.EmergencyDrive := Inputs.ForkRequest.ManualControl.OP_EmergencyDrive;
+
+
+IF( NOT ProBoxSystem.EMULATION_ENABLED) THEN	
+	fbMPDMover(
+		ErrorPending			:= _M_IsErrorActive(), 
+		ElementOperationState	:= FunctionInterface.In.Element.OperationState,
+		DisableEnableDrive		:= NOT _FunctionForkData.RequestMove, 
+		DriveCFG				:= Settings.DriveCFG,
+		ManualControl			:= MoviDriveManual,		  
+		DriveInputs				:= Inputs.HW.DriveInputs,		
+		EmgStopAxisTrig 		:= Inputs.ForkRequest.EmergencyStop,
+		Done	=> _FunctionForkData.Locked, 
+		Aborted	=> _FunctionForkData.MotionAborted,
+		ErrorData 				:= FunctionData.ErrorData.ErrorDataSet[3]);
+
+	//Request to move Normal operation
+	IF _FunctionForkData.RequestMove THEN 
+		fbMPDMover.M_MoveAbsolute(
+			mPosition		:= _FunctionForkData.RequestPosValue, 
+			mVelocity		:= Settings.DriveCFG.DriveParameter[DriveParameterIndex].Velocity, 
+			mAcceleration	:= Settings.DriveCFG.DriveParameter[DriveParameterIndex].Acceleration, 
+			mDeceleration	:= Settings.DriveCFG.DriveParameter[DriveParameterIndex].Deceleration, 
+			mJerk			:= Settings.DriveCFG.DriveParameter[DriveParameterIndex].Jerk,
+			ErrorData 		:= FunctionData.ErrorData.ErrorDataSet[3]);
+	END_IF
+		
+	_FunctionForkData.ActualPosValue := LREAL_TO_DINT( fbMPDMover.ActPos);
+END_IF	
+	
+
+	]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_IsErrorActive" Id="{0f0ca0e9-34e9-4902-89db-bad87b48ab36}">
+      <Declaration><![CDATA[//Check if element or function is in error.
+METHOD PRIVATE _M_IsErrorActive : BOOL
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+_M_IsErrorActive := FunctionInterface.In.Element.State.Error OR					
+					FunctionData.ErrorData.ErrorState = E_ErrorState.ERROR;
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_RegisterFunction" Id="{deb32df9-8a59-4a26-9399-c9f2fbe1a795}">
+      <Declaration><![CDATA[//Register FB_ForkControl to Element VC Fork
+METHOD PRIVATE _M_RegisterFunction : BOOL
+VAR	
+	pForksInstance				: ITF_PB_Element;
+	pElement					: POINTER TO FB_ProBoxElementBase; //implements ITF_PB_FunctionFork 
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[IF(NOT FunctionData.Init) THEN
+	IF(__ISVALIDREF(ElementRegistry[SettingsFunction.eElementLink].rElement)) THEN
+		pElement := ADR(ElementRegistry[SettingsFunction.eElementLink].rElement);		
+		pForksInstance := pElement^;		
+		pForksInstance.P_RegisterFuncton := ADR(THIS^.fbElementInterface);
+		
+		//check if registration was sucessfull
+		IF(pForksInstance.P_RegisterFuncton = 0) THEN
+			F_SetError(	
+					ErrorType	:= E_ErrorType.ERROR,
+					ErrorParam	:= 'Could not connect FB_ForkControl',
+					ErrorMsg	:= E_ErrorConv.CONFIGURATION_ERROR,
+					ErrorData	:= FunctionData.ErrorData.ErrorDataSet[3]);	
+		END_IF
+	END_IF	
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_TransportControl" Id="{a2c62d65-39ed-4ce3-9cc3-6bfa9d342173}">
+      <Declaration><![CDATA[METHOD PRIVATE _M_TransportControl : BOOL
+VAR
+	ZoneOccupied			: BOOL; // Zone physical occupied
+	CtrlInputPbTc			: ST_CtrlInPbTc; //Control input for Probox transportControl
+END_VAR
+
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[//Reset errors
+F_ResetError(FALSE,FunctionData.ErrorData.ErrorDataSet[1]);
+
+// Check transport direction of the conveyor
+SettingsFunction.FlowDirectionREV := _M_DefineTransportDirection(FunctionData.ErrorData.ErrorDataSet[1]);
+
+
+ZoneOccupied := Inputs.HW.Sensor_TU_Present AND
+				Outputs.ForkStatus.ForkState = E_FunctionForkState.E_CENTER AND 
+				F_PB_GetTransportControlDataRef(SettingsFunction.eFunctionNumber,1).NumberOfPresentTUs>0;
+			
+//reset encoder value to disable timeout
+FunctionInterface.In.Element.State.EncoderValue :=0;
+
+// call Straight transport method of base class
+
+CtrlInputPbTc.StopSensor		:= ZoneOccupied;
+		
+	M_StraightTransport(
+		fbTransportControl		:=fbTransportControl,
+		ZoneIx					:= 1, 
+		ExtDisableTakeover		:= FALSE, 
+		ExtDisableHandover		:= FALSE, 
+		ExtDisableTransport		:= FALSE,		
+		CtrlInputPbTc			:= CtrlInputPbTc,
+		CreepHwSensor			:= FALSE, 
+		Orientation_Axis		:= E_Axis_Orientation.Element_12);
+		
+		
+
+]]></ST>
+      </Implementation>
+    </Method>
+    <Action Name="A_Init" Id="{15c34d6f-9f02-4f6b-ac7c-111ec28077b0}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_Init
+ * 	FUNCTION	Initialize function
+ **************************************************************************************)
+ 
+// Update Registry
+M_UpdateRegistry();
+ 
+
+// Init ongoing - Wait until init is released (Sequencial startup)
+IF NOT FunctionData.Init AND FunctionData.InitRunning THEN
+	// When the subsystem is started, 
+	// When its released to initialize
+	IF FunctionData.OperationState.Info.SystemReady AND
+	   SettingsFunction.eFunctionNumber < FunctionData.OperationState.InitRelease.eLimitFunctionNumber THEN
+	   
+	   IF M_InitFunction(FALSE) THEN
+			// Function initialized - and initialization done
+			FunctionData.Init := TRUE;
+			FunctionData.InitRunning := FALSE;
+			
+			// Set reset cmd
+			FunctionData.ErrorData.Error.ResetError := TRUE;
+			
+			DebugMsg := CONCAT('Initialization done. Function: ', ConfigFunction.FunctionName);
+			fbDebugMsg.M_SendInfoMsg(DebugMsg);
+		END_IF
+	END_IF
+(*
+If the function is not initialized,
+clean all values and wait until init is released
+*)
+ELSIF NOT FunctionData.Init THEN
+	// Reset internal variables
+	FunctionData.OperationState := FunctionBase.PositionStateEmpty;
+
+	// Initiate initialization of all zones
+	FOR ZoneIdx := 1 TO SettingsFunction.NumberOfZones DO
+		ZoneData[ZoneIdx].Init := FALSE;
+	END_FOR;
+	
+	// Load function specific configuration to settings
+	Settings := Config;
+	
+	// Reset values and load config
+	M_PreInit();
+	
+	// To start init a valid functionnumber and element link is needed
+	FunctionData.InitRunning := SettingsFunction.eFunctionNumber > 0 AND
+								SettingsFunction.eElementLink > 0;
+END_IF
+
+// Init zones
+IF FunctionData.Init THEN
+	// Set init flag after one cycle
+	FOR ZoneIdx := 1 TO SettingsFunction.NumberOfZones DO
+		// If a zone is not initialized, wait one cycle to finish init
+		IF NOT ZoneData[ZoneIdx].Init THEN
+			IF ZoneData[ZoneIdx].InitRunning THEN
+				ZoneData[ZoneIdx].InitRunning := FALSE;
+				ZoneData[ZoneIdx].Init := TRUE;
+				ZoneData[ZoneIdx].ErrorData.Error.ResetError := TRUE;
+			ELSE	
+				ZoneData[ZoneIdx].InitRunning := TRUE;
+			END_IF
+		END_IF
+	END_FOR;
+END_IF]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="A_InputMapping" Id="{c84cc86d-f092-40d9-84ae-843134592899}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_InputMapping
+ * 	FUNCTION	Input mapping
+ **************************************************************************************)
+ 
+(**************************************************************************************
+   Hardware Inputs
+***************************************************************************************)
+
+//comunicate with element
+Inputs.ForkRequest 	:= fbElementInterface.P_ForkRequest;
+Inputs.HW			:= HW_Inputs;
+
+
+(**************************************************************************************
+   Element states
+***************************************************************************************)
+// Get status of the corresponding element
+M_GetElementStates(); 
+
+(**************************************************************************************
+   AddOn states
+***************************************************************************************)
+// Get status of all corresponding AddOn functions and store it in FunctionInterface.In.AddOnOrder
+M_GetAddOnOrder();
+
+]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="A_OutputMapping" Id="{325b050f-6db3-4136-86c8-8a707c916797}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_OutputMapping
+ * 	FUNCTION	Output mapping
+ **************************************************************************************)
+
+(**************************************************************************************
+   Map HW Outputs
+***************************************************************************************)
+HW_Outputs.VCDrive.MotionOutputHigh		:= fbMPDMover.AxisMotionOutputHigh;
+HW_Outputs.VCDrive.MotionOutputLow		:= fbMPDMover.AxisMotionOutputLow;
+HW_Outputs.VCDrive.DriveOutputs			:= fbMPDMover.DriveOutputs;
+HW_Outputs.VCDrive.EnableDrive			:= fbMPDMover.EnableDrive;
+
+(**************************************************************************************
+   Order outputs (Commands to corresponding element)
+***************************************************************************************)
+THIS^.M_OutputMapping(E_Axis_Orientation.Element_12,FALSE);
+
+
+//comunicate with element
+fbElementInterface.P_ForkStatus := Outputs.ForkStatus;
+
+CtrlOut.MotionRunning 			:= fbMPDMover.Busy AND NOT fbMPDMover.Done; 
+CtrlOut.ForkInCenter			:= Outputs.ForkStatus.ForkState = E_FunctionForkState.E_CENTER;
+
+//Inhibit stopping for the function when ExtendedRun is driving
+THIS^.InhibitStopping :=  Outputs.ForkStatus.ForkState = E_FunctionForkState.E_MOVING;]]></ST>
+      </Implementation>
+    </Action>
+    <LineIds Name="FB_FunctionForks">
+      <LineId Id="75" Count="2" />
+      <LineId Id="74" Count="0" />
+      <LineId Id="78" Count="0" />
+      <LineId Id="12" Count="29" />
+      <LineId Id="59" Count="3" />
+      <LineId Id="96" Count="2" />
+      <LineId Id="232" Count="1" />
+      <LineId Id="116" Count="0" />
+      <LineId Id="183" Count="0" />
+      <LineId Id="99" Count="0" />
+      <LineId Id="206" Count="0" />
+      <LineId Id="63" Count="0" />
+      <LineId Id="258" Count="0" />
+      <LineId Id="262" Count="3" />
+      <LineId Id="260" Count="1" />
+      <LineId Id="64" Count="7" />
+      <LineId Id="9" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_FunctionForks._M_CheckDesiredPosition">
+      <LineId Id="32" Count="1" />
+      <LineId Id="31" Count="0" />
+      <LineId Id="62" Count="1" />
+      <LineId Id="61" Count="0" />
+      <LineId Id="8" Count="0" />
+      <LineId Id="10" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_FunctionForks._M_DetermineForkPosition">
+      <LineId Id="6" Count="1" />
+      <LineId Id="56" Count="7" />
+      <LineId Id="8" Count="0" />
+      <LineId Id="64" Count="0" />
+      <LineId Id="9" Count="14" />
+      <LineId Id="39" Count="0" />
+      <LineId Id="25" Count="0" />
+      <LineId Id="27" Count="0" />
+      <LineId Id="31" Count="0" />
+      <LineId Id="55" Count="0" />
+      <LineId Id="32" Count="4" />
+      <LineId Id="5" Count="0" />
+      <LineId Id="52" Count="0" />
+      <LineId Id="54" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_FunctionForks._M_Emulation">
+      <LineId Id="30" Count="0" />
+      <LineId Id="29" Count="0" />
+      <LineId Id="31" Count="1" />
+      <LineId Id="34" Count="0" />
+      <LineId Id="33" Count="0" />
+      <LineId Id="6" Count="8" />
+      <LineId Id="16" Count="0" />
+      <LineId Id="49" Count="0" />
+      <LineId Id="51" Count="0" />
+      <LineId Id="48" Count="0" />
+      <LineId Id="50" Count="0" />
+      <LineId Id="41" Count="0" />
+      <LineId Id="5" Count="0" />
+      <LineId Id="26" Count="0" />
+      <LineId Id="25" Count="0" />
+      <LineId Id="27" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_FunctionForks._M_ForkControl">
+      <LineId Id="261" Count="1" />
+      <LineId Id="264" Count="1" />
+      <LineId Id="268" Count="3" />
+      <LineId Id="266" Count="1" />
+      <LineId Id="263" Count="0" />
+      <LineId Id="259" Count="1" />
+      <LineId Id="52" Count="3" />
+      <LineId Id="146" Count="0" />
+      <LineId Id="181" Count="0" />
+      <LineId Id="152" Count="0" />
+      <LineId Id="58" Count="2" />
+      <LineId Id="63" Count="0" />
+      <LineId Id="111" Count="1" />
+      <LineId Id="64" Count="0" />
+      <LineId Id="204" Count="0" />
+      <LineId Id="147" Count="0" />
+      <LineId Id="157" Count="0" />
+      <LineId Id="159" Count="0" />
+      <LineId Id="65" Count="1" />
+      <LineId Id="160" Count="0" />
+      <LineId Id="162" Count="0" />
+      <LineId Id="161" Count="0" />
+      <LineId Id="189" Count="0" />
+      <LineId Id="248" Count="1" />
+      <LineId Id="78" Count="0" />
+      <LineId Id="223" Count="0" />
+      <LineId Id="109" Count="0" />
+      <LineId Id="163" Count="0" />
+      <LineId Id="165" Count="0" />
+      <LineId Id="185" Count="0" />
+      <LineId Id="190" Count="0" />
+      <LineId Id="246" Count="1" />
+      <LineId Id="87" Count="1" />
+      <LineId Id="166" Count="0" />
+      <LineId Id="169" Count="0" />
+      <LineId Id="187" Count="0" />
+      <LineId Id="191" Count="0" />
+      <LineId Id="193" Count="0" />
+      <LineId Id="188" Count="0" />
+      <LineId Id="168" Count="0" />
+      <LineId Id="281" Count="1" />
+      <LineId Id="284" Count="3" />
+      <LineId Id="283" Count="0" />
+      <LineId Id="182" Count="0" />
+      <LineId Id="100" Count="1" />
+      <LineId Id="116" Count="0" />
+      <LineId Id="236" Count="0" />
+      <LineId Id="240" Count="0" />
+      <LineId Id="239" Count="0" />
+      <LineId Id="245" Count="0" />
+      <LineId Id="131" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_FunctionForks._M_ForkMover">
+      <LineId Id="32" Count="1" />
+      <LineId Id="35" Count="1" />
+      <LineId Id="34" Count="0" />
+      <LineId Id="6" Count="9" />
+      <LineId Id="17" Count="2" />
+      <LineId Id="5" Count="0" />
+      <LineId Id="21" Count="8" />
+      <LineId Id="20" Count="0" />
+      <LineId Id="41" Count="1" />
+      <LineId Id="44" Count="0" />
+      <LineId Id="47" Count="1" />
+      <LineId Id="52" Count="0" />
+      <LineId Id="45" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_FunctionForks._M_IsErrorActive">
+      <LineId Id="23" Count="0" />
+      <LineId Id="10" Count="0" />
+      <LineId Id="20" Count="0" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_FunctionForks._M_RegisterFunction">
+      <LineId Id="6" Count="2" />
+      <LineId Id="11" Count="1" />
+      <LineId Id="20" Count="2" />
+      <LineId Id="25" Count="3" />
+      <LineId Id="23" Count="1" />
+      <LineId Id="13" Count="0" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_FunctionForks._M_TransportControl">
+      <LineId Id="77" Count="1" />
+      <LineId Id="6" Count="3" />
+      <LineId Id="111" Count="0" />
+      <LineId Id="22" Count="0" />
+      <LineId Id="112" Count="2" />
+      <LineId Id="143" Count="1" />
+      <LineId Id="26" Count="1" />
+      <LineId Id="90" Count="0" />
+      <LineId Id="29" Count="0" />
+      <LineId Id="36" Count="1" />
+      <LineId Id="69" Count="0" />
+      <LineId Id="38" Count="3" />
+      <LineId Id="92" Count="0" />
+      <LineId Id="44" Count="1" />
+      <LineId Id="120" Count="1" />
+      <LineId Id="48" Count="0" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_FunctionForks.A_Init">
+      <LineId Id="2" Count="66" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_FunctionForks.A_InputMapping">
+      <LineId Id="2" Count="7" />
+      <LineId Id="34" Count="1" />
+      <LineId Id="33" Count="0" />
+      <LineId Id="36" Count="0" />
+      <LineId Id="16" Count="0" />
+      <LineId Id="20" Count="12" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_FunctionForks.A_OutputMapping">
+      <LineId Id="2" Count="3" />
+      <LineId Id="87" Count="7" />
+      <LineId Id="10" Count="0" />
+      <LineId Id="12" Count="2" />
+      <LineId Id="51" Count="0" />
+      <LineId Id="82" Count="0" />
+      <LineId Id="72" Count="2" />
+      <LineId Id="76" Count="0" />
+      <LineId Id="75" Count="0" />
+      <LineId Id="52" Count="0" />
+      <LineId Id="70" Count="1" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

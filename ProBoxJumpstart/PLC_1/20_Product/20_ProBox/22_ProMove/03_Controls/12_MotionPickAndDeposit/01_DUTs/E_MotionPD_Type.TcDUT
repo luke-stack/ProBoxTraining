@@ -1,0 +1,15 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.12">
+  <DUT Name="E_MotionPD_Type" Id="{c2b9a488-3acc-4b61-b185-c9ff8a094031}">
+    <Declaration><![CDATA[{attribute 'qualified_only'}
+{attribute 'strict'}
+TYPE E_MotionPD_Type :
+(
+	E_Unknown		:= 0,
+	E_ShuttleCar	:= 1, 	// Shuttle car motion type
+	E_VerticalCv	:= 2	// Vertical conveyor motion type
+);
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

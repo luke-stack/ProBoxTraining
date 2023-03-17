@@ -1,0 +1,726 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.18">
+  <POU Name="FB_TCP_Driver" Id="{e12a3d88-c12b-4b82-9560-5317997b3b71}" SpecialFunc="None">
+    <Declaration><![CDATA[///TCP / IP Driver - Handles a connection to one partner. Handles only one incoming and one outgoing message at once.
+FUNCTION_BLOCK FB_TCP_Driver
+(**************************************************************************************
+* Application : BoxControl Framework 
+* Revision date : $Date: 2020-10-16 11:02:56 +0200 (fre, 16 okt 2020) $
+* Author : CDC
+* ------------------------------------------------------------------------------------ 
+* © Swisslog AG 
+* Swisslog is not liable for any usage of this source code that is not agreed 
+* on between Swisslog and the other party. The mandatory legal liability remains 
+* unaffected. 
+* ------------------------------------------------------------------------------------ 
+* Project revision history: 
+* 
+* VERSION 	DATE 		INITIALS 	DESCRIPTION 
+* 0.1 		12.10.2020 	swl. 		example
+* 
+**************************************************************************************)
+
+VAR_INPUT
+	Config						: ST_CFG_TcpDriver;
+	pReceiveData				: PVOID; // Pointer to receive structure
+	ReceiveDataLen				: UDINT; // Length of received structure (Maximum which could be received)
+
+END_VAR
+
+VAR_OUTPUT
+	NewData						: BOOL; // New Data received	
+	ReceivedBytes				: UDINT; // Amount of received bytes
+	Connected					: BOOL; // Connected 
+	
+	ConnBusy					: BOOL; // Connection ongoing
+	ConnError					: BOOL; // Error during connection
+	ConnErrId					: UDINT; // Connection error code
+		
+	SendBusy					: BOOL; // Send ongoing status	
+	SendError					: BOOL; // Send error
+	SendErrId					: UDINT; // Sending error code
+	
+	RecvBusy					: BOOL; // Receive ongoing status
+	RecvError					: BOOL; // Receive error
+	RecvErrId					: UDINT; // Receive error code
+END_VAR
+
+VAR
+
+	Init						: BOOL := FALSE; // Instance is initialized
+	fbDebugMsg					: FB_DebugMsg; // Debug msg handler
+	DebugMsg					: T_MAXSTRING; // Debug msg
+	EnableSystemLog				: BOOL	:= FALSE;
+
+	fbConnectClientServer		: FB_ClientServerConnection := (sSrvNetId := ''); // Tc library connect
+	fbConnectServerClient		: FB_ServerClientConnection; // Tc library connect
+	
+	fbSocketSend				: FB_SocketSend := (sSrvNetID := '', tTimeout := DEFAULT_ADS_TIMEOUT); // Tc library send
+	fbSocketReceive				: FB_SocketReceive := (sSrvNetID := '', tTimeout := DEFAULT_ADS_TIMEOUT); // Tc library recv
+	hServer						: T_HSERVER; // Server connection handle 
+	hSocket						: T_HSOCKET; // Connection socket
+	
+	// Send receive data
+	RecvString					: T_MaxString; // String received for debugging
+	SendString					: T_MaxString; // String send for debugging
+	pSendData					: PVOID; // Address send structure
+	SendDataLen					: UDINT; // Send data length
+	
+	// States	
+	SocketState					: E_SocketConnectionState := eSOCKET_DISCONNECTED; // TCP/IP connection state 
+	ConnState					: E_ConnStates; // Connection states
+	SendState					: E_SendStates; // Sending states
+	RecvState					: E_RecvStates; // Receive states
+
+	SendTrigger					: BOOL; // New Data to Send
+	RestartCom					: BOOL; // Close and reopen socket
+
+	// Socket variables to accept and refuse a second server connection 
+	fbConnectServer_ConRefuse	: FB_ServerClientConnection; // Establishes a connection 
+	hSocket_ConRefuse			: T_HSOCKET; // Socket handle for this connection
+	SocketState_ConRefuse		: E_SocketConnectionState := eSOCKET_DISCONNECTED; // Socket state
+
+	ConnState_ConRefuse			: E_ConnStates; // Connection states; 
+
+	fbSocketSend_ConRefuse		: FB_SocketSend := (sSrvNetID := '', tTimeout := DEFAULT_ADS_TIMEOUT); // Send function block
+	MsgConnection_ConRefuse		: STRING := 'Connection refused'; // 
+
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[(**************************************************************************************
+   		Initialize
+***************************************************************************************)
+
+M_Init(FALSE);
+
+//  Server mode
+IF Config.Server THEN
+	// Call connection handling as server
+	A_Server();
+	
+	// Reject additional incomming connection requests
+	A_RejectCon();
+	
+// Client mode	
+ELSE
+	// Call connection handling as client
+	A_Client();
+END_IF
+
+
+]]></ST>
+    </Implementation>
+    <Action Name="A_Client" Id="{80b124ed-e902-4ab2-a04d-0833ce832df0}">
+      <Implementation>
+        <ST><![CDATA[fbConnectClientServer(hSocket => hSocket);
+
+// Connection states
+CASE ConnState OF
+	// Connection is idle 
+	E_ConnStates.CONN_IDLE:
+		Connected := FALSE;
+		// If connection is enabled 
+		IF Config.EnableConnection THEN
+			// Poll connection for new client
+			fbConnectClientServer( 	
+						nMode			:= SEL( EnableSystemLog, 0, CONNECT_MODE_ENABLEDBG), // Enable/disable debug messages? 
+						sRemoteHost 	:= Config.RemoteHost, 
+						nRemotePort 	:= Config.RemotePort,
+						bEnable			:= TRUE, 
+						tReconnect		:= Config.ClientRetryInterval, // Retry connection after  ConnectionTimeout
+						eState			=> SocketState );
+						
+			IF NOT fbConnectClientServer.bBusy THEN
+				IF NOT fbConnectClientServer.bError THEN
+					IF SocketState = eSOCKET_CONNECTED THEN  // We are connected 
+											
+						SendBusy 	:= FALSE;
+						RecvBusy 	:= FALSE;
+	
+						Connected := TRUE;
+						ConnState := E_ConnStates.CONN_RUNNING;
+					END_IF
+				END_IF
+			END_IF				
+		
+		END_IF
+		
+
+	// Connection is established - execute sending and receive over the connection 
+	E_ConnStates.CONN_RUNNING:
+		// Send
+		A_Send();
+		// Recv
+		A_Recv();
+
+	
+		// Should the connection need to be disabled or an error occours in the sending/receiving of data, deal with it 
+		IF NOT Config.EnableConnection AND NOT fbSocketSend.bBusy AND NOT fbSocketReceive.bBusy OR RestartCom THEN
+			RestartCom := FALSE;
+			M_DebugSendInfoMsg('ConnState: CONN_CLOSE_START');
+			ConnState := E_ConnStates.CONN_CLOSE;
+			
+		ELSIF SendError OR RecvError THEN
+			SendError := FALSE;
+			RecvError := FALSE;
+			M_DebugSendInfoMsg('ConnState: CONN_ERROR');
+			ConnState := E_ConnStates.CONN_ERROR;
+		END_IF
+		
+	// Connections need to be closed 
+	E_ConnStates.CONN_CLOSE:
+		fbConnectClientServer( bEnable:= FALSE, eState => SocketState );
+		IF SocketState = eSOCKET_DISCONNECTED THEN
+			// Please wait some seconds and then try to connect again 
+			Connected := FALSE;
+			RecvState := E_RecvStates.RECV_IDLE;
+			SendState := E_SendStates.SEND_IDLE;
+			ConnState := E_ConnStates.CONN_IDLE;
+		END_IF
+		
+	// Error detected in connection 
+	E_ConnStates.CONN_ERROR:
+		
+		// If still connected
+		IF Connected THEN
+			// Close connection
+			M_DebugSendInfoMsg('ConnState: CONN_CLOSE_START');
+			ConnState := E_ConnStates.CONN_CLOSE;
+		ELSE
+			ConnBusy   := FALSE;
+			// Switch to idle
+			M_DebugSendInfoMsg('ConnState: CONN_IDLE');
+			ConnState := E_ConnStates.CONN_IDLE;
+		END_IF
+END_CASE]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="A_Recv" Id="{666f5917-bed3-4eea-86d7-704da32c6d4d}">
+      <Implementation>
+        <ST><![CDATA[// Receive states
+CASE RecvState OF
+	// Idle state - waiting for confirmation to enable receiving 
+	E_RecvStates.RECV_IDLE:
+		// If no new data are waiting to be removed and
+		// a valid receive structure is available
+		IF NOT NewData AND
+           pReceiveData <> 0 AND 
+           ReceiveDataLen > 0 THEN
+			// Block receive channel
+			RecvBusy := TRUE;
+			
+			// Call receive function block
+			fbSocketReceive(
+				hSocket  	:= hSocket,
+				pDest	 	:= pReceiveData,
+				cbLen	 	:= ReceiveDataLen,
+				bExecute 	:= TRUE);
+			
+			// Reset variables
+			RecvError := FALSE;
+			RecvErrId := 0;
+			ReceivedBytes := 0;
+			MEMSET(ADR(RecvString), 0, SIZEOF(RecvString));
+			
+			// Switch to receive start
+			RecvState := E_RecvStates.RECV_WAIT;
+		
+		END_IF
+		
+	// Receiving is active, wait for the function to complete 
+	E_RecvStates.RECV_WAIT:
+		// Reset
+		fbSocketReceive(bExecute := FALSE);
+		
+		// If receiving is finished
+		IF NOT fbSocketReceive.bBusy THEN
+			// Reset
+			RecvBusy := FALSE;	
+		
+			// If no error is occured
+			IF NOT fbSocketReceive.bError THEN
+				// Receive module has completed - analyse the message 
+				IF (fbSocketReceive.nRecBytes > 0) THEN
+					// Store received bytes 
+					ReceivedBytes := fbSocketReceive.nRecBytes;
+				
+					// Copy first 255 signs for debug reason to RecvString
+					F_BlockCopy(
+						pSrc:= pReceiveData, 
+						LenSrc:= ReceivedBytes, 
+						pDest:= ADR(RecvString), 
+						LenDest:= SIZEOF(RecvString));
+						
+					// Set new data ready
+					NewData := TRUE;
+				END_IF
+				// Go to Idle
+				RecvState := E_RecvStates.RECV_IDLE;
+			ELSE
+				// Error detected 
+				RecvErrId := fbSocketReceive.nErrId;
+				RecvState := E_RecvStates.RECV_ERROR;
+			END_IF
+		END_IF
+		
+	// Recv error state 
+	E_RecvStates.RECV_ERROR:
+		RecvBusy := FALSE;
+		RecvError := TRUE;
+		RecvState := E_RecvStates.RECV_IDLE;
+END_CASE]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="A_RejectCon" Id="{84af5a64-6fb0-4332-8207-c8cf6c77282d}">
+      <Implementation>
+        <ST><![CDATA[(* -----------------------------------------------------------------------------
+ 	This code avoids addional connection as soon as a connection was established
+ 	It will accept any new incomming connection requests and will close it immediately
+-------------------------------------------------------------------------------- *)
+
+// Connection alreads established check for new incomming connection requests
+IF ConnState <> E_ConnStates.CONN_IDLE THEN
+
+	// Connection states
+	CASE ConnState_ConRefuse OF
+		// Connection is idle 
+		E_ConnStates.CONN_IDLE:
+			
+			// If connection is enabled and not listening
+			IF Config.EnableConnection THEN
+				fbConnectServer_ConRefuse( 	eMode := eACCEPT_ALL, 
+								tReconnect := Config.ServerRetryInterval, // Retry connection after  ConnectionTimeout
+								bEnable := TRUE, 
+								hServer := hServer, 
+								hSocket => hSocket_ConRefuse, 
+								eState => SocketState_ConRefuse );
+								
+				IF NOT fbConnectServer_ConRefuse.bBusy THEN
+					IF NOT fbConnectServer_ConRefuse.bError THEN
+						IF SocketState = eSOCKET_CONNECTED THEN(* We are connected *)
+							ConnState_ConRefuse := E_ConnStates.CONN_RUNNING;
+						END_IF
+					END_IF
+				END_IF
+			END_IF
+	
+		// Socket is open and listening, process incoming connection requests from partner 
+		E_ConnStates.CONN_RUNNING:
+					
+			// Start send action in same cycle
+			MsgConnection_ConRefuse := 'Connection refused, already active Connection with IP = ';
+			MsgConnection_ConRefuse := concat(MsgConnection_ConRefuse, fbConnectServerClient.hSocket.remoteAddr.sAddr);
+
+			// Send the connection refused message to the client
+			fbSocketSend_ConRefuse(
+				hSocket  	:= hSocket_ConRefuse,
+				pSrc     	:= ADR(MsgConnection_ConRefuse),
+				cbLen    	:= SIZEOF(MsgConnection_ConRefuse),
+				bExecute 	:= TRUE);
+					
+					
+			// Continue to wait, until the FB_SocketSend instance has finished and close the connection
+			IF NOT fbSocketSend_ConRefuse.bBusy THEN
+				// Reset
+				MsgConnection_ConRefuse := '';
+				fbSocketSend_ConRefuse(
+					hSocket  	:= hSocket_ConRefuse,
+					pSrc     	:= ADR(MsgConnection_ConRefuse),
+					cbLen    	:= SIZEOF(MsgConnection_ConRefuse),
+					bExecute 	:= FALSE);
+			
+				ConnState_ConRefuse := E_ConnStates.CONN_CLOSE;
+			END_IF
+					
+		// Close the socket 
+		E_ConnStates.CONN_CLOSE:
+					
+			fbConnectServer_ConRefuse( hServer := hServer, bEnable:= FALSE, eState => SocketState_ConRefuse );
+			// Socket closed
+			IF SocketState_ConRefuse = eSOCKET_DISCONNECTED THEN
+				ConnState_ConRefuse := E_ConnStates.CONN_IDLE;
+			END_IF
+	
+	END_CASE
+
+// Disable listener for additional connection requests, active connection was closes 	
+ELSE
+	fbConnectServer_ConRefuse(
+						hServer := hServer,  
+						bEnable := FALSE); 
+END_IF]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="A_Send" Id="{6fdeb1c4-ea2b-492b-9926-b1e687c83082}">
+      <Implementation>
+        <ST><![CDATA[CASE SendState OF
+		// Idle State - Waiting for trigger to start sending 
+		E_SendStates.SEND_IDLE:
+			// When new data are ready to be sent
+			// and an valid send structure is available
+			IF SendTrigger AND
+			   pSendData > 0 AND 
+			   SendDataLen > 0 THEN
+			   	// Block send channel
+				SendBusy    := TRUE;
+				
+				// Copy first 255 signs for debug reason to SendString
+				F_BlockCopy(
+					pSrc:= pSendData, 
+					LenSrc:= SendDataLen, 
+					pDest:= ADR(SendString), 
+					LenDest:= SIZEOF(SendString));
+				
+				// Start send action in same cycle
+				fbSocketSend(
+					hSocket  	:= hSocket,
+					pSrc     	:= pSendData,
+					cbLen    	:= SendDataLen,
+					bExecute 	:= TRUE);
+				
+				// Reset variables
+				SendError   := FALSE;
+				SendErrId   := 0;
+				
+				SendState  := E_SendStates.SEND_WAIT;
+			ELSIF SendTrigger THEN 
+				//If for some reason the data gets reset while send trigger is on and there is an error, the send will get stuck, so lets reset the send trigger.
+				SendTrigger := FALSE;
+				
+				DebugMsg := CONCAT('Send trigger on while there is no data present. SendDataLen: ', UDINT_TO_STRING(SendDataLen));
+				fbDebugMsg.M_SendWarningMsg(DebugMsg);
+			END_IF
+				
+		// Data has been queued for sending. Wait to see if sending was successful. 
+		E_SendStates.SEND_WAIT:
+			fbSocketSend(bExecute := TRUE);
+			// Continue to wait, until the FB_SocketSend instance has finished
+			IF NOT fbSocketSend.bBusy THEN
+				// Reset
+				SendBusy := FALSE;
+				fbSocketSend(bExecute := FALSE);
+				
+				IF NOT fbSocketSend.bError THEN
+					SendTrigger := FALSE;
+					// Sending completed without error, return to sending idle state and wait for next message to send 
+					SendState 	:= E_SendStates.SEND_IDLE;
+				ELSE
+					// Error detected 
+					SendErrId := fbSocketSend.nErrId;
+					SendState := E_SendStates.SEND_ERROR;
+				END_IF
+			END_IF
+			
+		// Send error state 
+		E_SendStates.SEND_ERROR:
+			SendBusy := FALSE;
+			SendError := TRUE;
+			SendState := E_SendStates.SEND_IDLE;
+	END_CASE]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="A_Server" Id="{8d2bd70a-95e7-41e7-aec7-9a9d84d71599}">
+      <Implementation>
+        <ST><![CDATA[fbConnectServerClient(hServer := hServer,
+				hSocket => hSocket, 
+				eState => SocketState );
+					  
+					  
+// Connection states
+CASE ConnState OF
+	// Connection is idle 
+	E_ConnStates.CONN_IDLE:
+		// Reset
+		Connected := FALSE;
+		
+		// If connection is enabled and not listning
+		IF Config.EnableConnection THEN
+			fbConnectServerClient( 	eMode := eACCEPT_ALL, 
+							tReconnect := Config.ServerRetryInterval, // Retry connection after  ConnectionTimeout
+							bEnable := TRUE, 
+							hServer := hServer, 
+							eState => SocketState );
+							
+			IF NOT fbConnectServerClient.bBusy THEN
+				IF NOT fbConnectServerClient.bError THEN
+					IF SocketState = eSOCKET_CONNECTED THEN(* We are connected *)
+						
+						SendBusy := FALSE;
+						RecvBusy := FALSE;
+	
+						// Connected
+						Connected := TRUE;
+						ConnState := E_ConnStates.CONN_RUNNING;
+					END_IF
+				END_IF
+			END_IF
+		END_IF
+		
+		
+	// Socket is open and listening, process incoming connection requests from partner 
+	E_ConnStates.CONN_RUNNING:
+
+			// Send
+			A_Send();
+			// Recv
+			A_Recv();
+
+		
+		// Should the connection need to be disabled or an error occours in the Sending/Receiving of data, deal with it 
+		IF NOT Config.EnableConnection AND NOT fbSocketSend.bBusy AND NOT fbSocketReceive.bBusy OR RestartCom THEN
+			RestartCom := FALSE;
+			M_DebugSendInfoMsg('AcceptState: ACCEPT_CLOSE_START');
+			ConnState := E_ConnStates.CONN_CLOSE;
+		ELSIF SendError OR RecvError THEN
+			SendError := FALSE;
+			RecvError := FALSE;
+			M_DebugSendInfoMsg('AcceptState: ACCEPT_ERROR');
+			ConnState := E_ConnStates.CONN_ERROR;
+		END_IF
+				
+	// Close the socket 
+	E_ConnStates.CONN_CLOSE:
+				
+		fbConnectServerClient( hServer := hServer, bEnable:= FALSE, eState => SocketState );
+		IF SocketState = eSOCKET_DISCONNECTED THEN
+			Connected := FALSE;
+			RecvState := E_RecvStates.RECV_IDLE;
+			SendState := E_SendStates.SEND_IDLE;				
+			ConnState := E_ConnStates.CONN_IDLE;
+		END_IF
+		
+	// Error state 
+	E_ConnStates.CONN_ERROR:
+		
+		// If still connected
+		IF Connected THEN
+			// Close connection
+			M_DebugSendInfoMsg('ConnState: CONN_CLOSE_START');
+			ConnState := E_ConnStates.CONN_CLOSE;
+		ELSE
+			ConnBusy   := FALSE;
+			// Switch to idle
+			M_DebugSendInfoMsg('ConnState: CONN_IDLE');
+			ConnState := E_ConnStates.CONN_IDLE;
+		END_IF		
+END_CASE
+]]></ST>
+      </Implementation>
+    </Action>
+    <Method Name="M_DataProcessed" Id="{29f1bbda-73b0-4135-81e7-fc5325930c13}">
+      <Declaration><![CDATA[METHOD M_DataProcessed 
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[// Release receive channel
+NewData := FALSE;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_DebugSendInfoMsg" Id="{f97c734c-f2a3-4521-8ddb-2c6774c8c71a}">
+      <Declaration><![CDATA[METHOD PRIVATE M_DebugSendInfoMsg
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 404529 $
+ *	Revision date	:	$Date: 2020-10-16 11:02:56 +0200 (fre, 16 okt 2020) $
+ *	Last changed by	:	$Author: b7bolm $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/trunk/01_Software/BCF/BCF/JumpStart/30_Toolbox/11_Com/10_TCP_Driver/FB_TCP_Driver.TcPOU $
+ *
+ *	Purpose			:	Send debug message, needs to enabable via TCP-Configuration
+ *
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+VAR_INPUT
+	mDebugMessage: STRING(DEBUGMESSAGELENGTH);
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[IF Config.EnableDebugMsg THEN
+	fbDebugMsg.M_SendInfoMsg(mDebugMessage);
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_Init" Id="{c6134ac3-4dac-4409-9e18-8db1d2acd740}">
+      <Declaration><![CDATA[{attribute 'object_name' := 'M_Init'}
+METHOD M_Init
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 404529 $
+ *	Revision date	:	$Date: 2020-10-16 11:02:56 +0200 (fre, 16 okt 2020) $
+ *	Last changed by	:	$Author: b7bolm $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/trunk/01_Software/BCF/BCF/JumpStart/30_Toolbox/11_Com/10_TCP_Driver/FB_TCP_Driver.TcPOU $
+ *
+ *	Purpose			:	Initialize TCP/ Ip Driver.
+ *						Normal calling will only do a init if its needed. If this 
+ *						instance is called with mInit = TRUE, initialization is forced
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+VAR_INPUT
+	mInit				: BOOL; // Force initialization
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[// Check if init is requested or needed
+IF NOT Init OR mInit THEN
+	IF Config.EnableConnection THEN
+		// Init done
+		Init := TRUE;
+
+		// Initialize bits
+		Connected		:= FALSE;
+		ConnBusy 		:= FALSE;
+		ConnError		:= FALSE;
+		ConnErrId		:= 0;
+		SendBusy		:= FALSE;
+		SendError		:= FALSE;
+		SendErrId		:= 0;
+		RecvBusy		:= FALSE;
+		RecvError		:= FALSE;
+		RecvErrId		:= 0;
+		ReceivedBytes   := 0;
+	
+		// Close all channels - and do a connection retry
+		ConnState := E_ConnStates.CONN_CLOSE;
+		
+		IF Config.Server THEN
+			// Initialize server handle once 
+			IF NOT F_CreateServerHnd( 	sSrvNetID := '', 
+								sLocalHost := Config.LocalHost, 
+								nLocalPort	:= Config.LocalPort,
+//								nMode 		:= SEL( EnableSystemLog, 0, CONNECT_MODE_ENABLEDBG OR LISTEN_MODE_CLOSEALL),(* Enable/disable debug messages? *)
+								nMode 		:= SEL( EnableSystemLog, 0, CONNECT_MODE_ENABLEDBG),(* Enable/disable debug messages? *)
+								bEnable 	:= FALSE,(* TRUE = leave listener socket open, FALSE = close listener socket after last connection ist closed too *)
+								hServer 	:= hServer ) THEN
+	
+				// Init failed server handle is not valid
+				Init := FALSE;
+				M_DebugSendInfoMsg('Init: Server handle not valid');				
+			END_IF				
+	
+		END_IF
+	END_IF	
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_RestartCom" Id="{456d5506-2024-40c3-876f-2ef85ed3525a}">
+      <Declaration><![CDATA[{attribute 'object_name' := 'M_RestartCom'}
+METHOD M_RestartCom
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 404529 $
+ *	Revision date	:	$Date: 2020-10-16 11:02:56 +0200 (fre, 16 okt 2020) $
+ *	Last changed by	:	$Author: b7bolm $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/trunk/01_Software/BCF/BCF/JumpStart/30_Toolbox/11_Com/10_TCP_Driver/FB_TCP_Driver.TcPOU $
+ *
+ *	Purpose			:	Restart TCP/IP Driver.
+ *
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[M_Init(TRUE);]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_Send" Id="{8caaf411-59d5-46b6-a363-4b453d1419f7}">
+      <Declaration><![CDATA[METHOD M_Send : BOOL
+VAR_INPUT
+	mpSendData		: PVOID; // Address to the send data storage
+	mSendDataLen	: UDINT; // Data length which need to be sent
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[// Check inputs
+IF mpSendData = 0 OR mSendDataLen = 0 THEN
+	M_Send := FALSE;
+	RETURN;
+END_IF
+
+// If a send request is already waiting or a send process is ongoing -&gt; do nothing
+IF SendTrigger OR SendBusy THEN
+	M_Send := FALSE;
+ELSE
+	pSendData := mpSendData;
+	SendDataLen := mSendDataLen;
+	
+	SendTrigger := TRUE;
+	
+	M_Send := TRUE;
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <LineIds Name="FB_TCP_Driver">
+      <LineId Id="3" Count="20" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_TCP_Driver.A_Client">
+      <LineId Id="2" Count="79" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_TCP_Driver.A_Recv">
+      <LineId Id="2" Count="70" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_TCP_Driver.A_RejectCon">
+      <LineId Id="2" Count="74" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_TCP_Driver.A_Send">
+      <LineId Id="2" Count="29" />
+      <LineId Id="69" Count="4" />
+      <LineId Id="76" Count="0" />
+      <LineId Id="32" Count="26" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_TCP_Driver.A_Server">
+      <LineId Id="2" Count="82" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_TCP_Driver.M_DataProcessed">
+      <LineId Id="3" Count="0" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_TCP_Driver.M_DebugSendInfoMsg">
+      <LineId Id="3" Count="1" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_TCP_Driver.M_Init">
+      <LineId Id="3" Count="38" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_TCP_Driver.M_RestartCom">
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_TCP_Driver.M_Send">
+      <LineId Id="21" Count="15" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

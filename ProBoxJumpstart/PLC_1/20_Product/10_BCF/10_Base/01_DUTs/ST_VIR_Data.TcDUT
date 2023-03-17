@@ -1,0 +1,39 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.12">
+  <DUT Name="ST_VIR_Data" Id="{57c9e9ca-4a7f-40ee-9d58-4c2c7366ad08}">
+    <Declaration><![CDATA[TYPE ST_VIR_Data :
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 404529 $
+ *	Revision date	:	$Date: 2018-04-23 08:21:38 +0200 (Mo., 23 Apr 2018) $
+ *	Last changed by	:	$Author: b7bolm $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/trunk/01_Software/BCF/BCF/JumpStart/20_Product/10_App/10_Base/10_Lib/01_DUTs/ST_VIR_Data.TcDUT $
+ *
+ *	Purpose			:	Visualization report structure
+ *
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+STRUCT
+	SendingAllowed			: BOOL; // Its allowed to send a new report
+	Overflow				: BOOL; // Overflow detected
+	TimeStep				: UDINT; // Desired time step
+	NextSendTimeStamp		: UDINT; // Next possible timestamp
+	ChangeDetected			: BOOL; // Change detected
+	NumberOfUsedKeys	 	: INT; // Number of monitored keys
+	Data					: ARRAY [1..System.NUMBER_OF_KEYVALUE_PAIRS_VIR] OF ST_ITC_VIR_SET; // Valid data
+	PrepData				: ARRAY [1..System.NUMBER_OF_KEYVALUE_PAIRS_VIR] OF ST_ITC_VIR_SET; // Preparation for sending report
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

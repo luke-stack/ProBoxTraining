@@ -1,0 +1,57 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <POU Name="F_PB_SetPalletOrientation" Id="{15a9062c-ac62-447c-b93e-db6ab19a0630}" SpecialFunc="None">
+    <Declaration><![CDATA[//Rotate profile data 90,80 or 270 degrees
+FUNCTION F_PB_SetPalletOrientation : BOOL
+VAR_INPUT
+	ePalletOrientation  : E_PalletOrientation;	
+	TuTableIdx			: DINT; // Which Tu Table destination slot (Default 1)
+END_VAR
+VAR
+	TU_DataIndex  : DINT;
+	_ProfileData: ST_Profile;
+	_TempProfileData : ST_Profile;
+	InvertedDone : BOOL:= FALSE;
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[//Sanity check
+IF TuTableIdx <= 0 OR ePalletOrientation = OrientationZero THEN	
+	RETURN;
+END_IF
+
+TU_DataIndex := TuTableIdx;
+_ProfileData:= TU_DataTable[TU_DataIndex].Profile;	
+
+
+CASE ePalletOrientation OF 	
+	OrientationZero:
+		; //nothing to do	
+
+	OrientationNinty:
+		TU_DataTable[TU_DataIndex].Profile.ProfileLeft:= _ProfileData.ProfileRear;	
+		TU_DataTable[TU_DataIndex].Profile.ProfileRight:= _ProfileData.ProfileFront;	
+		TU_DataTable[TU_DataIndex].Profile.ProfileFront:= _ProfileData.ProfileLeft;
+		TU_DataTable[TU_DataIndex].Profile.ProfileRear:= _ProfileData.ProfileRight;
+	
+	OrientationOneEighty:
+		TU_DataTable[TU_DataIndex].Profile.ProfileLeft:= _ProfileData.ProfileRight;
+		TU_DataTable[TU_DataIndex].Profile.ProfileRight:= _ProfileData.ProfileLeft;
+		TU_DataTable[TU_DataIndex].Profile.ProfileFront:= _ProfileData.ProfileRear;
+		TU_DataTable[TU_DataIndex].Profile.ProfileRear:= _ProfileData.ProfileFront;
+	
+	OrientationTwoSeventy:
+		TU_DataTable[TU_DataIndex].Profile.ProfileLeft:= _ProfileData.ProfileFront;
+		TU_DataTable[TU_DataIndex].Profile.ProfileRight:= _ProfileData.ProfileRear;
+		TU_DataTable[TU_DataIndex].Profile.ProfileFront:= _ProfileData.ProfileRight;
+		TU_DataTable[TU_DataIndex].Profile.ProfileRear:= _ProfileData.ProfileLeft;
+END_CASE
+
+F_PB_SetPalletOrientation:=TRUE; ;]]></ST>
+    </Implementation>
+    <LineIds Name="F_PB_SetPalletOrientation">
+      <LineId Id="187" Count="31" />
+      <LineId Id="96" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

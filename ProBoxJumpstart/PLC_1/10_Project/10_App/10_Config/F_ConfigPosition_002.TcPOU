@@ -1,0 +1,53 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <POU Name="F_ConfigPosition_002" Id="{6ac9bf1e-b525-44ba-9a58-acefab14028e}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION F_ConfigPosition_002
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[
+
+(****************************** 10-002-0206-00-0 ************************************)
+(*************************** ProBoxElement with one Motor *******************************)
+// Configuration element 
+fbEL_10_002_0206_00_0.ConfigElement.ElementName                     := '10-002-0206-00-0'; // Element name 
+fbEL_10_002_0206_00_0.ConfigElement.eElementNumber                  := E_10_002_0206_00_0; // Number of the element 
+fbEL_10_002_0206_00_0.ConfigElement.eSlaveElementNumber_34          := E_ElementNumber.E_BEGIN_ELEMENT; // Link from Master to slave element
+fbEL_10_002_0206_00_0.ConfigElement.eElementType                    := E_ElementType.NO_TYPE; // No specific type
+
+// Register element 
+ElementRegistry[E_10_002_0206_00_0].Enable                          := TRUE; // Object is called
+ElementRegistry[E_10_002_0206_00_0].eElementNumber                  := fbEL_10_002_0206_00_0.ConfigElement.eElementNumber; 
+
+(****************************** 10-002-0206-01-0 ************************************)
+(************************** ProBox Straight Transport *******************************)
+// Configuration function
+fbF_10_002_0206_01_0.ConfigFunction.FunctionName                       := '10-002-0206-01-0'; // Function name
+fbF_10_002_0206_01_0.ConfigFunction.eFunctionNumber                    := F_10_002_0206_01_0; // Number of the function
+fbF_10_002_0206_01_0.ConfigFunction.eElementLink                       := E_ElementNumber.E_10_002_0206_00_0;
+fbF_10_002_0206_01_0.ConfigFunction.FunctionLink.eFunctionNumber       := E_FunctionNumber.F_BEGIN_FUNCTION;
+fbF_10_002_0206_01_0.ConfigFunction.FunctionLink.ZoneNumber            := 0;
+fbF_10_002_0206_01_0.ConfigFunction.eAdjacentFunctionNumberSide[1]     := E_FunctionNumber.F_10_001_0204_01_0;
+fbF_10_002_0206_01_0.ConfigFunction.eAdjacentFunctionNumberSide[2]     := E_FunctionNumber.F_10_001_0208_01_0;
+fbF_10_002_0206_01_0.ConfigFunction.ePrevFunctionNumber                := E_FunctionNumber.F_10_001_0204_01_0;
+fbF_10_002_0206_01_0.ConfigFunction.eNextFunctionNumber                := E_FunctionNumber.F_10_001_0208_01_0;
+fbF_10_002_0206_01_0.ConfigFunction.NumberOfZones                      := 1;
+//Config zone 1
+fbF_10_002_0206_01_0.ConfigFunction.Zone[1].ZoneName                   := '10-002-0206-01-1';
+fbF_10_002_0206_01_0.ConfigFunction.Zone[1].EnableMFC                  := TRUE;
+fbF_10_002_0206_01_0.ConfigFunction.Zone[1].EnableSimultaneousTransport:= FALSE; //Disable Simultaneous transport for multi zone functions
+fbF_10_002_0206_01_0.ConfigFunction.Zone[1].EnableLatchOccupiedState   := TRUE;
+fbF_10_002_0206_01_0.ConfigFunction.Zone[1].Length[1]                  := INT_TO_UINT(3000 / fbF_10_002_0206_01_0.ConfigFunction.NumberOfZones);	//Zone length (ie element length / number of zones)
+
+// Register function
+FunctionRegistry[F_10_002_0206_01_0].Enable                            := TRUE; (* Function will be called *)
+FunctionRegistry[F_10_002_0206_01_0].eFunctionNumber                   := fbF_10_002_0206_01_0.ConfigFunction.eFunctionNumber; // Registration number
+
+
+]]></ST>
+    </Implementation>
+    <LineIds Name="F_ConfigPosition_002">
+      <LineId Id="3" Count="38" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

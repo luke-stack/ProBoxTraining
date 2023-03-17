@@ -1,0 +1,15 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <DUT Name="ST_InOutFeedData" Id="{97db937b-6207-4f71-8cf1-8daa426506e5}">
+    <Declaration><![CDATA[TYPE ST_InOutFeedData :
+STRUCT
+	TransportData				: ST_TransportControlData;
+	LiftUp						: BOOL; //Controls lift, dependent on state in state machine
+	NextFunction				: BOOL; //True if next function is defined
+	PrevFunction				: BOOL; //True if previous function is defined
+	LiftEnableTransport			: BOOL; 
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

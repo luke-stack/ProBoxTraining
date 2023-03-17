@@ -1,0 +1,79 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.4">
+  <Itf Name="I_SluggingAddOn" Id="{300d5825-39ef-48b9-9d7d-c5cc25c4bb2b}">
+    <Declaration><![CDATA[// controls slugging and deslugging as addon over several zones
+{attribute 'monitoring' := 'call'}
+INTERFACE PUBLIC I_SluggingAddOn
+(**************************************************************************************
+ *  Application     :   BoxControl Framework
+ *  Revision date   :   $Date: 2021-04-09 08:29:02 +0200 (fre, 09 apr 2021) $
+ *  Author          :   CDC
+ * ------------------------------------------------------------------------------------
+ *  © Swisslog AG
+ *  Swisslog is not liable for any usage of this source code that is not agreed 
+ *  on between Swisslog and the other party. The mandatory legal liability remains 
+ *  unaffected.
+ * ------------------------------------------------------------------------------------
+ *  Revision History: 
+ *
+ *  VERSION DATE         INITIALS     DESCRIPTION
+ *  0.0     DD.MM.YYYY   (name)       (explain customized modifications)
+ *
+ **************************************************************************************)]]></Declaration>
+    <Method Name="M_GetNextFromZone" Id="{158d7a47-aa29-4e65-804e-53cb5698c45d}">
+      <Declaration><![CDATA[// returns the proper adjacent side from the zone according to the selected direction 
+METHOD PUBLIC M_GetNextFromZone : E_FunctionNumber
+
+VAR_INPUT
+	FunctionNumber	: E_FunctionNumber		:= E_FunctionNumber.F_BEGIN_FUNCTION;
+	ZoneNumber		: DINT					:= 0;
+END_VAR
+]]></Declaration>
+    </Method>
+    <Method Name="M_GetPrevFromZone" Id="{3a7e1ef2-0b68-44fd-8783-5fa263e8a425}">
+      <Declaration><![CDATA[// returns the proper adjacent side from the zone according to the selected direction 
+METHOD PUBLIC M_GetPrevFromZone : E_FunctionNumber
+
+VAR_INPUT
+	FunctionNumber	: E_FunctionNumber		:= E_FunctionNumber.F_BEGIN_FUNCTION;
+	ZoneNumber		: DINT					:= 0;
+END_VAR
+]]></Declaration>
+    </Method>
+    <Method Name="M_ReleaseTrain" Id="{7c47caeb-5bcd-49b6-8151-041a3fab8349}">
+      <Declaration><![CDATA[// manually releases the train (if possible)
+METHOD PUBLIC M_ReleaseTrain
+
+VAR_INPUT
+END_VAR
+]]></Declaration>
+    </Method>
+    <Property Name="P_Direction" Id="{95a31340-e5b5-42d4-acbc-b68efb23b216}">
+      <Declaration><![CDATA[// direction/enabling of control
+{attribute 'monitoring' := 'call'}
+PROPERTY PUBLIC P_Direction : E_SluggingAddOnDirections]]></Declaration>
+      <Get Name="Get" Id="{311a8dae-f55c-4b28-9d6f-7c467a56ac02}">
+        <Declaration><![CDATA[]]></Declaration>
+      </Get>
+      <Set Name="Set" Id="{75c3eef0-ae87-44df-945d-eb9f3a390fe8}">
+        <Declaration><![CDATA[]]></Declaration>
+      </Set>
+    </Property>
+    <Property Name="P_Releasable" Id="{9ea6d0bf-15d9-4154-8a74-3f677e0d22ef}">
+      <Declaration><![CDATA[// train is releaseable via calling M_ReleaseTrain()
+{attribute 'monitoring' := 'call'}
+PROPERTY PUBLIC P_Releasable : BOOL]]></Declaration>
+      <Get Name="Get" Id="{f6648185-305d-4cda-937d-e605655809d8}">
+        <Declaration><![CDATA[]]></Declaration>
+      </Get>
+    </Property>
+    <Property Name="P_Summary" Id="{a83d7ed1-aafa-42ce-8528-98c68dc8b9c3}">
+      <Declaration><![CDATA[// train summary
+{attribute 'monitoring' := 'call'}
+PROPERTY PUBLIC P_Summary : I_SluggingAddOn_Summary]]></Declaration>
+      <Get Name="Get" Id="{0d7807dd-bc8e-4e68-94d2-ef1fdf5e23df}">
+        <Declaration><![CDATA[]]></Declaration>
+      </Get>
+    </Property>
+  </Itf>
+</TcPlcObject>

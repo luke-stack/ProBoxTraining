@@ -1,0 +1,11 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <GVL Name="Subsystem" Id="{208319e9-2343-4297-a56d-2a624f630be8}">
+    <Declaration><![CDATA[///Automatically created by BoxConfigurator
+VAR_GLOBAL
+	///Subsystem number 10
+	fbSubsystem10: FB_ProBoxSubsystem;
+	END_VAR VAR_GLOBAL CONSTANT NUMBERS_OF_ETHERCAT_SLAVE_DIAG: int :=50; //Number of EtherCAT Slaves;
+END_VAR]]></Declaration>
+  </GVL>
+</TcPlcObject>

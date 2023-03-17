@@ -1,0 +1,265 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.18">
+  <POU Name="FB_HandoverTrackingDivert" Id="{5f65e2b2-8c67-4ea8-a263-fef41f42d7a4}" SpecialFunc="None">
+    <Declaration><![CDATA[/// Functionality to control a handover process from a tracking conveyor
+FUNCTION_BLOCK FB_HandoverTrackingDivert IMPLEMENTS I_HandoverListener
+(************************************************************************************** 
+* 	Application 		: BoxControl Framework 
+* 	Revision 			: $Revision: 408723 $ 
+* 	Revision date 		: $Date: 2018-06-27 13:49:08 +0200 (Wed, 27 Jun 2018) $ 
+* 	Last changed by 	: $Author: b7bolm $ 
+* 	URL 				: $URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/21_Projects/BCF_2.0/trunk/BCF/BCF/JumpStart/20_Product/10_App/12_E_Functions/10_Lib/10_Conv/FB_FunctionList.TcPOU $ 
+* ------------------------------------------------------------------------------------ 
+* 	© Swisslog AG 
+* 	Swisslog is not liable for any usage of this source code that is not agreed 
+* 	on between Swisslog and the other party. The mandatory legal liability remains 
+* 	unaffected. 
+* ------------------------------------------------------------------------------------ 
+* 	Revision History: 
+* 
+* 	VERSION 		DATE 			INITIALS 			DESCRIPTION 
+* 	0.1 			22.08.2018 		herzig 				First implementation
+*	0.2				05.10.2018		b7bolm				Review
+* 
+**************************************************************************************)
+VAR_INPUT
+	Param 						: ST_TransportControlParam; // Parameter of the transport control
+	NextTransportData			: ST_TransportData; // Next transport data
+	Enable						: BOOL; // Transport enable
+	EnableHandOver 				: BOOL; // Transport enable handover
+	DivertPosition				: UDINT; // Merging position on tracking
+	DivertingTolerance			: UDINT; // Merging tolerance to allow merging
+	DivertRearEdge				: BOOL; // Divert on rear edge of TU
+	DriveDelayDistance			: DINT;  // Distance to drive until position is free
+	DriveReady					: BOOL; // Drive is ready to be used
+	EncoderValueInc				: UDINT; // Encoder value [inc]
+	MaxEncoderValueInc			: UDINT; // Max encoder value [inc]
+	RateIncPerMM				: LREAL; // Resolution amount of increment per mm
+	iWindowTracking				: I_WindowTracking;  // Window tracking implementation
+END_VAR
+
+VAR_OUTPUT
+	DriveRun					: BOOL; // Drive run
+	DriveStop					: BOOL; // Stop drive
+	FastSpeed					: BOOL; // Fast speed possible
+	RequestNextTransportData 	: BOOL; // Request next transport data
+	DeleteNextTransportData  	: BOOL; // Delete next transport data
+	eHandOverState				: E_HandOverState; // Handover state
+	eNextTakeOverState			: E_TakeOverState; // Takeover state of next position
+	Initialized					: BOOL; // Module is initialized
+	AvailableZoneIndex			: UINT; // Current valid zone index
+	HandoverOngoing				: BOOL; // Handover ongoing, interface in interaction
+END_VAR
+
+VAR_IN_OUT
+	ZoneData					: ST_ZoneData; // Zone data
+	ErrorData 					: ST_ErrorDataSet; // Error data
+END_VAR
+
+VAR
+	fbDebugMsg					: FB_DebugMsg; // Debug instance
+	DebugMsg					: T_MAXSTRING; // Debug message
+	fbHandover					: FB_Handover; // Basic handover impementation
+	DistanceToTU				: DINT; // Distance to TU from diverting point
+	TransportEnable				: BOOL; // Transport hardstop
+	TransportEnableHandOver		: BOOL; // Transport softstop, finish ongoing operations
+	TU_IndexOfZone				: DINT; // TU index of tracking zone
+	TrackingZoneIndex 			: UINT; // Tracking zone index
+	fbZoneEndLengthClear		: FB_DisplacementMeter; // ZoneEndLenght clear
+END_VAR]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[//Input mapping
+TransportEnable := Enable AND Param.rZoneEnable.Transport;
+TransportEnableHandOver := EnableHandOver AND Param.rZoneEnable.HandOver AND Param.rExternalZoneEnable;
+
+F_ResetError(Reset := FALSE, ErrorData := ErrorData);	
+
+IF iWindowTracking = 0 THEN
+	RETURN;
+END_IF
+
+// Initialization of the module
+// Module initialization
+IF NOT Initialized THEN
+	RETURN;
+END_IF
+
+(**************************************************************************************************************
+   Determine zone for this position
+***************************************************************************************************************)
+AvailableZoneIndex := 0;
+TU_IndexOfZone := 0;
+ZoneData.TransportControlData.DataPresent := FALSE;
+ZoneData.TransportControlData.TU_DataIndex := 0;
+
+// Wait until a zone can be found at divert point
+IF TrackingZoneIndex = 0 THEN
+	IF DivertRearEdge THEN
+		TrackingZoneIndex := iWindowTracking.M_GetFirstZoneIndex(DivertPosition, DivertPosition + DivertingTolerance, TRUE);
+	ELSE
+		TrackingZoneIndex := iWindowTracking.M_GetZoneIndex(DivertPosition);	
+	END_IF
+END_IF
+
+// When a possible zone was found, validate and monitor it
+IF TrackingZoneIndex > 0 THEN
+	// As long the zone is valid
+	IF iWindowTracking.P_ZoneTable[TrackingZoneIndex].Used THEN
+		// Divert on rear edge
+		IF DivertRearEdge THEN
+			// Zone gets monitored as long it is in a certain range 
+			DistanceToTU := iWindowTracking.M_GetDistanceToTU_End(DivertPosition, TrackingZoneIndex);
+		ELSE
+			// Zone gets monitored as long it is in a certain range 
+			DistanceToTU := iWindowTracking.M_GetDistanceToTU_Start(DivertPosition, TrackingZoneIndex);
+		END_IF
+		
+		// TU needs to pass divert point and stays available for distance (Divertingtolerance)
+		IF DistanceToTU <= 0 AND ABS(DistanceToTU) <= UDINT_TO_DINT(DivertingTolerance) THEN
+			// When position is occupied, its a possible next for this position
+			IF iWindowTracking.P_ZoneTable[TrackingZoneIndex].TU_Present THEN			
+				TU_IndexOfZone := iWindowTracking.P_ZoneTable[TrackingZoneIndex].TU_Index;
+			
+				ZoneData.TransportControlData.DataPresent := TU_IndexOfZone <> 0;
+				ZoneData.TransportControlData.TU_DataIndex := TU_IndexOfZone;
+				
+				AvailableZoneIndex := TrackingZoneIndex;	
+			END_IF
+			
+		// TU left divert tolerance range
+		ELSIF DistanceToTU <= 0 AND ABS(DistanceToTU) > UDINT_TO_DINT(DivertingTolerance) THEN
+			TrackingZoneIndex := 0;
+		END_IF
+	END_IF
+END_IF
+
+(**************************************************************************************************************
+   Handover state
+***************************************************************************************************************)
+// Delay after enabling handover, set as soon transport gets started
+fbZoneEndLengthClear(
+	EncoderValueInc		:= EncoderValueInc,
+	MaxEncoderValueInc 	:= MaxEncoderValueInc,
+	RateIncPerMM		:= RateIncPerMM);
+	
+fbHandover(
+	Enable					:= TransportEnable AND
+            				  (Param.rOperationState.eState = E_PositionState.STARTED OR
+	         				   Param.rOperationState.eState = E_PositionState.STOPPING),
+	RequestHandover			:= AvailableZoneIndex > 0 AND Param.rOperationState.eState = E_PositionState.STARTED AND TransportEnableHandOver,
+	NextZonePresent			:= Param.reNextFunctionNumber > 0,
+	HandoverComplete		:= fbZoneEndLengthClear.Q,
+	DriveReady				:= DriveReady,
+	iListener				:= THIS^,
+	FastSpeed				=> FastSpeed,
+	DriveRun				=> DriveRun,
+	eHandOverState			=> eHandOverState,
+	eNextTakeOverState		=> eNextTakeOverState,
+	RequestNextTransportData=> RequestNextTransportData,
+	DeleteNextTransportData	=> DeleteNextTransportData,
+	HandoverOngoing			=> HandoverOngoing,
+	NextTransportData		:= NextTransportData,
+	ErrorData				:= ErrorData);
+	
+IF fbZoneEndLengthClear.Q THEN
+	fbZoneEndLengthClear(RUN := FALSE);
+END_IF
+	
+ZoneData.TransportControlData.eHandOverState := eHandOverState;
+ZoneData.TransportControlData.DataPresent := ZoneData.TransportControlData.TU_DataIndex <> 0;
+ZoneData.TransportControlData.SensorOccupied := AvailableZoneIndex > 0;
+ZoneData.TransportControlData.Occupied := AvailableZoneIndex > 0;
+ZoneData.TransportControlData.TU_LeadingEdgePos := 0;
+
+DriveStop := (fbHandover.HandoverOngoing AND NOT fbHandover.DriveRun AND NOT fbHandover.DriveRequest);
+]]></ST>
+    </Implementation>
+    <Method Name="M_HandoverCompleteEvent" Id="{e048a3e4-6c25-4562-9b08-1294cde3870d}">
+      <Declaration><![CDATA[/// Handover completed event
+METHOD M_HandoverCompleteEvent
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[TrackingZoneIndex := 0;
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_HandoverStartEvent" Id="{723283d0-b69a-4c60-b6a6-96d55dffec1b}">
+      <Declaration><![CDATA[/// Handover initiated -> Active
+METHOD M_HandoverStartEvent
+VAR
+	mZoneDeleted	: BOOL;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+IF AvailableZoneIndex > 0 THEN
+	IF iWindowTracking <> 0 THEN
+		mZoneDeleted := iWindowTracking.M_DeleteZone(AvailableZoneIndex);
+		IF mZoneDeleted THEN
+			DebugMsg := CONCAT('Zone deleted from tracking by divert. ZoneIndex: ', UINT_TO_STRING(AvailableZoneIndex));
+			
+		ELSE
+			DebugMsg := CONCAT('Zone delete from tracking by divert not possible. ZoneIndex: ', UINT_TO_STRING(AvailableZoneIndex));
+		END_IF
+		fbDebugMsg.M_SendInfoMsg(DebugMsg);
+	END_IF
+	
+	// Run zone end length clearing 
+	fbZoneEndLengthClear(
+		Run 				:= TRUE, 
+		EncoderValueInc		:= EncoderValueInc,
+		MaxEncoderValueInc 	:= MaxEncoderValueInc,
+		RateIncPerMM 		:= RateIncPerMM,
+		SetPoint 			:= DriveDelayDistance);
+END_IF
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_Init" Id="{788a9c62-88f4-4872-ac7d-d0c88a6cee1a}">
+      <Declaration><![CDATA[/// Initialize module
+METHOD M_Init : BOOL
+VAR_INPUT
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[fbHandover.M_Init();
+
+Initialized := TRUE;
+M_Init := TRUE;
+			]]></ST>
+      </Implementation>
+    </Method>
+    <ObjectProperties>
+      <XmlArchive>
+        <Data>
+          <o xml:space="preserve" t="UMLStereoTypeContainerObject">
+            <v n="IsType" t="UMLType">BaseArea</v>
+            <v n="Stereotype">""</v>
+            <d n="Stereotypes" t="Hashtable" />
+          </o>
+        </Data>
+        <TypeList>
+          <Type n="Hashtable">System.Collections.Hashtable</Type>
+          <Type n="String">System.String</Type>
+          <Type n="UMLStereoTypeContainerObject">{30250973-b110-4e31-b562-c102e042dca4}</Type>
+          <Type n="UMLType">{0197b136-405a-42ee-bb27-fd08b621d0cf}</Type>
+        </TypeList>
+      </XmlArchive>
+    </ObjectProperties>
+    <LineIds Name="FB_HandoverTrackingDivert">
+      <LineId Id="3" Count="103" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_HandoverTrackingDivert.M_HandoverCompleteEvent">
+      <LineId Id="3" Count="0" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_HandoverTrackingDivert.M_HandoverStartEvent">
+      <LineId Id="3" Count="20" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_HandoverTrackingDivert.M_Init">
+      <LineId Id="3" Count="3" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

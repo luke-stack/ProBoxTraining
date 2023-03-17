@@ -1,0 +1,41 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <POU Name="F_IsFwdDriveDirection" Id="{469be181-9f6b-44fd-8ba8-5d739f5c998a}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION F_IsFwdDriveDirection : BOOL
+VAR_INPUT
+	FunctionNumber 	: E_FunctionNumber;
+	Takeover		: BOOL; 
+	Handover		: BOOL;
+END_VAR
+VAR
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[IF NOT __ISVALIDREF(FunctionRegistry[FunctionNumber].rSettingsFunction) THEN 
+	RETURN;
+END_IF
+
+IF NOT __ISVALIDREF(FunctionRegistry[FunctionNumber].rFunctionInterface) THEN 
+	RETURN;
+END_IF
+
+
+IF( FunctionRegistry[FunctionNumber].rSettingsFunction.eAdjacentFunctionNumberSide[1] =  FunctionRegistry[FunctionNumber].rFunctionInterface.In.ePrevFunctionNumber OR 
+	FunctionRegistry[FunctionNumber].rSettingsFunction.eAdjacentFunctionNumberSide[3] =  FunctionRegistry[FunctionNumber].rFunctionInterface.In.ePrevFunctionNumber) AND
+	Takeover THEN 
+	F_IsFwdDriveDirection := TRUE; 
+END_IF
+
+IF( FunctionRegistry[FunctionNumber].rSettingsFunction.eAdjacentFunctionNumberSide[2] =  FunctionRegistry[FunctionNumber].rFunctionInterface.In.eNextFunctionNumber OR
+	FunctionRegistry[FunctionNumber].rSettingsFunction.eAdjacentFunctionNumberSide[4] =  FunctionRegistry[FunctionNumber].rFunctionInterface.In.eNextFunctionNumber) AND 
+	Handover THEN 
+	F_IsFwdDriveDirection := TRUE; 
+END_IF
+]]></ST>
+    </Implementation>
+    <LineIds Name="F_IsFwdDriveDirection">
+      <LineId Id="11" Count="19" />
+      <LineId Id="7" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

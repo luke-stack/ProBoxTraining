@@ -1,0 +1,13 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <DUT Name="ST_CFG_RunnerCheck" Id="{2194e0a3-900c-431e-9df1-de8c6c0a7f62}">
+    <Declaration><![CDATA[TYPE ST_CFG_RunnerCheck :
+STRUCT
+	EnableExternalTrigger			: BOOL; // Enable an external trigger for customization via CtrlIn.ExternalTrigger
+	FilterTime						: TIME:= T#20MS; //Filter time to ignore "small" defects. Default 20ms = 7mm at speed of 350 mm/s	 		
+	StartTrigDestination			: E_FunctionNumber; //optionally. automatic start pallet runner check when the destination is fullfilled. default function link function number is used
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

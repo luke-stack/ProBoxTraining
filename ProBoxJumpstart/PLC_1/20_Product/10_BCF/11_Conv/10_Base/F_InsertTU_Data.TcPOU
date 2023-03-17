@@ -1,0 +1,103 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.4">
+  <POU Name="F_InsertTU_Data" Id="{82d430be-1af5-43bb-9f84-b06dae188be9}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION F_InsertTU_Data : DINT
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 404529 $
+ *	Revision date	:	$Date: 2018-04-23 08:21:38 +0200 (Mo., 23 Apr 2018) $
+ *	Last changed by	:	$Author: b7bolm $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/trunk/01_Software/BCF/BCF/JumpStart/20_Product/10_App/10_Base/10_Lib/10_Conv/F_InsertTU_Data.TcPOU $
+ *
+ *	Purpose			:	Searchs for a free TU-DataIndex and presets it. 
+ *						Returns the TU-DataIndex. If no free TU_Data was found, it
+ *						will return 0.
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * VERSION DATE         INITIALS     DESCRIPTION
+ * 0.0     DD.MM.YYYY   (name)       (explain customized modifications)
+ *
+ **************************************************************************************)
+VAR_INPUT
+	eFunctionNumber	 	: E_FunctionNumber; // Number of the function 
+	ZoneNumber	 		: INT; // Number of the zone  
+END_VAR
+
+VAR
+	TU_DataIndex  		: DINT; // TU-DataIndex 
+	Idx	  				: INT; // Index variable 
+	DebugMsg			: T_MAXSTRING; // Debug msg
+	FunctionName		: STRING(NAME_LENGTH); // Function name
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[// Initialize
+F_InsertTU_Data := 0;
+
+// Search a free TU Index
+FOR TU_DataIndex := 1 TO NUMBER_OF_TU_DATA BY 1 DO
+	// If data set is free
+	IF NOT TU_DataTable[TU_DataIndex].DataSet.DataPresent THEN
+		// Return new index
+		F_InsertTU_Data := TU_DataIndex;
+		EXIT;
+	END_IF
+END_FOR
+
+// Free index was found 
+IF F_InsertTU_Data > 0 THEN
+	// Set DataPresent 
+	TU_DataTable[TU_DataIndex].DataSet.DataPresent := TRUE;
+
+	// Preset TU_Data 
+	TU_DataTable[TU_DataIndex].TU_ID.ASCII := Conveyor.TU_ID_UNKNOWN;
+	TU_DataTable[TU_DataIndex].TU_ID.HashCode := F_CreateHashCode(Conveyor.TU_ID_UNKNOWN);
+	
+	// Preset Assignmetn
+	TU_DataTable[TU_DataIndex].AssignmentID := Conveyor.ASSIGNMENT_ID_UNKNOWN;
+
+	FOR Idx := 1 TO NUMBER_OF_DESTINATIONS BY 1 DO
+		TU_DataTable[TU_DataIndex].Destination[Idx].eFunctionNumber := E_FunctionNumber.F_BEGIN_FUNCTION;
+		TU_DataTable[TU_DataIndex].Destination[Idx].ZoneNumber := 0;
+	END_FOR
+
+	// Update time stamp 
+	IF eFunctionNumber > E_FunctionNumber.F_BEGIN_FUNCTION AND
+	   eFunctionNumber < E_FunctionNumber.F_END_FUNCTION THEN	
+		TU_DataTable[TU_DataIndex].TimeStamp.eInsertFunctionNumber := eFunctionNumber;
+	ELSE
+		TU_DataTable[TU_DataIndex].TimeStamp.eInsertFunctionNumber := E_FunctionNumber.F_BEGIN_FUNCTION;
+	END_IF
+	
+	IF ZoneNumber <= NUMBER_OF_ZONES_PER_FUNCTION THEN
+		TU_DataTable[TU_DataIndex].TimeStamp.InsertZoneNumber := ZoneNumber;
+	ELSE
+		TU_DataTable[TU_DataIndex].TimeStamp.InsertZoneNumber := 0;	
+	END_IF
+
+	TU_DataTable[TU_DataIndex].TimeStamp.InsertDateTime := System.fbSystemTime.TIMESTR;
+	
+	FunctionName := F_GetFunctionName(
+						eFunctionNumber := eFunctionNumber,
+						ZoneNumber		:= ZoneNumber);
+
+	//-- debug message ------------------------------------------------
+	// example: '11-001-1979-01-9,  TU_Data inserted,  TU_DataIndex = 1979,  TuID = 0012345600,  AssignmentID = 19790109'
+	DebugMsg:= '';
+	DebugMsg:= CONCAT(DebugMsg, F_AddDividerToSisString(FunctionName));
+	DebugMsg:= CONCAT(DebugMsg, ',  TU_Data inserted');
+	DebugMsg:= CONCAT(DebugMsg, F_CreateTU_DataString(TU_DataIndex));
+	fbDebugMsgManager.M_SendMessage(meMessageType:= E_DebugMsgType.INFO,
+									mDebugSource := 'F_InsertTU_Data', 
+									mpMsgData    := ADR(DebugMsg),
+									mMsgDataLen  := INT_TO_UDINT(LEN(DebugMsg)));
+END_IF]]></ST>
+    </Implementation>
+  </POU>
+</TcPlcObject>

@@ -1,0 +1,16 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.12">
+  <DUT Name="ST_Conveyor_Interface_5_1_TU" Id="{aec8ab5e-a67b-42b0-ae15-7aacd6b9823d}">
+    <Declaration><![CDATA[TYPE ST_Conveyor_Interface_5_1_TU :
+STRUCT
+	TU_ID		: STRING(Conveyor.TU_ID_STRINGLENGTH); // 18 Digit SSID 
+	TU_Type		: INT; // TU type 
+	(*{IF defined(full_emulation)}
+		Index			: INT;
+		BinSetup		: E_BIN_TEST_SETUP;
+	{END_IF}*)
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

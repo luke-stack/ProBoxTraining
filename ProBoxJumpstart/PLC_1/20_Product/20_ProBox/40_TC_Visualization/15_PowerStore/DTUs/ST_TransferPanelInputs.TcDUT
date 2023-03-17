@@ -1,0 +1,32 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.4">
+  <DUT Name="ST_TransferPanelInputs" Id="{d7acdc57-9a51-45f3-9987-6de4bbca889d}">
+    <Declaration><![CDATA[TYPE ST_TransferPanelInputs :
+STRUCT
+	PB_ActivateMainContactor : BOOL; // Pushbutton activate main contactor
+	PB_MainContactorOff : BOOL; // Pushbutton main contactor off
+	PB_AutoOn : BOOL; // Pushbutton activate automatic mode
+	PB_EmergencyStopReset : BOOL; // Pushbutton reset emergency stop
+	PB_ErrorReset : BOOL; // Pushbutton reset error
+	PB_EmergencyStop : BOOL; // Pushbutton Emergency stop
+	SW_Auto : BOOL; // Auto/Man keyswitch
+	PB_VcUp : BOOL; // Lift up vertical conveyor
+	PB_VcDown : BOOL; // Lift down vertical conveyor
+	
+	PB_VcConvLeft : BOOL; // Vertical conveyor Left
+	PB_VcConvRight : BOOL; // Vertical conveyor Right
+ 	PB_Conv_1_Left : BOOL; // Conveyor 1 Left
+	PB_Conv_1_Right : BOOL; // Conveyor 1 Right
+	PB_Conv_2_Left : BOOL; // Conveyor 2 Left
+	PB_Conv_2_Right : BOOL; // Conveyor 2 Right
+	PB_Conv_3_Left : BOOL; // Conveyor 3 Left
+	PB_Conv_3_Right : BOOL; // Conveyor 3 Right
+	
+	PB_AC_ConvLeft : BOOL; // Aisle carrier conveyor Left
+	PB_AC_ConvRight : BOOL; // Aisle carrier conveyor Right
+	
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

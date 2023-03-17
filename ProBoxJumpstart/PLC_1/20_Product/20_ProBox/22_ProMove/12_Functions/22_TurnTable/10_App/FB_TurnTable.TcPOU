@@ -1,0 +1,234 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <POU Name="FB_TurnTable" Id="{eafed1eb-794a-4db3-b53f-ba6902785f06}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK FB_TurnTable EXTENDS FB_TurnTableBase
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision:  $
+ *	Revision date	:	$Date: $
+ *	Last changed by	:	$Author:  $
+ *	URL				:	$URL: $
+ *
+ *	Purpose			:	Turntable roller conveyor or chain.
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *
+ **************************************************************************************)
+VAR_INPUT
+	Config					: ST_CFG_TurnTable; 		// Configuration
+	HW_Inputs				: ST_HW_InputsTurnTable; 	// Hardware inputs
+	CtrlIn					: ST_CtrlInTT;			// Inputs to control functionality
+END_VAR
+
+VAR_OUTPUT	
+	HW_Outputs				: ST_HW_OutputsTurnTable;	// Hardware outputs
+END_VAR
+
+VAR	
+END_VAR
+
+VAR_TEMP
+	HW_InputsTTConv			: ST_HW_InputsTTConv;
+END_VAR
+
+VAR PERSISTENT
+	Settings				: ST_CFG_TurnTable; // Settings - activated configuration 
+END_VAR
+
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[(**************************************************************************************************************
+   Input mapping
+***************************************************************************************************************)
+A_InputMapping();
+
+(**************************************************************************************************************
+   Initialization
+***************************************************************************************************************)
+A_Init();
+
+(**************************************************************************************************************
+   External Subsystem transport interface
+***************************************************************************************************************)
+A_ExternalSTI();
+
+(**************************************************************************************************************
+   State control
+***************************************************************************************************************)
+A_StateControl();
+
+(**************************************************************************************************************
+   Error handler
+***************************************************************************************************************)
+A_ErrorHandler();
+
+
+(**************************************************************************************************************
+   Manual control
+***************************************************************************************************************)
+A_ManualControl();
+
+
+(**********************************************************************************************************
+   Assign transport data
+***********************************************************************************************************)
+A_AssignTransportParam();
+
+(**********************************************************************************************************
+   Transport link
+***********************************************************************************************************)
+A_TransportLink();
+
+(**********************************************************************************************************
+   TurnTable control
+***********************************************************************************************************)
+_M_TurnControl( HW_Sensor_TurnTable	:= HW_Inputs.TT,
+				HW_Sensor_Overhang 	:= HW_Inputs.Sensor_Overhang_12 AND HW_Inputs.Sensor_Overhang_21,
+				TurnTimeoutValue 	:= Settings.TurnTimeoutValue,
+				TurnHomePosFree 	:= Settings.TurnHomePosFree,
+				TurnHomePosOccupied := Settings.TurnHomePosOccupied,
+				DisableTurning		:= FALSE,
+				TurnBrakeDelayTime	:= Config.TurnBrakeDelayTime,
+				ZoneData[1].ErrorData.ErrorDataSet[2]);
+
+(**********************************************************************************************************
+   Transport control
+***********************************************************************************************************)
+HW_InputsTTConv.Sensor_Stop_12 := HW_Inputs.Sensor_Stop_12;
+HW_InputsTTConv.Sensor_Stop_21 := HW_Inputs.Sensor_Stop_21;
+HW_InputsTTConv.Sensor_Creep_12 := HW_Inputs.Sensor_Creep_12;
+HW_InputsTTConv.Sensor_Creep_21 := HW_Inputs.Sensor_Creep_21;
+
+_M_TransportControl(EnableTransport 	:= _fbTurnControl.EnableTransport,
+					HW_InputsConv		:=	HW_InputsTTConv,			
+					TranspErrorData		:= ZoneData[1].ErrorData.ErrorDataSet[1]);
+
+
+(**************************************************************************************************************
+   Process AddOns
+***************************************************************************************************************)
+M_ProcessAddOns();
+
+(**********************************************************************************************************
+   Message handler zone
+***********************************************************************************************************)
+M_MsgHandlerZone(mZoneNumber := 1);
+
+(**********************************************************************************************************
+   ITC Zone output
+***********************************************************************************************************)
+M_ITC_ProcessOutZone(mZoneNumber := 1);
+
+(**************************************************************************************************************
+   Interface handler out
+***************************************************************************************************************)
+M_ITC_ProcessOut();
+
+(**************************************************************************************************************
+   Output mapping
+***************************************************************************************************************)
+A_OutputMapping();	]]></ST>
+    </Implementation>
+    <Action Name="A_Init" Id="{3fd37e65-2c64-4d41-8979-a5068e992675}">
+      <Implementation>
+        <ST><![CDATA[
+SUPER^.A_Init();
+
+IF NOT FunctionData.Init THEN
+	// Load function specific configuration to settings
+	Settings := Config;
+	
+	//Prepare base object
+	_AdjacentSideElementType[1] := E_AdjacentSideType.E_RC;
+	_AdjacentSideElementType[2] := E_AdjacentSideType.E_RC;
+	_AdjacentSideElementType[3] := E_AdjacentSideType.E_RC;
+	_AdjacentSideElementType[4] := E_AdjacentSideType.E_RC;
+END_IF
+]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="A_InputMapping" Id="{92ee532e-a302-4a3d-9d2f-525a4e74501b}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_InputMapping
+ * 	FUNCTION	Input mapping
+ **************************************************************************************)
+ 
+
+
+
+//Set Invert parameters
+_M_SetInvertTurn(CtrlIn.InvertTurnTakeover, CtrlIn.InvertTurnHandover);
+
+//run base class Action
+SUPER^.A_InputMapping();
+]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="A_OutputMapping" Id="{0ebb8dd6-fa31-46b8-83cd-8f409ae2f7e5}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_OutputMapping
+ * 	FUNCTION	Output mapping
+ **************************************************************************************)
+
+ (**************************************************************************************
+   Hardware outputs
+***************************************************************************************)
+
+ //	TurnTable
+
+HW_Outputs.Drive_Run_CW 		:= _fbTurnControl.Drive_Run_CW; 
+HW_Outputs.Drive_Run_CCW 		:= _fbTurnControl.Drive_Run_CCW;
+HW_Outputs.Drive_Creep_CW_CCW 	:= _fbTurnControl.Drive_Creep_CW_CCW; 
+HW_Outputs.Drive_Brake_CW_CCW 	:= _TurnDriveBrakeRelease;
+
+//run base class Action that output requests to the element
+SUPER^.A_OutputMapping();
+]]></ST>
+      </Implementation>
+    </Action>
+    <ObjectProperties>
+      <XmlArchive>
+        <Data>
+          <o xml:space="preserve" t="UMLStereoTypeContainerObject">
+            <v n="IsType" t="UMLType">BaseArea</v>
+            <v n="Stereotype">""</v>
+            <d n="Stereotypes" t="Hashtable" />
+          </o>
+        </Data>
+        <TypeList>
+          <Type n="Hashtable">System.Collections.Hashtable</Type>
+          <Type n="String">System.String</Type>
+          <Type n="UMLStereoTypeContainerObject">{30250973-b110-4e31-b562-c102e042dca4}</Type>
+          <Type n="UMLType">{0197b136-405a-42ee-bb27-fd08b621d0cf}</Type>
+        </TypeList>
+      </XmlArchive>
+    </ObjectProperties>
+    <LineIds Name="FB_TurnTable">
+      <LineId Id="3" Count="50" />
+      <LineId Id="133" Count="0" />
+      <LineId Id="54" Count="37" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_TurnTable.A_Init">
+      <LineId Id="2" Count="12" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_TurnTable.A_InputMapping">
+      <LineId Id="2" Count="12" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_TurnTable.A_OutputMapping">
+      <LineId Id="2" Count="17" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

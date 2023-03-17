@@ -1,0 +1,40 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.12">
+  <DUT Name="ST_CM_GeneralData" Id="{8bb5e4ff-e7cf-451a-b999-f2f706356c75}">
+    <Declaration><![CDATA[TYPE ST_CM_GeneralData :
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 404529 $
+ *	Revision date	:	$Date: 2018-04-23 08:21:38 +0200 (Mo., 23 Apr 2018) $
+ *	Last changed by	:	$Author: b7bolm $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/trunk/01_Software/BCF/BCF/JumpStart/20_Product/10_App/10_Base/10_Lib/01_DUTs/ST_CM_GeneralData.TcDUT $
+ *
+ *	Purpose			:	General Process data for Condition monitoring 					
+ *
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)	
+STRUCT
+	Position			: STRING(Conveyor.POSITION_STRINGLENGTH);// PositionName MM-000-0000-000
+	LoggingActive		: BOOL; //Logging is active 
+	WriteIdx			: INT; //Write index
+	SampleTimer			: ULINT; //Sample Timer 
+	MaxReportTimer		: ULINT; // Maimum Report Timer 
+	PreviousValue		: UDINT; // Last Value Logged 
+	eMode				: E_CM_Mode; //Mode Selection 
+	Sequence			: INT; //sequnce used for the Data log 
+	Buffer				: ARRAY[0..System.CM_MAX_NUMBER_Of_ENTRIES] OF ST_CM_LOG; //Storage Buffer 
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

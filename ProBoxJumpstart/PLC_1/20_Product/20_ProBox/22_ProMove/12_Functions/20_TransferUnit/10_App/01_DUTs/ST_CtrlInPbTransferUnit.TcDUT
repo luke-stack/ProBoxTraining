@@ -1,0 +1,12 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <DUT Name="ST_CtrlInPbTransferUnit" Id="{c229754d-7d3f-4363-a3f2-40f4f664c8ca}">
+    <Declaration><![CDATA[TYPE ST_CtrlInPbTransferUnit :
+STRUCT
+	HoldExtendedRun	: BOOL;		//When set the extended run is not executed until variable is set to false. Note that Extended run has to be Activated by configuration.
+	DisableOverrideLiftControl : bool; //Disable check on lift axis when multiple TU's run
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

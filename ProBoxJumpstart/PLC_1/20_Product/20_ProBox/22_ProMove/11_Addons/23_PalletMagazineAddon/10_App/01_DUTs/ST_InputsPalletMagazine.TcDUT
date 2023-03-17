@@ -1,0 +1,14 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.4">
+  <DUT Name="ST_InputsPalletMagazine" Id="{df0e4b78-350d-4810-8aff-c688a679b5e5}">
+    <Declaration><![CDATA[TYPE ST_InputsPalletMagazine :
+STRUCT
+	Lift			: ST_LSPM_Inp_LiftSensors;	
+	Element 		: ST_LSPM_Inp_Element;	
+	CtrlIn			: ST_CtrlInPalletmagazine;
+	OpResetSequence	: BOOL;		//Reset sequence operator controled switch/button
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

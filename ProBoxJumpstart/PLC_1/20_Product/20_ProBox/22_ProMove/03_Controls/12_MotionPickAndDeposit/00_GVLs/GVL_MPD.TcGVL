@@ -1,0 +1,16 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.12">
+  <GVL Name="GVL_MPD" Id="{ed37fd96-bf63-4854-81c0-68c693eb576a}">
+    <Declaration><![CDATA[{attribute 'qualified_only'}
+VAR_GLOBAL
+	
+END_VAR
+VAR_GLOBAL CONSTANT
+	MAXPDs : INT := 10;  	//Maximum adjacent functions
+	MAXDEST	: INT := 10;	//Maximum possible destinatins
+	CV_A :	INT:= 1;		//Conveyour A
+	CV_B :	INT:= 2; 		//Conveyor B
+	CV_IxNAME : ARRAY [1..2] OF STRING(2) := ['A','B'];
+END_VAR]]></Declaration>
+  </GVL>
+</TcPlcObject>

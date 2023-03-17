@@ -1,0 +1,34 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.12">
+  <DUT Name="ST_CFG_TransferCCEmulation" Id="{96a55344-2f1b-4226-b0a1-5e55f5e6dcc8}">
+    <Declaration><![CDATA[TYPE ST_CFG_TransferCCEmulation :
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision:  $
+ *	Revision date	:	$Date:  $
+ *	Last changed by	:	$Author: q8hedls $
+ *	URL				:	$URL:  $
+ *
+ *	Purpose			:	Scanner emulation configuration
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+STRUCT
+	Position_Max_Left				: INT := 0;
+	Position_Max_Right 				: INT := 1000;	
+	Position_Left					: INT := 100;
+	Position_Right					: INT := 900;
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

@@ -1,0 +1,85 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.4">
+  <Itf Name="I_TraceHandler" Id="{b4ff2dc4-3fe3-4d08-a8e4-9c56ceab3301}">
+    <Declaration><![CDATA[// writes traces into files, deletes too old files and monitors hdd usage
+{attribute 'monitoring' := 'call'}
+INTERFACE PUBLIC I_TraceHandler
+]]></Declaration>
+    <Folder Name="Methods" Id="{d002a3c9-a350-4c3b-8432-c1d3c5210c34}" />
+    <Folder Name="Properties" Id="{64c2a857-af1d-4dbc-a81b-62b2111136cd}" />
+    <Method Name="Clear" Id="{daf26ceb-8c50-42ea-b8e8-105cd7af90ee}" FolderPath="Methods\">
+      <Declaration><![CDATA[// clears the internal fifo (all unwritten traces will be lost)
+METHOD PUBLIC Clear
+
+(********************************************************************************************************************************)
+VAR_INPUT
+END_VAR
+]]></Declaration>
+    </Method>
+    <Property Name="Enable" Id="{a54fdc2c-6c3c-4884-b4b0-9873e002d3b8}" FolderPath="Properties\">
+      <Declaration><![CDATA[// HI = writing/deleting enabled
+{attribute 'monitoring' := 'call'}
+PROPERTY PUBLIC Enable : BOOL]]></Declaration>
+      <Get Name="Get" Id="{75b888e8-1f17-4a26-bf3f-238875824eb5}">
+        <Declaration><![CDATA[]]></Declaration>
+      </Get>
+      <Set Name="Set" Id="{2bbc36a8-8eef-411d-9902-ce3d73b454ed}">
+        <Declaration><![CDATA[]]></Declaration>
+      </Set>
+    </Property>
+    <Property Name="Folder" Id="{5d75d09c-2d72-4d27-92e3-906cbd171e18}" FolderPath="Properties\">
+      <Declaration><![CDATA[// folder to work within, folder must exist! (will only take effect when enabled is low)
+{attribute 'monitoring' := 'call'}
+PROPERTY PUBLIC Folder : A_TracePath]]></Declaration>
+      <Get Name="Get" Id="{1ed87ea9-945e-4027-8a3b-5eec681f7033}">
+        <Declaration><![CDATA[]]></Declaration>
+      </Get>
+      <Set Name="Set" Id="{44abb707-0827-4783-b9f9-4ae4aa1ab21b}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+      </Set>
+    </Property>
+    <Property Name="MaxFileSizeKB" Id="{303e1984-e23b-4307-bfaf-84bc27c4aa42}" FolderPath="Properties\">
+      <Declaration><![CDATA[// maximum file size in kilobytes
+{attribute 'monitoring' := 'call'}
+PROPERTY PUBLIC MaxFileSizeKB : WORD]]></Declaration>
+      <Get Name="Get" Id="{69567ee4-7396-473f-9586-07408b3952c7}">
+        <Declaration><![CDATA[]]></Declaration>
+      </Get>
+      <Set Name="Set" Id="{231399ca-d193-40ba-92d6-9ffd52253440}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+      </Set>
+    </Property>
+    <Property Name="Opened" Id="{27c6008f-1d0b-47e6-997e-f5993c6e26ab}" FolderPath="Properties\">
+      <Declaration><![CDATA[// HI = file is currently open
+{attribute 'monitoring' := 'call'}
+PROPERTY PUBLIC Opened : BOOL]]></Declaration>
+      <Get Name="Get" Id="{4d573152-297d-41ef-9d8c-5ec8dd1c8c3e}">
+        <Declaration><![CDATA[]]></Declaration>
+      </Get>
+    </Property>
+    <Method Name="Put" Id="{ca9e73bc-aa0a-4747-8e0c-e5540037d2cb}" FolderPath="Methods\">
+      <Declaration><![CDATA[// puts a new trace line into the current file
+METHOD PUBLIC Put
+
+(********************************************************************************************************************************)
+VAR_INPUT
+  MsgType               : E_DebugMsgType                   := E_DebugMsgType.ERROR;
+  Instance              : POINTER TO BYTE                  := 0;     // pointer to string
+  Text                  : POINTER TO BYTE                  := 0;     // pointer to string
+END_VAR
+]]></Declaration>
+    </Method>
+    <Property Name="Statistics" Id="{2c17eb65-3635-4543-83e0-e797c720bc07}" FolderPath="Properties\">
+      <Declaration><![CDATA[// diagnosis & statisticals
+{attribute 'monitoring' := 'call'}
+PROPERTY PUBLIC Statistics : I_TraceHandlerStatistics]]></Declaration>
+      <Get Name="Get" Id="{a42e7929-f967-4613-8939-bfbc5d71e376}">
+        <Declaration><![CDATA[]]></Declaration>
+      </Get>
+    </Property>
+  </Itf>
+</TcPlcObject>

@@ -1,0 +1,28 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <POU Name="F_ConfigGroupEmulation" Id="{c90ca705-efb5-4f58-829f-10c886e5e4eb}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION F_ConfigGroupEmulation
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[
+
+
+(********************************* Group *************************************
+ Switching Group  
+**********************************************************************************)
+fbSG_001_Emulation.Config.Autostart := TRUE;
+
+
+(********************************* Group *************************************
+ Switching Group  
+**********************************************************************************)
+fbSG_002_Emulation.Config.Autostart := TRUE;
+
+]]></ST>
+    </Implementation>
+    <LineIds Name="F_ConfigGroupEmulation">
+      <LineId Id="3" Count="13" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

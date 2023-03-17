@@ -1,0 +1,20 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <POU Name="F_ConfigPositionEmulation" Id="{a7f26f32-6c50-45c6-9f84-e8928dbb343a}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION F_ConfigPositionEmulation
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[
+
+F_ConfigPositionEmulation_001();
+
+F_ConfigPositionEmulation_002();
+
+]]></ST>
+    </Implementation>
+    <LineIds Name="F_ConfigPositionEmulation">
+      <LineId Id="3" Count="5" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

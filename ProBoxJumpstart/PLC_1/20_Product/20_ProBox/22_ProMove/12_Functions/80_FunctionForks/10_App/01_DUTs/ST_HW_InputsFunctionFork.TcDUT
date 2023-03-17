@@ -1,0 +1,14 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <DUT Name="ST_HW_InputsFunctionFork" Id="{797db7f1-2994-4f75-ae3f-c8694ca5b729}">
+    <Declaration><![CDATA[TYPE ST_HW_InputsFunctionFork :
+STRUCT	
+	DriveInputs					: ST_PDO_DriveIn; //Motion drive inputs
+	SensorForkCenter			: BOOL;	//Fork in center
+	Sensor_TU_Present			: BOOL; //pallet present sensor. (one sensor for both RWD and FWD transfer)
+	Sensor_TU_PD_Present		: BOOL;	 //TU present on PD station
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

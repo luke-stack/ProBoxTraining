@@ -1,0 +1,315 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <POU Name="FB_ProfileCheckAddonEmulation" Id="{a6d6dc1d-e2cc-4af7-befa-014b02257eda}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK FB_ProfileCheckAddonEmulation EXTENDS FB_FunctionConvEmulation
+VAR_INPUT
+	Config							: ST_CFG_ProfileCheckAddonEmulation; // emulation config
+END_VAR
+VAR_OUTPUT
+END_VAR
+VAR
+	pFunction						: POINTER TO FB_ProfileCheckAddon; // Address to function
+	rFunction						: REFERENCE TO FB_ProfileCheckAddon; // Reference to function	
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[(**************************************************************************************************************
+   Initialization
+***************************************************************************************************************)
+A_Init();
+
+
+(**************************************************************************************************************
+   Update reference
+***************************************************************************************************************)
+A_UpdateReference();
+
+(**************************************************************************************************************
+   Emulation
+***************************************************************************************************************)
+// If emulation function is initialized
+IF FunctionData.Init THEN
+
+	// Update data of real object
+	M_UpdateRealObjectData();
+		
+	// Overwrite inputs	
+	_M_OverWriteInputs();
+END_IF]]></ST>
+    </Implementation>
+    <Method Name="_M_GetFunctionEmuData" Id="{70769666-1662-490c-bc1d-6e8c3c748337}">
+      <Declaration><![CDATA[//Get the TU data index from the function that owns the Addon according to the function link of the addon.
+METHOD PRIVATE _M_GetFunctionEmuData : BOOL
+VAR_OUTPUT
+	Width				:INT;
+	Length				:INT;
+	Height				:INT;
+END_VAR
+VAR
+	EmuTuTableIx			: DINT;	//index of the emulation TU Table (ConveyorEmulation.TU_DataTableEmulation)	
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+IF __ISVALIDREF(FunctionRegistryEmulation[rFunction.ConfigFunction.FunctionLink.eFunctionNumber].rFunction) THEN
+	FunctionRegistryEmulation[rFunction.ConfigFunction.FunctionLink.eFunctionNumber].rFunction.M_GetTU_PresentState(rFunction.ConfigFunction.FunctionLink.ZoneNumber,100(*mm*),mTU_DataIndex=>EmuTuTableIx);
+	
+	IF(EmuTuTableIx>0) THEN
+		_M_GetFunctionEmuData:= TRUE;
+		Width:=ConveyorEmulation.TU_DataTableEmulation[DINT_TO_INT(EmuTuTableIx)].DataSet.Dimension.Width;
+		Length:=ConveyorEmulation.TU_DataTableEmulation[DINT_TO_INT(EmuTuTableIx)].DataSet.Dimension.Length;
+		Height:=ConveyorEmulation.TU_DataTableEmulation[DINT_TO_INT(EmuTuTableIx)].DataSet.Dimension.Height;
+	END_IF
+		
+END_IF	
+		
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_OverWriteInputs" Id="{6d48101c-ae7c-4da7-bbdb-797105ad9467}">
+      <Declaration><![CDATA[METHOD PRIVATE _M_OverWriteInputs
+VAR_INPUT
+END_VAR
+
+VAR	
+	RemainingMeassurement	:INT;
+	ATQ_Width				:INT;
+	ATQ_Lenght				:INT;
+	ATQ_Height				:INT;	
+	SensorHeight			: ST_CFG_SingelSensor;
+
+	
+	
+END_VAR
+VAR_INST
+	EmuState						: INT;
+	EmuHeight				:INT;
+	EmuOverhangFront		:INT;
+	EmuOverhangRear			:INT;
+	EmuOverhangLeft			:INT;
+	EmuOverhangRight		:INT;
+	
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+(**************************************************************************************
+ * 	NAME		A_OverWriteInputs
+ * 	FUNCTION	Overwrite inputs for emulation
+ **************************************************************************************)
+ 
+ 
+ IF( NOT rFunction._Trigger) THEN
+	 EmuState:=0;  //restart
+ END_IF
+ 
+ 
+CASE EmuState OF
+	0:
+		//reset length, to simulate end of pallet. and set Rear length
+		rFunction.HW_Inputs.LBB_Height_Lower := 65535;
+		rFunction.HW_Inputs.LBB_WidthLeft := 65535;
+		rFunction.HW_Inputs.LBB_WidthRight := 65535;		
+		rFunction.HW_Inputs.LBB_Length := 65535;	
+	
+		IF(rFunction._Trigger) THEN
+			EmuState := EmuState+1;
+		END_IF
+		
+	1,2,3,4,5:
+		//Wait for real function to enter E_ProfileCheckState.SENSOR_CHECK:
+		//Get the emulation TU table data index from the owner of this addon
+		IF(_M_GetFunctionEmuData(Width=>ATQ_Width,Length=>ATQ_Lenght,Height=>ATQ_Height)) THEN				
+	        EmuHeight:= ATQ_Height;
+			EmuOverhangFront 	:= SEL(ATQ_Lenght>Config.DefaultLength,0,(ATQ_Lenght-Config.DefaultLength)/2);
+			EmuOverhangRear 	:= EmuOverhangFront;
+			EmuOverhangLeft 	:= SEL(ATQ_Width>Config.DefaultWidth,0,(ATQ_Width-Config.DefaultWidth)/2);
+			EmuOverhangRight 	:= EmuOverhangLeft;
+
+
+		
+			EmuState := 6;
+		END_IF				
+		
+	6:		
+		//rFunction.HW_Inputs.LBB_Length := INT_TO_UINT((EmuOverhangFront + rFunction.Config.LightGrid_Offset_Length_Front) / rFunction.Config.BeamSpacing_Length); 	
+	//	rFunction.HW_Inputs.LBB_Length := INT_TO_UINT((EmuOverhangFront - EmuOverhangFront) / rFunction.Config.BeamSpacing_Length); 
+		IF EmuOverhangFront >= rFunction.Config.LightGrid_Offset_Length_Front THEN 
+			rFunction.HW_Inputs.LBB_Length := 0; 
+		ELSE 
+		rFunction.HW_Inputs.LBB_Length := INT_TO_UINT((rFunction.Config.LightGrid_Offset_Length_Front - EmuOverhangFront) / rFunction.Config.BeamSpacing_Length); 
+		END_IF		
+			
+		rFunction.HW_Inputs.LBB_Height_Lower := INT_TO_UINT((EmuHeight + rFunction.Config.LightGrid_Offset_Height_Lower) / rFunction.Config.BeamSpacing_HeightLower); 			
+		rFunction.HW_Inputs.LBB_WidthLeft := INT_TO_UINT((EmuOverhangLeft + rFunction.Config.LightGrid_Offset_Width_Left) / rFunction.Config.BeamSpacing_WidthLeft); 
+		rFunction.HW_Inputs.LBB_WidthRight := INT_TO_UINT((EmuOverhangRight + rFunction.Config.LightGrid_Offset_Width_Right) / rFunction.Config.BeamSpacing_WidthRight); 		
+		
+		EmuState := EmuState+1;
+
+	7:
+		//reset length, to simulate end of pallet. and set Rear length
+		rFunction.HW_Inputs.LBB_Height_Lower := 65535;
+		rFunction.HW_Inputs.LBB_WidthLeft := 65535;
+		rFunction.HW_Inputs.LBB_WidthRight := 65535;	
+		rFunction.HW_Inputs.LBB_Length := 65535;		
+		rFunction.HW_Inputs.FBB_Length := INT_TO_UINT((EmuOverhangFront + rFunction.Config.LightGrid_Offset_Length_Front) / rFunction.Config.BeamSpacing_Length); 
+		EmuState := EmuState+1;
+		
+	8:
+		rFunction.HW_Inputs.FBB_Length := 65535;	
+		IF(NOT rFunction._Trigger) THEN
+			EmuState:=0;
+		END_IF
+		
+		
+END_CASE
+ 
+
+ 
+
+]]></ST>
+      </Implementation>
+    </Method>
+    <Action Name="A_Init" Id="{7f73a4bd-19b6-454c-8ec9-65a2552ef685}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_Init
+ * 	FUNCTION	Initialize emulated dummy function
+ **************************************************************************************)
+
+// If dummy function is not initialized
+IF NOT FunctionData.Init Then
+	// Check that linked dummy function number is valid
+	IF eFunctionNumber > E_FunctionNumber.F_BEGIN_FUNCTION AND
+	   eFunctionNumber < E_FunctionNumber.F_END_FUNCTION THEN   
+		
+		// Check if the real module is initialized
+		IF F_IsFunctionInitialized(eFunctionNumber := eFunctionNumber) THEN
+			// Module is initialized
+			FunctionData.Init:= TRUE;
+			
+			// Send debug message
+			DebugMsg := CONCAT('Initialization done. Element Function: ', FunctionRegistry[eFunctionNumber].FunctionName);
+			fbDebugMsg.M_SendInfoMsg(DebugMsg);
+			
+			// Initialize real module
+			F_InitializeFunction(eFunctionNumber := eFunctionNumber);
+		END_IF
+	END_IF
+END_IF
+]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="A_UpdateReference" Id="{f84daf14-7d60-48ba-91d4-41a53b676861}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_UpdateReference
+ * 	FUNCTION	Update reference to real object
+ **************************************************************************************)
+
+// Check valid function number
+IF eFunctionNumber > E_FunctionNumber.F_BEGIN_FUNCTION AND
+   eFunctionNumber < E_FunctionNumber.F_END_FUNCTION THEN
+
+	// Is reference valid  
+	IF __ISVALIDREF(FunctionRegistry[eFunctionNumber].rFunction) THEN
+		// Build address to reference
+		pFunction := ADR(FunctionRegistry[eFunctionNumber].rFunction);
+
+		// If address is possible
+		IF pFunction <> 0 THEN
+			// Build reference to memory
+			rFunction REF= pFunction^;
+		ELSE
+			// Reinitialize module
+			FunctionData.Init:= FALSE;
+		END_IF
+	ELSE
+		// Reinitialize module
+		FunctionData.Init:= FALSE;
+	END_IF
+END_IF
+		]]></ST>
+      </Implementation>
+    </Action>
+    <LineIds Name="FB_ProfileCheckAddonEmulation">
+      <LineId Id="20" Count="21" />
+      <LineId Id="9" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ProfileCheckAddonEmulation._M_GetFunctionEmuData">
+      <LineId Id="14" Count="1" />
+      <LineId Id="67" Count="0" />
+      <LineId Id="78" Count="0" />
+      <LineId Id="82" Count="0" />
+      <LineId Id="81" Count="0" />
+      <LineId Id="77" Count="0" />
+      <LineId Id="86" Count="0" />
+      <LineId Id="79" Count="1" />
+      <LineId Id="76" Count="0" />
+      <LineId Id="42" Count="0" />
+      <LineId Id="36" Count="1" />
+    </LineIds>
+    <LineIds Name="FB_ProfileCheckAddonEmulation._M_OverWriteInputs">
+      <LineId Id="6" Count="4" />
+      <LineId Id="187" Count="1" />
+      <LineId Id="193" Count="0" />
+      <LineId Id="237" Count="1" />
+      <LineId Id="236" Count="0" />
+      <LineId Id="201" Count="0" />
+      <LineId Id="203" Count="1" />
+      <LineId Id="366" Count="2" />
+      <LineId Id="361" Count="0" />
+      <LineId Id="369" Count="0" />
+      <LineId Id="365" Count="0" />
+      <LineId Id="340" Count="0" />
+      <LineId Id="214" Count="1" />
+      <LineId Id="217" Count="1" />
+      <LineId Id="263" Count="0" />
+      <LineId Id="306" Count="5" />
+      <LineId Id="304" Count="0" />
+      <LineId Id="356" Count="1" />
+      <LineId Id="305" Count="0" />
+      <LineId Id="273" Count="0" />
+      <LineId Id="312" Count="0" />
+      <LineId Id="235" Count="0" />
+      <LineId Id="220" Count="0" />
+      <LineId Id="393" Count="0" />
+      <LineId Id="418" Count="0" />
+      <LineId Id="420" Count="0" />
+      <LineId Id="419" Count="0" />
+      <LineId Id="421" Count="3" />
+      <LineId Id="348" Count="0" />
+      <LineId Id="354" Count="0" />
+      <LineId Id="345" Count="0" />
+      <LineId Id="221" Count="0" />
+      <LineId Id="233" Count="0" />
+      <LineId Id="293" Count="0" />
+      <LineId Id="232" Count="0" />
+      <LineId Id="234" Count="0" />
+      <LineId Id="347" Count="0" />
+      <LineId Id="358" Count="1" />
+      <LineId Id="394" Count="0" />
+      <LineId Id="249" Count="0" />
+      <LineId Id="240" Count="0" />
+      <LineId Id="245" Count="0" />
+      <LineId Id="244" Count="0" />
+      <LineId Id="360" Count="0" />
+      <LineId Id="246" Count="2" />
+      <LineId Id="243" Count="0" />
+      <LineId Id="212" Count="0" />
+      <LineId Id="205" Count="0" />
+      <LineId Id="202" Count="0" />
+      <LineId Id="194" Count="0" />
+      <LineId Id="173" Count="0" />
+      <LineId Id="41" Count="0" />
+      <LineId Id="24" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ProfileCheckAddonEmulation.A_Init">
+      <LineId Id="2" Count="24" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ProfileCheckAddonEmulation.A_UpdateReference">
+      <LineId Id="2" Count="26" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

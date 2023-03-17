@@ -1,0 +1,148 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.12">
+  <POU Name="F_MemStringReplace" Id="{a99a4e2d-1d9d-4106-8f49-e5c0a0079168}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION F_MemStringReplace : BOOL
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 404529 $
+ *	Revision date	:	$Date: 2018-04-23 08:21:38 +0200 (Mo., 23 Apr 2018) $
+ *	Last changed by	:	$Author: b7bolm $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/trunk/01_Software/BCF/BCF/JumpStart/20_Product/10_App/10_Base/10_Lib/F_MemStringReplace.TcPOU $
+ *
+ *	Purpose			:	Search in a pointer based structure for a find string, replace 
+ *						it with replacement string. If replacement string is shorter, 
+ *						move data to close the gap and clean last digits after movement.
+ *
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+VAR_INPUT
+	pSrc 			: PVOID; // Pointer to source
+	FindString		: STRING(MAX_DIGITS); // Find string
+	Replacement 	: STRING(MAX_DIGITS); // Replacement string
+END_VAR
+VAR_IN_OUT
+	SrcLen 			: UDINT; // Length of source structure
+END_VAR
+VAR
+	Idx 			: UDINT; // Iterator
+	ReplacmentLen 	: UDINT; // Length of string
+	FindLen			: UDINT; // Length of string
+	RelativeSrc		: UDINT; // Relative source pointer to close gap in data
+	RelativeDest	: UDINT; // Relative destination pointer to close gap in data
+	pFirstDataByte 	: POINTER TO BYTE; // Pointer to a byte
+	pFirstFindByte	: POINTER TO BYTE; // Pointer to a byte
+	byte1 			: BYTE;
+	byte2			: BYTE;
+END_VAR
+
+VAR CONSTANT
+	MAX_DIGITS : UDINT := 10; // Max Digits of strings
+END_VAR]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[(* 
+Validate Inputs
+
+Length of replacement needs to have the same or a smaller length,
+compared to find. Otherwise it would be possible to move data to
+the outside of the allocated memory.
+
+*)
+IF LEN(Replacement) > LEN(FindString) OR
+   pSrc = 0 OR
+   SrcLen = 0 THEN
+    // Invalid, cancel
+	F_MemStringReplace := FALSE;
+	RETURN;
+END_IF
+
+// Get compare length
+ReplacmentLen := INT_TO_UDINT(LEN(Replacement));
+FindLen := INT_TO_UDINT(LEN(FindString));
+
+FOR Idx := 0 TO SrcLen - FindLen DO
+
+	pFirstDataByte := pSrc;
+	pFirstDataByte := pFirstDataByte + Idx;
+	pFirstFindByte := ADR(FindString);
+	
+	IF (USINT_TO_BYTE(pFirstDataByte^) AND pFirstFindByte^) = pFirstFindByte^ THEN
+		(*
+		Go through data and compare TO <Find>
+		
+			0,		Equal
+			1/-1, 	Unequal
+			0xFF, 	Incorrect parameters
+		
+		Example:  ABCDEF123GHIJ
+				  Find: 123 -> Len : 3
+				  Compare ABC with 123
+				  Compare BCD with 123
+				  Compare CDE with 123
+				  ...
+		*)		
+		IF MEMCMP(pSrc + Idx, ADR(FindString),FindLen) = 0 THEN
+			// Replace find with replacement
+			MEMCPY(pSrc + Idx, ADR(Replacement), ReplacmentLen);
+			
+			// If replacement length is smaller than find length, 
+			// move data to close the gap
+			IF ReplacmentLen < FindLen THEN
+				// Build relative addresses
+				RelativeSrc := Idx + FindLen;
+				RelativeDest := Idx + ReplacmentLen;
+				
+				(* 
+					Example:
+					Original:  ABCDEFG   Find BCD, Replacement 12
+					Replaced:  A12DEFG
+					
+					Relativ pointers:   A12DEFG
+										   ^^
+										   || Source after data
+							 Dest for move | 
+				*)
+				// Check that address is in range of structure
+				IF RelativeSrc <= SrcLen THEN
+					// Move data to close gap
+					MEMCPY(pSrc + RelativeDest, pSrc + RelativeSrc, SrcLen - Idx - FindLen);
+					(*
+						Example: Moved: A12EFGG
+					*)
+				END_IF
+				
+				// Clean unused bytes at the end
+				MEMSET(pSrc + SrcLen - FindLen + ReplacmentLen, 0, FindLen - ReplacmentLen);
+				// Correction of new length
+				SrcLen := SrcLen - FindLen + ReplacmentLen;
+				
+				(* 
+					Example: Cleaned : A12EFG0
+				*)
+				// Check border
+				IF SrcLen < 0 THEN
+					SrcLen := 0;
+				END_IF
+			END_IF
+		END_IF
+	END_IF
+END_FOR
+
+// Return
+F_MemStringReplace := TRUE;]]></ST>
+    </Implementation>
+    <LineIds Name="F_MemStringReplace">
+      <LineId Id="3" Count="88" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

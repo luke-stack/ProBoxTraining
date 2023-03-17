@@ -1,0 +1,13 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <DUT Name="U_HW_OutPutExchangeRegister" Id="{bfb5cdc0-3baa-461f-8aaa-d8757725243c}">
+    <Declaration><![CDATA[TYPE U_HW_OutPutExchangeRegister :
+UNION
+	ByteOut8		: BYTE; // ExchangeRegister
+	ByteOut9		: BYTE; // ExchangeRegister
+	Exchangeregister		: DWORD;
+END_UNION
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

@@ -1,0 +1,76 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <POU Name="F_AddPhysicalTU" Id="{55e6601f-dabc-4336-8fb9-c534ab102d4e}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION F_AddPhysicalTU : BOOL
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision:  $
+ *	Revision date	:	$Date: $
+ *	Last changed by	:	$Author: $
+ *	URL				:	$URL: $
+ *
+ *	Purpose			:	Adds physical (emulation) TU data (equal to ATQ)
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+VAR_INPUT
+	eFunctionNumber : E_FunctionNumber;
+	ZoneNumber		: INT;
+	(*Height
+	Length
+	Weight
+	Width *)
+	
+END_VAR
+VAR
+	mName	: STRING;
+	NewID 	: T_MaxString;
+END_VAR
+VAR_STAT
+	ID		: INT := 1;
+	ATQ		: ST_ITC_ATQ;
+END_VAR]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[mName := F_GetFunctionName(eFunctionNumber:= eFunctionNumber, ZoneNumber:= ZoneNumber);
+ATQ.Position := F_ReduceToAlphaNumeric(InputString := mName);
+
+NewID := F_StuffString(
+			InputString 	:= INT_TO_STRING(ID), 
+			StringLength	:= 8, 
+			StuffCharacter 	:= '0',
+			LeftAligned     := FALSE);
+			
+ID := ID + 1;
+
+IF ID > 9998 THEN
+	ID := 1;
+END_IF
+
+ATQ.Height := 150;
+ATQ.Length := 800; //1200;
+ATQ.Weight := 1500;
+ATQ.Width := 800;
+ATQ.LabelPresent := 1;
+ATQ.Label := CONCAT('TESTLABEL_',NewID);
+
+fbITC_ManagerEmulation.M_AddData(
+	meChannelSrc := 0,
+	mMsgType     := E_ITC_MsgTypeConv.E_ADD_TU_REQUEST,
+	mpData		 := ADR(ATQ),
+    mLen 		 := SIZEOF(ATQ));]]></ST>
+    </Implementation>
+    <LineIds Name="F_AddPhysicalTU">
+      <LineId Id="3" Count="25" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

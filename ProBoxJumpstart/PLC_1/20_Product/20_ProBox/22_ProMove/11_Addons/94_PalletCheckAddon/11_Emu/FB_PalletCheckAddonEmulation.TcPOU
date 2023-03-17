@@ -1,0 +1,208 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <POU Name="FB_PalletCheckAddonEmulation" Id="{81906258-d815-49e9-9f98-921af527c65d}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK FB_PalletCheckAddonEmulation EXTENDS FB_FunctionConvEmulation
+VAR_INPUT
+END_VAR
+VAR_OUTPUT
+END_VAR
+VAR
+	pFunction						: POINTER TO FB_PalletCheckAddon; // Address to function
+	rFunction						: REFERENCE TO FB_PalletCheckAddon; // Reference to function	
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[(**************************************************************************************************************
+   Initialization
+***************************************************************************************************************)
+A_Init();
+
+
+(**************************************************************************************************************
+   Update reference
+***************************************************************************************************************)
+A_UpdateReference();
+
+(**************************************************************************************************************
+   Emulation
+***************************************************************************************************************)
+// If emulation function is initialized
+IF FunctionData.Init THEN
+
+	// Update data of real object
+	M_UpdateRealObjectData();
+		
+	// Overwrite inputs	
+	_M_OverWriteInputs();
+END_IF]]></ST>
+    </Implementation>
+    <Method Name="_M_OverWriteInputs" Id="{0fb28ba9-ae88-4745-93e8-907469db019e}">
+      <Declaration><![CDATA[METHOD PRIVATE _M_OverWriteInputs
+VAR_INPUT
+END_VAR
+
+VAR	
+	
+END_VAR
+
+VAR_INST
+	EmuState						: INT;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+(**************************************************************************************
+ * 	NAME		A_OverWriteInputs
+ * 	FUNCTION	Overwrite inputs for emulation
+ **************************************************************************************)
+
+CASE EmuState OF
+	0:
+		rFunction.HW_Inputs.Sensor_RunnerTunnel := FALSE;
+		rFunction.HW_Inputs.Sensor_TriggerStart  := FALSE;
+		rFunction.HW_Inputs.Sensor_TriggerStop := FALSE;
+		
+		IF(rFunction._Trigger) THEN
+			EmuState := EmuState+1;
+		END_IF
+		
+	1,2,3,4,5,6,7,8,9:
+		//give the real addon some time to execute
+		EmuState := EmuState+1;
+	
+	10:
+		//emulate TU reaching trigger start
+		rFunction.HW_Inputs.Sensor_TriggerStart  := TRUE;
+		rFunction.HW_Inputs.Sensor_RunnerTunnel := TRUE;
+		EmuState := EmuState+1;
+	11:
+		rFunction.HW_Inputs.Sensor_TriggerStop := TRUE;
+		EmuState := EmuState+1;
+	
+	12:
+		IF(NOT rFunction._Trigger) THEN
+			EmuState := EmuState+1;
+		END_IF
+	13:
+		//done
+		EmuState:=0;
+		
+	ELSE
+		EmuState := 0;		
+		
+END_CASE
+
+rFunction.HW_Inputs.Sensor_RunnerTunnel := rFunction.Config.HW_InputInverted.Sensor_RunnerTunnel XOR rFunction.HW_Inputs.Sensor_RunnerTunnel;
+rFunction.HW_Inputs.Sensor_TriggerStart := rFunction.Config.HW_InputInverted.Sensor_TriggerStart XOR rFunction.HW_Inputs.Sensor_TriggerStart;
+rFunction.HW_Inputs.Sensor_TriggerStop := rFunction.Config.HW_InputInverted.Sensor_TriggerStop XOR rFunction.HW_Inputs.Sensor_TriggerStop;
+
+
+]]></ST>
+      </Implementation>
+    </Method>
+    <Action Name="A_Init" Id="{e0c8366e-871c-42d9-b74f-fe834b548fe7}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_Init
+ * 	FUNCTION	Initialize emulated dummy function
+ **************************************************************************************)
+
+// If dummy function is not initialized
+IF NOT FunctionData.Init Then
+	// Check that linked dummy function number is valid
+	IF eFunctionNumber > E_FunctionNumber.F_BEGIN_FUNCTION AND
+	   eFunctionNumber < E_FunctionNumber.F_END_FUNCTION THEN   
+		
+		// Check if the real module is initialized
+		IF F_IsFunctionInitialized(eFunctionNumber := eFunctionNumber) THEN
+			// Module is initialized
+			FunctionData.Init:= TRUE;
+			
+			// Send debug message
+			DebugMsg := CONCAT('Initialization done. Element Function: ', FunctionRegistry[eFunctionNumber].FunctionName);
+			fbDebugMsg.M_SendInfoMsg(DebugMsg);
+			
+			// Initialize real module
+			F_InitializeFunction(eFunctionNumber := eFunctionNumber);
+		END_IF
+	END_IF
+END_IF
+]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="A_UpdateReference" Id="{387d7454-fb27-46b6-8fb6-900f076ce8cf}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_UpdateReference
+ * 	FUNCTION	Update reference to real object
+ **************************************************************************************)
+
+// Check valid function number
+IF eFunctionNumber > E_FunctionNumber.F_BEGIN_FUNCTION AND
+   eFunctionNumber < E_FunctionNumber.F_END_FUNCTION THEN
+
+	// Is reference valid  
+	IF __ISVALIDREF(FunctionRegistry[eFunctionNumber].rFunction) THEN
+		// Build address to reference
+		pFunction := ADR(FunctionRegistry[eFunctionNumber].rFunction);
+
+		// If address is possible
+		IF pFunction <> 0 THEN
+			// Build reference to memory
+			rFunction REF= pFunction^;
+		ELSE
+			// Reinitialize module
+			FunctionData.Init:= FALSE;
+		END_IF
+	ELSE
+		// Reinitialize module
+		FunctionData.Init:= FALSE;
+	END_IF
+END_IF
+		]]></ST>
+      </Implementation>
+    </Action>
+    <LineIds Name="FB_PalletCheckAddonEmulation">
+      <LineId Id="20" Count="21" />
+      <LineId Id="9" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_PalletCheckAddonEmulation._M_OverWriteInputs">
+      <LineId Id="6" Count="4" />
+      <LineId Id="156" Count="0" />
+      <LineId Id="57" Count="0" />
+      <LineId Id="157" Count="0" />
+      <LineId Id="170" Count="1" />
+      <LineId Id="169" Count="0" />
+      <LineId Id="172" Count="0" />
+      <LineId Id="161" Count="1" />
+      <LineId Id="160" Count="0" />
+      <LineId Id="163" Count="1" />
+      <LineId Id="196" Count="0" />
+      <LineId Id="173" Count="0" />
+      <LineId Id="176" Count="0" />
+      <LineId Id="178" Count="1" />
+      <LineId Id="167" Count="0" />
+      <LineId Id="181" Count="2" />
+      <LineId Id="185" Count="0" />
+      <LineId Id="208" Count="4" />
+      <LineId Id="184" Count="0" />
+      <LineId Id="192" Count="2" />
+      <LineId Id="187" Count="0" />
+      <LineId Id="168" Count="0" />
+      <LineId Id="177" Count="0" />
+      <LineId Id="159" Count="0" />
+      <LineId Id="158" Count="0" />
+      <LineId Id="24" Count="0" />
+      <LineId Id="45" Count="4" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_PalletCheckAddonEmulation.A_Init">
+      <LineId Id="2" Count="24" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_PalletCheckAddonEmulation.A_UpdateReference">
+      <LineId Id="2" Count="26" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

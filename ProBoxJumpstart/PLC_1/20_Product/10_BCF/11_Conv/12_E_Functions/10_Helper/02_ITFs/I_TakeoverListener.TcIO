@@ -1,0 +1,38 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.12">
+  <Itf Name="I_TakeoverListener" Id="{b0a0ad7a-c403-4f05-b0a5-1360d420fbd0}">
+    <Declaration><![CDATA[INTERFACE I_TakeoverListener
+]]></Declaration>
+    <Method Name="M_PrevUnlinkedEvent" Id="{5a3273a5-d6ab-4235-a9a3-dee33b5d7d72}">
+      <Declaration><![CDATA[METHOD M_PrevUnlinkedEvent
+VAR_INPUT
+END_VAR
+]]></Declaration>
+    </Method>
+    <Method Name="M_TakeoveCompleteEvent" Id="{d031e43b-a213-44df-aad2-7f42c595ccfc}">
+      <Declaration><![CDATA[METHOD M_TakeoveCompleteEvent
+VAR_INPUT
+END_VAR
+]]></Declaration>
+    </Method>
+    <Method Name="M_TakeoverStartEvent" Id="{40e993e2-2c03-4c62-a8c1-0e4ec6da6513}">
+      <Declaration><![CDATA[METHOD M_TakeoverStartEvent
+VAR_INPUT
+END_VAR
+]]></Declaration>
+    </Method>
+    <Method Name="M_TakeoverStopEvent" Id="{d481ba9b-4455-463e-b7d4-300aed75b224}">
+      <Declaration><![CDATA[METHOD M_TakeoverStopEvent
+VAR_INPUT
+END_VAR
+]]></Declaration>
+    </Method>
+    <Method Name="M_TU_IndexMovedEvent" Id="{8e653e3f-25a0-4156-9980-6bad2089b8a1}">
+      <Declaration><![CDATA[METHOD M_TU_IndexMovedEvent
+VAR_INPUT
+	mMovedTU_Index	: DINT;
+END_VAR
+]]></Declaration>
+    </Method>
+  </Itf>
+</TcPlcObject>

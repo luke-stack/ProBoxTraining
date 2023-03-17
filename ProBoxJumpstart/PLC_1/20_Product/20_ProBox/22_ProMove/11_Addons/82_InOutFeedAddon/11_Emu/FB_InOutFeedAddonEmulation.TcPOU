@@ -1,0 +1,286 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <POU Name="FB_InOutFeedAddonEmulation" Id="{77a012f1-658d-4c1d-8e20-6d2c99812cea}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK FB_InOutFeedAddonEmulation EXTENDS FB_FunctionConvEmulation
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: q8hedls $
+ *	Revision date	:	$Date: $
+ *	Last changed by	:	$Author:  $
+ *	URL				:	$URL:  $
+ *
+ *	Purpose			:	Emulation of inOutFeed
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				26.04.2019		SHE					LowLiftUnitEmulation
+ *
+ **************************************************************************************)
+VAR_INPUT
+	//Config							: ST_CFG_InOutFeedEmulation; // emulation config	
+END_VAR 
+
+VAR
+	pFunction						: POINTER TO FB_InOutFeedAddon; // Address to function
+	rFunction						: REFERENCE TO FB_InOutFeedAddon; // Reference to function
+	FLT_EmuTimer					: TON;
+	TU_SensEmuTimer					: TON;			
+	EmuState						: INT;
+	fbLiftControlEmu 				: FB_LiftControlEmulation; // Lift control emulation
+	fbMotorControlLift				: FB_MotorControlEmulation; // Motor control emulation
+	_Config							: ST_CFG_TransferUnitEmulation;
+	
+END_VAR]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[(**************************************************************************************************************
+   Initialization
+***************************************************************************************************************)
+A_Init();
+
+(**************************************************************************************************************
+   Update reference
+***************************************************************************************************************)
+A_UpdateReference();
+
+(**************************************************************************************************************
+   Emulation
+***************************************************************************************************************)
+// If emulation function is initialized
+IF FunctionData.Init THEN
+
+	// Update data of real object
+	M_UpdateRealObjectData();
+	
+	// Handle external Subsystem-Subsystem interfaces
+	// not needed for Add On emulation
+	//A_ExternalSTI();
+	
+	
+	// Call Lift control
+	fbLiftControlEmu.Config.Position_Down := 10;
+	fbLiftControlEmu.Config.Position_Max_Down := 0;
+	fbLiftControlEmu.Config.Position_Up := 290;
+	fbLiftControlEmu.Config.Position_Max_Up := 300;
+	
+	fbLiftControlEmu(DriveRun_Lift := rFunction.HW_Outputs.Drive_Run_UpDown);	
+		
+	// Call motor control lift
+	
+	fbMotorControlLift(
+		Run_fw:= rFunction.HW_Outputs.Drive_Run_UpDown, 
+		Run_bw:= FALSE, 
+		CommandSpeed:= 100, 
+		SpeedRatio:= rFunction.ConfigFunction.Zone[1].SpeedRatio);
+	
+	// Overwrite inputs	
+	_M_OverWriteInputs();
+END_IF]]></ST>
+    </Implementation>
+    <Method Name="_M_OverWriteInputs" Id="{87f61d18-e5c7-4576-87d6-311f9d241a4c}">
+      <Declaration><![CDATA[METHOD PRIVATE _M_OverWriteInputs
+VAR_INPUT
+END_VAR
+
+VAR
+	(*FLT_EmuTimer					: TON;
+	TU_SensEmuTimer					: TON;*)
+	TranspCtrlData					: ST_TransportControlData;
+	Occupied						:BOOL :=FALSE;		
+	
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+(**************************************************************************************
+ * 	NAME		A_OverWriteInputs
+ * 	FUNCTION	Overwrite inputs for emulation
+ **************************************************************************************)
+TranspCtrlData	:= F_GetTransportControlData(rFunction.ConfigFunction.FunctionLink.eFunctionNumber, rFunction.ConfigFunction.FunctionLink.ZoneNumber);
+Occupied := TranspCtrlData.SensorOccupied;
+
+rFunction.HW_Inputs.Sensor_Pos_Down := fbLiftControlEmu.Lift_Pos_Down;
+rFunction.HW_Inputs.Sensor_Pos_Up := fbLiftControlEmu.Lift_Pos_Up; 
+rFunction.HW_Inputs.Signal_MotorUnitOK := fbMotorControlLift.MotorUnitOK;
+
+IF(Occupied AND TranspCtrlData.TU_DataIndex =0 AND EmuState=0) THEN
+	EmuState := 1; // Infeed process started.
+ELSIF(Occupied=TRUE AND TranspCtrlData.TU_DataIndex >0 AND EmuState=0) THEN
+	EmuState := 10; // OutFeed process started
+END_IF
+
+CASE EmuState OF
+	0:	//IDLE		
+		TU_SensEmuTimer(IN:=FALSE);
+		FLT_EmuTimer(IN:=FALSE);
+		rFunction.HW_Inputs.TUSensor :=FALSE;
+		rFunction.HW_Inputs.FLTSensor := FALSE;
+
+	1:	//Infeed
+		//Trig timers
+		TU_SensEmuTimer(IN:=Occupied, PT:=T#1S);
+		FLT_EmuTimer(IN:=TU_SensEmuTimer.Q, PT:=T#6S); //rFunction.Config.tFTLClearTime+1
+		//Emulate HW inputs
+		rFunction.HW_Inputs.TUSensor  := TU_SensEmuTimer.Q;
+		rFunction.HW_Inputs.FLTSensor := TU_SensEmuTimer.Q AND NOT FLT_EmuTimer.Q;
+		IF(Occupied=FALSE) THEN
+			EmuState:=0;
+		END_IF	
+		
+		
+	10:	//OutFeed, simulate TU tranfering into position		
+		FLT_EmuTimer(IN:=TRUE, PT:=T#2S); 		
+		
+		//Emulate HW inputs
+		rFunction.HW_Inputs.TUSensor := TRUE;		
+		rFunction.HW_Inputs.FLTSensor := FLT_EmuTimer.Q;	
+		IF(FLT_EmuTimer.Q) THEN
+			EmuState:=EmuState+1;									
+		END_IF		
+	11:
+		//Emulate HW inputs. Send RTQ cmd to delete TU from Conveyor.
+		rFunction.HW_Inputs.TUSensor :=Occupied;
+		rFunction.HW_Inputs.FLTSensor :=Occupied;
+		IF( NOT Occupied) THEN
+			EmuState:=0;
+		END_IF
+END_CASE
+
+]]></ST>
+      </Implementation>
+    </Method>
+    <Action Name="A_Init" Id="{7c50be72-710f-4b6c-88b8-ea47ff7139a1}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_Init
+ * 	FUNCTION	Initialize emulated dummy function
+ **************************************************************************************)
+
+// If dummy function is not initialized
+IF NOT FunctionData.Init Then
+	// Check that linked dummy function number is valid
+	IF eFunctionNumber > E_FunctionNumber.F_BEGIN_FUNCTION AND
+	   eFunctionNumber < E_FunctionNumber.F_END_FUNCTION THEN   
+		
+		// Check if the real module is initialized
+		IF F_IsFunctionInitialized(eFunctionNumber := eFunctionNumber) THEN
+			// Module is initialized
+			FunctionData.Init:= TRUE;
+			
+			// Send debug message
+			DebugMsg := CONCAT('Initialization done. Element Function: ', FunctionRegistry[eFunctionNumber].FunctionName);
+			fbDebugMsg.M_SendInfoMsg(DebugMsg);
+			
+			// Initialize real module
+			F_InitializeFunction(eFunctionNumber := eFunctionNumber);
+		END_IF
+	END_IF
+END_IF
+]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="A_UpdateReference" Id="{0bde52b0-5411-46f0-a51c-85f581b4fae5}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_UpdateReference
+ * 	FUNCTION	Update reference to real object
+ **************************************************************************************)
+
+// Check valid function number
+IF eFunctionNumber > E_FunctionNumber.F_BEGIN_FUNCTION AND
+   eFunctionNumber < E_FunctionNumber.F_END_FUNCTION THEN
+
+	// Is reference valid  
+	IF __ISVALIDREF(FunctionRegistry[eFunctionNumber].rFunction) THEN
+		// Build address to reference
+		pFunction := ADR(FunctionRegistry[eFunctionNumber].rFunction);
+
+		// If address is possible
+		IF pFunction <> 0 THEN
+			// Build reference to memory
+			rFunction REF= pFunction^;
+		ELSE
+			// Reinitialize module
+			FunctionData.Init:= FALSE;
+		END_IF
+	ELSE
+		// Reinitialize module
+		FunctionData.Init:= FALSE;
+	END_IF
+END_IF
+		]]></ST>
+      </Implementation>
+    </Action>
+    <LineIds Name="FB_InOutFeedAddonEmulation">
+      <LineId Id="3" Count="19" />
+      <LineId Id="229" Count="0" />
+      <LineId Id="23" Count="0" />
+      <LineId Id="205" Count="0" />
+      <LineId Id="295" Count="0" />
+      <LineId Id="300" Count="0" />
+      <LineId Id="354" Count="0" />
+      <LineId Id="356" Count="2" />
+      <LineId Id="355" Count="0" />
+      <LineId Id="301" Count="0" />
+      <LineId Id="304" Count="1" />
+      <LineId Id="353" Count="0" />
+      <LineId Id="306" Count="3" />
+      <LineId Id="296" Count="0" />
+      <LineId Id="54" Count="0" />
+      <LineId Id="69" Count="0" />
+      <LineId Id="262" Count="0" />
+      <LineId Id="71" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_InOutFeedAddonEmulation._M_OverWriteInputs">
+      <LineId Id="6" Count="5" />
+      <LineId Id="33" Count="0" />
+      <LineId Id="149" Count="3" />
+      <LineId Id="57" Count="0" />
+      <LineId Id="36" Count="0" />
+      <LineId Id="38" Count="0" />
+      <LineId Id="58" Count="1" />
+      <LineId Id="39" Count="0" />
+      <LineId Id="32" Count="0" />
+      <LineId Id="12" Count="0" />
+      <LineId Id="40" Count="0" />
+      <LineId Id="51" Count="1" />
+      <LineId Id="66" Count="1" />
+      <LineId Id="53" Count="0" />
+      <LineId Id="50" Count="0" />
+      <LineId Id="44" Count="4" />
+      <LineId Id="43" Count="0" />
+      <LineId Id="85" Count="0" />
+      <LineId Id="92" Count="0" />
+      <LineId Id="89" Count="0" />
+      <LineId Id="91" Count="0" />
+      <LineId Id="87" Count="0" />
+      <LineId Id="55" Count="0" />
+      <LineId Id="76" Count="2" />
+      <LineId Id="137" Count="0" />
+      <LineId Id="75" Count="0" />
+      <LineId Id="93" Count="2" />
+      <LineId Id="99" Count="0" />
+      <LineId Id="136" Count="0" />
+      <LineId Id="134" Count="1" />
+      <LineId Id="101" Count="0" />
+      <LineId Id="100" Count="0" />
+      <LineId Id="102" Count="0" />
+      <LineId Id="116" Count="0" />
+      <LineId Id="41" Count="0" />
+      <LineId Id="24" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_InOutFeedAddonEmulation.A_Init">
+      <LineId Id="2" Count="24" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_InOutFeedAddonEmulation.A_UpdateReference">
+      <LineId Id="2" Count="26" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

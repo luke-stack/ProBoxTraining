@@ -1,0 +1,22 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <DUT Name="ST_LSPM_Inp_LiftSensors" Id="{6d3f5e1a-1594-4a9b-b9ac-db2c99a3466b}">
+    <Declaration><![CDATA[TYPE ST_LSPM_Inp_LiftSensors :
+STRUCT
+	SensorPosDownCS				: BOOL; // Sensor position lift down creep speed
+	SensorPosDown				: BOOL; // Sensor position lift down
+	SensorPosMiddleDown			: BOOL; // Sensor position lift middle down
+	SensorPosMiddleUp			: BOOL; // Sensor position lift middle up
+	SensorPosUp					: BOOL; // Sensor position lift up
+	SensorEndlimitUp			: BOOL; // Upper endlimit
+	SensorEndlimitDown			: BOOL; // Lower endlimit
+
+	EncoderValue				: UDINT; //Encoder input, replaces all sensor inputs		
+	LoadStackerGapSensor_1		: BOOL; // Side 1. TRUE=Gap detected. Usage needs to be configured. when enabled-> sensor check of pallet gap.
+	LoadStackerGapSensor_2		: BOOL; // Side 2. TRUE=Gap detected. Usage needs to be configured. when enabled-> sensor check of pallet gap.
+ 
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

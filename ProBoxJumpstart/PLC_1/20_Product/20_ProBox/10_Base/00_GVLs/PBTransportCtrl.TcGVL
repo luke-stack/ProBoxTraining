@@ -1,0 +1,10 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.12">
+  <GVL Name="PBTransportCtrl" Id="{ad130535-2a0e-4df6-8665-e4ac61b25b51}">
+    <Declaration><![CDATA[{attribute 'qualified_only'}
+VAR_GLOBAL	
+	pbTransportControlDataEmpty 	: ST_TransportControlData; // Transport control data
+	pbZoneSettingsEmpty				: ST_CFG_Zone;	
+END_VAR]]></Declaration>
+  </GVL>
+</TcPlcObject>

@@ -1,0 +1,34 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <DUT Name="ST_CFG_SickScanner" Id="{7d423051-c7a3-4af8-851c-eb9b8ff5c192}">
+    <Declaration><![CDATA[TYPE ST_CFG_SickScanner :
+STRUCT
+	tComTimeout				: TIME:= T#5S; 	// Communication timeout heart beat. Note this is NOT a scan timeout.
+	MaxLabelLength			: UINT:=18; 	// Max lable length
+	SendTTQ					: BOOL:=FALSE; 	// Send TTQ for new IDs
+	AcceptedNoReadSeries	: INT:=10; 		// Tolerated no reads in a sequence until an error stops the scanner 0 = off
+	EnableExternalTrigger	: BOOL:=FALSE;	// Enable an external trigger for a real sensor or customization. Use CtrlIn.ExternTrigger to actually trig scanner.
+	MoveDataLabelField		: BOOL:=FALSE;	// Enable to move read barcode to lable field if false move data to TU ID
+	ConfigFilePath			: T_MaxString :=''; //Path to config file to be written to scanner. disable by setting to empty '' string 	
+END_STRUCT
+END_TYPE
+]]></Declaration>
+    <ObjectProperties>
+      <XmlArchive>
+        <Data>
+          <o xml:space="preserve" t="UMLStereoTypeContainerObject">
+            <v n="IsType" t="UMLType">BaseArea</v>
+            <v n="Stereotype">""</v>
+            <d n="Stereotypes" t="Hashtable" />
+          </o>
+        </Data>
+        <TypeList>
+          <Type n="Hashtable">System.Collections.Hashtable</Type>
+          <Type n="String">System.String</Type>
+          <Type n="UMLStereoTypeContainerObject">{30250973-b110-4e31-b562-c102e042dca4}</Type>
+          <Type n="UMLType">{0197b136-405a-42ee-bb27-fd08b621d0cf}</Type>
+        </TypeList>
+      </XmlArchive>
+    </ObjectProperties>
+  </DUT>
+</TcPlcObject>

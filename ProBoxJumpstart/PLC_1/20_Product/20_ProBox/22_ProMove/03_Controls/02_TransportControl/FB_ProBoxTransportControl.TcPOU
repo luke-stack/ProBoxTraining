@@ -1,0 +1,1287 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <POU Name="FB_ProBoxTransportControl" Id="{29daa1e8-4133-497f-a8f0-fe816a844b08}" SpecialFunc="None">
+    <Declaration><![CDATA[//ProBox transportcontroller
+FUNCTION_BLOCK FB_ProBoxTransportControl EXTENDS FB_TransportControl
+(**************************************************************************************
+ * 	Application		:	ProBox
+ *	Revision		:	$Revision:  $
+ *	Revision date	:	$Date: $
+ *	Last changed by	:	$Author: $
+ *	URL				:	$URL: $
+ *
+ *	Purpose			:	The transport control is responsible for the coordinated
+ *                      physical TU and logical data movement and ensures the relation
+ *                      to the position for the ProMove Pallet system.
+ *
+ **************************************************************************************)
+VAR_INPUT
+	CtrlInPbTc				: ST_CtrlInPbTc;// Control input for Pro box Transport control
+END_VAR
+VAR	
+	_PB_TransportCtrlData	: ST_PB_TransportCtrl;
+	_ValidPrevFunction		: E_FunctionNumber;
+	_ValidPrevZone			: INT;	
+	_PbTcDebugLogLevel		: INT:=0; 		//ProBox Transport Control Debug level. 0 = Off, 1=States, 2 Verbose
+END_VAR
+
+VAR_TEMP
+		
+	PB_SimultaniousDisableTakeover		 :BOOL;	//TRUE = Release TU's
+	PB_PreventTakeover					: BOOL; //For Multi Zone Functions
+	PB_PreventHandover					: BOOL; //workaround for BCF transportcontroller not capable of handling a occupied after transition error
+	PB_InhibitHandoverRun				: BOOL;	//Force stopping of drive
+	PB_ForceTakeoverRun					: BOOL; //Force motor run of drive
+	
+	// internal variables only for debuging purposes
+	PrevTrspState						: E_TransportState;
+	PrevHandOvrState					: E_HandOverState;
+	PrevTakeOvrState					: E_TakeOverState;		
+END_VAR]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[IF(_PbTcDebugLogLevel>0) THEN
+	// internal variables onlyfor debuging purposes
+	PrevTrspState := ZoneData.TransportControlData.eTransportState;
+	PrevHandOvrState := ZoneData.TransportControlData.eHandOverState;
+	PrevTakeOvrState := ZoneData.TransportControlData.eTakeOverState;
+END_IF
+
+//---------------------------------------------------------------------------------------------------
+// Init and checks for ProBox
+//---------------------------------------------------------------------------------------------------
+_M_PB_Init(ZoneData);
+_M_InputMapping();
+
+
+//---------------------------------------------------------------------------------------------------
+// Pre-tasks that must be performed before runnign BCF transportcontrol
+//---------------------------------------------------------------------------------------------------
+
+_M_SyntheticSensor(ZoneData);
+_M_GapCheck(ZoneData,ErrorData);
+_M_PB_PreErrorCheck(ZoneData,ErrorData,PB_PreventTakeover,PB_PreventHandover);
+_M_PB_PreTrspCtrl(ZoneData,ErrorData,PB_ForceTakeoverRun,PB_SimultaniousDisableTakeover,PB_PreventTakeover);
+
+//---------------------------------------------------------------------------------------------------
+// Call BCF TransportController
+//---------------------------------------------------------------------------------------------------
+
+TransportEnableTakeOver := TransportEnableTakeOver AND (NOT PB_SimultaniousDisableTakeover AND NOT PB_PreventTakeover);
+TransportEnableHandOver := TransportEnableHandOver AND NOT PB_PreventHandover;
+SUPER^(ZoneData:=ZoneData,ErrorData:=ErrorData);
+
+
+
+//---------------------------------------------------------------------------------------------------
+// Post-tasks that must be performed after BCF transportcontrol where executed
+//---------------------------------------------------------------------------------------------------
+_M_PB_PostTrspCtrl(ZoneData,PB_InhibitHandoverRun);
+_M_PB_PostErrorCheck(ZoneData);
+_M_PB_SpeedControl(ZoneData);
+
+//PB transportcontrol controlling driving.
+Outputs.DriveHandoverRun := (Outputs.DriveHandoverRun AND NOT PB_InhibitHandoverRun);
+Outputs.DriveTakeoverRun := Outputs.DriveTakeoverRun OR PB_ForceTakeoverRun;
+
+ZoneData.TransportControlData.Stopped := Param.rOperationState.eState = E_PositionState.STOPPED OR
+									 	 Param.rOperationState.eState = E_PositionState.STOPPING AND NOT
+									     DriveTakeoverRun AND NOT DriveHandoverRun;
+
+//check RequestNext / DeleteNext and RequestPrev / DeletePrev
+_M_ControlTransportRequests();
+
+
+
+//---------------------------------------------------------------------------------------------------
+// log transitions (To be deleted
+//---------------------------------------------------------------------------------------------------
+IF(_PbTcDebugLogLevel>0) THEN
+	IF( PrevTrspState<>ZoneData.TransportControlData.eTransportState OR 
+		PrevHandOvrState<>ZoneData.TransportControlData.eHandOverState OR
+		PrevTakeOvrState<>ZoneData.TransportControlData.eTakeOverState) THEN
+					DebugMsg := F_AddDividerToSisString(Param.rSettings.ZoneName);				
+					DebugMsg := CONCAT(DebugMsg, '. Transport state: ');
+					DebugMsg := CONCAT(DebugMsg, INT_TO_STRING(ZoneData.TransportControlData.eTransportState));
+					DebugMsg := CONCAT(DebugMsg, '. Handover state: ');
+					DebugMsg := CONCAT(DebugMsg, INT_TO_STRING(ZoneData.TransportControlData.eHandOverState));
+					DebugMsg := CONCAT(DebugMsg, '. Takeover state: ');
+					DebugMsg := CONCAT(DebugMsg, INT_TO_STRING(ZoneData.TransportControlData.eTakeOverState));
+					DebugMsg := CONCAT(DebugMsg, '. HO Run: ');
+					DebugMsg := CONCAT(DebugMsg, BOOL_TO_STRING(Outputs.DriveHandoverRun));
+					DebugMsg := CONCAT(DebugMsg, '. TO Run: ');
+					DebugMsg := CONCAT(DebugMsg, BOOL_TO_STRING(Outputs.DriveTakeoverRun));				
+					fbDebugMsg.M_SendInfoMsg(DebugMsg);
+	END_IF	
+END_IF
+
+//---------------------------------------------------------------------------------------------------
+// Set error param with informative descriptions 
+//---------------------------------------------------------------------------------------------------
+//Only set the ErrorParam once, ie when the zone has no error. Also, do not override ErrorParam if there is text already set
+IF(ZoneData.ErrorData.ErrorState <> E_ErrorState.ERROR AND ErrorData.ErrorParam[0]=0) THEN
+	
+	CASE ErrorData.ErrorCode.Conv OF 
+		E_ErrorConv.TIMEOUT_TAKEOVER:
+			ErrorData.ErrorParam	:= 'Takeover abnormal distance(TimeOut)';		
+		E_ErrorConv.POSITION_OCCUPIED_BEFORE_TAKEOVER:
+        	ErrorData.ErrorParam	:= 'Position occupied before takeover';
+		E_ErrorConv.POSITION_OCCUPIED_AFTER_HANDOVER:
+			ErrorData.ErrorParam	:= 'Position occupied after transmission';		
+		E_ErrorConv.TU_DATA_SET_EMPTY_ZONE_OCCUPIED:
+			ErrorData.ErrorParam	:= 'TU data set empty, position occupied'; 
+  		E_ErrorConv.TU_DATA_SET_OCCUPIED_ZONE_FREE:
+			ErrorData.ErrorParam	:= 'TU data set occupied, position free';	
+		
+	END_CASE
+	
+END_IF
+	]]></ST>
+    </Implementation>
+    <Folder Name="InternalMethods" Id="{f9b29ffc-64f8-43ed-9033-06d80e21c98d}" />
+    <Method Name="_M_AllZonesOccupied" Id="{6ed55f58-5221-4d64-a9c7-164c0f1d2951}" FolderPath="InternalMethods\">
+      <Declaration><![CDATA[METHOD PRIVATE _M_AllZonesOccupied : BOOL
+VAR_INPUT
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+_M_AllZonesOccupied := _M_CountTus() = _PB_TransportCtrlData.NumberOfZones;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_CheckZoneError" Id="{d5fb53be-7a16-4472-a6b3-4891294af4a2}" FolderPath="InternalMethods\">
+      <Declaration><![CDATA[METHOD PRIVATE _M_CheckZoneError : BOOL
+VAR_INPUT
+	eFunctionNumber		: E_FunctionNumber; // Function number
+	ZoneNumber			: INT; // Zone number
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[// Check if function number and zone is valid
+IF eFunctionNumber > E_FunctionNumber.F_BEGIN_FUNCTION AND
+   eFunctionNumber < E_FunctionNumber.F_END_FUNCTION AND
+   ZoneNumber > 0 AND ZoneNumber <= NUMBER_OF_ZONES_PER_FUNCTION THEN
+  
+   IF __ISVALIDREF(FunctionRegistry[eFunctionNumber].Zone[ZoneNumber].refZoneData) THEN
+		// Zone errordata
+		_M_CheckZoneError := FunctionRegistry[eFunctionNumber].Zone[ZoneNumber].refZoneData.ErrorData.Error.ErrorType = E_ErrorType.ERROR;
+	END_IF
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_ControlTransportRequests" Id="{2ee78a00-d3ea-49b1-af55-fb208b7eb2ed}" FolderPath="InternalMethods\">
+      <Declaration><![CDATA[METHOD PRIVATE _M_ControlTransportRequests : BOOL
+VAR_INPUT
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[//Disable fbRoutingServiceRetry waiting for RECALL_SERVICE_TIMEOUT ie 2S to request next function.
+IF(SUPER^.Init AND  Param.rSettings.EnableRoutingUpdate AND _PB_TransportCtrlData.NumberOfZones>1 AND _PB_TransportCtrlData.IsFirstZone) THEN
+	fbRoutingServiceRetry(IN := TRUE);
+END_IF
+
+
+
+//PB-6238 eNextFunctionNumber not set to F_BEGIN_FUNCTION after pallet removal
+//request next function required when a zone is in state free.
+IF(_PB_TransportCtrlData.NumberOfZones>1 AND _PB_TransportCtrlData.IsLastZone) THEN
+	{warning disable C0371}
+	IF( ZoneData.TransportControlData.eTransportState = E_TransportState.FREE) THEN		
+		Outputs.DeleteNextTransportData:=TRUE;// request next
+	END_IF
+	{warning restore C0371}
+END_IF
+
+
+// control Delete next transportdata for multi zone functions. Don't delete next transport data unless finished handover
+// fix for BCFD-11642 - TransportControl M_RequestPrev deletes previous on the same cycle as the transport starts
+// -Also single zone functions needs to reset reqest signals
+IF(Outputs.DeleteNextTransportData AND NOT Outputs.RequestNextTransportData) THEN
+	//DeleteNextTransportData is requested	
+	IF(_M_TransferBusy(Param.ZoneNumber,3)) THEN		
+		Outputs.DeleteNextTransportData:=FALSE;	//Prevent delete next function			
+	END_IF	
+END_IF
+IF(Outputs.DriveHandoverRun) THEN (*PB-5879 - TransportControl - TransportUnit transport error	AND BCFD-11642 - TransportControl M_RequestPrev deletes previous on the same cycle as the transport starts*)
+	Outputs.DeleteNextTransportData:=FALSE;	//Prevent delete next function
+	Outputs.RequestNextTransportData:=FALSE;//Prevent delete next function
+END_IF
+
+// control Delete prev transportdata for multi zone functions. Don't delete Prev transport data unless all zones finished takeover
+// -Also single zone functions needs to reset reqest signals 
+IF(Outputs.DeletePrevTransportData AND NOT Outputs.RequestPrevTransportData) THEN
+	//DeletePrevTransportData is requested	
+	IF(_M_TransferBusy(Param.ZoneNumber,1)) THEN
+		Outputs.DeletePrevTransportData:=FALSE;	//Prevent delete previous function		
+	END_IF			
+END_IF
+// fix for BCFD-11642 - TransportControl M_RequestPrev deletes previous on the same cycle as the transport starts
+IF(Outputs.DriveTakeoverRun) THEN	
+	Outputs.DeletePrevTransportData:=FALSE;	//Prevent delete previous function
+	Outputs.RequestPrevTransportData:=FALSE;	//Prevent delete previous function
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_CountTus" Id="{c52ed794-9662-4ebd-9d56-ff82cb41d134}" FolderPath="InternalMethods\">
+      <Declaration><![CDATA[METHOD PRIVATE _M_CountTus : INT
+VAR
+	i,OccupiedCount:INT;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[//Count TU's
+FOR i:=1 TO _PB_TransportCtrlData.NumberOfZones DO
+	IF(__ISVALIDREF(FunctionRegistry[Param.reFunctionNumber].Zone[i].refZoneData)) THEN
+		IF(FunctionRegistry[Param.reFunctionNumber].Zone[i].refZoneData.TransportControlData.Occupied) THEN
+			OccupiedCount := OccupiedCount + 1;
+		END_IF
+	END_IF
+END_FOR
+	
+_M_CountTus:=OccupiedCount;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_GapCheck" Id="{c0c3bfa2-a4d9-4325-a77a-7df27200ee86}">
+      <Declaration><![CDATA[METHOD PRIVATE _M_GapCheck : BOOL
+VAR_IN_OUT
+	ZoneData				: ST_ZoneData;
+	ErrorData 				: ST_ErrorDataSet; // Error data 
+END_VAR
+VAR_INST		
+	GapCheckState			: INT;			
+	distanceMeter			: FB_DisplacementMeter();
+	TestRunning	: BOOL;
+END_VAR
+VAR
+	QuitTest				: BOOL;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[IF(_PB_TransportCtrlData.NumberOfZones=1 OR NOT _PB_TransportCtrlData.IsLastZone) THEN
+	RETURN;
+END_IF
+
+
+//Escape test
+QuitTest := ZoneData.TransportControlData.eTransportState <> E_TransportState.SIMULTANEOUS AND
+			ZoneData.TransportControlData.eTransportState <> E_TransportState.SIMULTANEOUS_STOP; 
+
+CASE  GapCheckState OF
+	0:		
+		//Start test
+		IF( ZoneData.TransportControlData.eTakeOverState = E_TakeOverState.ACTIVE AND
+			ZoneData.TransportControlData.eTransportState = E_TransportState.SIMULTANEOUS) THEN			
+			GapCheckState := GapCheckState+1;
+			TestRunning:=FALSE;
+		END_IF
+	1:
+		//check time when sensor detects gap of rear edge
+		IF(NOT ZoneOccupied) THEN
+			TestRunning:=TRUE;
+			GapCheckState := GapCheckState+1;			
+		ELSIF(QuitTest) THEN
+			GapCheckState:=0;
+		END_IF
+		
+	2: //Check when new pallet arrives
+		IF(ZoneOccupied) THEN
+			IF(distanceMeter.Q) THEN				 
+				GapCheckState := GapCheckState+1; //Test successful				
+			ELSE
+				GapCheckState :=4; //error state				
+			END_IF
+		ELSIF(QuitTest) THEN
+			GapCheckState := GapCheckState+1;
+		END_IF 
+	
+	3:	
+		//wait for Escape test to occure.
+		IF(QuitTest) THEN			
+			GapCheckState:=0;
+		END_IF 
+	4:
+		//error
+		F_SetError(	
+					ErrorType	:= E_ErrorType.ERROR,
+					ErrorParam	:= 'Gap not detected',
+					ErrorMsg	:= E_ErrorConv.GAP_CHECK_ACTIVE,
+					ErrorData	:= ErrorData);		
+					
+		//recover from error. sensor needs to be un-occupied. (or should it be enought with just a acknowledge of error?)
+		IF(NOT ZoneOccupied) THEN
+			GapCheckState:=0;
+		END_IF
+		
+END_CASE
+
+
+distanceMeter(
+	Run:=TestRunning, 
+	EncoderValueInc:=SUPER^.EncoderValue,
+	MaxEncoderValueInc 	:= SUPER^.MaxEncoderValue, 
+	RateIncPerMM:=1,
+	SetPoint := 100 (*mm*));
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_InputMapping" Id="{aebc4b7c-fe45-4f25-a7e0-2e5a59ebb2fb}" FolderPath="InternalMethods\">
+      <Declaration><![CDATA[METHOD PRIVATE _M_InputMapping : BOOL
+VAR_INPUT
+END_VAR
+VAR
+	ElementNumber : E_ElementNumber;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+//Prerequsities for ProBox transports
+IF(Param.rSettings.EnableMFC) THEN
+	//Following parameters must have defined state in order for ProBox to guarantee known functionality
+	Param.rSettings.EnableFreeRun := FALSE;
+	Param.rSettings.EnableMultizone := FALSE;
+	Param.rSettings.EnableJamAutoReset := FALSE;
+	Param.rSettings.ClearingDistance := 0;
+	Param.rSettings.AddTU_Data := FALSE;
+	Param.rSettings.DeleteTU_DataTakeOver := FALSE;
+	Param.rSettings.DeleteTU_DataZoneFree := FALSE;
+	Param.rSettings.EnablePrestart:=FALSE;				//important to set to false for transfer units
+	Param.rSettings.EnableRoutingUpdate:=TRUE;			//Default ON
+END_IF
+
+//Transport control Inputs
+EnableFastSpeed:=FALSE;			//Probox needs an alternative way of treating low speeds than BCF transport control. (this functionality is always enabled, but the EnableFastSpeed is set to false so that the BCF transport controller shall not run code unnecessary
+
+
+IF(__ISVALIDREF(FunctionRegistry[Param.reFunctionNumber].rFunctionInterface)) THEN
+	IF(NOT FunctionRegistry[Param.reFunctionNumber].rFunctionInterface.In.FunctionEnable) THEN
+		TransportEnableHandOver := FALSE;
+		IF(_M_CountTus()=0 AND _PB_TransportCtrlData.IsFirstZone) THEN 
+			TransportEnableTakeOver:=FALSE; //Disable takeover if all zones are free
+		END_IF 
+		TransportEnableHandOver:=FALSE; //disable handover for all zones
+	END_IF
+END_IF
+
+
+IF(__ISVALIDREF(FunctionRegistry[Param.reFunctionNumber].rSettingsFunction)) THEN
+	ElementNumber := FunctionRegistry[Param.reFunctionNumber].rSettingsFunction.eElementLink;
+	IF(__ISVALIDREF(ElementRegistry[ElementNumber].rElementInterface)) THEN
+		IF(NOT ElementRegistry[ElementNumber].rElementInterface.In.ElementEnable) THEN			
+			IF(_M_CountTus()=0 AND _PB_TransportCtrlData.IsFirstZone) THEN 
+				TransportEnableTakeOver:=FALSE; //Disable takeover if all zones are free
+			END_IF
+			TransportEnableHandOver:=FALSE; //disable handover for all zones
+		END_IF	
+	END_IF
+END_IF
+
+
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_IsDeslugging" Id="{c1353b20-108d-43e9-854d-2b3f4a73c1e9}" FolderPath="InternalMethods\">
+      <Declaration><![CDATA[// Check if zone is deslugging 
+METHOD PRIVATE _M_IsDeslugging : BOOL
+VAR_INPUT
+END_VAR
+VAR
+	NextNumberOfZones : INT;
+	MeNumberOfZones : INT;
+	OccupiedCount:INT;
+	IsLastZone : BOOL;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+//Last zone shall check if deslugging
+IF(NOT _PB_TransportCtrlData.IsLastZone) THEN
+	RETURN;
+END_IF
+
+// Check if function number is valid
+IF NextTransportData.eFunctionNumber > E_FunctionNumber.F_BEGIN_FUNCTION AND
+   NextTransportData.eFunctionNumber < E_FunctionNumber.F_END_FUNCTION THEN
+  	
+	IF __ISVALIDREF(FunctionRegistry[NextTransportData.eFunctionNumber].rSettingsFunction) THEN   		
+   		NextNumberOfZones := FunctionRegistry[NextTransportData.eFunctionNumber].rSettingsFunction.NumberOfZones;
+	ELSE
+		RETURN;		 
+	END_IF
+	
+			
+	//Count TU's on own function
+	OccupiedCount := _M_CountTus();
+			
+	// Deslugging whait with handover last TU until next function has filled upp all zones.  
+	_M_IsDeslugging := NextNumberOfZones < _PB_TransportCtrlData.NumberOfZones AND (OccupiedCount + NextNumberOfZones <= _PB_TransportCtrlData.NumberOfZones); 
+	
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_PB_Init" Id="{7f0677b0-9dc3-4301-99ee-73bd42e22dfa}" FolderPath="InternalMethods\">
+      <Declaration><![CDATA[METHOD _M_PB_Init : BOOL
+VAR_IN_OUT
+	ZoneData					: ST_ZoneData;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+IF( NOT ZoneData.Init) THEN
+	_PB_TransportCtrlData.Init:=FALSE;		
+END_IF
+
+IF(NOT _PB_TransportCtrlData.Init) THEN
+	IF __ISVALIDREF(FunctionRegistry[Param.reFunctionNumber].rSettingsFunction) THEN   		
+   		_PB_TransportCtrlData.NumberOfZones := FunctionRegistry[Param.reFunctionNumber].rSettingsFunction.NumberOfZones;
+		_PB_TransportCtrlData.Init := TRUE; 
+	END_IF
+	//Set to Default value.
+	MaxEncoderValue	:= 16#FFFF;
+	
+ELSE
+	//For each call check following.
+	IF __ISVALIDREF(FunctionRegistry[Param.reFunctionNumber].rSettingsFunction) THEN
+
+		_PB_TransportCtrlData.IsFirstZone := (Param.ZoneNumber = 1 AND  FunctionRegistry[Param.reFunctionNumber].rSettingsFunction.FlowDirectionREV = FALSE) OR
+											 (Param.ZoneNumber = _PB_TransportCtrlData.NumberOfZones AND  FunctionRegistry[Param.reFunctionNumber].rSettingsFunction.FlowDirectionREV = TRUE);   		
+   		
+		_PB_TransportCtrlData.IsLastZone := (Param.ZoneNumber = 1 AND  FunctionRegistry[Param.reFunctionNumber].rSettingsFunction.FlowDirectionREV = TRUE) OR
+											 (Param.ZoneNumber = _PB_TransportCtrlData.NumberOfZones AND  FunctionRegistry[Param.reFunctionNumber].rSettingsFunction.FlowDirectionREV = FALSE);
+		
+		_PB_TransportCtrlData.LastZoneIx := SEL(NOT FunctionRegistry[Param.reFunctionNumber].rSettingsFunction.FlowDirectionREV ,1,_PB_TransportCtrlData.NumberOfZones);
+   		_PB_TransportCtrlData.FirstZoneIx:= SEL(NOT FunctionRegistry[Param.reFunctionNumber].rSettingsFunction.FlowDirectionREV ,_PB_TransportCtrlData.NumberOfZones,1);
+	ELSE
+		; //raise error?
+	END_IF	
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_PB_PostErrorCheck" Id="{d388e795-dec2-49bc-b1ec-2c843da15848}">
+      <Declaration><![CDATA[METHOD PRIVATE _M_PB_PostErrorCheck : BOOL
+VAR_IN_OUT
+	ZoneData				: ST_ZoneData;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+
+//error handling
+CASE ZoneData.TransportControlData.eTransportState OF
+
+
+	E_TransportState.OCCUPIED, E_TransportState.SIMULTANEOUS_OCCUPIED:
+		IF( (Zonedata.TransportControlData.eTakeOverState = E_TakeOverState.COMPLETE OR Zonedata.TransportControlData.eTakeOverState = E_TakeOverState.INTERRUPTED) AND						 
+			PrevTransportData.rTransportControlData.eHandOverState = E_HandOverState.STOP) THEN
+			
+			//Set takeover to interupted.
+			Zonedata.TransportControlData.eTakeOverState := E_TakeOverState.INTERRUPTED;
+		END_IF
+			
+END_CASE]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_PB_PostTrspCtrl" Id="{c19ba1aa-e1fe-46d0-b971-b25a81d0b672}">
+      <Declaration><![CDATA[METHOD _M_PB_PostTrspCtrl : BOOL
+VAR_INPUT
+END_VAR
+VAR_IN_OUT
+	ZoneData			: ST_ZoneData;
+	InhibitHandoverRun	: BOOL;	
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+InhibitHandoverRun:=FALSE;
+
+
+CASE ZoneData.TransportControlData.eTransportState OF
+	E_TransportState.TAKEOVER:		
+		//adjust takeover distance on last zone, since the takeover may start earlier than the zone is. (depending on zone length configuration)
+		//when running without MFC the plausability check must be intact, hence, adjusting the zone length		
+		IF(_PB_TransportCtrlData.NumberOfZones>1 AND _PB_TransportCtrlData.IsLastZone AND			
+			ZoneData.TransportControlData.eTakeOverState = E_TakeOverState.ACTIVE AND
+			F_PB_GetTransportControlDataRef(Param.reFunctionNumber,_PB_TransportCtrlData.FirstZoneIx).eTransportState = E_TransportState.SIMULTANEOUS) THEN
+			// Reset timeout take
+			fbTimeoutTake(RUN:=FALSE); //reset DisplacmentDistance in order to adjust the correct takeover length
+		END_IF
+ 
+
+	E_TransportState.OCCUPIED, E_TransportState.HANDOVER:
+		
+		//if previous is occupied and we should start slugging, this happens when adding pallets by TTA or chaning drive direction
+		//should be fixed in BCF transportControl in state occupied.
+		IF( ((_PB_TransportCtrlData.IsFirstZone AND CtrlInPbTc.EnableSlugging) OR 
+			 (NOT _PB_TransportCtrlData.IsFirstZone AND PrevTransportData.rTransportControlData.Occupied)) AND
+			Param.rSettings.EnableSimultaneousTransport AND ZoneData.TransportControlData.Occupied AND 
+			ZoneData.TransportControlData.NumberOfPresentTUs>0 AND TU_DataTable[ZoneData.TransportControlData.TU_DataIndex].DataSet.JobPresent) THEN			
+			 ZoneData.TransportControlData.eTransportState := E_TransportState.SIMULTANEOUS_OCCUPIED;
+			 ZoneData.TransportControlData.eHandOverState := E_HandOverState.IDLE;
+			 IF(_PbTcDebugLogLevel>1) THEN fbDebugMsg.M_SendInfoMsg('Force state to SIMULTANEOUS_OCCUPIED'); END_IF			 
+		END_IF
+					
+	E_TransportState.SIMULTANEOUS_OCCUPIED:
+		//Deslugging must stop conveyor at last zone if next zone is longer than own zone	 
+		IF(Outputs.DriveHandoverRun AND ZoneData.TransportControlData.eHandOverState = E_HandOverState.COMPLETE AND _M_IsDeslugging()) THEN 
+			InhibitHandoverRun:=TRUE;//Outputs.DriveHandoverRun :=FALSE;
+		END_IF
+END_CASE]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_PB_PreErrorCheck" Id="{6eadc9f5-899b-47db-bc03-1cda7226c595}">
+      <Declaration><![CDATA[METHOD PRIVATE _M_PB_PreErrorCheck : BOOL
+VAR_IN_OUT
+	ZoneData					: ST_ZoneData;
+	ErrorData 					: ST_ErrorDataSet; // Error data	
+	PreventTakeover				: BOOL;
+	PreventHandover				: BOOL;
+END_VAR
+VAR_INST
+	Error_181					: BOOL; //Error Position occupied after handover
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+(*IF(NOT _PB_TransportCtrlData.Init AND NOT Param.rSettings.EnableMFC) THEN
+	F_SetError(	
+			ErrorType	:= E_ErrorType.WARNING,
+			ErrorParam	:= 'MFC has to be enabled for ProBox transport control',
+			ErrorMsg	:= E_ErrorConv.CONFIGURATION_ERROR,
+			ErrorData	:= ErrorData);
+END_IF*)
+
+
+//error handling
+CASE ZoneData.TransportControlData.eTransportState OF
+
+	E_TransportState.OCCUPIED, E_TransportState.SIMULTANEOUS_OCCUPIED:
+		//Keep TU Data on last zone if first zone not finalized takeover
+		IF( _PB_TransportCtrlData.IsLastZone AND 
+			NOT F_PB_GetTransportControlDataRef(Param.reFunctionNumber, _PB_TransportCtrlData.FirstZoneIx).Occupied AND
+			F_PB_GetTransportControlDataRef(Param.reFunctionNumber, _PB_TransportCtrlData.FirstZoneIx).NumberOfPresentTUs>0) THEN
+ 				PreventHandover:=TRUE;
+		END_IF
+		
+		//error handling when previous has error.
+		IF( (Zonedata.TransportControlData.eTakeOverState = E_TakeOverState.COMPLETE OR Zonedata.TransportControlData.eTakeOverState = E_TakeOverState.INTERRUPTED) AND
+			//_M_CheckZoneError(_ValidPrevFunction,_ValidPrevZone)) THEN						 
+			PrevTransportData.rTransportControlData.eHandOverState = E_HandOverState.STOP) THEN
+			//If prev has error 181 (POSITION_OCCUPIED_AFTER_HANDOVER) then set takeover interupted.			
+			IF(_PbTcDebugLogLevel>1 AND Zonedata.TransportControlData.eTakeOverState <> E_TakeOverState.INTERRUPTED) THEN 
+				fbDebugMsg.M_SendInfoMsg('Prev has error POSITION_OCCUPIED_AFTER_HANDOVER');
+			END_IF
+			Zonedata.TransportControlData.eTakeOverState := E_TakeOverState.INTERRUPTED;
+			PreventHandover:=TRUE;		
+			
+			// Set error to stop transfer when slugging (create train) when previous has error 'POSITION_OCCUPIED_AFTER_HANDOVER'
+			IF(_PB_TransportCtrlData.IsFirstZone AND _PB_TransportCtrlData.NumberOfZones>1 AND CtrlInPbTc.SlugSensorExists AND
+				ZoneData.TransportControlData.eTransportState = E_TransportState.SIMULTANEOUS_OCCUPIED) THEN				
+				F_SetError(	
+					ErrorType	:= E_ErrorType.ERROR,
+					ErrorParam	:= 'Check Slug Sensor',
+					ErrorMsg	:= E_ErrorConv.TRANSFER_ERROR,
+					ErrorData	:= ErrorData);
+			END_IF
+		
+		//recover			
+		ELSIF( Zonedata.TransportControlData.eTakeOverState = E_TakeOverState.INTERRUPTED AND
+			PrevTransportData.rTransportControlData.eHandOverState <> E_HandOverState.STOP) THEN
+			Zonedata.TransportControlData.eTakeOverState := E_TakeOverState.COMPLETE;
+		END_IF
+		Error_181:=FALSE;
+				 
+		
+		
+	E_TransportState.TAKEOVER:
+			
+		//Error check that is missing in BCF TransportControl when EnableSimultaneousTranspor is enabled 
+		IF( PrevTransportData.rTransportControlData.eHandOverState = E_HandOverState.READY AND ZoneOccupied AND Param.rSettings.EnableSimultaneousTransport) THEN				
+			// Set error
+			F_SetError(	
+				ErrorType	:= E_ErrorType.ERROR,
+				ErrorParam	:= '',
+				ErrorMsg	:= E_ErrorConv.POSITION_OCCUPIED_BEFORE_TAKEOVER,
+				ErrorData	:= ErrorData);
+		END_IF
+		
+		//First zone shall check last sensor (for multi zone functions) regardless if EnableSimultaneousTransport is enabled or not before taking over, and all zones are free (un-occupied). 
+		IF(_PB_TransportCtrlData.IsFirstZone AND _PB_TransportCtrlData.NumberOfZones>1 AND 
+			PrevTransportData.rTransportControlData.eHandOverState = E_HandOverState.READY) THEN
+			
+			IF(_M_CountTus() = 0 AND CtrlInPbTc.StopSensor) THEN //F_PB_GetTransportControlDataRef(Param.reFunctionNumber, _PB_TransportCtrlData.LastZoneIx).SensorOccupied) THEN				
+				// Set error (should be on last zone or on function level)				 
+				F_SetError(	
+					ErrorType	:= E_ErrorType.ERROR,
+					ErrorParam	:= 'Last zone is occupied before takeover',
+					ErrorMsg	:= E_ErrorConv.POSITION_OCCUPIED_BEFORE_TAKEOVER,
+					ErrorData	:= ErrorData);
+				//ihibit takeover
+				PreventTakeover := TRUE;				
+			END_IF
+		END_IF
+	
+	
+	E_TransportState.HANDOVER:
+		//Correction of BCF Transport control, since Position occupied after handover error (181) is possible to acknowledge and proceed.
+		IF(ErrorData.ErrorCode.Conv=E_ErrorConv.POSITION_OCCUPIED_AFTER_HANDOVER)THEN
+			Error_181:=TRUE;
+		END_IF
+		IF(ZoneOccupied AND Error_181) THEN
+			F_SetError(	
+					ErrorType	:= E_ErrorType.ERROR,
+					ErrorParam	:= '',
+					ErrorMsg	:= E_ErrorConv.POSITION_OCCUPIED_AFTER_HANDOVER,
+					ErrorData	:= ErrorData);
+		ELSIF(NOT ZoneOccupied AND Error_181) THEN
+			Error_181:=FALSE;
+		END_IF
+	
+END_CASE
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_PB_PreTrspCtrl" Id="{87574fd2-6391-4489-a0cd-13e9da19e82e}">
+      <Declaration><![CDATA[METHOD PRIVATE _M_PB_PreTrspCtrl : BOOL
+VAR_INPUT
+END_VAR
+VAR_IN_OUT
+	ZoneData					: ST_ZoneData;
+	ErrorData 					: ST_ErrorDataSet; // Error data
+	ForceTakeoverRun			: BOOL;
+	SimultaniousDisableTakeover : BOOL;
+	PreventTakeover				: BOOL;	
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[DriveFeedInRun:=FALSE;	//Set default to False, due to bug in BCF transportcontrol (when group is in manual mode DriveFeedInRun is not canceled)
+
+//Get previous function and zone
+IF(ZoneData.TransportControlData.eTakeOverState = E_TakeOverState.ACTIVE) THEN
+	IF(__ISVALIDREF(PrevTransportData.rTransportControlData)) THEN
+		IF(PrevTransportData.eFunctionNumber <> E_FunctionNumber.F_BEGIN_FUNCTION) THEN
+			_ValidPrevFunction 	:= PrevTransportData.eFunctionNumber;
+			_ValidPrevZone		:= PrevTransportData.ZoneNumber;
+		END_IF
+	END_IF
+		
+END_IF
+
+//ProBox Transport control multizone functionality
+CASE ZoneData.TransportControlData.eTransportState OF
+
+		
+	E_TransportState.FREE, E_TransportState.TAKEOVER:
+		
+		//prevent multizone function to takeover on first zone(if empty) if any other zones are occupied
+		IF(ZoneData.TransportControlData.eTakeOverState = E_TakeOverState.READY OR Zonedata.TransportControlData.eTakeOverState = E_TakeOverState.IDLE) THEN
+			IF(_PB_TransportCtrlData.IsFirstZone AND _M_CountTus()>0) THEN
+				PreventTakeover := TRUE;
+			END_IF
+			
+		//recover from error previous occupied after transition  
+		ELSIF(ZoneData.TransportControlData.Occupied AND
+			  ZoneData.TransportControlData.eTakeOverState = E_TakeOverState.INTERRUPTED AND 
+			  PrevTransportData.rTransportControlData.eHandOverState = E_HandOverState.ACTIVE) THEN
+			  Zonedata.TransportControlData.eTakeOverState := E_TakeOverState.COMPLETE;			
+		END_IF	
+				
+
+	E_TransportState.OCCUPIED:
+		//solves issue when removing an TU from the system (InOutFeedAddon or CraneXover etc)
+		IF(NOT ZoneData.TransportControlData.Occupied AND ZoneData.TransportControlData.NumberOfPresentTUs=0 AND NOT DriveRunning) THEN
+			ZoneData.TransportControlData.eTransportState := E_TransportState.FREE; 
+			IF(_PbTcDebugLogLevel>1) THEN fbDebugMsg.M_SendInfoMsg('Not logically occupied anymore'); END_IF
+		END_IF
+
+	
+	E_TransportState.SIMULTANEOUS_OCCUPIED:
+						
+		//check if previous function is able to handover a TU when an simultanious takeover is complete in order to make possible to handover TU
+		IF((ZoneData.TransportControlData.eTakeOverState = E_TakeOverState.READY OR Zonedata.TransportControlData.eTakeOverState = E_TakeOverState.IDLE) AND
+			ZoneData.TransportControlData.eHandOverState <> E_HandOverState.COMPLETE AND F_PB_GetTransportControlDataRef(_ValidPrevFunction,_ValidPrevZone).eTransportState <> E_TransportState.SIMULTANEOUS_STOP) THEN
+			
+			//solves issue when removing an TU from the system (InOutFeedAddon or CraneXover etc)			
+			IF(NOT ZoneData.TransportControlData.Occupied AND ZoneData.TransportControlData.NumberOfPresentTUs=0 AND NOT DriveRunning) THEN
+				ZoneData.TransportControlData.eTransportState := E_TransportState.FREE;
+				IF(_PbTcDebugLogLevel>1) THEN fbDebugMsg.M_SendInfoMsg('Not logically occupied anymore'); END_IF 
+			
+			
+			//Control slugging
+			ELSIF(_PB_TransportCtrlData.IsFirstZone AND CtrlInPbTc.EnableSlugging) THEN
+				//Hold TU on first zone while creating train
+				; // do nothing. SimultaniousDisableTakeover:=FALSE;
+			ELSIF(_PB_TransportCtrlData.IsFirstZone AND _PB_TransportCtrlData.NumberOfZones>1 AND _M_AllZonesOccupied() AND NOT CtrlInPbTc.EnableSlugging) THEN
+				SimultaniousDisableTakeover:=TRUE;
+				IF(_PbTcDebugLogLevel>2) THEN fbDebugMsg.M_SendInfoMsg('Simultanious all zone occupied relese train'); END_IF
+							
+			ELSIF(_PB_TransportCtrlData.IsFirstZone AND _PB_TransportCtrlData.NumberOfZones>1 AND _ValidPrevFunction <> E_FunctionNumber.F_BEGIN_FUNCTION AND 
+				 (F_PB_GetTransportControlDataRef(_ValidPrevFunction,_ValidPrevZone).eTransportState = E_TransportState.SIMULTANEOUS OR 
+				  F_PB_GetTransportControlDataRef(_ValidPrevFunction,_ValidPrevZone).eHandOverState = E_HandOverState.COMPLETE)) THEN				
+				ForceTakeoverRun:=TRUE;	//run conveoyr while previous is takeover acitve (else the TU's will stop when zone is occupied for a short while)
+				
+				IF(CtrlInPbTc.StopSensor) THEN
+					F_SetError(	
+						ErrorType	:= E_ErrorType.ERROR,
+						ErrorParam	:= 'Slugging error, stop sensor covered',
+						ErrorMsg	:= E_ErrorConv.TRANSFER_ERROR,
+						ErrorData	:= ErrorData);	 		
+				END_IF
+				
+			ELSIF(PrevTransportData.eFunctionNumber<>E_FunctionNumber.F_BEGIN_FUNCTION AND NOT PrevTransportData.rTransportControlData.Occupied AND
+				 (PrevTransportData.rTransportControlData.NumberOfPresentTUs=0 OR _PB_TransportCtrlData.IsFirstZone)) THEN				   
+				SimultaniousDisableTakeover:=TRUE;
+				IF(_PbTcDebugLogLevel>2) THEN fbDebugMsg.M_SendInfoMsg('Simultanious relese train'); END_IF
+			ELSIF(PrevTransportData.eFunctionNumber=E_FunctionNumber.F_BEGIN_FUNCTION) THEN
+				SimultaniousDisableTakeover :=TRUE;	
+				IF(_PbTcDebugLogLevel>2) THEN fbDebugMsg.M_SendInfoMsg('Previous not defined'); END_IF
+			END_IF
+		END_IF
+				
+
+	E_TransportState.HANDOVER:
+		IF(ZoneData.TransportControlData.Occupied = FALSE AND ZoneData.TransportControlData.eHandOverState <> E_HandOverState.STOP) THEN
+			//Solves PB-3889 - Stuck In Handover mode								
+			ZoneData.TransportControlData.eTransportState := E_TransportState.FREE;			
+		END_IF	
+		
+		//If handover and next function is complete, then always delete Occupied and NumberOfPresentTUs
+		//-If the transfer has finished, but not if it where just started.
+		//Solves issue with error 181=(POSITION_OCCUPIED_AFTER_HANDOVER) when Sensor is occupied after an complete handover, (A new handover is started after the error is acknowledged, despite theres no TU ID index or sensor occupied etc.)
+		//Solves issue with creating ghost pallets.
+		IF( NextTransportData.rTransportControlData.eTakeOverState = E_TakeOverState.COMPLETE AND ZoneData.TransportControlData.TU_DataIndex=0 AND
+			ZoneData.TransportControlData.eHandOverState <> E_HandOverState.STOP) THEN
+			ZoneData.TransportControlData.Occupied := FALSE;
+			ZoneData.TransportControlData.NumberOfPresentTUs := 0;
+		END_IF	
+	
+	E_TransportState.SIMULTANEOUS_STOP:		
+				
+			// If function is started
+			IF Param.rOperationState.eState = E_PositionState.STARTED THEN
+				// If transport is enabled
+				IF Inputs.Enable.Transport THEN		
+					// If no error is active
+					IF ErrorData.ErrorType <> E_ErrorType.ERROR THEN
+						
+						IF(ZoneData.TransportControlData.NumberOfPresentTUs = 0 AND NOT ZoneData.TransportControlData.Occupied) THEN
+							ZoneData.TransportControlData.eTransportState := E_TransportState.FREE;
+						ELSE
+							// Resume to simultaneous transport, otherwise do handover
+							ZoneData.TransportControlData.eTransportState := E_TransportState.SIMULTANEOUS;
+						END_IF						
+					END_IF
+				END_IF
+			END_IF		
+		
+	
+END_CASE
+
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_PB_SpeedControl" Id="{113bc706-55d7-4e51-8b3f-e355e1d18a09}">
+      <Declaration><![CDATA[METHOD PRIVATE _M_PB_SpeedControl : BOOL
+VAR_INPUT
+END_VAR
+VAR_IN_OUT
+	ZoneData					: ST_ZoneData;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[//---------------------------------------------------------------------------------------------------
+// ProBox Speed control
+//---------------------------------------------------------------------------------------------------
+// Reset fast speed active
+ZoneData.TransportControlData.FastSpeedActive := FALSE;
+// Set fast speed active
+IF CurrentSpeed <> E_ProBoxMotorSpeed.CREEP_SPEED AND CurrentSpeed <> E_ProBoxMotorSpeed.LOW_SPEED THEN
+	ZoneData.TransportControlData.FastSpeedActive := TRUE;
+END_IF
+// Reset fast speed active
+IF NOT NextTransportData.rTransportControlData.FastSpeedActive AND Outputs.DriveHandoverRun THEN
+	ZoneData.TransportControlData.FastSpeedActive := FALSE;
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_SyntheticSensor" Id="{1f4c1416-bc97-485f-9f8c-31da85df5c15}">
+      <Declaration><![CDATA[//Creats ZoneOccupied signal that is used by BCF transport control for Zones that does not have HW sensors.
+METHOD PRIVATE _M_SyntheticSensor : BOOL
+VAR_IN_OUT
+	ZoneData					: ST_ZoneData;
+END_VAR
+
+VAR_INST	
+	PrevZoneOccupiedRTrig			: R_TRIG;
+	LastZoneOccupiedRTrig			: R_TRIG;
+	
+END_VAR
+
+VAR
+	//FirstZoneIx : INT:=1;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[//Use stop sensor from CtrlInPbTc
+IF(_PB_TransportCtrlData.NumberOfZones<=1) THEN	
+	//set zone occupied when any sensor is active for elements with only one zone
+		ZoneOccupied := CtrlInPbTc.SlugSensor OR CtrlInPbTc.StopSensor;
+	RETURN;
+ELSIF(_PB_TransportCtrlData.IsFirstZone AND CtrlInPbTc.SlugSensorExists) THEN
+	
+	//disable plausibile takeover filtering if Param.rSettings.TakeoverPlausibilityDistance = 0 (else BCF transport control will use pre defined value)
+	IF(ZoneData.TransportControlData.eTakeOverState = E_TakeOverState.ACTIVE AND Param.rSettings.TakeoverPlausibilityDistance>0 AND NOT fbTakeoverPlausible.Q) THEN
+		ZoneOccupied:=ZoneData.TransportControlData.Occupied;
+		RETURN;	
+	ELSE
+		ZoneOccupied := CtrlInPbTc.SlugSensor;	
+		RETURN;
+	END_IF
+	
+ELSIF(_PB_TransportCtrlData.IsLastZone) THEN
+	ZoneOccupied := CtrlInPbTc.StopSensor;
+	RETURN;
+END_IF
+
+//only zones that does not have HW sensor shall execute following code
+
+//Clear Zone occupied
+IF(ZoneData.TransportControlData.eHandOverState = E_HandOverState.ACTIVE) THEN
+	ZoneOccupied := FALSE;
+END_IF
+
+
+//Set ZoneOccupied depending on previous and next being occupied or not
+//Note, the first zone taking over last TU from previous, must run entire TransportParam.ZoneLength so we know it is fully on the takeover conveyor.  
+PrevZoneOccupiedRTrig(CLK:=PrevTransportData.rTransportControlData.Occupied AND PrevTransportData.rTransportControlData.eTransportState <> E_TransportState.HANDOVER AND PrevTransportData.eFunctionNumber<>E_FunctionNumber.F_BEGIN_FUNCTION);	
+LastZoneOccupiedRTrig(CLK:=CtrlInPbTc.StopSensor AND (ZoneData.TransportControlData.eTransportState = E_TransportState.SIMULTANEOUS OR
+													  ZoneData.TransportControlData.eTransportState = E_TransportState.SIMULTANEOUS_OCCUPIED));
+
+IF(fbTimeoutTake.Run) THEN
+	//ZoneLenght distance is achieved
+	IF(fbTimeoutTake.Displacement > (TransportParam.ZoneLength-TransportParam.ZoneEndLength)) THEN
+		IF(_PbTcDebugLogLevel>1 AND NOT ZoneOccupied) THEN fbDebugMsg.M_SendInfoMsg(CONCAT('Takeover Distance achieved: ', DINT_TO_STRING(fbTimeoutTake.Displacement))); END_IF  
+		ZoneOccupied := TRUE;
+	ELSIF(PrevZoneOccupiedRTrig.Q AND fbTimeoutTake.Displacement>0) THEN
+		IF(_PbTcDebugLogLevel>1 AND NOT ZoneOccupied) THEN fbDebugMsg.M_SendInfoMsg(CONCAT('Takeover aborted PrevRTrig, distance: ', DINT_TO_STRING(fbTimeoutTake.Displacement))); END_IF
+		ZoneOccupied := TRUE;	
+	ELSIF(LastZoneOccupiedRTrig.Q) THEN
+		IF(_PbTcDebugLogLevel>1 AND NOT ZoneOccupied) THEN fbDebugMsg.M_SendInfoMsg(CONCAT('Takeover aborted NextRTrig, distance: ', DINT_TO_STRING(fbTimeoutTake.Displacement))); END_IF
+		ZoneOccupied := TRUE;
+	END_IF
+END_IF
+
+
+
+// support TTA, TTC for zones that does not have HW sensors
+IF(NOT ZoneData.Init) THEN	
+	IF(ZoneData.TransportControlData.DataPresent AND ZoneData.TransportControlData.TU_DataIndex>0(*AND HW_SensorStop*)) THEN
+		//Enable Adding TU when receiving TTA (*only possible if last zone is occupied*)
+		ZoneOccupied:=TRUE;
+	ELSIF(NOT ZoneData.TransportControlData.DataPresent AND ZoneData.TransportControlData.TU_DataIndex=0) THEN 
+		//Clear SoftSensorOccupied on init of zone	// Clear SoftSensorOccupied uppon an init (TDQ)
+		ZoneOccupied:=FALSE;
+	END_IF
+END_IF
+
+
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_TransferBusy" Id="{e5e32264-8845-4234-9d78-2e33721eef1e}" FolderPath="InternalMethods\">
+      <Declaration><![CDATA[METHOD PRIVATE _M_TransferBusy : BOOL
+VAR_INPUT
+	MyZoneIx		: INT;
+	TransferType	: UINT; //TakeOver=1, //HandOver=2, // Both=3	
+END_VAR
+VAR
+	i	:INT;
+	ToBusy,HoBusy	:BOOL;			
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+IF(_PB_TransportCtrlData.NumberOfZones<=1) THEN
+	RETURN;
+END_IF
+
+//Check other zones transfer is busy or stopped/interupted
+FOR i:=1 TO _PB_TransportCtrlData.NumberOfZones DO	
+	IF(__ISVALIDREF(FunctionRegistry[Param.reFunctionNumber].Zone[i].refZoneData)) THEN
+		IF(i<>MyZoneIx) THEN		
+			IF(TransferType.0) THEN	// TransferType =1 or 3		 
+				ToBusy := FunctionRegistry[Param.reFunctionNumber].Zone[i].refZoneData.TransportControlData.eTakeOverState <> E_TakeOverState.IDLE AND 
+						  FunctionRegistry[Param.reFunctionNumber].Zone[i].refZoneData.TransportControlData.eTakeOverState <> E_TakeOverState.READY;
+			END_IF
+			IF(TransferType.1) THEN // TransferType =2 or 3
+				HoBusy := FunctionRegistry[Param.reFunctionNumber].Zone[i].refZoneData.TransportControlData.eHandOverState <> E_HandOverState.IDLE AND
+						  FunctionRegistry[Param.reFunctionNumber].Zone[i].refZoneData.TransportControlData.eHandOverState <> E_HandOverState.READY;			
+			END_IF
+		END_IF
+	END_IF
+	
+	//Quit if busy
+	IF(ToBusy OR HoBusy) THEN
+		_M_TransferBusy:=TRUE;
+		RETURN;
+	END_IF
+	
+END_FOR
+
+	
+]]></ST>
+      </Implementation>
+    </Method>
+    <LineIds Name="FB_ProBoxTransportControl">
+      <LineId Id="2857" Count="5" />
+      <LineId Id="2963" Count="0" />
+      <LineId Id="2864" Count="10" />
+      <LineId Id="2876" Count="19" />
+      <LineId Id="2897" Count="9" />
+      <LineId Id="3210" Count="0" />
+      <LineId Id="2908" Count="0" />
+      <LineId Id="3205" Count="0" />
+      <LineId Id="2929" Count="30" />
+      <LineId Id="419" Count="0" />
+      <LineId Id="107" Count="12" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ProBoxTransportControl._M_AllZonesOccupied">
+      <LineId Id="10" Count="0" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ProBoxTransportControl._M_CheckZoneError">
+      <LineId Id="25" Count="8" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ProBoxTransportControl._M_ControlTransportRequests">
+      <LineId Id="61" Count="3" />
+      <LineId Id="58" Count="2" />
+      <LineId Id="40" Count="0" />
+      <LineId Id="42" Count="0" />
+      <LineId Id="46" Count="0" />
+      <LineId Id="54" Count="0" />
+      <LineId Id="47" Count="0" />
+      <LineId Id="43" Count="0" />
+      <LineId Id="41" Count="0" />
+      <LineId Id="53" Count="0" />
+      <LineId Id="6" Count="0" />
+      <LineId Id="52" Count="0" />
+      <LineId Id="7" Count="25" />
+      <LineId Id="37" Count="0" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ProBoxTransportControl._M_CountTus">
+      <LineId Id="6" Count="6" />
+      <LineId Id="5" Count="0" />
+      <LineId Id="17" Count="1" />
+    </LineIds>
+    <LineIds Name="FB_ProBoxTransportControl._M_GapCheck">
+      <LineId Id="66" Count="2" />
+      <LineId Id="238" Count="0" />
+      <LineId Id="155" Count="0" />
+      <LineId Id="132" Count="0" />
+      <LineId Id="116" Count="0" />
+      <LineId Id="269" Count="0" />
+      <LineId Id="91" Count="0" />
+      <LineId Id="103" Count="0" />
+      <LineId Id="98" Count="4" />
+      <LineId Id="248" Count="0" />
+      <LineId Id="104" Count="2" />
+      <LineId Id="108" Count="0" />
+      <LineId Id="245" Count="0" />
+      <LineId Id="124" Count="1" />
+      <LineId Id="109" Count="1" />
+      <LineId Id="118" Count="1" />
+      <LineId Id="215" Count="0" />
+      <LineId Id="246" Count="0" />
+      <LineId Id="120" Count="0" />
+      <LineId Id="122" Count="1" />
+      <LineId Id="128" Count="2" />
+      <LineId Id="126" Count="0" />
+      <LineId Id="135" Count="4" />
+      <LineId Id="93" Count="0" />
+      <LineId Id="92" Count="0" />
+      <LineId Id="8" Count="0" />
+      <LineId Id="5" Count="0" />
+      <LineId Id="30" Count="0" />
+      <LineId Id="17" Count="0" />
+      <LineId Id="53" Count="11" />
+      <LineId Id="252" Count="0" />
+      <LineId Id="251" Count="0" />
+      <LineId Id="254" Count="0" />
+      <LineId Id="253" Count="0" />
+      <LineId Id="255" Count="0" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ProBoxTransportControl._M_InputMapping">
+      <LineId Id="24" Count="2" />
+      <LineId Id="71" Count="0" />
+      <LineId Id="27" Count="1" />
+      <LineId Id="70" Count="0" />
+      <LineId Id="29" Count="9" />
+      <LineId Id="23" Count="0" />
+      <LineId Id="6" Count="2" />
+      <LineId Id="52" Count="0" />
+      <LineId Id="54" Count="1" />
+      <LineId Id="57" Count="0" />
+      <LineId Id="77" Count="0" />
+      <LineId Id="53" Count="0" />
+      <LineId Id="9" Count="0" />
+      <LineId Id="64" Count="0" />
+      <LineId Id="16" Count="0" />
+      <LineId Id="15" Count="0" />
+      <LineId Id="10" Count="2" />
+      <LineId Id="60" Count="1" />
+      <LineId Id="58" Count="0" />
+      <LineId Id="78" Count="0" />
+      <LineId Id="63" Count="0" />
+      <LineId Id="5" Count="0" />
+      <LineId Id="17" Count="0" />
+      <LineId Id="45" Count="0" />
+      <LineId Id="44" Count="0" />
+      <LineId Id="46" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ProBoxTransportControl._M_IsDeslugging">
+      <LineId Id="91" Count="0" />
+      <LineId Id="89" Count="0" />
+      <LineId Id="92" Count="2" />
+      <LineId Id="90" Count="0" />
+      <LineId Id="6" Count="3" />
+      <LineId Id="11" Count="0" />
+      <LineId Id="13" Count="0" />
+      <LineId Id="30" Count="1" />
+      <LineId Id="14" Count="0" />
+      <LineId Id="26" Count="0" />
+      <LineId Id="71" Count="0" />
+      <LineId Id="53" Count="0" />
+      <LineId Id="79" Count="0" />
+      <LineId Id="61" Count="0" />
+      <LineId Id="78" Count="0" />
+      <LineId Id="25" Count="0" />
+      <LineId Id="21" Count="0" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ProBoxTransportControl._M_PB_Init">
+      <LineId Id="6" Count="0" />
+      <LineId Id="11" Count="0" />
+      <LineId Id="7" Count="1" />
+      <LineId Id="20" Count="0" />
+      <LineId Id="19" Count="0" />
+      <LineId Id="21" Count="0" />
+      <LineId Id="18" Count="0" />
+      <LineId Id="26" Count="0" />
+      <LineId Id="14" Count="0" />
+      <LineId Id="54" Count="0" />
+      <LineId Id="53" Count="0" />
+      <LineId Id="59" Count="0" />
+      <LineId Id="27" Count="0" />
+      <LineId Id="39" Count="0" />
+      <LineId Id="31" Count="0" />
+      <LineId Id="41" Count="0" />
+      <LineId Id="40" Count="0" />
+      <LineId Id="42" Count="0" />
+      <LineId Id="32" Count="0" />
+      <LineId Id="43" Count="1" />
+      <LineId Id="50" Count="1" />
+      <LineId Id="49" Count="0" />
+      <LineId Id="30" Count="0" />
+      <LineId Id="34" Count="0" />
+      <LineId Id="33" Count="0" />
+      <LineId Id="24" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ProBoxTransportControl._M_PB_PostErrorCheck">
+      <LineId Id="15" Count="3" />
+      <LineId Id="10" Count="2" />
+      <LineId Id="5" Count="0" />
+      <LineId Id="19" Count="0" />
+      <LineId Id="23" Count="0" />
+      <LineId Id="22" Count="0" />
+      <LineId Id="24" Count="0" />
+      <LineId Id="21" Count="0" />
+      <LineId Id="20" Count="0" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ProBoxTransportControl._M_PB_PostTrspCtrl">
+      <LineId Id="37" Count="0" />
+      <LineId Id="34" Count="2" />
+      <LineId Id="6" Count="1" />
+      <LineId Id="71" Count="0" />
+      <LineId Id="83" Count="0" />
+      <LineId Id="72" Count="0" />
+      <LineId Id="74" Count="0" />
+      <LineId Id="81" Count="0" />
+      <LineId Id="84" Count="0" />
+      <LineId Id="75" Count="1" />
+      <LineId Id="8" Count="2" />
+      <LineId Id="13" Count="0" />
+      <LineId Id="47" Count="0" />
+      <LineId Id="50" Count="0" />
+      <LineId Id="48" Count="0" />
+      <LineId Id="95" Count="0" />
+      <LineId Id="59" Count="0" />
+      <LineId Id="94" Count="0" />
+      <LineId Id="49" Count="0" />
+      <LineId Id="51" Count="0" />
+      <LineId Id="93" Count="0" />
+      <LineId Id="14" Count="0" />
+      <LineId Id="69" Count="0" />
+      <LineId Id="25" Count="3" />
+      <LineId Id="5" Count="0" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ProBoxTransportControl._M_PB_PreErrorCheck">
+      <LineId Id="36" Count="0" />
+      <LineId Id="179" Count="6" />
+      <LineId Id="7" Count="2" />
+      <LineId Id="60" Count="0" />
+      <LineId Id="59" Count="0" />
+      <LineId Id="62" Count="0" />
+      <LineId Id="284" Count="0" />
+      <LineId Id="279" Count="0" />
+      <LineId Id="281" Count="2" />
+      <LineId Id="295" Count="1" />
+      <LineId Id="280" Count="0" />
+      <LineId Id="63" Count="0" />
+      <LineId Id="65" Count="1" />
+      <LineId Id="81" Count="1" />
+      <LineId Id="79" Count="0" />
+      <LineId Id="132" Count="0" />
+      <LineId Id="134" Count="0" />
+      <LineId Id="212" Count="2" />
+      <LineId Id="222" Count="0" />
+      <LineId Id="218" Count="3" />
+      <LineId Id="215" Count="1" />
+      <LineId Id="211" Count="0" />
+      <LineId Id="200" Count="0" />
+      <LineId Id="143" Count="0" />
+      <LineId Id="68" Count="0" />
+      <LineId Id="146" Count="1" />
+      <LineId Id="10" Count="0" />
+      <LineId Id="197" Count="1" />
+      <LineId Id="165" Count="0" />
+      <LineId Id="11" Count="0" />
+      <LineId Id="58" Count="0" />
+      <LineId Id="18" Count="8" />
+      <LineId Id="94" Count="3" />
+      <LineId Id="100" Count="0" />
+      <LineId Id="117" Count="0" />
+      <LineId Id="120" Count="4" />
+      <LineId Id="108" Count="0" />
+      <LineId Id="113" Count="0" />
+      <LineId Id="112" Count="0" />
+      <LineId Id="105" Count="0" />
+      <LineId Id="99" Count="0" />
+      <LineId Id="98" Count="0" />
+      <LineId Id="27" Count="1" />
+      <LineId Id="168" Count="0" />
+      <LineId Id="158" Count="2" />
+      <LineId Id="223" Count="0" />
+      <LineId Id="227" Count="2" />
+      <LineId Id="139" Count="1" />
+      <LineId Id="135" Count="0" />
+      <LineId Id="166" Count="1" />
+      <LineId Id="136" Count="0" />
+      <LineId Id="34" Count="0" />
+      <LineId Id="268" Count="0" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ProBoxTransportControl._M_PB_PreTrspCtrl">
+      <LineId Id="81" Count="0" />
+      <LineId Id="77" Count="0" />
+      <LineId Id="13" Count="7" />
+      <LineId Id="234" Count="0" />
+      <LineId Id="21" Count="3" />
+      <LineId Id="108" Count="0" />
+      <LineId Id="26" Count="7" />
+      <LineId Id="157" Count="2" />
+      <LineId Id="161" Count="2" />
+      <LineId Id="34" Count="0" />
+      <LineId Id="219" Count="0" />
+      <LineId Id="172" Count="1" />
+      <LineId Id="208" Count="0" />
+      <LineId Id="174" Count="1" />
+      <LineId Id="283" Count="0" />
+      <LineId Id="176" Count="0" />
+      <LineId Id="36" Count="0" />
+      <LineId Id="148" Count="0" />
+      <LineId Id="38" Count="0" />
+      <LineId Id="155" Count="0" />
+      <LineId Id="40" Count="2" />
+      <LineId Id="267" Count="0" />
+      <LineId Id="269" Count="0" />
+      <LineId Id="271" Count="2" />
+      <LineId Id="268" Count="0" />
+      <LineId Id="266" Count="0" />
+      <LineId Id="43" Count="8" />
+      <LineId Id="70" Count="1" />
+      <LineId Id="53" Count="0" />
+      <LineId Id="95" Count="0" />
+      <LineId Id="305" Count="0" />
+      <LineId Id="301" Count="3" />
+      <LineId Id="300" Count="0" />
+      <LineId Id="306" Count="0" />
+      <LineId Id="299" Count="0" />
+      <LineId Id="61" Count="0" />
+      <LineId Id="190" Count="0" />
+      <LineId Id="63" Count="1" />
+      <LineId Id="188" Count="1" />
+      <LineId Id="250" Count="0" />
+      <LineId Id="265" Count="0" />
+      <LineId Id="264" Count="0" />
+      <LineId Id="249" Count="0" />
+      <LineId Id="118" Count="0" />
+      <LineId Id="120" Count="2" />
+      <LineId Id="125" Count="3" />
+      <LineId Id="130" Count="0" />
+      <LineId Id="137" Count="1" />
+      <LineId Id="131" Count="0" />
+      <LineId Id="147" Count="0" />
+      <LineId Id="132" Count="1" />
+      <LineId Id="117" Count="0" />
+      <LineId Id="119" Count="0" />
+      <LineId Id="6" Count="0" />
+      <LineId Id="5" Count="0" />
+      <LineId Id="90" Count="4" />
+      <LineId Id="209" Count="0" />
+      <LineId Id="329" Count="3" />
+      <LineId Id="96" Count="1" />
+      <LineId Id="333" Count="0" />
+      <LineId Id="98" Count="5" />
+      <LineId Id="2" Count="0" />
+      <LineId Id="298" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ProBoxTransportControl._M_PB_SpeedControl">
+      <LineId Id="9" Count="11" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ProBoxTransportControl._M_SyntheticSensor">
+      <LineId Id="276" Count="5" />
+      <LineId Id="367" Count="0" />
+      <LineId Id="375" Count="0" />
+      <LineId Id="368" Count="1" />
+      <LineId Id="373" Count="0" />
+      <LineId Id="370" Count="1" />
+      <LineId Id="283" Count="0" />
+      <LineId Id="374" Count="0" />
+      <LineId Id="372" Count="0" />
+      <LineId Id="284" Count="13" />
+      <LineId Id="301" Count="0" />
+      <LineId Id="304" Count="0" />
+      <LineId Id="307" Count="0" />
+      <LineId Id="352" Count="0" />
+      <LineId Id="309" Count="28" />
+      <LineId Id="211" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ProBoxTransportControl._M_TransferBusy">
+      <LineId Id="107" Count="0" />
+      <LineId Id="115" Count="1" />
+      <LineId Id="114" Count="0" />
+      <LineId Id="109" Count="1" />
+      <LineId Id="79" Count="0" />
+      <LineId Id="3" Count="0" />
+      <LineId Id="7" Count="0" />
+      <LineId Id="51" Count="5" />
+      <LineId Id="126" Count="0" />
+      <LineId Id="98" Count="1" />
+      <LineId Id="58" Count="2" />
+      <LineId Id="100" Count="0" />
+      <LineId Id="89" Count="0" />
+      <LineId Id="101" Count="0" />
+      <LineId Id="62" Count="2" />
+      <LineId Id="111" Count="1" />
+      <LineId Id="65" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

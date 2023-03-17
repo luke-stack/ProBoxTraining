@@ -1,0 +1,60 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.12">
+  <POU Name="F_SearchAssignmentId" Id="{63fd5e34-de09-41a9-b092-7a0cd8862282}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION F_SearchAssignmentId : DINT
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 404529 $
+ *	Revision date	:	$Date: 2018-04-23 08:21:38 +0200 (Mo., 23 Apr 2018) $
+ *	Last changed by	:	$Author: b7bolm $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/trunk/01_Software/BCF/BCF/JumpStart/20_Product/10_App/10_Base/10_Lib/10_Conv/F_SearchAssignmentId.TcPOU $
+ *
+ *	Purpose			:	The function searchs searches for the AsssignementID in the TU-Data Table and then the ElementName.
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+VAR_INPUT
+	AssignmentID		: UDINT; // TU ID as string 
+END_VAR
+
+VAR
+	TU_DataIndex		: DINT; // Index 
+END_VAR]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[// Initialize
+F_SearchAssignmentId := 0;
+
+// Check assignment ID is different to UNKNOWN
+IF AssignmentID = Conveyor.ASSIGNMENT_ID_UNKNOWN THEN
+	// Otherwise return 0
+	RETURN;
+ELSIF 	AssignmentID = 0 THEN
+	// Otherwise return 0
+	RETURN;
+END_IF
+
+// Loop over all TU_Data sets 
+FOR TU_DataIndex := 0  TO NUMBER_OF_TU_DATA DO
+	// Search for equal id
+	IF TU_DataTable[TU_DataIndex].AssignmentID = AssignmentID THEN
+		F_SearchAssignmentId := TU_DataIndex;
+		RETURN;
+	END_IF
+END_FOR
+]]></ST>
+    </Implementation>
+    <LineIds Name="F_SearchAssignmentId">
+      <LineId Id="3" Count="19" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

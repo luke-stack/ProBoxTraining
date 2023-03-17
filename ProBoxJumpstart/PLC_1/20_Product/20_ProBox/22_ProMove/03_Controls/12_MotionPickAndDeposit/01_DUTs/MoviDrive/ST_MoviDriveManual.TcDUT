@@ -1,0 +1,13 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.4">
+  <DUT Name="ST_MoviDriveManual" Id="{95c73026-c7e4-457d-bb6b-8fed1e15c127}">
+    <Declaration><![CDATA[TYPE ST_MoviDriveManual :
+STRUCT
+	EmergencyDrive 	: BOOL;		// Key switch emergency drive, used when limit switch activated
+	DriveFwd		: BOOL; 	// Manual drive carrige (Shuttle car forward / Vertical Cv up)
+	DriveRev		: BOOL; 	// Manual drive carrige (Shuttle car reverse / Vertical Cv down)	
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

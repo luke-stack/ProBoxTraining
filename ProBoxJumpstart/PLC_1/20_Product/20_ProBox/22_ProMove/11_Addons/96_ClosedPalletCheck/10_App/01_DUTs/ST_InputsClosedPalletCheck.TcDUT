@@ -1,0 +1,13 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <DUT Name="ST_InputsClosedPalletCheck" Id="{a801e775-3b45-4c41-91c9-2dc9e328ad50}">
+    <Declaration><![CDATA[// Load stacker HW inputs
+TYPE ST_InputsClosedPalletCheck :
+STRUCT	
+	HW				: ST_HW_InputsClosedPalletCheck;	// Hardware inputs
+	CtrlIn			: ST_CtrlInClosedPalletCheck;		// ser function control inputs	
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

@@ -1,0 +1,451 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.6">
+  <POU Name="FB_TakeoverTracking" Id="{ae7a22ed-39c7-42e8-96b6-76aa027dfce0}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK FB_TakeoverTracking IMPLEMENTS I_TakeoverListener
+(**************************************************************************************
+* Application : BoxControl Framework 
+* Revision date : $Date: 2021-04-01 10:33:04 +0200 (tor, 01 apr 2021) $
+* Author : CDC
+* ------------------------------------------------------------------------------------ 
+* © Swisslog AG 
+* Swisslog is not liable for any usage of this source code that is not agreed 
+* on between Swisslog and the other party. The mandatory legal liability remains 
+* unaffected. 
+* ------------------------------------------------------------------------------------ 
+* Project revision history: 
+* 
+* 	VERSION 		DATE 			INITIALS 			DESCRIPTION 
+* 	0.1 			31.08.2018 		ahe 				First implementation
+* 
+**************************************************************************************)
+VAR_INPUT
+	Param 						: ST_TransportControlParam; // Parameter of the transport control
+	PrevTransportData  			: ST_TransportData; // Previous transport data
+	Enable						: BOOL; // Transport enable
+	EnableTakeOver 				: BOOL; // Transport enable takeover 
+	StartTrackingSensor			: BOOL; // Start tracking Sensor
+	StartTrackingPosition		: UDINT; // Position of start tracking sensor [mm]
+	DriveReady					: BOOL;  // Drive is ready to be switched on
+	EncoderValueInc				: UDINT; // Encoder value [mm]
+	MaxEncoderValueInc			: UDINT; // Max encoder value [mm]
+	RateIncPerMM				: LREAL; // Resolution amount of inc per mm
+	iWindowTracking				: I_WindowTracking;  // Window tracking implementation
+END_VAR
+VAR_OUTPUT
+	DriveRun   				 	: BOOL; // Run signal for drive
+	DriveStop   			 	: BOOL; // Stop signal for drive
+	RequestPrevTransportData 	: BOOL; // Request previous transport data
+	DeletePrevTransportData	 	: BOOL; // Delete previous transport data
+	Initialized					: BOOL; // Module is initialized
+	eTakeOverState 				: E_TakeoverState; // Current takeover state
+	ePrevHandOverState			: E_HandOverState; // Previous handover state
+	TakeoverOngoing				: BOOL; // A takeover is ongoing, statemachine in operation
+	TakingOverTU				: BOOL; // True when TU is being handed over and has not reached start tracking sensor yet.
+END_VAR
+VAR_IN_OUT
+	ZoneData					: ST_ZoneData; // Zone data
+	ErrorData 					: ST_ErrorDataSet; // Error data
+END_VAR
+VAR
+	fbDebugMsg					: FB_DebugMsg; // Debug instance
+	DebugMsg					: T_MAXSTRING; // Debug message
+	fbTimeoutTake 				: FB_DisplacementMeter; // Timeout take
+	TimeoutTakeDistance			: DINT; // Distance until timeout take is triggered [mm]
+	TransitionTU_DataIndex 		: DINT; // Transition TU-data index at takeover from previous zone to tracking
+	TrackingZoneIndex			: UINT; // Tracking zone index
+	TrackingZoneIndexRE			: UINT; // Tracking zone index rear edge
+	eTrackingState				: E_TakeoverTrackingState; // Tracking state machine
+	TransportEnable				: BOOL; // Hardstop 
+	TransportEnableTakeOver		: BOOL; // Softstop takeover
+	TU_InTransition				: BOOL; // Tu is between takeover and start tracking
+	fbTakeover 					: FB_Takeover; // Takeover control
+	CreateGap					: BOOL; // Command to create gap
+	fbGapMeter					: FB_DisplacementMeter; // Distance meter to create minimal gap between TUs
+	DrivePreStart 				: BOOL; // Drive pre start 2 zones ahead
+	AbortTakeover				: BOOL; // Takeover must be aborted
+END_VAR]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[//Input mapping
+TransportEnable := Enable AND Param.rZoneEnable.Transport;
+TransportEnableTakeOver := EnableTakeOver AND Param.rZoneEnable.TakeOver;
+
+F_ResetError(Reset := FALSE, ErrorData := ErrorData);	
+
+IF iWindowTracking = 0 THEN
+	RETURN;
+END_IF
+
+// Initialization of the module
+// Module initialization
+IF NOT Initialized THEN
+	RETURN;
+END_IF
+
+(**************************************************************************************************************
+   Tracking state
+***************************************************************************************************************)
+CASE eTrackingState OF
+	// Idle
+	E_TakeoverTrackingState.WAITING_FOR_TAKEOVER:
+		TakingOverTU := FALSE;
+		TU_InTransition := FALSE;
+		IF ZoneData.TransportControlData.eTakeOverState = E_TakeoverSTate.ACTIVE THEN
+			fbTimeoutTake(Run := FALSE);
+			TU_InTransition := TRUE;
+			TakingOverTU := TRUE;
+			
+			// When an adding process at Starttracking is ongoing, wait until its finished
+			IF TrackingZoneIndex > 0 THEN
+				eTrackingState := E_TakeoverTrackingState.TRACKING_ALLOCATION_ONGOING;
+			ELSE
+				eTrackingState := E_TakeoverTrackingState.DETECT_TU_FRONTEDGE;
+			END_IF
+		END_IF
+		
+	// Adding process still ongoing, wait until start tracking is free to add new one
+	E_TakeoverTrackingState.TRACKING_ALLOCATION_ONGOING:
+		IF TrackingZoneIndex = 0 THEN
+			eTrackingState := E_TakeoverTrackingState.DETECT_TU_FRONTEDGE;
+		END_IF
+		TakingOverTU := FALSE;
+		
+	E_TakeoverTrackingState.DETECT_TU_FRONTEDGE:
+		// Run timeout start tracking
+		fbTimeoutTake(
+			Run 				:= TRUE, 
+			EncoderValueInc		:= EncoderValueInc,
+			MaxEncoderValueInc 	:= MaxEncoderValueInc,
+			RateIncPerMM		:= RateIncPerMM,
+			SetPoint 			:= TimeoutTakeDistance);
+	
+		// Wait until TU arrives at start tracking sensor
+		IF StartTrackingSensor THEN
+			TrackingZoneIndex := iWindowTracking.M_AddTU_FE(
+									mTU_Index			:= TransitionTU_DataIndex, 
+									mAbsolutePosition	:= StartTrackingPosition, 
+									miActionListener	:= 0);
+		
+			IF TrackingZoneIndex > 0 THEN
+				eTrackingState := E_TakeoverTrackingState.FINISH_TAKEOVER;
+			ELSE
+				DebugMsg := 'Fatal error - New TU FE could not be added to WindowTracking';
+				fbDebugMsg.M_SendInfoMsg(DebugMsg);	
+				eTrackingState := E_TakeoverTrackingState.WAITING_FOR_TAKEOVER;
+			END_IF
+			
+			TU_InTransition := FALSE;
+			TakingOverTU := FALSE;
+
+		ELSIF fbTimeoutTake.Q THEN
+			fbTimeoutTake(Run := FALSE);
+			
+			// Send debug message
+			DebugMsg := CONCAT('Timeout start tracking, TU did not show up at start tracking sensor', Param.rSettings.ZoneName);
+			fbDebugMsg.M_SendInfoMsg(DebugMsg);	
+			
+			TU_InTransition := FALSE;
+			TakingOverTU := FALSE;
+			AbortTakeover := TRUE;
+			M_DeleteTU_DataIndex();
+			
+			eTrackingState := E_TakeoverTrackingState.FINISH_TAKEOVER;
+		END_IF
+		
+	// WAITING_TRANSPORT_FINISHED
+	E_TakeoverTrackingState.FINISH_TAKEOVER:
+		fbTimeoutTake();
+		
+		IF ZoneData.TransportControlData.eTakeOverState <> E_TakeoverSTate.ACTIVE AND 
+           ZoneData.TransportControlData.eTakeOverState <> E_TakeoverSTate.COMPLETE THEN
+			AbortTakeover := FALSE;
+			eTrackingState := E_TakeoverTrackingState.WAITING_FOR_TAKEOVER;
+			
+		ELSIF fbTimeoutTake.Q THEN
+			fbTimeoutTake(Run := FALSE);
+			
+			// Send debug message
+			DebugMsg := CONCAT('Timeout takeover, handshake not completed', Param.rSettings.ZoneName);
+			fbDebugMsg.M_SendInfoMsg(DebugMsg);	
+			
+			AbortTakeover := TRUE;
+			M_DeleteTU_DataIndex();
+		END_IF
+ELSE
+	eTrackingState := E_TakeoverTrackingState.WAITING_FOR_TAKEOVER;
+END_CASE
+
+(**************************************************************************************************************
+   Complete adding process 
+   When a TU was detected at start tracking, wait for rear edge to complete
+***************************************************************************************************************)
+IF TrackingZoneIndex > 0 THEN
+	IF NOT StartTrackingSensor THEN
+		TrackingZoneIndexRE := iWindowTracking.M_AddTU_RE(
+									mAbsolutePosition	:= StartTrackingPosition, 
+									mZoneIndex			:= TrackingZoneIndex);
+									
+		// When the adding was completet successfully
+		IF TrackingZoneIndexRE > 0 THEN
+			;
+		ELSE
+			DebugMsg := 'Fatal error - New TU RE could not be added to WindowTracking';
+			fbDebugMsg.M_SendInfoMsg(DebugMsg);	
+		END_IF
+		
+		TrackingZoneIndex := 0;
+	END_IF
+END_IF
+
+(**************************************************************************************************************
+   Create minimum gap between TUs
+***************************************************************************************************************)
+IF eTakeOverState = E_TakeOverState.ACTIVE THEN
+	CreateGap := TRUE;
+END_IF
+
+IF Param.rSettings.MinimumTU_Distance > 0 THEN 
+	IF CreateGap AND eTakeOverState = E_TakeOverState.IDLE THEN
+		fbGapMeter(
+			Run					:= TRUE, 
+			EncoderValueInc		:= EncoderValueInc,
+			MaxEncoderValueInc 	:= MaxEncoderValueInc,
+			RateIncPerMM 		:= RateIncPerMM,
+			SetPoint			:= Param.rSettings.MinimumTU_Distance);
+	END_IF
+ELSE
+	CreateGap := FALSE;
+END_IF
+
+fbGapMeter( 
+	EncoderValueInc		:= EncoderValueInc,
+	MaxEncoderValueInc 	:= MaxEncoderValueInc,
+	RateIncPerMM 		:= RateIncPerMM);
+	
+IF fbGapMeter.Q THEN
+	fbGapMeter(Run := FALSE);
+	CreateGap := FALSE;
+END_IF
+
+(**************************************************************************************************************
+   Takeover state
+***************************************************************************************************************)
+fbTakeover(
+	Enable					:= TransportEnable AND
+            		   		  (Param.rOperationState.eState = E_PositionState.STARTED OR
+	         		    	   Param.rOperationState.eState = E_PositionState.STOPPING),
+	RequestTakeover			:= Param.rOperationState.eState = E_PositionState.STARTED AND
+							   TransportEnableTakeOver AND
+							   NOT TU_InTransition AND
+							   NOT CreateGap,						   
+	AbortTakeover 			:= AbortTakeover,
+	PrevZonePresent			:= Param.rePrevFunctionNumber > 0,
+	EncoderValue			:= EncoderValueInc,
+	MaxEncoderValue			:= MaxEncoderValueInc,
+	EncoderRate 			:= RateIncPerMM,
+	DriveReady				:= DriveReady,
+	iListener				:= THIS^,
+	DriveRun				=> ,
+	eTakeOverState			=> eTakeOverState,
+	ePrevHandOverState		=> ePrevHandOverState,
+	RequestPrevTransportData=> RequestPrevTransportData,
+	DeletePrevTransportData	=> DeletePrevTransportData,
+	TakeoverOngoing			=> TakeoverOngoing,
+	PrevTransportData		:= PrevTransportData,
+	ErrorData				:= ErrorData);
+
+DrivePreStart := PrevTransportData.rTransportControlData.TransportActive AND eTakeOverState = E_TakeoverState.READY OR fbTakeover.DriveRequest;
+	
+DriveRun := fbTakeover.DriveRun OR CreateGap OR eTrackingState = E_TakeoverTrackingState.DETECT_TU_FRONTEDGE OR DrivePreStart;
+
+ZoneData.TransportControlData.eTakeOverState := eTakeOverState;
+
+DriveStop := fbTakeover.TakeoverOngoing AND NOT fbTakeover.DriveRun AND NOT fbTakeover.DriveRequest;
+]]></ST>
+    </Implementation>
+    <Method Name="M_DeleteTU_DataIndex" Id="{007879ce-f399-4bb0-95ca-e845eeba3ee2}">
+      <Declaration><![CDATA[METHOD PROTECTED  M_DeleteTU_DataIndex
+
+VAR_INPUT
+END_VAR
+
+VAR
+  WindowTrackingIndex   : UDINT                  := 0;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[{warning disable C0371}
+IF NOT __ISVALIDREF(ZoneData) THEN
+	RETURN;
+END_IF
+
+// If a TU-data index is existing 
+IF TransitionTU_DataIndex <> 0 THEN
+	// If TU- and assignment ID is unknown
+	IF     TU_DataTable[TransitionTU_DataIndex].TU_ID.ASCII  = Conveyor.TU_ID_UNKNOWN
+       AND TU_DataTable[TransitionTU_DataIndex].AssignmentID = Conveyor.ASSIGNMENT_ID_UNKNOWN THEN
+		// debug message: '11-001-0095-01-1,  unknown TU_DataIndex deleted,  TU_DataIndex = 5,  TuID = 000012345,  AssignmentID = 999999999'
+		DebugMsg := '';
+		DebugMsg := CONCAT(DebugMsg, F_AddDividerToSisString(Param.rSettings.ZoneName));
+		DebugMsg := CONCAT(DebugMsg, ',  unknown TU_DataIndex deleted');
+		DebugMsg := CONCAT(DebugMsg, F_CreateTU_DataString(TU_DataIndex:= TransitionTU_DataIndex));
+		// Delete TU-data
+		F_DeleteTU_Data(
+			TU_DataIndex	:= TransitionTU_DataIndex,
+			NoTTC 			:= FALSE);
+
+		// delete TU index from window tracking
+		WindowTrackingIndex:= iWindowTracking.M_GetZoneIndex(mAbsolutePosition:= StartTrackingPosition);
+		IF WindowTrackingIndex > 0 THEN
+			IF iWindowTracking.P_ZoneTable[WindowTrackingIndex].TU_Index = TransitionTU_DataIndex THEN
+				iWindowTracking.P_ZoneTable[WindowTrackingIndex].TU_Index:= 0;
+			END_IF
+		END_IF
+	END_IF
+
+	// Update last TU data index			
+	IF TransitionTU_DataIndex <> 0 THEN
+		ZoneData.TransportControlData.LastTU_DataIndex := ZoneData.TransportControlData.TU_DataIndex;
+	END_IF		
+
+	// Update states
+	TransitionTU_DataIndex := 0;
+	ZoneData.TransportControlData.DataPresent := FALSE;
+END_IF
+{warning restore C0371}
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_Init" Id="{47ee8f10-1c5c-4e29-a876-777dd2f8e9ca}">
+      <Declaration><![CDATA[/// Initialize Takeover tracking
+METHOD M_Init : BOOL
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[fbTakeover.M_Init();
+eTrackingState := E_TakeoverTrackingState.WAITING_FOR_TAKEOVER;
+
+fbTimeoutTake(Run := FALSE);
+
+// Timeout take monitoring
+IF Param.rSettings.TimeoutTakeDistance <> 0 THEN
+	TimeoutTakeDistance := Param.rSettings.TimeoutTakeDistance;
+ELSE
+	TimeoutTakeDistance := 3000;
+END_IF
+
+CreateGap := TRUE;
+
+Initialized := TRUE;
+
+M_Init := TRUE;
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_PrevUnlinkedEvent" Id="{c6be421a-1618-49d0-aefd-b5514932cf62}">
+      <Declaration><![CDATA[METHOD M_PrevUnlinkedEvent
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[M_DeleteTU_DataIndex();
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_TakeoveCompleteEvent" Id="{b85c498e-8b81-4d2a-85ef-4e6923e951f9}">
+      <Declaration><![CDATA[METHOD M_TakeoveCompleteEvent
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_TakeoverStartEvent" Id="{0f5d15c7-f034-4289-bb11-bd7d88ce5937}">
+      <Declaration><![CDATA[METHOD M_TakeoverStartEvent
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_TakeoverStopEvent" Id="{938de7ce-42b4-4fa8-a888-fd60c91b66a3}">
+      <Declaration><![CDATA[METHOD M_TakeoverStopEvent
+VAR_INPUT
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_TU_IndexMovedEvent" Id="{f695a44e-9865-4bb6-93a6-1955506963d2}">
+      <Declaration><![CDATA[METHOD M_TU_IndexMovedEvent
+VAR_INPUT
+	mMovedTU_Index	: DINT;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+IF mMovedTU_Index > 0 THEN
+	// Delete TU-data if it is configured
+	IF Param.rSettings.DeleteTU_DataTakeover THEN
+		// debug message: '11-001-0095-01-1,  moved TU_DataIndex deleted,  TU_DataIndex = 5,  TuID = 000012345,  AssignmentID = 999999999'
+		DebugMsg := '';
+		DebugMsg := CONCAT(DebugMsg, F_AddDividerToSisString(Param.rSettings.ZoneName));
+		DebugMsg := CONCAT(DebugMsg, ',  moved TU_DataIndex deleted');
+		DebugMsg := CONCAT(DebugMsg, F_CreateTU_DataString(TU_DataIndex:= mMovedTU_Index));
+		fbDebugMsg.M_SendInfoMsg(DebugMsg);
+		// If data has been deleted
+		If F_DeleteTU_Data(
+			TU_DataIndex 	:= mMovedTU_Index,
+			NoTTC 			:= FALSE) THEN
+	
+			M_DeleteTU_dataIndex();
+		END_IF
+	END_IF
+END_IF
+
+TransitionTU_DataIndex := mMovedTU_Index;
+]]></ST>
+      </Implementation>
+    </Method>
+    <ObjectProperties>
+      <XmlArchive>
+        <Data>
+          <o xml:space="preserve" t="UMLStereoTypeContainerObject">
+            <v n="IsType" t="UMLType">BaseArea</v>
+            <v n="Stereotype">""</v>
+            <d n="Stereotypes" t="Hashtable" />
+          </o>
+        </Data>
+        <TypeList>
+          <Type n="Hashtable">System.Collections.Hashtable</Type>
+          <Type n="String">System.String</Type>
+          <Type n="UMLStereoTypeContainerObject">{30250973-b110-4e31-b562-c102e042dca4}</Type>
+          <Type n="UMLType">{0197b136-405a-42ee-bb27-fd08b621d0cf}</Type>
+        </TypeList>
+      </XmlArchive>
+    </ObjectProperties>
+    <LineIds Name="FB_TakeoverTracking">
+      <LineId Id="3" Count="194" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_TakeoverTracking.M_DeleteTU_DataIndex">
+      <LineId Id="3" Count="38" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_TakeoverTracking.M_Init">
+      <LineId Id="3" Count="16" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_TakeoverTracking.M_PrevUnlinkedEvent">
+      <LineId Id="3" Count="0" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_TakeoverTracking.M_TakeoveCompleteEvent">
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_TakeoverTracking.M_TakeoverStartEvent">
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_TakeoverTracking.M_TakeoverStopEvent">
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_TakeoverTracking.M_TU_IndexMovedEvent">
+      <LineId Id="3" Count="20" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

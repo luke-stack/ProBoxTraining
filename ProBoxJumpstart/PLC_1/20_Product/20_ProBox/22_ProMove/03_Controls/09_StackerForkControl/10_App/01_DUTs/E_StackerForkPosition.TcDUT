@@ -1,0 +1,33 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.4">
+  <DUT Name="E_StackerForkPosition" Id="{2911931a-8223-4b82-9885-d1184053121a}">
+    <Declaration><![CDATA[TYPE E_StackerForkPosition :
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision:  $
+ *	Revision date	:	$Date: $
+ *	Last changed by	:	$Author: $
+ *	URL				:	$URL: $
+ *
+ *	Purpose			:	positions for motorized forks 
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.05.2018		lca					Example
+ *
+ **************************************************************************************)	
+(
+	UNDEFINED,	
+	IN,
+	OUT
+);
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

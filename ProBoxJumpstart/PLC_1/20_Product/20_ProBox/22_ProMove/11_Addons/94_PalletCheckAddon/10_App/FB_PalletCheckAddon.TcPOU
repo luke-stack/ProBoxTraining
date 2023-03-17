@@ -1,0 +1,554 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <POU Name="FB_PalletCheckAddon" Id="{ae75fcdf-ed78-449d-a983-e9b0e0fa9c2b}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK FB_PalletCheckAddon EXTENDS FB_FunctionConv
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 417092 $
+ *	Revision date	:	$Date: 2018-11-14 12:58:58 +0100 (Mi., 14 Nov 2018) $
+ *	Last changed by	:	$Author: q8aberh $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/ProMove/02_Controls/ProBox/03_Implementation/01_DevelopmentProject/01_Software/ProBox_COE/ProBox_DevProj_v1.0/PLC_1/20_Product/10_App/12_E_Functions/11_ProBox/94_PalletCheckAddon/10_App/FB_PalletCh $
+ *
+ *	Purpose			:	Pallet Check configuration
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+
+VAR_INPUT
+	Config						: ST_CFG_PalletCheck;
+	HW_Inputs					: ST_HW_InputsPalletCheck;
+	CtrlIn						: ST_CtrlInPalletCheck;
+END_VAR
+
+VAR
+	_Trigger					: BOOL := FALSE; // Start measurement		
+	Inputs						: ST_InputsPalletCheck;	 		// Function specific inputs
+	fb_AddOnErrHandler			: FB_AddOnErrHandler();
+	eState						: E_PalletCheckStates;			// State machine
+	eLastState					: E_PalletCheckStates;
+	
+	TU_DataIndex				: DINT; 		// TU Data index	
+	MeasurementActive			: BOOL;			// Measurement has been triggered
+	SensorTriggerStartActivated : BOOL;			// Sensor trigger start activated
+	SensorTriggerStopActivated  : BOOL;			// Sensor trigger stop activated
+	TunnelRunnerFault			: BOOL;			// Faulty runner or tunnel 
+	Sensor_RunnerTunnel_Clear	: BOOL; 		// Runner/Tunnel sensor is clear
+	Sensor_TriggerStart_Clear	: BOOL;			// Start trigger sensor is clear
+	Sensor_TriggerStop_Clear	: BOOL;			// Stop trigger sensor is clear
+END_VAR
+
+VAR PERSISTENT
+	Settings					: ST_CFG_PalletCheck;	
+END_VAR
+ ]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[(**************************************************************************************************************
+   Input mapping
+***************************************************************************************************************)
+A_InputMapping();
+
+(**************************************************************************************************************
+   Initialization
+***************************************************************************************************************)
+A_Init();
+
+(**************************************************************************************************************
+   State control 
+***************************************************************************************************************)
+A_StateControl();
+
+(**************************************************************************************************************
+   Error handler
+***************************************************************************************************************)
+A_ErrorHandler();
+fb_AddOnErrHandler(AddOnSettingsFunction :=SettingsFunction, AddOnFunctionData:=FunctionData);
+
+(**************************************************************************************************************
+   Pallet check states
+***************************************************************************************************************)
+A_PalletCheckStates();
+
+(**************************************************************************************************************
+   Interface handler out
+***************************************************************************************************************)
+M_ITC_ProcessOut();
+
+(**************************************************************************************************************
+   Output mapping
+***************************************************************************************************************)
+A_OutputMapping();
+
+]]></ST>
+    </Implementation>
+    <Action Name="A_Init" Id="{fb420b6d-44fc-4c24-86fb-d7a9afce8dd9}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_Init
+ * 	FUNCTION	Initialize function
+ **************************************************************************************)
+
+(********** Profile Check modified **********)
+
+// Update Registry
+M_UpdateRegistry();
+
+IF NOT FunctionData.Init AND FunctionData.InitRunning THEN
+	// When the subsystem is started, 
+	// and its released to initialize
+	IF FunctionData.OperationState.Info.SystemReady AND
+	   SettingsFunction.eFunctionNumber < FunctionData.OperationState.InitRelease.eLimitFunctionNumber THEN
+	   
+	   IF M_InitFunction(FALSE) THEN
+			// Function initialized - and initialization done
+			FunctionData.Init := TRUE;
+			FunctionData.InitRunning := FALSE;
+			
+			// reset values
+			eLastState := eState;
+			eState := E_PalletCheckStates.INIT;
+		
+			// Set reset cmd
+			FunctionData.ErrorData.Error.ResetError := TRUE;
+			
+			DebugMsg := CONCAT('Initialization done. Function: ', ConfigFunction.FunctionName);
+			fbDebugMsg.M_SendInfoMsg(DebugMsg);
+		END_IF
+	END_IF
+	
+// Init request -> Clean all, close all links
+ELSIF NOT FunctionData.Init THEN
+	
+	// reset values
+	eLastState := eState;
+	eState := E_PalletCheckStates.INIT;
+	
+	// internal values
+	FunctionData.OperationState := FunctionBase.PositionStateEmpty;
+	
+	// load function specific configuration to settings
+	Settings := Config;
+	
+	// load config / Close links to other funcitons,elements
+	M_PreInit();
+	
+	// to start init a valid functionnumber and element link is needed
+	FunctionData.InitRunning := SettingsFunction.eFunctionNumber > 0 AND
+								SettingsFunction.eElementLink > 0;
+END_IF
+]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="A_InputMapping" Id="{24d6a18e-ab7d-4f3a-affc-8da7ba626c1e}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_InputMapping
+ * 	FUNCTION	Input mapping
+ **************************************************************************************)
+  
+(**************************************************************************************
+   Hardware Inputs
+***************************************************************************************)
+
+Inputs.Sensor_RunnerTunnel		:= HW_Inputs.Sensor_RunnerTunnel XOR Settings.HW_InputInverted.Sensor_RunnerTunnel;
+Inputs.Sensor_TriggerStart		:= HW_Inputs.Sensor_TriggerStart XOR Settings.HW_InputInverted.Sensor_TriggerStart;
+Inputs.Sensor_TriggerStop		:= HW_Inputs.Sensor_TriggerStop XOR Settings.HW_InputInverted.Sensor_TriggerStop;
+ 
+(**************************************************************************************
+   Element states
+***************************************************************************************)
+// Get status of the corresponding element
+M_GetElementStates();
+
+(**************************************************************************************
+   Transport data of corresponding zone
+***************************************************************************************)
+Inputs.TransportData := F_GetTransportControlData(
+							eFunctionNumber	:= SettingsFunction.FunctionLink.eFunctionNumber,
+							ZoneNumber 		:= SettingsFunction.FunctionLink.ZoneNumber);						
+
+]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="A_InterfaceHandlerOut" Id="{452c361d-28b7-48c8-b5ac-e1cfd83fb2b5}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_InterfaceHandlerOut
+ * 	FUNCTION	Handles outgoing interfaces
+ **************************************************************************************)
+ 
+ 
+(**************************************************************************************************************
+   ITC Handler Out
+***************************************************************************************************************)
+M_ITC_ProcessOut();]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="A_OutputMapping" Id="{571e7101-23d9-4feb-ad7c-515c9f35ef26}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+   Hardware outputs
+***************************************************************************************)
+
+;
+
+(**************************************************************************************
+   Order outputs (Commands to corresponding element)
+***************************************************************************************)
+// Drive run not needed
+FunctionInterface.Out.FunctionOrders.ReqDriveRun := FALSE;
+
+// Allow element to drive
+FunctionInterface.Out.FunctionOrders.Enable := TRUE;
+FunctionInterface.Out.FunctionOrders.Enable_34 := TRUE;
+  
+(**************************************************************************************
+   AddOn outputs
+***************************************************************************************)
+FunctionInterface.Out.AddOnOrders.Enable := FunctionData.ErrorData.Error.ErrorType <> E_ErrorType.ERROR;
+
+FunctionInterface.Out.AddOnOrders.EnableTakeover := TRUE;
+FunctionInterface.Out.AddOnOrders.EnableHandover := eState = E_PalletCheckStates.READY
+													OR eState = E_PalletCheckStates.WAIT_UNTIL_FREE;
+FunctionInterface.Out.AddOnOrders.DataReady		 := eState = E_PalletCheckStates.READY
+													OR eState = E_PalletCheckStates.WAIT_UNTIL_FREE;
+
+
+]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="A_PalletCheckStates" Id="{0a228c0f-db81-44f8-95fd-b94223f9dc27}">
+      <Implementation>
+        <ST><![CDATA[
+F_ResetError(
+	Reset 	  := FALSE,
+	ErrorData := FunctionData.ErrorData.ErrorDataSet[2]);
+
+(**************************************************************************************************************
+   Detect Trigger
+***************************************************************************************************************)
+
+IF Settings.EnableExternalTrigger THEN
+	_Trigger := CtrlIn.Trigger;
+ELSE	
+	//Automatically trig measurement	
+	//check if the destination is to this function and zone, then if takevoer state is active we shall trigg the scanner
+	 _Trigger := F_PB_GetTuDestination(SettingsFunction.FunctionLink.eFunctionNumber,SettingsFunction.FunctionLink.ZoneNumber,1) = SettingsFunction.FunctionLink.eFunctionNumber AND
+				 F_PB_GetTransportControlDataRef(SettingsFunction.FunctionLink.eFunctionNumber,SettingsFunction.FunctionLink.ZoneNumber).eTakeOverState = E_TakeOverState.ACTIVE;	
+END_IF
+
+(**************************************************************************************
+   States
+***************************************************************************************)
+CASE eState OF
+
+	(**************************************************************************************
+   		INIT
+	***************************************************************************************)
+	E_PalletCheckStates.INIT:
+		// Reset
+		FunctionInterface.Out.AddOnOrders.EnableTakeover := FALSE;
+		
+		MeasurementActive			:= FALSE;
+		SensorTriggerStartActivated := FALSE;
+		SensorTriggerStopActivated  := FALSE;
+		TunnelRunnerFault			:= FALSE;
+		Sensor_RunnerTunnel_Clear	:= FALSE;
+		Sensor_TriggerStart_Clear	:= FALSE;
+		Sensor_TriggerStop_Clear	:= FALSE;	
+			
+		// Wait until error is resetted
+		IF FunctionData.ErrorData.Error.ErrorType <> E_ErrorType.ERROR THEN
+			// Change state
+			eLastState := eState;
+			eState := E_PalletCheckStates.READY;
+		ELSE
+			// Change state
+			eLastState := eState;
+			eState := E_PalletCheckStates.ERROR;
+		END_IF		
+
+	(**********************************************************************************
+   		READY
+	***********************************************************************************)
+	E_PalletCheckStates.READY:
+		// Measurement is started, start with checking that sensors are unblocked
+		IF _Trigger THEN
+			eLastState := eState;
+			eState := E_PalletCheckStates.SENSOR_CHECK;
+		END_IF	
+		
+	(**********************************************************************************
+   		SENSOR CHECK
+	***********************************************************************************)
+	E_PalletCheckStates.SENSOR_CHECK:
+
+		Sensor_RunnerTunnel_Clear	:=	TRUE;
+		Sensor_TriggerStart_Clear	:=	TRUE;
+		Sensor_TriggerStop_Clear	:=	TRUE;
+		
+		IF Inputs.Sensor_RunnerTunnel THEN
+			Sensor_RunnerTunnel_Clear	:=	FALSE;
+		END_IF
+			
+		IF Inputs.Sensor_TriggerStart THEN
+			Sensor_TriggerStart_Clear	:=	FALSE;
+		END_IF
+		
+		IF Inputs.Sensor_TriggerStop THEN
+			Sensor_TriggerStop_Clear	:=	FALSE;
+		END_IF
+	
+		// Check that all sensors are unblocked
+		IF Sensor_RunnerTunnel_Clear AND 
+		   Sensor_TriggerStart_Clear AND 
+		   Sensor_TriggerStop_Clear THEN
+		  
+			// Activate measurement state 
+			eLastState := eState;
+			eState := E_PalletCheckStates.MEASURING;
+		ELSE
+			// Error
+			F_SetError(
+				ErrorType 	:= E_ErrorType.ERROR,
+				ErrorParam 	:= 'Sensors not clear before measuring',
+				ErrorMsg 	:= E_ErrorConv.INCORRECT_SENSOR_SIGNAL,
+				ErrorData 	:= FunctionData.ErrorData.ErrorDataSet[2]);			
+		
+			// Disable takeover if configured
+			IF Settings.DisableTakeoverIfError THEN
+				FunctionInterface.Out.AddOnOrders.EnableTakeover := FALSE;
+			END_IF				
+			// If any of the sensors are blocked raise sensor error
+			eLastState := eState;
+			eState := E_PalletCheckStates.ERROR;			
+		END_IF		
+		
+	(**************************************************************************************
+   		MEASURING
+	***************************************************************************************)		
+	E_PalletCheckStates.MEASURING:
+		// Start measurement
+		IF Inputs.Sensor_TriggerStart THEN
+			MeasurementActive			:=	TRUE;
+			SensorTriggerStartActivated	:=	TRUE;
+		END_IF
+		
+		// Stop measurment
+		IF Inputs.Sensor_TriggerStop THEN
+			MeasurementActive			:=	FALSE;
+			SensorTriggerStopActivated	:=	TRUE;
+		END_IF
+		
+		// Measurement runner/tunnel sensor state
+		IF MeasurementActive AND NOT Inputs.Sensor_RunnerTunnel THEN
+			TunnelRunnerFault	:=	TRUE;
+		END_IF
+		
+		// When measurement is finished 
+		IF NOT _Trigger AND Inputs.TransportData.Occupied THEN
+			// Reset
+			MeasurementActive := FALSE;	
+		
+			// Change state
+			eLastState 	:= eState;
+			eState 		:= E_PalletCheckStates.DATA_AVAIABLE;				
+		END_IF
+		
+	(**************************************************************************************
+   		DATA AVAIABLE
+	***************************************************************************************)			
+	E_PalletCheckStates.DATA_AVAIABLE:
+		// Get TU Data index of corresponding function
+		TU_DataIndex := Inputs.TransportData.TU_DataIndex;
+		// Check TU Index
+		IF TU_DataIndex <> 0 THEN
+			// If start trigger sensors did not detect anything (i.e. wrong positioned)
+			IF NOT SensorTriggerStartActivated THEN
+				// Write result to TU Data
+				TU_DataTable[TU_DataIndex].Profile.Runner := 9;
+				TU_DataTable[TU_DataIndex].Profile.Tunnel := 9;				
+				
+				// Error
+				F_SetError(
+					ErrorType 	:= E_ErrorType.ERROR,
+					ErrorParam 	:= 'Start trigger sensor did not detect anything',
+					ErrorMsg 	:= E_ErrorConv.SENSOR_FRONT_DEFECT,
+					ErrorData 	:= FunctionData.ErrorData.ErrorDataSet[2]);
+				
+				// Disable handover if configured
+				IF Settings.DisableHandoverIfError THEN
+					FunctionInterface.Out.AddOnOrders.EnableHandover := FALSE;
+				END_IF
+				// Change state
+				eLastState 	:= eState;
+				eState 		:= E_PalletCheckStates.ERROR;
+			// If stop trigger sensors did not detect anything (i.e. wrong positioned)
+			ELSIF NOT SensorTriggerStopActivated THEN
+				// Write result to TU Data
+				TU_DataTable[TU_DataIndex].Profile.Runner := 9;
+				TU_DataTable[TU_DataIndex].Profile.Tunnel := 9;
+				
+				// Error
+				F_SetError(
+					ErrorType 	:= E_ErrorType.ERROR,
+					ErrorParam 	:= 'Stop trigger sensor did not detect anything',
+					ErrorMsg 	:= E_ErrorConv.SENSOR_REAR_DEFECT,
+					ErrorData 	:= FunctionData.ErrorData.ErrorDataSet[2]);
+				
+				// Disable handover if configured
+				IF Settings.DisableHandoverIfError THEN
+					FunctionInterface.Out.AddOnOrders.EnableHandover := FALSE;
+				END_IF
+				// Change state
+				eLastState 	:= eState;
+				eState 		:= E_PalletCheckStates.ERROR;
+			// No sensor error
+			ELSE
+				// If runner/tunnel fault was detected
+				IF TunnelRunnerFault THEN
+					// Write result to TU Data
+					TU_DataTable[TU_DataIndex].Profile.Runner := 2;
+					TU_DataTable[TU_DataIndex].Profile.Tunnel := 2;	
+				ELSE
+					// Write result to TU Data
+					TU_DataTable[TU_DataIndex].Profile.Runner := 1;
+					TU_DataTable[TU_DataIndex].Profile.Tunnel := 1;
+				END_IF
+				// Change state
+				eLastState 	:= eState;
+				eState 		:= E_PalletCheckStates.WAIT_UNTIL_FREE;
+			END_IF
+(*			
+			// Set data ready
+			FunctionInterface.Out.AddOnOrders.DataReady := TRUE;
+			FunctionInterface.Out.AddOnOrders.EnableHandover := TRUE;
+*)			
+			// Reset
+			SensorTriggerStartActivated	:= FALSE;
+			SensorTriggerStopActivated	:= FALSE;
+			TunnelRunnerFault := FALSE;								
+		ELSE
+			// Error, no data present
+			F_SetError(
+				ErrorType 	:= E_ErrorType.ERROR,
+				ErrorParam 	:= 'No TU Data found',
+				ErrorMsg 	:= E_ErrorConv.NO_FREE_TU_DATA_SET,
+				ErrorData 	:= FunctionData.ErrorData.ErrorDataSet[2]);
+			
+			// Reset
+			SensorTriggerStartActivated	:= FALSE;
+			SensorTriggerStopActivated	:= FALSE;
+			TunnelRunnerFault := FALSE;				
+			
+			// Disable handover if configured
+			IF Settings.DisableHandoverIfError THEN					
+				FunctionInterface.Out.AddOnOrders.EnableHandover := FALSE;
+			END_IF
+			// Change state
+			eLastState 	:= eState;
+			eState 		:= E_PalletCheckStates.ERROR;
+		END_IF																
+	
+	(**********************************************************************************
+   		WAIT_UNTIL_FREE
+	***********************************************************************************)
+	E_PalletCheckStates.WAIT_UNTIL_FREE:
+		// Wait until zone is free
+		IF	(Inputs.TransportData.eTransportState = E_TransportState.FREE
+		   	OR Inputs.TransportData.eTransportState = E_TransportState.FREE_RUN
+		   	OR Inputs.TransportData.eTransportState = E_TransportState.IDLE) THEN		   
+				// Change state
+				eLastState 	:= eState;
+				eState 		:= E_PalletCheckStates.READY;
+		END_IF	
+				
+	(**************************************************************************************
+   		ERROR 
+	***************************************************************************************)	
+	E_PalletCheckStates.ERROR:	
+		// Wait until error is resetted
+		IF FunctionData.ErrorData.Error.ErrorType <> E_ErrorType.ERROR THEN
+			// Go back to init
+			eLastState 	:= eState;
+			eState 		:= E_PalletCheckStates.INIT;
+		END_IF
+END_CASE
+]]></ST>
+      </Implementation>
+    </Action>
+    <LineIds Name="FB_PalletCheckAddon">
+      <LineId Id="3" Count="34" />
+      <LineId Id="2" Count="0" />
+      <LineId Id="39" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_PalletCheckAddon.A_Init">
+      <LineId Id="2" Count="52" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_PalletCheckAddon.A_InputMapping">
+      <LineId Id="2" Count="25" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_PalletCheckAddon.A_InterfaceHandlerOut">
+      <LineId Id="2" Count="8" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_PalletCheckAddon.A_OutputMapping">
+      <LineId Id="2" Count="13" />
+      <LineId Id="30" Count="0" />
+      <LineId Id="16" Count="5" />
+      <LineId Id="23" Count="1" />
+      <LineId Id="27" Count="2" />
+      <LineId Id="25" Count="1" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_PalletCheckAddon.A_PalletCheckStates">
+      <LineId Id="262" Count="4" />
+      <LineId Id="528" Count="2" />
+      <LineId Id="551" Count="0" />
+      <LineId Id="553" Count="6" />
+      <LineId Id="267" Count="0" />
+      <LineId Id="545" Count="0" />
+      <LineId Id="268" Count="8" />
+      <LineId Id="278" Count="0" />
+      <LineId Id="280" Count="0" />
+      <LineId Id="282" Count="23" />
+      <LineId Id="307" Count="1" />
+      <LineId Id="311" Count="7" />
+      <LineId Id="571" Count="0" />
+      <LineId Id="320" Count="35" />
+      <LineId Id="357" Count="4" />
+      <LineId Id="363" Count="3" />
+      <LineId Id="368" Count="4" />
+      <LineId Id="560" Count="0" />
+      <LineId Id="374" Count="20" />
+      <LineId Id="396" Count="2" />
+      <LineId Id="400" Count="0" />
+      <LineId Id="402" Count="1" />
+      <LineId Id="405" Count="1" />
+      <LineId Id="408" Count="1" />
+      <LineId Id="411" Count="14" />
+      <LineId Id="427" Count="4" />
+      <LineId Id="433" Count="14" />
+      <LineId Id="449" Count="14" />
+      <LineId Id="465" Count="6" />
+      <LineId Id="566" Count="0" />
+      <LineId Id="472" Count="21" />
+      <LineId Id="495" Count="8" />
+      <LineId Id="505" Count="3" />
+      <LineId Id="510" Count="4" />
+      <LineId Id="516" Count="3" />
+      <LineId Id="521" Count="6" />
+      <LineId Id="561" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

@@ -1,0 +1,604 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <POU Name="FB_MPD_PriorityControl" Id="{03cf931d-03fb-4b68-8608-5fd7c74c3081}" SpecialFunc="None">
+    <Declaration><![CDATA[//Get the 2 most prioritized pickup functions
+FUNCTION_BLOCK FB_MPD_PriorityControl
+VAR_INPUT
+	ConfigPDs				: REFERENCE TO ARRAY[1..GVL_MPD.MAXPDs] OF ST_CFG_PDs;		
+	CvAFunctionNumber		: E_FunctionNumber;	 //the shuttel Conveyor A function number
+	CvBFunctionNumber		: E_FunctionNumber;	 //the shuttel Conveyor B function number
+	OverrideFunctions 		: ARRAY[1..GVL_MPD.MAXPDs] OF BOOL;	//Pickup functions that is set with higher prioirty
+	IgnoreDepositCheck		: ARRAY[1..GVL_MPD.MAXPDs] OF BOOL; //Deposit functions that is set to not check conditions.
+	MPD_Type				: E_MotionPD_Type;		// Motion PD type
+END_VAR
+VAR_OUTPUT
+	
+	CV_A					: ST_PrioFunctions;
+	CV_B					: ST_PrioFunctions;
+		
+END_VAR
+VAR
+	_fbFifo			:FB_MergingFiFo;	
+	
+END_VAR
+VAR_TEMP
+	i:INT;
+	InternalDisables: BOOL;//ARRAY [1..GVL_MPD.MAXCONV] OF BOOL;
+	DisabledFunctions: ARRAY [1..GVL_MPD.MAXPDs] OF BOOL;
+	AdjacentFunctionNumbers	: ARRAY [1..GVL_MPD.MAXPDs] OF E_FunctionNumber;	// The function numbers of all adjacent functions
+	DepositFunction : E_FunctionNumber;
+	
+	PickupFunctionNumberA	: E_FunctionNumber;	//the function number that has the highest pickup priority
+	PickupFunctionNumberB	: E_FunctionNumber;	//the function number that has the second highest pickup priority
+	DepositFunctionNumberA	: E_FunctionNumber;
+	DepositFunctionNumberB	: E_FunctionNumber;
+	
+	CvA_Enabled				: BOOL; //is conveyor A enabled (zone, function, element)	
+	CvB_Enabled				: BOOL; //is conveyor B enabled (zone, function, element)
+	
+	CV_PickupEnabled		: ARRAY[1..2] OF BOOL;
+	CV_DepositEnabled		: ARRAY[1..2] OF BOOL;
+	CV_A_IsAssigned			: BOOL;
+	MPD_ConfigIx			: INT; //index of the deposit function in MPD Config struct
+	_IgnoreDepositCheck		: BOOL;
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[	
+	//extract deposit/pickup functions
+	FOR i:=1 TO GVL_MPD.MAXPDs BY 1 DO
+		AdjacentFunctionNumbers[i] := ConfigPDs[i].eFunctionNumber;		 
+	END_FOR	
+ 		
+	//convert from override to disable	
+	_M_ConvertOverrideToDisables(OverrideFunctions:=OverrideFunctions, DisabledFunctions=>DisabledFunctions);
+	
+	CV_A.PickupFunctionNumber:=CV_A.DepositFunctionNumber:=E_FunctionNumber.F_BEGIN_FUNCTION;	
+	CV_B.PickupFunctionNumber:=CV_B.DepositFunctionNumber:=E_FunctionNumber.F_BEGIN_FUNCTION;
+	CV_A.HighestPriority:=CV_B.HighestPriority:=FALSE;
+	
+	MEMSET(ADR(InternalDisables),0,SIZEOF(InternalDisables));
+	// Get Prioirty of the pickup function that has the higest priority
+	FOR i:=1 TO GVL_MPD.MAXPDs BY 1 DO			
+		DepositFunction  := M_GetDepositFunction(AdjacentFunctionNumbers[i],0,FALSE,MPD_ConfigIndex=>MPD_ConfigIx);
+		_IgnoreDepositCheck := SEL(MPD_ConfigIx>0 AND MPD_ConfigIx<=GVL_MPD.MAXPDs,FALSE,IgnoreDepositCheck[MPD_ConfigIx]); 
+		InternalDisables := _M_IsEnabled(AdjacentFunctionNumbers[i])= FALSE;
+		InternalDisables := InternalDisables OR (_M_IsEnabled(DepositFunction)= FALSE);		
+		InternalDisables := InternalDisables OR _M_CheckConditions(AdjacentFunctionNumbers[i], DepositFunction, _IgnoreDepositCheck);
+		_fbFifo(FunctionNumber:=AdjacentFunctionNumbers[i],Disable:=DisabledFunctions[i] OR InternalDisables);
+	END_FOR
+	
+	//Set outputs A	
+	//Get the most prioritized pickup funciton number.
+	PickupFunctionNumberA  := _fbFifo.ePrevFunctionNumber;
+	DepositFunctionNumberA := M_GetDepositFunction(PickupFunctionNumberA,0,FALSE);
+	
+	//Set outputs B
+	//Get the second most prioritized pickup function number.
+	PickupFunctionNumberB  := _fbFifo.M_GetFifoIndex(2);
+	DepositFunctionNumberB := M_GetDepositFunction(PickupFunctionNumberB,0,FALSE);
+	
+	
+	CvA_Enabled := _M_IsEnabled(CvAFunctionNumber);
+	CvB_Enabled := _M_IsEnabled(CvBFunctionNumber);
+	
+	
+	//Check the most prioritized task can be set to conveyor X
+	IF(PickupFunctionNumberA <> E_FunctionNumber.F_BEGIN_FUNCTION) THEN
+		CV_PickupEnabled := _M_GetConveyorEnabled(ConfigPDs,PickupFunctionNumberA);
+		CV_DepositEnabled := _M_GetConveyorEnabled(ConfigPDs,DepositFunctionNumberA);
+		IF (CV_PickupEnabled[1] AND CV_DepositEnabled[1] AND CvA_Enabled) THEN // set the TU with most priority to CV A
+			CV_A.PickupFunctionNumber := PickupFunctionNumberA;		
+			CV_A.DepositFunctionNumber := DepositFunctionNumberA;
+			CV_A.HighestPriority := TRUE;
+			CV_A_IsAssigned:=TRUE;
+		ELSIF (CV_PickupEnabled[2] AND CV_DepositEnabled[2] AND CvB_Enabled) THEN // set the TU with most priority to CV B
+			CV_B.PickupFunctionNumber := PickupFunctionNumberA;
+			CV_B.DepositFunctionNumber := DepositFunctionNumberA;
+			CV_B.HighestPriority := TRUE;
+		END_IF
+	END_IF
+	
+	//Check the second most prioritized task can be set to conveyor X 
+	IF(PickupFunctionNumberB <> E_FunctionNumber.F_BEGIN_FUNCTION) THEN
+		CV_PickupEnabled := _M_GetConveyorEnabled(ConfigPDs,PickupFunctionNumberB);
+		CV_DepositEnabled := _M_GetConveyorEnabled(ConfigPDs,DepositFunctionNumberB);	
+		IF(CV_A_IsAssigned) THEN
+			IF (CV_PickupEnabled[2] AND CV_DepositEnabled[2] AND CvB_Enabled) THEN // set the TU with 2nd most priority to CV B
+				CV_B.PickupFunctionNumber := PickupFunctionNumberB;
+				CV_B.DepositFunctionNumber := DepositFunctionNumberB;
+				CV_B.HighestPriority := FALSE;
+			END_IF
+		ELSE
+			IF (CV_PickupEnabled[1] AND CV_DepositEnabled[1] AND CvA_Enabled) THEN // set the TU with 2nd most priority to CV A
+				CV_A.PickupFunctionNumber := PickupFunctionNumberB;
+				CV_A.DepositFunctionNumber := DepositFunctionNumberB;
+				CV_A.HighestPriority := FALSE;
+			END_IF
+		END_IF
+	END_IF
+	
+	
+	]]></ST>
+    </Implementation>
+    <Method Name="_M_CheckConditions" Id="{c0e1f3aa-e7a9-416e-bf17-8c4d9ccdc7a9}">
+      <Declaration><![CDATA[//Check that the adjacent function is an valid pickup position,
+//Check that the destination is free and not in error
+//Return: TRUE if the function shuld be disabled
+METHOD PRIVATE _M_CheckConditions : BOOL
+VAR_INPUT
+	PickupFunctionNumber	: E_FunctionNumber;	 //the adjacent function number	
+	DepositFunction 		: E_FunctionNumber;	
+	IgnoreDepositCheck		: BOOL; //TRUE = Deposit function is not validated and being considered as valid.		
+END_VAR
+
+VAR		
+	PickupZoneIndex 	: INT;
+	DepositZoneIndex 	: INT;	
+	
+	TuDestination 		: E_FunctionNumber;
+	TmpZoneData 		: ST_ZoneData;
+	TmpTranspState		: E_TransportState;
+	//ConditionValid 		: BOOL;
+	ConditionNotValid : BOOL;
+	i:INT;
+	TU_DataIndex :DINT;
+	DepositElementNumber	: E_ElementNumber;
+	
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[	
+	// sanity checks
+	IF( NOT __ISVALIDREF(FunctionRegistry[PickupFunctionNumber].rFunction) OR
+		NOT __ISVALIDREF(FunctionRegistry[DepositFunction].rFunction) OR	   
+	    PickupFunctionNumber = E_FunctionNumber.F_BEGIN_FUNCTION ) OR 
+		DepositFunction=E_FunctionNumber.F_BEGIN_FUNCTION THEN 
+			_M_CheckConditions:=TRUE;
+			RETURN;
+	 END_IF
+	
+	// ------------------------------------------------------------------------------------
+	//Check if the deposit function is set as "ignore condition checks"
+	IF(IgnoreDepositCheck) THEN
+		_M_CheckConditions:=FALSE; //Stop conditional check and return as the deposit function is valid. 
+		RETURN;
+	END_IF
+	
+	// ------------------------------------------------------------------------------------	
+	
+	
+	//get the deposit zone index closest to the shuttle
+	F_PB_GetAdjacentFunctionZoneIndex(DepositFunction,CvAFunctionNumber,FALSE,TRUE,DepositZoneIndex);		
+	IF(	DepositZoneIndex =0) THEN
+		F_PB_GetAdjacentFunctionZoneIndex(DepositFunction,CvBFunctionNumber,FALSE,TRUE,DepositZoneIndex);		
+	END_IF
+		
+	
+	//Sanity check
+	IF(DepositZoneIndex<=0 OR DepositZoneIndex >NUMBER_OF_ZONES_PER_FUNCTION) THEN		
+		_M_CheckConditions := TRUE; //True=> Pickup position should be disabled 	
+		RETURN;
+	END_IF
+	
+	(**************************************************************************************************************		
+	//check that the Deposit function is ready to takeover TU
+	**************************************************************************************************************)
+	TmpTranspState := F_PB_GetTransportControlDataRef(DepositFunction,DepositZoneIndex).eTransportState;
+	IF( NOT (TmpTranspState = E_TransportState.IDLE OR TmpTranspState = E_TransportState.FREE OR TmpTranspState = E_TransportState.TAKEOVER)) THEN
+ 		ConditionNotValid := TRUE; //True=> Pickup position should be disabled because deposit function is not ready
+	END_IF
+	
+	
+	//TODO
+	//check functionInterface.in.PreviusFunction?? risk for deadlock if condition is set in merging flow control??
+	
+	//TODO
+	// check Pickup position for errors on Element
+	
+	(**************************************************************************************************************
+	//Check that the deposit function all zones are not Busy
+	**************************************************************************************************************)
+	IF(__ISVALIDREF(FunctionRegistry[DepositFunction].rSettingsFunction)) THEN
+		FOR i:=1 TO FunctionRegistry[DepositFunction].rSettingsFunction.NumberOfZones DO
+	 		TmpZoneData := F_GetZoneData(DepositFunction, i);
+			 IF(	TmpZoneData.TransportControlData.eHandOverState = E_HandOverState.ACTIVE OR
+					TmpZoneData.TransportControlData.eHandOverState = E_HandOverState.INTERRUPTED OR
+					TmpZoneData.TransportControlData.eHandOverState = E_HandOverState.STOP OR
+					TmpZoneData.TransportControlData.eTakeOverState = E_TakeOverState.ACTIVE OR
+					TmpZoneData.TransportControlData.eTakeOverState = E_TakeOverState.INTERRUPTED OR
+					TmpZoneData.TransportControlData.eTakeOverState = E_TakeOverState.STOP) THEN
+				ConditionNotValid := TRUE;	//True=> Pickup position should be disabled	because any zone is not ready		 
+			 END_IF
+		END_FOR
+	ELSE
+		ConditionNotValid := TRUE; //True=> Pickup position should be disabled
+	END_IF
+ 
+	(**************************************************************************************************************
+	//check that the deposit function is not occupied	
+	**************************************************************************************************************)	
+	IF(__ISVALIDREF(FunctionRegistry[DepositFunction].Zone[DepositZoneIndex].refZoneData)) THEN
+		IF( FunctionRegistry[DepositFunction].Zone[DepositZoneIndex].refZoneData.TransportControlData.Occupied) THEN
+			ConditionNotValid := TRUE; //True=> Pickup position should be disabled because the deposit function is occupied
+		END_IF	
+	ELSE
+		ConditionNotValid := TRUE; //True=> Pickup position should be disabled
+	END_IF
+	
+	
+	(**************************************************************************************************************
+	//check that the deposit element, function or zone is in error	
+	**************************************************************************************************************)
+	IF(__ISVALIDREF(FunctionRegistry[DepositFunction].rSettingsFunction)) THEN
+		DepositElementNumber := FunctionRegistry[DepositFunction].rSettingsFunction.eElementLink;
+		IF(__ISVALIDREF(ElementRegistry[DepositElementNumber].rElementData))THEN
+			IF(ElementRegistry[DepositElementNumber].rElementData.ErrorData.FunctionErrorPending OR ElementRegistry[DepositElementNumber].rElementData.ErrorData.ErrorState = E_ErrorState.ERROR) THEN
+				ConditionNotValid := TRUE; //True=> Pickup position should be disabled because the deposit element or function or zone(s) is in error
+			END_IF
+		ELSE
+			ConditionNotValid := TRUE; //True=> Pickup position should be disabled
+		END_IF		
+	END_IF
+	
+	
+	
+	(**************************************************************************************************************
+	// Check that the deposit function has enabled transport and enabled takeover	
+	**************************************************************************************************************)		
+	IF ( NOT FunctionRegistry[DepositFunction].rFunction.ZoneInterface[DepositZoneIndex].In.Enable.Transport OR
+		 NOT FunctionRegistry[DepositFunction].rFunction.ZoneInterface[DepositZoneIndex].In.Enable.TakeOver) THEN
+			ConditionNotValid := TRUE; //True=> Pickup position should be disabled because deposit functin is not ready		
+	END_IF
+	
+	
+	(**************************************************************************************************************
+	//check that the destinations function are not in error	???
+	**************************************************************************************************************)
+	(*ConditionValid := FALSE;
+	FOR i:=1 TO E_FunctionNumber.F_BEGIN_EXTERN_FUNCTION DO
+		IF(PossibleDestinations[i] <> E_FunctionNumber.F_BEGIN_FUNCTION) THEN		
+			IF(__ISVALIDREF(FunctionRegistry[PossibleDestinations[i]].Zone[DepositZoneIndex].refZoneData) AND 
+			   __ISVALIDREF(FunctionRegistry[PossibleDestinations[i]].rSettingsFunction) ) THEN
+						
+				FOR i:=1 TO FunctionRegistry[PossibleDestinations[i]].rSettingsFunction.NumberOfZones DO		
+					ConditionValid := FunctionRegistry[DepositFunction].Zone[1].refZoneData.ErrorData.ErrorState = E_ErrorState.OPERATIONAL;
+				END_FOR
+			END_IF
+		END_IF
+	END_FOR
+	ConditionNotValid := ConditionNotValid OR NOT ConditionValid;*)
+	
+	
+	(**************************************************************************************************************
+	//set output	
+	**************************************************************************************************************)
+	_M_CheckConditions := ConditionNotValid; //True=> Pickup position should be disabled]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_ConvertOverrideToDisables" Id="{c7f652d7-339b-49e3-82eb-7347bc7e4eda}">
+      <Declaration><![CDATA[METHOD PRIVATE _M_ConvertOverrideToDisables
+VAR_IN_OUT	
+	OverrideFunctions 		: ARRAY[1..GVL_MPD.MAXPDs] OF BOOL;
+END_VAR
+VAR_OUTPUT
+	DisabledFunctions		: ARRAY[1..GVL_MPD.MAXPDs] OF BOOL;
+END_VAR
+VAR
+	OverridesActive:BOOL;
+	i:int;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+	//convert from override to disable	
+	FOR i:=1 TO GVL_MPD.MAXPDs DO
+		IF(OverrideFunctions[i]) THEN
+			OverridesActive:=TRUE;
+		END_IF
+	END_FOR
+	
+	IF(OverridesActive) THEN
+		MEMSET(ADR(DisabledFunctions), BOOL_TO_BYTE(TRUE),SIZEOF(DisabledFunctions));	
+		FOR i:=1 TO GVL_MPD.MAXPDs DO
+			DisabledFunctions[i]:= NOT OverrideFunctions[i];
+		END_FOR
+	END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_GetConveyorEnabled" Id="{4425f0ab-41e2-4f06-b517-d64d4ed3b1be}">
+      <Declaration><![CDATA[//check that the deposit / pickup position is enabled( for Convayor A or B can reach the position)
+METHOD PRIVATE _M_GetConveyorEnabled : ARRAY[1..2] OF BOOL
+VAR_INPUT
+	ConfigPDs				: REFERENCE TO ARRAY[1..GVL_MPD.MAXPDs] OF ST_CFG_PDs;
+	FunctionNumber			: E_FunctionNumber;
+END_VAR
+VAR
+	i:INT;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+IF(FunctionNumber = E_FunctionNumber.F_BEGIN_FUNCTION) THEN RETURN; END_IF
+
+FOR i:=1 TO GVL_MPD.MAXPDs DO
+	IF(ConfigPDs[i].eFunctionNumber = FunctionNumber ) THEN
+		_M_GetConveyorEnabled[1]:= ConfigPDs[i].EnableConv[1];
+		_M_GetConveyorEnabled[2]:= ConfigPDs[i].EnableConv[2];
+		EXIT;
+	END_IF		
+END_FOR]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_IsEnabled" Id="{afc2a585-ec52-4b03-94aa-523158712087}">
+      <Declaration><![CDATA[//Get enable status. Zone, Function or element disabled via SIS interface
+METHOD PRIVATE _M_IsEnabled : BOOL
+VAR_INPUT
+	FuncNumber 		: E_FunctionNumber;
+END_VAR
+
+VAR
+	myElementNumber : E_ElementNumber;
+	
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+_M_IsEnabled := FALSE;
+
+IF(FuncNumber = E_FunctionNumber.F_BEGIN_FUNCTION) THEN
+	RETURN;
+END_IF
+
+IF( NOT __ISVALIDREF(FunctionRegistry[FuncNumber].rSettingsFunction)) THEN
+	RETURN;
+END_IF
+
+myElementNumber := FunctionRegistry[FuncNumber].rSettingsFunction.eElementLink;
+
+
+IF( NOT __ISVALIDREF(ElementRegistry[myElementNumber].rElementInterface) OR 
+	NOT __ISVALIDREF(FunctionRegistry[FuncNumber].rFunctionInterface) OR
+	NOT __ISVALIDREF(FunctionRegistry[FuncNumber].Zone[1].refZoneInterface)) THEN
+	RETURN;
+END_IF
+
+_M_IsEnabled := ElementRegistry[myElementNumber].rElementInterface.In.ElementEnable AND 
+				FunctionRegistry[FuncNumber].rFunctionInterface.In.FunctionEnable AND
+				FunctionRegistry[FuncNumber].Zone[1].refZoneInterface.In.ZoneEnable;
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_CheckConditions" Id="{ddc5aef1-3023-4b50-8f0f-387a7b9db876}">
+      <Declaration><![CDATA[METHOD PUBLIC M_CheckConditions : BOOL
+VAR_INPUT
+	PickupFunctionNumber	: E_FunctionNumber;	 //the adjacent function number	
+	DepositFunction 		: E_FunctionNumber;	
+	IgnoreDepositCheck		: BOOL; //TRUE = Deposit function is not validated and being considered as valid.		
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[M_CheckConditions := _M_CheckConditions(PickupFunctionNumber,DepositFunction,IgnoreDepositCheck);]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_GetDepositFunction" Id="{18200405-9aba-4be6-bd46-2f1ad1cd12aa}">
+      <Declaration><![CDATA[//Get the corresponding Deposit Function based on the destination of the TU located on pickup function  
+METHOD PUBLIC M_GetDepositFunction : E_FunctionNumber
+VAR_INPUT	
+	PickupFunctionNumber	: E_FunctionNumber;
+	ZoneIndex				: INT;	// Set to 0 in order for the method to lookup the zone index
+	RecoverUsingLastTUix	: BOOL; // in case of recover, we may need to use the LastTU_DataIndex
+END_VAR
+VAR_OUTPUT
+	MPD_ConfigIndex			: INT; // the index of the MPD index
+END_VAR
+
+VAR		
+	TuDestination	: E_FunctionNumber;
+	ZoneIx:INT;
+	TU_DataIndex:DINT;
+	i:INT;
+	j:INT;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[MPD_ConfigIndex:=0;
+// sanity checks
+	IF(NOT __ISVALIDREF(FunctionRegistry[PickupFunctionNumber].rFunction) OR	   
+	   PickupFunctionNumber = E_FunctionNumber.F_BEGIN_FUNCTION) THEN
+		RETURN;
+	 END_IF
+	 	 
+	 
+	//Get the Zone index of the pickupFunction that is closest to the shuttle function 
+	//This is also an implicit check that the pickupFunction has its "next function" or "previous function" set to shuttle function
+	//Check both Shuttle convayor A and B as in F_ConfigPosition we dont know if the pickup position pointing towards CV A or CV B 	 
+	IF(ZoneIndex=0) THEN
+		F_PB_GetAdjacentFunctionZoneIndex(PickupFunctionNumber,CvAFunctionNumber,TRUE,FALSE,ZoneIx);
+		//ZoneIx := FunctionRegistry[PickupFunctionNumber].rFunction.M_GetTransportData(meFunctionNumber := CvAFunctionNumber).ZoneNumber;
+		IF(ZoneIx = 0) THEN
+			F_PB_GetAdjacentFunctionZoneIndex(PickupFunctionNumber,CvBFunctionNumber,TRUE, FALSE,ZoneIx);
+			//ZoneIx := FunctionRegistry[PickupFunctionNumber].rFunction.M_GetTransportData(meFunctionNumber := CvBFunctionNumber).ZoneNumber;
+		END_IF			
+		//sanity check
+		IF(ZoneIx=0) THEN
+			RETURN; //Not possible determine the zone, it may be because the pickup position not has its next position set towards the shuttle CV A or CV B
+		END_IF
+	ELSE
+		ZoneIx := ZoneIndex;
+	END_IF	
+	
+	//get the TU index of the pickup adjacentFunction
+	TU_DataIndex := F_PB_GetTransportControlDataRef(PickupFunctionNumber,ZoneIx).TU_DataIndex; 
+	IF(RecoverUsingLastTUix AND TU_DataIndex=0) THEN // try with last TU_DataIndex when recover
+		TU_DataIndex := F_PB_GetTransportControlDataRef(PickupFunctionNumber,ZoneIx).LastTU_DataIndex;
+	END_IF
+	
+	//Get the TU destination number from TU table
+	TuDestination := TU_Table.TU_DataTable[TU_DataIndex].Destination[1].eFunctionNumber;
+	
+	//************************************************************************************************
+	//Search for Deposit function
+	//************************************************************************************************
+	//Sanity check
+	IF( NOT __ISVALIDREF(ConfigPDs) OR TuDestination = E_FunctionNumber.F_BEGIN_FUNCTION) THEN
+		RETURN; 
+	END_IF 	
+
+	
+	FOR i:=1 TO GVL_MPD.MAXPDs BY 1 DO
+		//AdjacentFunctionNumbers[i] := Config_Shuttle.ConvCFG[i].eFunctionNumber;
+		FOR j:=1 TO GVL_MPD.MAXDEST DO
+			IF(ConfigPDs[i].PossibleDestinations[j] = TuDestination AND 
+				ConfigPDs[i].eFunctionNumber <> PickupFunctionNumber (*Not possible to transfer TU to the same function*)) THEN
+				M_GetDepositFunction :=ConfigPDs[i].eFunctionNumber;
+				MPD_ConfigIndex:=i;
+				RETURN;
+			END_IF	
+			IF(ConfigPDs[i].PossibleDestinations[j] = E_FunctionNumber.F_BEGIN_FUNCTION) THEN
+				EXIT; //just to not iterate through alll functions to F_BEGIN_EXTERN_FUNCTION
+			END_IF
+		END_FOR 
+	END_FOR	
+	
+	]]></ST>
+      </Implementation>
+    </Method>
+    <LineIds Name="FB_MPD_PriorityControl">
+      <LineId Id="156" Count="9" />
+      <LineId Id="276" Count="0" />
+      <LineId Id="278" Count="0" />
+      <LineId Id="275" Count="0" />
+      <LineId Id="166" Count="3" />
+      <LineId Id="509" Count="0" />
+      <LineId Id="422" Count="0" />
+      <LineId Id="424" Count="0" />
+      <LineId Id="171" Count="4" />
+      <LineId Id="467" Count="0" />
+      <LineId Id="176" Count="7" />
+      <LineId Id="412" Count="0" />
+      <LineId Id="415" Count="1" />
+      <LineId Id="414" Count="0" />
+      <LineId Id="413" Count="0" />
+      <LineId Id="216" Count="0" />
+      <LineId Id="316" Count="0" />
+      <LineId Id="221" Count="0" />
+      <LineId Id="223" Count="0" />
+      <LineId Id="219" Count="0" />
+      <LineId Id="224" Count="0" />
+      <LineId Id="226" Count="1" />
+      <LineId Id="246" Count="0" />
+      <LineId Id="228" Count="0" />
+      <LineId Id="230" Count="1" />
+      <LineId Id="229" Count="0" />
+      <LineId Id="225" Count="0" />
+      <LineId Id="317" Count="0" />
+      <LineId Id="232" Count="0" />
+      <LineId Id="244" Count="0" />
+      <LineId Id="319" Count="0" />
+      <LineId Id="234" Count="1" />
+      <LineId Id="247" Count="0" />
+      <LineId Id="250" Count="3" />
+      <LineId Id="248" Count="0" />
+      <LineId Id="255" Count="0" />
+      <LineId Id="257" Count="3" />
+      <LineId Id="256" Count="0" />
+      <LineId Id="249" Count="0" />
+      <LineId Id="320" Count="0" />
+      <LineId Id="185" Count="1" />
+      <LineId Id="15" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_MPD_PriorityControl._M_CheckConditions">
+      <LineId Id="575" Count="9" />
+      <LineId Id="851" Count="0" />
+      <LineId Id="840" Count="0" />
+      <LineId Id="832" Count="1" />
+      <LineId Id="835" Count="0" />
+      <LineId Id="834" Count="0" />
+      <LineId Id="683" Count="0" />
+      <LineId Id="850" Count="0" />
+      <LineId Id="848" Count="1" />
+      <LineId Id="585" Count="0" />
+      <LineId Id="807" Count="0" />
+      <LineId Id="686" Count="0" />
+      <LineId Id="808" Count="0" />
+      <LineId Id="688" Count="0" />
+      <LineId Id="659" Count="0" />
+      <LineId Id="729" Count="0" />
+      <LineId Id="731" Count="1" />
+      <LineId Id="737" Count="1" />
+      <LineId Id="734" Count="0" />
+      <LineId Id="730" Count="0" />
+      <LineId Id="588" Count="3" />
+      <LineId Id="593" Count="25" />
+      <LineId Id="782" Count="1" />
+      <LineId Id="619" Count="6" />
+      <LineId Id="627" Count="1" />
+      <LineId Id="780" Count="1" />
+      <LineId Id="629" Count="0" />
+      <LineId Id="762" Count="1" />
+      <LineId Id="765" Count="1" />
+      <LineId Id="764" Count="0" />
+      <LineId Id="767" Count="1" />
+      <LineId Id="772" Count="0" />
+      <LineId Id="771" Count="0" />
+      <LineId Id="774" Count="3" />
+      <LineId Id="773" Count="0" />
+      <LineId Id="769" Count="0" />
+      <LineId Id="630" Count="0" />
+      <LineId Id="712" Count="1" />
+      <LineId Id="725" Count="1" />
+      <LineId Id="715" Count="0" />
+      <LineId Id="722" Count="0" />
+      <LineId Id="740" Count="0" />
+      <LineId Id="723" Count="0" />
+      <LineId Id="717" Count="0" />
+      <LineId Id="714" Count="0" />
+      <LineId Id="631" Count="21" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_MPD_PriorityControl._M_ConvertOverrideToDisables">
+      <LineId Id="10" Count="6" />
+      <LineId Id="25" Count="0" />
+      <LineId Id="17" Count="4" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_MPD_PriorityControl._M_GetConveyorEnabled">
+      <LineId Id="32" Count="0" />
+      <LineId Id="10" Count="0" />
+      <LineId Id="33" Count="0" />
+      <LineId Id="11" Count="2" />
+      <LineId Id="42" Count="0" />
+      <LineId Id="24" Count="0" />
+      <LineId Id="14" Count="0" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_MPD_PriorityControl._M_IsEnabled">
+      <LineId Id="20" Count="0" />
+      <LineId Id="15" Count="0" />
+      <LineId Id="36" Count="0" />
+      <LineId Id="35" Count="0" />
+      <LineId Id="37" Count="1" />
+      <LineId Id="17" Count="0" />
+      <LineId Id="16" Count="0" />
+      <LineId Id="18" Count="1" />
+      <LineId Id="10" Count="0" />
+      <LineId Id="9" Count="0" />
+      <LineId Id="26" Count="2" />
+      <LineId Id="33" Count="0" />
+      <LineId Id="32" Count="0" />
+      <LineId Id="29" Count="0" />
+      <LineId Id="23" Count="0" />
+      <LineId Id="21" Count="0" />
+      <LineId Id="5" Count="0" />
+      <LineId Id="30" Count="0" />
+      <LineId Id="34" Count="0" />
+      <LineId Id="31" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_MPD_PriorityControl.M_CheckConditions">
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_MPD_PriorityControl.M_GetDepositFunction">
+      <LineId Id="259" Count="0" />
+      <LineId Id="185" Count="48" />
+      <LineId Id="260" Count="0" />
+      <LineId Id="234" Count="7" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

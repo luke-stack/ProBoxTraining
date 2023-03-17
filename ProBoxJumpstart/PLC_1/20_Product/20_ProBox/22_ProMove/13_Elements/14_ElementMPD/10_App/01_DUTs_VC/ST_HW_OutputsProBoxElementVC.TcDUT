@@ -1,0 +1,31 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <DUT Name="ST_HW_OutputsProBoxElementVC" Id="{bbc41df0-d9e3-43aa-9f1f-8b2309559196}">
+    <Declaration><![CDATA[TYPE ST_HW_OutputsProBoxElementVC EXTENDS ST_HW_OutputsElementVC_Base :
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: $
+ *	Revision date	:	$Date: $
+ *	Last changed by	:	$Author: $
+ *	URL				:	$$
+ *
+ *	Purpose			:	VC Element - Hardware outputs
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION 
+ *
+ **************************************************************************************)
+STRUCT
+	DriveCV_A					:ST_HW_OutputsProBoxElementMotor;
+	DriveCV_B					:ST_HW_OutputsProBoxElementMotor;	
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

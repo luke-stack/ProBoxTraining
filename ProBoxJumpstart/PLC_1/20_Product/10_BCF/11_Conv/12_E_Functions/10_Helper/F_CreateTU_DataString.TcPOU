@@ -1,0 +1,63 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.4">
+  <POU Name="F_CreateTU_DataString" Id="{378c082b-d50b-46ed-a271-2294b8f2abae}" SpecialFunc="None">
+    <Declaration><![CDATA[// Creates a text string with TU data information: 'TU_DataIndex = 1979,  TuID = 0012345600,  AssignmentID = 19790109'
+FUNCTION PUBLIC F_CreateTU_DataString : STRING[127]
+
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 474106 $
+ *	Revision date	:	$Date: 2021-03-26 07:58:15 +0100 (fre, 26 mar 2021) $
+ *	Last changed by	:	$Author: d7mangc $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/tags/R1.12.0/01_Software/BCF/BCF/JumpStart/20_Product/10_BCF/11_Conv/12_E_Functions/10_Helper/F_CreateTU_DataString.TcPOU $
+ *
+ *	Purpose			:	Creates a text string with TU data information which can be used for debug messages
+ * 						String: 'TU_DataIndex = 1979,  TuID = 0012345600,  AssignmentID = 19790109'
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * VERSION DATE         INITIALS     DESCRIPTION
+ * 0.0     DD.MM.YYYY   (name)       (explain customized modifications)
+ *
+ **************************************************************************************)
+VAR_INPUT
+	TU_DataIndex 	: DINT; // TU data index used to create string from
+END_VAR
+
+VAR
+	TU_Data 		: ST_TU_Data;
+	Result			: STRING[127];
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[// Prepaire internal vars
+TU_Data := TU_Table.TU_DataTable[TU_DataIndex];
+Result := '';
+
+// TU data index
+Result := CONCAT(Result, DebugTextBlocks.TU_DATA_INDEX);
+Result := CONCAT(Result, DINT_TO_STRING(TU_DataIndex));
+
+// TU ID
+Result := CONCAT(Result,DebugTextBlocks.TUID);
+Result := CONCAT(Result, TU_Data.TU_ID.ASCII);
+
+// Assignment ID
+Result := CONCAT(Result, DebugTextBlocks.AssignmentID);
+Result := CONCAT(Result, UDINT_TO_STRING(TU_Data.AssignmentID));
+
+// Return value
+F_CreateTU_DataString := Result;
+]]></ST>
+    </Implementation>
+    <LineIds Name="F_CreateTU_DataString">
+      <LineId Id="3" Count="17" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

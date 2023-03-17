@@ -1,0 +1,32 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.4">
+  <Itf Name="ITF_PB_ScannerAddon" Id="{a31e508b-83d2-43d6-ae17-16499491cdb4}">
+    <Declaration><![CDATA[INTERFACE ITF_PB_ScannerAddon
+]]></Declaration>
+    <Method Name="M_PostScan" Id="{eb2a6a5a-0ba5-488e-84cd-120dfe0f25c8}">
+      <Declaration><![CDATA[//Called once when the label is received from scanner. Optionally perform customised modifications to the received string. 
+METHOD M_PostScan : BOOL
+VAR_INPUT
+	Label				: REFERENCE TO STRING(GVL_SickScanner.MAX_DATA_LENGTH);	//the string received from scanner
+	LabelLength			: UINT;	//The length of the string received.
+END_VAR
+
+]]></Declaration>
+    </Method>
+    <Method Name="M_PreScan" Id="{3fe181c7-3362-4e97-99e7-d8c3bcc7b84f}">
+      <Declaration><![CDATA[//Called when once when Trigger is set and we're waiting for the scanner to send the barcode.
+METHOD M_PreScan : BOOL
+
+]]></Declaration>
+    </Method>
+    <Method Name="M_SetupScanner" Id="{c8fa0b49-1eb2-4b2a-bfb7-045c8b0fd99c}">
+      <Declaration><![CDATA[//Called when Statmachine is in Setup state, ie function is re-initialized.
+METHOD M_SetupScanner : BOOL
+VAR_INPUT
+END_VAR
+VAR_OUTPUT
+	HoldExecution		: BOOL; //Optionally stop SickScannerAddon from proceed in the state machine if the customized code needs to run several cycles
+END_VAR]]></Declaration>
+    </Method>
+  </Itf>
+</TcPlcObject>

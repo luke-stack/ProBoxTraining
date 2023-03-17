@@ -1,0 +1,23 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4020.6">
+  <POU Name="F_MaxReportTime_TO_Time" Id="{f2a996e7-3f4e-4bba-8d94-ff8c17360b78}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION F_MaxReportTime_TO_Time : TIME
+VAR_INPUT
+	sTimeIn : STRING;
+END_VAR
+VAR
+	TempOT : OTSTRUCT;
+	
+	
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[//'12:34:56:789';
+TempOT.wHour			:= STRING_TO_WORD(LEFT(sTimeIn,2));
+TempOT.wMinute			:= STRING_TO_WORD(MID(sTimeIn,2,4));
+TempOT.wSecond			:= STRING_TO_WORD(MID(sTimeIn,2,7));
+
+F_MaxReportTime_TO_Time	:= OTSTRUCT_TO_TIME(OTIN:= TempOT);]]></ST>
+    </Implementation>
+  </POU>
+</TcPlcObject>

@@ -1,0 +1,12 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <DUT Name="ST_DebugSensors_ProBoxStraightTransportEmulation" Id="{e19b109b-464b-4c92-ad5f-e00627f14d77}">
+    <Declaration><![CDATA[TYPE ST_DebugSensors_ProBoxStraightTransportEmulation :
+STRUCT
+	EnableSensorDebug	: BOOL; 								// Overwrite sensor values with debug sensor values
+	HW_Inputs			: ST_HW_InputsProBoxStraightTransport;	// Debug sensors
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

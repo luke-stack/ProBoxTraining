@@ -1,0 +1,11 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <DUT Name="ST_VC_CFG_PDs" Id="{2ba7403c-c39c-4330-bf49-b9b4203e55d7}">
+    <Declaration><![CDATA[TYPE ST_VC_CFG_PDs EXTENDS ST_CFG_PDs :
+STRUCT
+	ForkStroke		: INT; //Fork stroke distance [mm] relative value. (positive values only)
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

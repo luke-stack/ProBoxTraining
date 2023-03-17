@@ -1,0 +1,248 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <POU Name="FB_ProBoxElementVC_Emulation" Id="{77476b2e-3a94-4cc5-8dab-13e17f77d4e4}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK FB_ProBoxElementVC_Emulation  EXTENDS FB_ElementConvEmulation
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision:  $
+ *	Revision date	:	$Date: $
+ *	Last changed by	:	$Author: $
+ *	URL				:	$URL: $
+ *
+ *	Purpose			:	Probox Vertical Conveyor element emulation.
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ **************************************************************************************)
+VAR
+	pElement						: POINTER TO FB_ProBoxElementVC; // Address to element
+	rElement						: REFERENCE TO FB_ProBoxElementVC; // Reference to element
+	i,j : INT:=1;	
+	_DefaultHwInputVC 				: ST_HW_InputsProBoxElementVC;
+	
+END_VAR]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[(**************************************************************************************************************
+   Initialization
+***************************************************************************************************************)
+A_Init();
+
+(**************************************************************************************************************
+   Update reference
+***************************************************************************************************************)
+A_UpdateReference();
+
+(**************************************************************************************************************
+   Emulation
+***************************************************************************************************************)
+// If emulation element is initialized
+IF ElementData.Init THEN
+	
+	// Update real data
+	M_UpdateRealObjectData();	
+
+	//Set emulation speed	
+	rElement.P_EmuSpeed	:= ProBoxSystem.EMULATION_SPEED;
+		
+	// Overwrite inputs
+	_M_OverWriteInputs();
+
+END_IF]]></ST>
+    </Implementation>
+    <Method Name="_M_OverWriteInputs" Id="{ffa0f9d0-e3a8-482b-8d5d-e3564aaade53}">
+      <Declaration><![CDATA[//Overwrite hardware inputs for emulation
+METHOD PRIVATE _M_OverWriteInputs : BOOL
+VAR_INPUT
+END_VAR
+VAR
+	FunctionNoConvA 				: E_FunctionNumber;
+	FunctionNoConvB 				: E_FunctionNumber;	
+	NumberOfZonesConvA				: INT:=1;
+	NumberOfZonesConvB				: INT:=1;
+	
+	DriveA_Run_12					: BOOL;	//Conveyor A FWD
+	DriveA_Run_21					: BOOL; //Conveyor A RWD
+	DriveB_Run_12					: BOOL; //Conveyor B FWD
+	DriveB_Run_21					: BOOL; //Conveyor B RWD
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+* 	NAME		_M_OverWriteInputs
+* 	FUNCTION	Overwrite hardware inputs for emulation
+**************************************************************************************)
+//Get the function number of the vertical lift conveyor A and B
+IF(__ISVALIDREF(ElementRegistry[rElement.ConfigElement.eElementNumber].rElementData)) THEN
+	FunctionNoConvA:= ElementRegistry[rElement.ConfigElement.eElementNumber].rElementData.MemberList.FunctionList[1].eFunctionNumber;
+	FunctionNoConvB:= ElementRegistry[rElement.ConfigElement.eElementNumber].rElementData.MemberList.FunctionList[2].eFunctionNumber;
+ELSE
+	RETURN; //error
+END_IF
+
+IF(__ISVALIDREF(FunctionRegistry[FunctionNoConvA].rSettingsFunction)) THEN
+	NumberOfZonesConvA := FunctionRegistry[FunctionNoConvA].rSettingsFunction.NumberOfZones;
+END_IF
+IF(__ISVALIDREF(FunctionRegistry[FunctionNoConvB].rSettingsFunction)) THEN
+	NumberOfZonesConvB := FunctionRegistry[FunctionNoConvB].rSettingsFunction.NumberOfZones;
+END_IF
+
+
+IF(ElementData.Init) THEN
+	
+	//copy entire debug structure to HW_Inputs.APCabinet (for debug purposes, it is possible to change the content in DbgHWInputElVC)	
+	rElement.HW_Inputs				:= _DefaultHwInputVC;
+	
+	
+	//set temp variables
+	DriveA_Run_12 := ElementRegistry[rElement.ConfigElement.eElementNumber].rElementData.FunctionOrder.ReqDriveRun AND ElementRegistry[rElement.ConfigElement.eElementNumber].rElementData.FunctionOrder.ReqDriveDirection;
+	DriveA_Run_21 := ElementRegistry[rElement.ConfigElement.eElementNumber].rElementData.FunctionOrder.ReqDriveRun AND NOT ElementRegistry[rElement.ConfigElement.eElementNumber].rElementData.FunctionOrder.ReqDriveDirection;
+	DriveB_Run_12:= ElementRegistry[rElement.ConfigElement.eElementNumber].rElementData.FunctionOrder.ReqDriveRun_34 AND ElementRegistry[rElement.ConfigElement.eElementNumber].rElementData.FunctionOrder.ReqDriveDirection_34;
+	DriveB_Run_21:= ElementRegistry[rElement.ConfigElement.eElementNumber].rElementData.FunctionOrder.ReqDriveRun_34 AND NOT ElementRegistry[rElement.ConfigElement.eElementNumber].rElementData.FunctionOrder.ReqDriveDirection_34;
+			
+	//Set overhang sensor value on VC. simulate overhang sensor being blocked during transfer
+	F_MPD_GetOverhangSensorStatus(
+			MPD_Function:= FunctionNoConvB,  // Conveyor B
+			ZonesPerFunction:= NumberOfZonesConvB,
+			Drive_Run_12:= DriveB_Run_12, //rElement.HW_Outputs.DriveCV_B.Drive_Run_12,
+			Drive_Run_21:= DriveB_Run_21, //rElement.HW_Outputs.DriveCV_B.Drive_Run_21,
+			SensorOverhang12=>rElement.HW_Inputs.Conv[2].SensorOverhangLeft,
+			SensorOverhang21=>rElement.HW_Inputs.Conv[2].SensorOverhangRight);	
+	
+	F_MPD_GetOverhangSensorStatus(
+			MPD_Function:= FunctionNoConvA,  // Conveyor A
+			ZonesPerFunction:= NumberOfZonesConvA,
+			Drive_Run_12:= DriveA_Run_12, //rElement.HW_Outputs.DriveCV_A.Drive_Run_12,
+			Drive_Run_21:= DriveA_Run_21,//rElement.HW_Outputs.DriveCV_A.Drive_Run_21,
+			SensorOverhang12=>rElement.HW_Inputs.Conv[1].SensorOverhangLeft,
+			SensorOverhang21=>rElement.HW_Inputs.Conv[1].SensorOverhangRight);
+
+
+	
+	//Set overhang sensor value on adjacent functions
+	//simulate Sensor overhang is activated during transfer
+	FOR i := 1 TO GVL_MPD.MAXPDs BY 1 DO	
+		IF  rElement.Config.ConvCFG[i].eFunctionNumber <> E_FunctionNumber.F_BEGIN_FUNCTION THEN
+			rElement.M_SetOverhangSensor(
+				eFunctionnumber:= rElement.Config.ConvCFG[i].eFunctionNumber,			
+				SensorValue:= NOT (F_PB_GetTransportControlDataRef(rElement.Config.ConvCFG[i].eFunctionNumber,1).DriveRunning AND 
+								  (DriveA_Run_12 OR DriveA_Run_21 OR DriveB_Run_12 OR DriveB_Run_21)));
+						
+		ELSE
+			EXIT;
+		END_IF
+	END_FOR
+			
+END_IF
+]]></ST>
+      </Implementation>
+    </Method>
+    <Action Name="A_Init" Id="{df12ba80-87a9-4284-a543-669ce2f158b9}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_Init
+ * 	FUNCTION	Initialize emulated dummy element
+ **************************************************************************************)
+
+// If element is not initialized
+IF NOT ElementData.Init THEN
+
+	// Check that linked element number is valid
+	IF eElementNumber > E_ElementNumber.E_BEGIN_ELEMENT AND
+	   eElementNumber < E_ElementNumber.E_END_ELEMENT THEN
+		
+			// Check that the real module is initialized
+			IF F_IsElementInitialized(eElementNumber) THEN
+				// Module is initialized
+				ElementData.Init := TRUE;
+				
+				// Send debug message
+				DebugMsg := CONCAT('Initialization done. Element: ', ElementRegistry[eElementNumber].ElementName);
+				fbDebugMsg.M_SendInfoMsg(DebugMsg);
+				
+				// Initialize real module
+				F_InitializeElement(eElementNumber := eElementNumber);
+			END_IF
+	END_IF
+END_IF
+
+]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="A_UpdateReference" Id="{0d2fb278-cbee-4ec5-9071-ae913b3e6525}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_UpdateReference
+ * 	FUNCTION	Update reference to real object
+ **************************************************************************************)
+
+// Check valid element number
+IF eElementNumber > E_ElementNumber.E_BEGIN_ELEMENT AND
+   eElementNumber < E_ElementNumber.E_END_ELEMENT THEN
+
+	// Is reference valid  
+	IF __ISVALIDREF(ElementRegistry[eElementNumber].rElement) THEN
+		// Build address to reference
+		pElement := ADR(ElementRegistry[eElementNumber].rElement);
+
+		// If address is possible
+		IF pElement <> 0 THEN
+			// Build reference to memory
+			rElement REF= pElement^;
+		ELSE
+			// Reinitialize module
+			ElementData.Init := FALSE;
+		END_IF
+	ELSE
+		// Reinitialize module
+		ElementData.Init := FALSE;
+	END_IF
+END_IF
+		]]></ST>
+      </Implementation>
+    </Action>
+    <Method Name="FB_init" Id="{1c329d04-aa12-4cd2-ab8a-ba8ed3c8432c}">
+      <Declaration><![CDATA[METHOD FB_init : BOOL
+VAR_INPUT
+	bInitRetains : BOOL; // if TRUE, the retain variables are initialized (warm start / cold start)
+	bInCopyCode : BOOL;  // if TRUE, the instance afterwards gets moved into the copy code (online change)
+END_VAR
+VAR
+	i:INT;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[IF(bInitRetains OR bInCopyCode) THEN
+	_DefaultHwInputVC.HomeSwitch:= FALSE;
+	_DefaultHwInputVC.MotorUnitOK :=  TRUE;
+	_DefaultHwInputVC.Errors.EndLimit := TRUE;	
+			
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <LineIds Name="FB_ProBoxElementVC_Emulation">
+      <LineId Id="50" Count="23" />
+      <LineId Id="75" Count="0" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ProBoxElementVC_Emulation._M_OverWriteInputs">
+      <LineId Id="380" Count="64" />
+      <LineId Id="453" Count="0" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ProBoxElementVC_Emulation.A_Init">
+      <LineId Id="2" Count="26" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ProBoxElementVC_Emulation.A_UpdateReference">
+      <LineId Id="2" Count="26" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ProBoxElementVC_Emulation.FB_init">
+      <LineId Id="7" Count="0" />
+      <LineId Id="10" Count="1" />
+      <LineId Id="35" Count="0" />
+      <LineId Id="50" Count="0" />
+      <LineId Id="9" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

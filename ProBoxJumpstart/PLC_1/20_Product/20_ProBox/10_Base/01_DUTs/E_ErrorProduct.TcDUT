@@ -1,0 +1,44 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.12">
+  <DUT Name="E_ErrorProduct" Id="{754262f4-6769-4c82-8e14-4ccbcc3ca7ca}">
+    <Declaration><![CDATA[{attribute 'qualified_only'}
+{attribute 'strict'}
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 417092 $
+ *	Revision date	:	$Date: 2018-11-14 12:58:58 +0100 (Mi., 14 Nov 2018) $
+ *	Last changed by	:	$Author: q8aberh $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/ProMove/02_Controls/ProBox/03_Implementation/01_DevelopmentProject/01_Software/ProBox_COE/ProBox_DevProj_v1.0/PLC_1/20_Product/10_App/10_Base/E_ErrorProduct.TcDUT $
+ *
+ *	Purpose			:	Product error
+ *						This Structure can be used for product specific error codes.
+ *						ATTENTION! - WM needs to be updated for each error code
+ *
+ *						0 - 999 Reserved Framework
+ *						1000... Product specific
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+TYPE E_ErrorProduct :
+(
+	UNDEF := 1000,	
+(* -------------------------------------------------------------
+		ProBox error messages
+--------------------------------------------------------------*)
+	SCALE_OVER_UNDER_WEIGHT							:= 1100,
+	SCALE_WEIGHT_CELL_ERROR							:= 1101
+	
+);
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

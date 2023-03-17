@@ -1,0 +1,15 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.4">
+  <DUT Name="E_LSPM_ForkPos" Id="{5a43acba-18a2-46b5-8e4a-13ec5a70eb51}">
+    <Declaration><![CDATA[{attribute 'qualified_only'}
+{attribute 'strict'}
+TYPE E_LSPM_ForkPos :
+(
+	E_UNKNOWN,	
+	E_IN,		//In: Fork is positioned so that the lift is free to move up/down without engaging pallet  
+	E_OUT		//Out: Fork is in position to operate pallet
+);
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

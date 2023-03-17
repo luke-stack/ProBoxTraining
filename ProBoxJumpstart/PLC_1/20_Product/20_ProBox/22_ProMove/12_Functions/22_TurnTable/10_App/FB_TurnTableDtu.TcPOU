@@ -1,0 +1,365 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <POU Name="FB_TurnTableDtu" Id="{209e6a70-d7ac-43be-807d-6e40b46f419d}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK FB_TurnTableDtu EXTENDS FB_TurnTableBase
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision:  $
+ *	Revision date	:	$Date: $
+ *	Last changed by	:	$Author:  $
+ *	URL				:	$URL: $
+ *
+ *	Purpose			:	Turntable with DTU and lift.
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *
+ **************************************************************************************)
+VAR_INPUT
+	Config					: ST_CFG_TurnTableDTU; 		// Configuration
+	HW_Inputs				: ST_HW_InputsTurnTableDTU; 	// Hardware inputs
+	CtrlIn					: ST_CtrlInTT;			// Inputs to control functionality
+END_VAR
+
+VAR
+	_fbLiftControl			: FB_LiftControl; // Lift control
+END_VAR
+
+VAR_OUTPUT	
+	HW_Outputs				: ST_HW_OutputsTurnTableDTU;	// Hardware outputs
+END_VAR
+
+
+VAR PERSISTENT
+	Settings				: ST_CFG_TurnTableDTU; // Settings - activated configuration 
+END_VAR
+
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[(**************************************************************************************************************
+   Input mapping
+***************************************************************************************************************)
+A_InputMapping();
+
+(**************************************************************************************************************
+   Initialization
+***************************************************************************************************************)
+A_Init();
+
+(**************************************************************************************************************
+   External Subsystem transport interface
+***************************************************************************************************************)
+A_ExternalSTI();
+
+(**************************************************************************************************************
+   State control
+***************************************************************************************************************)
+A_StateControl();
+
+(**************************************************************************************************************
+   Error handler
+***************************************************************************************************************)
+A_ErrorHandler();
+
+(**************************************************************************************************************
+   Process AddOns
+***************************************************************************************************************)
+M_ProcessAddOns();
+
+(**************************************************************************************************************
+   Manual control
+***************************************************************************************************************)
+A_ManualControl();
+
+
+(**********************************************************************************************************
+   Transport link
+***********************************************************************************************************)
+A_TransportLink();
+
+(**********************************************************************************************************
+   TurnTable control
+***********************************************************************************************************)
+_M_TurnControl( HW_Sensor_TurnTable := HW_Inputs.TT,
+				HW_Sensor_Overhang 	:= HW_Inputs.Sensor_Overhang_12 AND HW_Inputs.Sensor_Overhang_21 AND HW_Inputs.Sensor_Overhang_34 AND HW_Inputs.Sensor_Overhang_43,
+				TurnTimeoutValue 	:= Settings.TurnTimeoutValue,
+				TurnHomePosFree 	:= Settings.TurnHomePosFree,
+				TurnHomePosOccupied := Settings.TurnHomePosOccupied,
+				DisableTurning		:= _fbLiftControl.Drive_Run_UpDown AND Settings.LiftnTurnSimultaneously = FALSE,
+				TurnBrakeDelayTime	:= Config.TurnBrakeDelayTime,
+				ZoneData[1].ErrorData.ErrorDataSet[2]);
+
+
+(**********************************************************************************************************
+   Lift control
+***********************************************************************************************************)
+_M_LiftControl(ZoneData[1].ErrorData.ErrorDataSet[3]);
+
+
+(**********************************************************************************************************
+   Transport control
+***********************************************************************************************************)
+_M_TransportControl(EnableTransport 	:= _fbTurnControl.EnableTransport AND _fbLiftControl.EnableTransport,
+					HW_InputsConv		:= HW_Inputs.CV,
+					TranspErrorData		:= ZoneData[1].ErrorData.ErrorDataSet[1]);
+
+(**********************************************************************************************************
+   Assign transport data
+***********************************************************************************************************)
+A_AssignTransportParam();
+
+(**********************************************************************************************************
+   Message handler zone
+***********************************************************************************************************)
+M_MsgHandlerZone(mZoneNumber := 1);
+
+(**********************************************************************************************************
+   ITC Zone output
+***********************************************************************************************************)
+M_ITC_ProcessOutZone(mZoneNumber := 1);
+
+(**************************************************************************************************************
+   Interface handler out
+***************************************************************************************************************)
+M_ITC_ProcessOut();
+
+(**************************************************************************************************************
+   Output mapping
+***************************************************************************************************************)
+A_OutputMapping();	]]></ST>
+    </Implementation>
+    <Method Name="_M_GetExpectedAdjacentSideLiftPos" Id="{86d7ff9b-2172-46d7-8f64-6493d33e53eb}">
+      <Declaration><![CDATA[METHOD PRIVATE _M_GetExpectedAdjacentSideLiftPos : E_Positions_LiftControl
+VAR_INPUT
+	TurnTableIsOccupied	: BOOL;  // true means occupied => Handing over, False => Takeing over
+END_VAR
+VAR_IN_OUT
+	ErrorData 			: ST_ErrorDataSet;
+END_VAR
+VAR
+	SideType			: E_AdjacentSideType;
+	FunctionNumber 		: E_FunctionNumber;
+	i:INT;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+SideType := _M_GetExpectedAdjacentSideType(TurnTableIsOccupied, ErrorData);
+
+// If Settings.LiftControlChain is set in ConfigPosition -> Swap lift up and down
+
+IF((SideType = E_AdjacentSideType.E_RC AND NOT Settings.LiftControlChain) OR
+   (SideType = E_AdjacentSideType.E_CC AND Settings.LiftControlChain)) THEN
+	_M_GetExpectedAdjacentSideLiftPos := E_Positions_LiftControl.UP;
+END_IF
+IF((SideType = E_AdjacentSideType.E_CC AND NOT Settings.LiftControlChain) OR
+   (SideType = E_AdjacentSideType.E_RC AND Settings.LiftControlChain)) THEN
+	_M_GetExpectedAdjacentSideLiftPos := E_Positions_LiftControl.DOWN;
+END_IF
+
+
+
+
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_LiftControl" Id="{5eee01c5-5e22-4201-b4c4-ee5667975e27}">
+      <Declaration><![CDATA[METHOD PRIVATE _M_LiftControl : BOOL
+VAR_OUTPUT
+	//LiftEnableTransport		:BOOL;
+END_VAR
+VAR_IN_OUT
+	LiftErrorData 			: ST_ErrorDataSet;
+END_VAR
+VAR
+	OrderPos				: E_Positions_LiftControl; // Order position for turn table
+	HomePos					: E_Positions_LiftControl; // Home position for turn table
+	ZoneLogicalOccupied		: BOOL;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[(**********************************************************************************************************
+   Lift control
+***********************************************************************************************************)
+
+// Initialize variables
+OrderPos := E_Positions_LiftControl.UNDIFINED; 
+HomePos := E_Positions_LiftControl.UNDIFINED; 
+
+(**********************************************************************************************************
+   Get Lift order possition or Home position
+***********************************************************************************************************)
+ZoneLogicalOccupied := F_PB_IsLogicalOccupied(ZoneData[1].TransportControlData);
+
+// When zone is free
+IF( NOT ZoneLogicalOccupied) THEN 
+	// If previous function is avaiable
+	IF FunctionInterface.In.ePrevFunctionNumber <> E_FunctionNumber.F_BEGIN_FUNCTION THEN
+		//Get if lift shall be up or down	
+		OrderPos := _M_GetExpectedAdjacentSideLiftPos(FALSE, LiftErrorData);			
+	ELSE
+		// Set homeposition
+		HomePos := Settings.LiftHomePosFree;	
+	END_IF	
+// When zone is occupied
+ELSE (*if ZoneLogicalOccupied*)	
+	// If next function is avaiable and zone is enabled
+	IF FunctionInterface.In.eNextFunctionNumber <> E_FunctionNumber.F_BEGIN_FUNCTION THEN
+		//Get if lift shall be up or down	
+		OrderPos := _M_GetExpectedAdjacentSideLiftPos(TRUE, LiftErrorData);			
+	ELSE
+		// Set homeposition
+		HomePos := Settings.LiftHomePosOccupied;			
+	END_IF				
+END_IF			
+
+
+// Dont start lift motor if turning is active if config parameter LiftnTurnSimultaneously is not used
+IF( Settings.LiftnTurnSimultaneously = FALSE AND 
+  (_fbTurnControl.ActualPosition = E_Positions_TurnControl.UNDEFINED )) THEN 
+	OrderPos :=  E_Positions_LiftControl.UNDIFINED; 
+	HomePos := E_Positions_LiftControl.UNDIFINED; 
+END_IF
+
+(**********************************************************************************************************
+   Check Element / Motor Feedback
+***********************************************************************************************************)
+IF(FunctionInterface.In.Element.State.Error) THEN		
+	F_SetError(E_ErrorType.ERROR,'Element in error',E_ErrorConv.POSITIONING_ERROR,LiftErrorData);
+END_IF
+
+
+(**********************************************************************************************************
+   Run lift control
+***********************************************************************************************************)			  
+
+_fbLiftControl(
+	LinkedElementNumber		:= SettingsFunction.eElementLink,	
+	FunctionData			:= FunctionData, // Function data 
+	Sensor_Pos_Down			:= HW_Inputs.Sensor_Pos_Down, // Sensor position lift down
+	Sensor_Pos_Up			:= HW_Inputs.Sensor_Pos_Up, // Sensor position lift up
+	TimeoutValueLift		:= Settings.LiftTimeoutValue, // Timeout value for lifting
+	OrderPos				:= OrderPos, // Order position Lift		
+	HomePos					:= HomePos, // Home position lift
+	ErrorData				:= LiftErrorData); // Error data		
+
+
+
+//Check if _fbTurnControl is requesting drive at any direction during transport, may happen if an sensor signal is broken
+IF( _fbLiftControl.Drive_Run_UpDown AND _M_IsTransportActive() ) THEN
+	F_SetError(	ErrorType 	:= E_ErrorType.ERROR,
+				ErrorParam 	:= 'Lift not in position during transport',
+				ErrorMsg 	:= E_ErrorConv.INCORRECT_SENSOR_SIGNAL,
+				ErrorData 	:= LiftErrorData);	
+END_IF
+	
+
+
+
+]]></ST>
+      </Implementation>
+    </Method>
+    <Action Name="A_Init" Id="{cd1d7d4f-8a7c-426a-8b0f-898198a0bfbe}">
+      <Implementation>
+        <ST><![CDATA[
+SUPER^.A_Init();
+
+IF NOT FunctionData.Init THEN
+	// Load function specific configuration to settings
+	Settings := Config;
+END_IF
+]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="A_InputMapping" Id="{bb62afb7-12b1-4164-980a-cfcf282631cf}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_InputMapping
+ * 	FUNCTION	Input mapping
+ **************************************************************************************)
+
+
+//Prepare base object
+_AdjacentSideElementType 			:= Settings.AdjacentSideElementType;
+
+//Set Invert parameters
+_M_SetInvertTurn(CtrlIn.InvertTurnTakeover, CtrlIn.InvertTurnHandover);
+
+//run base class Action
+SUPER^.A_InputMapping();
+]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="A_OutputMapping" Id="{d1fdde41-fbac-4e25-b6d3-2a8ea7760364}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_OutputMapping
+ * 	FUNCTION	Output mapping
+ **************************************************************************************)
+ 
+(**************************************************************************************
+   Hardware outputs
+***************************************************************************************)
+
+//	Lift
+HW_Outputs.Drive_Run_UpDown 	:= _fbLiftControl.Drive_Run_UpDown;
+
+//	TurnTable
+
+HW_Outputs.Drive_Run_CW 		:= _fbTurnControl.Drive_Run_CW; 
+HW_Outputs.Drive_Run_CCW 		:= _fbTurnControl.Drive_Run_CCW;
+HW_Outputs.Drive_Creep_CW_CCW 	:= _fbTurnControl.Drive_Creep_CW_CCW;
+HW_Outputs.Drive_Brake_CW_CCW	:= _TurnDriveBrakeRelease; 
+
+//run base class Action that output requests to the element
+SUPER^.A_OutputMapping();
+]]></ST>
+      </Implementation>
+    </Action>
+    <LineIds Name="FB_TurnTableDtu">
+      <LineId Id="3" Count="34" />
+      <LineId Id="134" Count="3" />
+      <LineId Id="133" Count="0" />
+      <LineId Id="139" Count="9" />
+      <LineId Id="240" Count="0" />
+      <LineId Id="149" Count="7" />
+      <LineId Id="43" Count="6" />
+      <LineId Id="196" Count="0" />
+      <LineId Id="198" Count="2" />
+      <LineId Id="197" Count="0" />
+      <LineId Id="75" Count="18" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_TurnTableDtu._M_GetExpectedAdjacentSideLiftPos">
+      <LineId Id="3" Count="16" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_TurnTableDtu._M_LiftControl">
+      <LineId Id="3" Count="10" />
+      <LineId Id="97" Count="0" />
+      <LineId Id="14" Count="1" />
+      <LineId Id="18" Count="9" />
+      <LineId Id="31" Count="53" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_TurnTableDtu.A_Init">
+      <LineId Id="2" Count="6" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_TurnTableDtu.A_InputMapping">
+      <LineId Id="2" Count="13" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_TurnTableDtu.A_OutputMapping">
+      <LineId Id="2" Count="16" />
+      <LineId Id="24" Count="0" />
+      <LineId Id="20" Count="2" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

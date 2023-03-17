@@ -1,0 +1,14 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.4">
+  <DUT Name="ST_LSPM_Inp_Element" Id="{2efd4113-1ae8-4c1b-9745-57f53c0865af}">
+    <Declaration><![CDATA[TYPE ST_LSPM_Inp_Element :
+STRUCT
+	SignalMotorUnitOK			: BOOL; // Signal motor unit OK of compact starter
+	SensorOccupied				: BOOL; // Sensor occupied on element
+	SensorMagazineFull			: BOOL; // Sensor magazine full	
+	// not used. ReflexSensor	: BOOL; // Sensor on zone to ensure if the position has a pallet or not	
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

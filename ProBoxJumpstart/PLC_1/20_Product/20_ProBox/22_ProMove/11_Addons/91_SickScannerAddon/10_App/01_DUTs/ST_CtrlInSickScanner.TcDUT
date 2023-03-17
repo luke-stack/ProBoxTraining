@@ -1,0 +1,11 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.4">
+  <DUT Name="ST_CtrlInSickScanner" Id="{15bdefae-6a83-4dab-b725-1d2e1551750f}">
+    <Declaration><![CDATA[TYPE ST_CtrlInSickScanner :
+STRUCT
+	ExternTrigger			: BOOL;	//Trig scaner signal, optionally set by HW or SW trigger. Note to use ExternTrigger, the config parameter 'EnableExternalTrigger' must be set 
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

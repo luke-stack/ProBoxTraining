@@ -1,0 +1,74 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.4">
+  <Itf Name="I_HddUsage" Id="{98b5570c-fa8a-41b0-8781-84655e04dabb}">
+    <Declaration><![CDATA[// reads usage/free and total space of hdd
+{attribute 'monitoring' := 'call'}
+INTERFACE PUBLIC I_HddUsage
+]]></Declaration>
+    <Folder Name="properties" Id="{12f23bd7-155f-4d7a-b639-f7822868fe1c}" />
+    <Property Name="Busy" Id="{6881636d-02d9-4677-b70e-6951d62c7080}" FolderPath="properties\">
+      <Declaration><![CDATA[// LO = FB is finished -> data valid
+{attribute 'monitoring' := 'call'}
+PROPERTY PUBLIC Busy : BOOL]]></Declaration>
+      <Get Name="Get" Id="{9d0b1399-5ae9-4ebb-b8ab-f87c986dad2a}">
+        <Declaration><![CDATA[]]></Declaration>
+      </Get>
+    </Property>
+    <Property Name="BytesFree" Id="{2685f038-065a-4131-86de-1abe15dbeca1}" FolderPath="properties\">
+      <Declaration><![CDATA[// number of bytes free to use
+{attribute 'monitoring' := 'call'}
+PROPERTY PUBLIC BytesFree : ULINT]]></Declaration>
+      <Get Name="Get" Id="{ad917130-0f7a-4d6d-b118-bf600bd74f99}">
+        <Declaration><![CDATA[]]></Declaration>
+      </Get>
+    </Property>
+    <Property Name="BytesTotal" Id="{b1fa7935-cfcc-457c-8aee-746303f33746}" FolderPath="properties\">
+      <Declaration><![CDATA[// total capacity of hdd in bytes
+{attribute 'monitoring' := 'call'}
+PROPERTY PUBLIC BytesTotal : ULINT]]></Declaration>
+      <Get Name="Get" Id="{ad040f8a-337c-45fc-986b-affe0310600d}">
+        <Declaration><![CDATA[]]></Declaration>
+      </Get>
+    </Property>
+    <Property Name="BytesUsed" Id="{b2b05c58-b084-48c1-a334-55fb4dbf1e9f}" FolderPath="properties\">
+      <Declaration><![CDATA[// number of bytes free already used
+{attribute 'monitoring' := 'call'}
+PROPERTY PUBLIC BytesUsed : ULINT]]></Declaration>
+      <Get Name="Get" Id="{75ec8fda-be0c-408f-9ead-5f17c29da86a}">
+        <Declaration><![CDATA[]]></Declaration>
+      </Get>
+    </Property>
+    <Property Name="Drive" Id="{b846b76f-1a20-428c-b729-7041e2242c06}" FolderPath="properties\">
+      <Declaration><![CDATA[// drive letter
+{attribute 'monitoring' := 'call'}
+PROPERTY PUBLIC Drive : STRING[2]]]></Declaration>
+      <Get Name="Get" Id="{86fc5f39-15d9-407f-b68f-5a72e8cb0dee}">
+        <Declaration><![CDATA[]]></Declaration>
+      </Get>
+    </Property>
+    <Property Name="Error" Id="{1524f1de-56c1-4790-97f8-2c092010b73c}" FolderPath="properties\">
+      <Declaration><![CDATA[// HI = unable to retrieve data
+{attribute 'monitoring' := 'call'}
+PROPERTY PUBLIC Error : BOOL]]></Declaration>
+      <Get Name="Get" Id="{32d32e52-7e5e-45a3-80b7-dca5315dd40f}">
+        <Declaration><![CDATA[]]></Declaration>
+      </Get>
+    </Property>
+    <Property Name="PercentageFree" Id="{3126a29b-33ab-4f1b-b61a-3ebeb3b0f8e2}" FolderPath="properties\">
+      <Declaration><![CDATA[// percentual free space
+{attribute 'monitoring' := 'call'}
+PROPERTY PUBLIC PercentageFree : BYTE]]></Declaration>
+      <Get Name="Get" Id="{2705e4e0-0fde-44d4-9799-32de5784d5d1}">
+        <Declaration><![CDATA[]]></Declaration>
+      </Get>
+    </Property>
+    <Property Name="PercentageUsed" Id="{935c460e-f77e-4082-bd7c-a63113d07eaf}" FolderPath="properties\">
+      <Declaration><![CDATA[// percentual used space
+{attribute 'monitoring' := 'call'}
+PROPERTY PUBLIC PercentageUsed : BYTE]]></Declaration>
+      <Get Name="Get" Id="{c203c7ac-1e5b-4d87-8836-b9540aa8a5f9}">
+        <Declaration><![CDATA[]]></Declaration>
+      </Get>
+    </Property>
+  </Itf>
+</TcPlcObject>

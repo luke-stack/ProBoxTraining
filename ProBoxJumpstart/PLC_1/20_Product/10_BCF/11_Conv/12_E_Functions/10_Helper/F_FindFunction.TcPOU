@@ -1,0 +1,48 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.4">
+  <POU Name="F_FindFunction" Id="{0edbc0af-4573-40df-b7ab-9e13dac132a9}" SpecialFunc="None">
+    <Declaration><![CDATA[// returns the function number of the functions name or F_BEGIN_FUNCTION if not found
+FUNCTION PUBLIC F_FindFunction : E_FunctionNumber
+
+(**************************************************************************************
+ * Application   : BoxControl Framework
+ * Revision date : $Date: 2013-09-23 11:26:06 +0200 (Wed, 23 Sep 2015) $
+ * Author        : CDC
+ * ------------------------------------------------------------------------------------
+ * © Swisslog AG * Swisslog is not liable for any usage of this source code that is not agreed
+ * on between Swisslog and the other party. The mandatory legal liability remains * unaffected.
+ * ------------------------------------------------------------------------------------
+ * Project revision history:
+ *
+ * VERSION DATE         INITIALS     DESCRIPTION
+ * 0.0     DD.MM.YYYY   (name)       (explain customized modifications)
+ *
+ **************************************************************************************)
+
+//***********************************************************************************************************
+VAR_INPUT
+	Name				: STRING[NAME_LENGTH]		:= '';	// name of position
+END_VAR
+
+//***********************************************************************************************************
+VAR
+	eFunctionNumber		: E_FunctionNumber			:= 0;
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[
+// string length is roughly 12chars -> hashcode is not neccessary
+FOR eFunctionNumber := E_FunctionNumber.F_BEGIN_FUNCTION + 1 TO E_FunctionNumber.F_END_FUNCTION - 1 DO
+	IF F_EqualSisNames(Name1:= FunctionRegistry[eFunctionNumber].FunctionName,
+					 Name2:= Name) THEN
+		F_FindFunction:= eFunctionNumber;
+		RETURN;
+	END_IF
+
+END_FOR
+
+// done
+F_FindFunction:= E_FunctionNumber.F_BEGIN_FUNCTION;]]></ST>
+    </Implementation>
+  </POU>
+</TcPlcObject>

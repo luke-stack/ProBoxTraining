@@ -1,0 +1,110 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.12">
+  <POU Name="FB_SeqBranchMux" Id="{47052186-a75a-4952-bc37-59ea560e8c34}" SpecialFunc="None">
+    <Declaration><![CDATA[/// Branch multiplexer. Allows to multiplex several branches.
+/// This is no checkpoint! Automated update of checkpoint id is not possible, needs to be done manually.
+/// Remark: No automated loop detection
+FUNCTION_BLOCK FB_SeqBranchMux IMPLEMENTS I_BranchCheckpoint
+(************************************************************************************** 
+* 	Application 		: BoxControl Framework 
+* 	Revision 			: $Revision: 404877 $ 
+* 	Revision date 		: $Date: 2018-04-26 14:10:34 +0200 (Thu, 26 Apr 2018) $ 
+* 	Last changed by 	: $Author: b7ernsb $ 
+* 	URL 				: $URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/21_Projects/BCF_2.0/trunk/BCF/BCF/JumpStart/20_Product/10_App/12_E_Functions/10_Lib/10_Conv/FB_FunctionConv.TcPOU $ 
+* ------------------------------------------------------------------------------------ 
+* 	© Swisslog AG 
+* 	Swisslog is not liable for any usage of this source code that is not agreed 
+* 	on between Swisslog and the other party. The mandatory legal liability remains 
+* 	unaffected. 
+* ------------------------------------------------------------------------------------ 
+* 	Revision History: 
+* 
+* 	VERSION 		DATE 			INITIALS 			DESCRIPTION 
+* 	0.1 			23.05.2018 		mbo 				Created.
+* 
+**************************************************************************************)
+VAR_INPUT
+	BranchRecursive 	: BOOL := FALSE; // Check all connected recursive (Default = FALSE)
+	BranchA				: I_BranchCheckpoint; // Branch to check
+	BranchB				: I_BranchCheckpoint; // Branch to check
+	BranchC				: I_BranchCheckpoint; // Branch to check
+	BranchD				: I_BranchCheckpoint; // Branch to check
+END_VAR
+VAR
+	Empty				: STRING(5) := ''; // Empty string to fullfil interface
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[;]]></ST>
+    </Implementation>
+    <Method Name="M_IsOnBranches" Id="{d3e1a007-1d66-4721-8dfb-5cdfcb737ff6}">
+      <Declaration><![CDATA[/// Searches if a checkpoint can be found on a specific branch
+/// Returns true if found, false = not found 
+METHOD M_IsOnBranches : BOOL
+VAR_INPUT
+	mRecursive	: BOOL := FALSE;// Search recursive through the whole tree
+END_VAR
+VAR_IN_OUT CONSTANT
+	mCheckpointID	: STRING(5); // Last checkpoint id	
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+IF BranchA <> 0 THEN
+	 IF BranchA.M_IsOnBranches(BranchRecursive, mCheckpointId) THEN;
+	 	M_IsOnBranches := TRUE;
+		RETURN;
+	END_IF
+END_IF
+
+IF BranchB <> 0 THEN
+	 IF BranchB.M_IsOnBranches(BranchRecursive, mCheckpointId) THEN;
+	 	M_IsOnBranches := TRUE;
+		RETURN;
+	END_IF
+END_IF
+
+IF BranchC <> 0 THEN
+	 IF BranchC.M_IsOnBranches(BranchRecursive, mCheckpointId) THEN;
+	 	M_IsOnBranches := TRUE;
+		RETURN;
+	END_IF
+END_IF
+
+IF BranchD <> 0 THEN
+	 IF BranchD.M_IsOnBranches(BranchRecursive, mCheckpointId) THEN;
+	 	M_IsOnBranches := TRUE;
+		RETURN;
+	END_IF
+END_IF
+
+]]></ST>
+      </Implementation>
+    </Method>
+    <Property Name="P_CheckpointID" Id="{1144c656-4916-4da1-bc21-5a83cec7e2d3}">
+      <Declaration><![CDATA[/// Identifier for checkpoint
+{attribute 'monitoring' := 'call'}
+{attribute 'suppress_wrn_C0410'}
+PROPERTY P_CheckpointID : REFERENCE TO STRING(5)
+]]></Declaration>
+      <Get Name="Get" Id="{7cb0a98e-168e-4056-8b1f-33c99a37eefb}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[P_CheckpointID REF= Empty;]]></ST>
+        </Implementation>
+      </Get>
+    </Property>
+    <LineIds Name="FB_SeqBranchMux">
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_SeqBranchMux.M_IsOnBranches">
+      <LineId Id="3" Count="28" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_SeqBranchMux.P_CheckpointID.Get">
+      <LineId Id="2" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

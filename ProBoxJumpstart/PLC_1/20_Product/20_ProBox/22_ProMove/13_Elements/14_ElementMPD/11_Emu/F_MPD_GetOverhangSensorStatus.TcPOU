@@ -1,0 +1,87 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <POU Name="F_MPD_GetOverhangSensorStatus" Id="{41945abe-de8c-49a6-8cca-f1e6b91b8246}" SpecialFunc="None">
+    <Declaration><![CDATA[//Set overhang sensor value on shuttle car or vertical conveyor. simulate overhang sensor being blocked during transfer
+FUNCTION F_MPD_GetOverhangSensorStatus : BOOL
+VAR_INPUT
+	MPD_Function		: E_FunctionNumber;	//VC or SC function number
+	ZonesPerFunction	: INT;
+	Drive_Run_12		: BOOL;
+	Drive_Run_21		: BOOL;
+END_VAR
+VAR_OUTPUT
+	SensorOverhang12 : BOOL;
+	SensorOverhang21 : BOOL;
+END_VAR
+VAR
+	IsEmpty:BOOL;
+	HandingOver:BOOL;
+	TakingOver:BOOL;
+	i:INT;
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[//Set overhang sensor value on shuttle car or vertical conveyor. simulate overhang sensor being blocked during transfer
+ 
+
+//Set all True 
+SensorOverhang12:=TRUE;
+SensorOverhang21:=TRUE;
+
+
+ //Taking over from Left => FWD transport direction
+ //Taking over to Right => RWD transport direction 
+ //Taking over from Right => RWD transport direction
+ //Handing over to Right => FWD transport direction
+ 
+IF(ZonesPerFunction > Conveyor.NUMBER_OF_ZONES_PER_FUNCTION) THEN
+	RETURN; //not allowed
+END_IF
+ 
+ //Takeover from Left, Set OH sensor on Side 1 low
+ IF(Drive_Run_12  AND F_PB_GetTransportControlDataRef(MPD_Function,1).eTakeOverState = E_TakeOverState.ACTIVE) THEN
+	 SensorOverhang12 := FALSE; //emulate sensor detecting TU
+ END_IF
+ //Handover To Left, Set OH sensor on Side 1 low
+ IF(Drive_Run_21  AND F_PB_GetTransportControlDataRef(MPD_Function,1).eHandOverState = E_HandOverState.ACTIVE) THEN
+	 SensorOverhang12 := FALSE; //emulate sensor detecting TU
+ END_IF
+ 
+ //Takeover from Right, Set OH sensor on Side 2 low
+ IF(Drive_Run_21  AND F_PB_GetTransportControlDataRef(MPD_Function,ZonesPerFunction).eTakeOverState = E_TakeOverState.ACTIVE) THEN
+	 SensorOverhang21 := FALSE; //emulate sensor detecting TU
+ END_IF
+ //Handover To Right, Set OH sensor on Side 2 low
+ IF(Drive_Run_12  AND F_PB_GetTransportControlDataRef(MPD_Function,ZonesPerFunction).eHandOverState = E_HandOverState.ACTIVE) THEN
+	 SensorOverhang21 := FALSE; //emulate sensor detecting TU
+ END_IF
+ 
+ ]]></ST>
+    </Implementation>
+    <LineIds Name="F_MPD_GetOverhangSensorStatus">
+      <LineId Id="8" Count="0" />
+      <LineId Id="36" Count="0" />
+      <LineId Id="84" Count="0" />
+      <LineId Id="82" Count="0" />
+      <LineId Id="85" Count="1" />
+      <LineId Id="83" Count="0" />
+      <LineId Id="81" Count="0" />
+      <LineId Id="37" Count="0" />
+      <LineId Id="39" Count="0" />
+      <LineId Id="42" Count="0" />
+      <LineId Id="38" Count="0" />
+      <LineId Id="46" Count="0" />
+      <LineId Id="48" Count="0" />
+      <LineId Id="78" Count="1" />
+      <LineId Id="59" Count="0" />
+      <LineId Id="61" Count="4" />
+      <LineId Id="67" Count="1" />
+      <LineId Id="66" Count="0" />
+      <LineId Id="69" Count="0" />
+      <LineId Id="71" Count="6" />
+      <LineId Id="70" Count="0" />
+      <LineId Id="60" Count="0" />
+      <LineId Id="7" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

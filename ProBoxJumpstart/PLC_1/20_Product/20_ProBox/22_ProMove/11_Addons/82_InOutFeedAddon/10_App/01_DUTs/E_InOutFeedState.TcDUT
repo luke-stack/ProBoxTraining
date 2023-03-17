@@ -1,0 +1,20 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.12">
+  <DUT Name="E_InOutFeedState" Id="{c4121499-7670-421d-81a5-8838b3a6f02b}">
+    <Declaration><![CDATA[TYPE E_InOutFeedState :
+(
+	INIT,
+	CHECK_ZONE,
+	EMPTY,
+	INFEED_OCCUPIED,
+	OUTFEED_OCCUPIED,
+	OUTFEED_TU_SENSOR_CLEAR,
+	INFEED_FLT_CLEAR,
+	OUTFEED_FLT_CLEAR,
+	ERROR
+
+);
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

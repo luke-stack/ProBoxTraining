@@ -1,0 +1,13 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <DUT Name="ST_CtrlOutMPD_Control" Id="{13d93881-7513-4397-9a2b-1cdad25093ac}">
+    <Declaration><![CDATA[TYPE ST_CtrlOutMPD_Control :
+STRUCT
+	EntryRequestProcessed	: BOOL; // The request is processed and SC/VC is moved to the entry position.
+	MotionRunning			: BOOL; //True if motion is active and shuttle car / Lift is moving
+	MotionComplete			: BOOL; //True if the desired position is reached.
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

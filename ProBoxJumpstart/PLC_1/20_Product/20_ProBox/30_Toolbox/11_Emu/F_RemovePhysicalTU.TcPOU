@@ -1,0 +1,60 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.12">
+  <POU Name="F_RemovePhysicalTU" Id="{87234d14-7a47-4110-9beb-fd81824cccd1}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION F_RemovePhysicalTU : BOOL
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 353897 $
+ *	Revision date	:	$Date: 2015-08-24 22:28:50 +0200 (Mo, 24 Aug 2015) $
+ *	Last changed by	:	$Author: d7mangc $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/trunk/01_Software/BoxControlFramework/BoxControlFramework/JumpStart/11_Library/10_Application/12_ElementFunctions/10_Functions/F_GetFunctionData.TcPOU $
+ *
+ *	Purpose			:	Removes physical (emulation) TU data
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+VAR_INPUT
+	eFunctionNumber : E_FunctionNumber;
+	ZoneNumber		: INT;
+END_VAR
+VAR
+	Name			: STRING;
+	RTQ				: ST_ITC_RTQ;
+	TransportData	: ST_TransportControlData;
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[TransportData := F_GetTransportControlData(eFunctionNumber, ZoneNumber);
+
+IF TransportData.SensorOccupied THEN
+	Name := F_GetFunctionName(eFunctionNumber:= eFunctionNumber, ZoneNumber:= ZoneNumber);
+	RTQ.Position := F_ReduceToAlphaNumeric(InputString := Name);
+	
+	fbITC_ManagerEmulation.M_AddData(
+		meChannelSrc := 0,
+		mMsgType     := E_ITC_MsgTypeConv.E_REMOVE_TU_REQUEST,
+		mpData		 := ADR(RTQ),
+		mLen		 := SIZEOF(RTQ));
+	
+	F_RemovePhysicalTU := TRUE;
+END_IF
+	
+]]></ST>
+    </Implementation>
+    <LineIds Name="F_RemovePhysicalTU">
+      <LineId Id="3" Count="9" />
+      <LineId Id="47" Count="0" />
+      <LineId Id="13" Count="3" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

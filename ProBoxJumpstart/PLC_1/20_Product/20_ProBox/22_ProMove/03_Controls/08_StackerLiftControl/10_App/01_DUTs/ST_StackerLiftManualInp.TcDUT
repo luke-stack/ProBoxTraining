@@ -1,0 +1,13 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.4">
+  <DUT Name="ST_StackerLiftManualInp" Id="{689bcd45-38eb-4de8-964d-8cd43efe560f}">
+    <Declaration><![CDATA[TYPE ST_StackerLiftManualInp :
+STRUCT	
+	SwitchManualAuto			: BOOL; //Switch to put machine in,  1 = Auto, 0 = Manual
+	SwitchDriveUp				: BOOL; //Switch to manually drive up
+	SwitchDriveDown				: BOOL; //Switch to manually drive down	 
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

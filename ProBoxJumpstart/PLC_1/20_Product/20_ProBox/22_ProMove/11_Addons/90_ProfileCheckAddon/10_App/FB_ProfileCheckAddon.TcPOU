@@ -1,0 +1,574 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <POU Name="FB_ProfileCheckAddon" Id="{678b6058-05b7-4b25-8e91-215c26052711}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK FB_ProfileCheckAddon EXTENDS FB_FunctionConv
+
+VAR_INPUT
+	Config							: ST_CFG_ProfileCheck;
+	HW_Inputs						: ST_HW_InputsProfileCheck;
+	CtrlIn							: ST_CtrlInProfileCheck;
+END_VAR
+
+VAR_OUTPUT
+	HW_Outputs						: ST_HW_OutputsProfileCheck;
+	CtrlOut							: ST_CtrlOutProfileCheck;
+END_VAR
+
+VAR
+	_Trigger						: BOOL := FALSE;
+	_StartMeasurement				: BOOL; 
+	_MeasurementFrontDone			: BOOL;
+	_MeasurementRearDone			: BOOL;	
+	Outputs							: ST_OutputsProfileCheck;
+	Inputs							: ST_InputsProfileCheck; // Inputs dummy scanner
+	ProfileCheckState				: ST_ProfileCheckStates;
+	fb_AddOnErrHandler				: FB_AddOnErrHandler();
+	
+	// Light grids are clear/un blocked before transport through the profile gauge
+	LightGrid_Height_Lower_Clear	: BOOL;
+	LightGrid_Height_Upper_Clear 	: BOOL;
+	LightGrid_Width_Left_Clear		: BOOL;
+	LightGrid_Width_Right_Clear		: BOOL;
+	LightGrid_Length_Clear			: BOOL; 
+	
+	_fbMeasureHeightLower			: FB_ProfileCheckMeasure;
+	_fbMeasureHeightUpper			: FB_ProfileCheckMeasure;
+	_fbMeasureHeightLeft			: FB_ProfileCheckMeasure;	
+	_fbMeasureHeightRight			: FB_ProfileCheckMeasure;
+	
+	// Measurement results
+	Measurement_Length_Front		: INT;		// Front
+	Measurement_Length_Rear			: INT;		// Rear
+
+	MeasurementTempRear				: INT;
+	MeasurementTempFront			: INT;	
+
+	MeasurementCommissioingRear				: INT;
+	MeasurementCommissioingFront			: INT;	
+	
+	Max_Measurement_Height			: INT;		// Max measured height
+	Max_Measurement_Width_Left		: INT;		// Max measured width left side
+	Max_Measurement_Width_Right		: INT;		// Max measured width right side
+	Max_Measurement_Length_Front	: INT;		// Max measured front overhang
+	Max_Measurement_Length_Rear		: INT;		// Max measured rear overhang
+	
+	Idx								: INT;
+
+
+	
+
+END_VAR
+
+
+VAR PERSISTENT
+	Settings						: ST_CFG_ProfileCheck;	
+END_VAR
+ ]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[(**************************************************************************************************************
+   Input mapping
+***************************************************************************************************************)
+A_InputMapping();
+
+(**************************************************************************************************************
+   Initialization
+***************************************************************************************************************)
+A_Init();
+
+(**************************************************************************************************************
+   State control 
+***************************************************************************************************************)
+A_StateControl();
+
+(**************************************************************************************************************
+   Error handler
+***************************************************************************************************************)
+A_ErrorHandler();
+fb_AddOnErrHandler(AddOnSettingsFunction :=SettingsFunction, AddOnFunctionData:=FunctionData);
+
+(**************************************************************************************************************
+   Infeed states
+***************************************************************************************************************)
+A_ProfileCheckStates();
+
+(**************************************************************************************************************
+   Interface handler out
+***************************************************************************************************************)
+M_ITC_ProcessOut();
+
+(**************************************************************************************************************
+   Output mapping
+***************************************************************************************************************)
+A_OutputMapping();
+
+]]></ST>
+    </Implementation>
+    <Action Name="A_Init" Id="{140f4593-9d8f-4a55-83b5-bb84bd780809}">
+      <Implementation>
+        <ST><![CDATA[// Update Registry
+M_UpdateRegistry();
+
+IF NOT FunctionData.Init AND FunctionData.InitRunning THEN
+	// When the subsystem is started, 
+	// and its released to initialize
+	IF FunctionData.OperationState.Info.SystemReady AND
+	   SettingsFunction.eFunctionNumber < FunctionData.OperationState.InitRelease.eLimitFunctionNumber THEN
+	   
+	   IF M_InitFunction(FALSE) THEN
+			// Function initialized - and initialization done
+			FunctionData.Init := TRUE;
+			FunctionData.InitRunning := FALSE;
+			
+			//ProfileCheckState.eLastState := ProfileCheckState.eState;
+			//ProfileCheckState.eState := E_ProfileCheckState.INIT;
+
+
+			//Inputs.DestinationFunction	:= SettingsFunction.FunctionLink.eFunctionNumber;
+			//Inputs.DestinationZone		:= SettingsFunction.FunctionLink.ZoneNumber;
+			
+			// Set reset cmd
+			FunctionData.ErrorData.Error.ResetError := TRUE;
+			
+			DebugMsg := CONCAT('Initialization done. Function: ', ConfigFunction.FunctionName);
+			fbDebugMsg.M_SendInfoMsg(DebugMsg);
+		END_IF
+	END_IF
+ELSIF NOT FunctionData.Init THEN
+	ProfileCheckState.eLastState := ProfileCheckState.eState;
+	ProfileCheckState.eState := E_ProfileCheckState.INIT;
+	
+	FunctionData.OperationState := FunctionBase.PositionStateEmpty;
+	
+	Settings := Config;
+	
+	M_PreInit();
+	
+	FunctionData.InitRunning := SettingsFunction.eFunctionNumber > 0 AND
+								SettingsFunction.eElementLink > 0;
+END_IF]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="A_InputMapping" Id="{65e2e501-9e50-4b2d-89d7-7d7b8ae7b46f}">
+      <Implementation>
+        <ST><![CDATA[
+Inputs.FBB_Length		:= HW_Inputs.FBB_Length;
+Inputs.LBB_Length		:= HW_Inputs.LBB_Length;
+Inputs.LBB_WidthLeft	:= HW_Inputs.LBB_WidthLeft;
+Inputs.LBB_WidthRight	:= HW_Inputs.LBB_WidthRight;
+Inputs.LBB_Height_Lower	:= HW_Inputs.LBB_Height_Lower;
+Inputs.LBB_Height_Upper	:= HW_Inputs.LBB_Height_Upper;
+
+(**************************************************************************************
+   Element states
+***************************************************************************************)
+// Get status of the corresponding element
+M_GetElementStates(); 
+
+(**************************************************************************************
+   Transport data of corresponding zone
+***************************************************************************************)
+// Get transport state of corresponding conveyor to generate a proper trigger
+Inputs.TransportData := F_GetTransportControlData(
+							eFunctionNumber	:= SettingsFunction.FunctionLink.eFunctionNumber,
+							ZoneNumber 		:= SettingsFunction.FunctionLink.ZoneNumber);
+
+(**************************************************************************************
+   AddOn states
+***************************************************************************************)
+// Get status of all corresponding AddOn functions and store it in FunctionInterface.In.AddOnOrder
+M_GetAddOnOrder();]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="A_OutputMapping" Id="{ec281cec-c161-4de9-a1c0-fceebd533804}">
+      <Implementation>
+        <ST><![CDATA[
+(**************************************************************************************
+   Order outputs (Commands to corresponding element)
+***************************************************************************************)
+// Drive run not needed
+FunctionInterface.Out.FunctionOrders.ReqDriveRun := FALSE;
+
+// Allow element to drive
+FunctionInterface.Out.FunctionOrders.Enable := TRUE;
+FunctionInterface.Out.FunctionOrders.Enable_34 := TRUE;
+  
+(**************************************************************************************
+   AddOn outputs
+***************************************************************************************)
+FunctionInterface.Out.AddOnOrders.Enable := FunctionData.ErrorData.Error.ErrorType <> E_ErrorType.ERROR;
+
+//FunctionInterface.Out.AddOnOrders.EnableHandover := ProfileCheckState.eState <> E_ProfileCheckState.MEASURING AND ProfileCheckState.eState <> E_ProfileCheckState.SENSOR_CHECK;
+FunctionInterface.Out.AddOnOrders.EnableTakeover := TRUE;
+FunctionInterface.Out.AddOnOrders.EnableHandover := ProfileCheckState.eState = E_ProfileCheckState.READY
+													OR ProfileCheckState.eState = E_ProfileCheckState.DONE;
+FunctionInterface.Out.AddOnOrders.DataReady 	 := ProfileCheckState.eState = E_ProfileCheckState.READY
+													OR ProfileCheckState.eState = E_ProfileCheckState.DONE;
+]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="A_ProfileCheckStates" Id="{485523a1-6e5a-444e-be84-2e245fa3de33}">
+      <Implementation>
+        <ST><![CDATA[F_ResetError(
+	Reset 	  := FALSE,
+	ErrorData := FunctionData.ErrorData.ErrorDataSet[2]);
+
+(**************************************************************************************************************
+   Measure 
+***************************************************************************************************************)
+	_fbMeasureHeightLower(
+		LastBeamBlocked:= Inputs.LBB_Height_Lower, 
+		Offset:= Settings.LightGrid_Offset_Height_Lower, 
+		BeamSpacing:= Settings.BeamSpacing_HeightLower, 
+		MaxMeasuredValue=> Max_Measurement_Height,
+		LiveValue => CtrlOut.Measurement_Height_Lower, 
+		LightGridClear=> LightGrid_Height_Lower_Clear, 
+		StartMeasurement:= _StartMeasurement);
+	
+	_fbMeasureHeightUpper(
+		LastBeamBlocked:= Inputs.LBB_Height_Upper, 
+		Offset:= Settings.LightGrid_Offset_Height_Upper, 
+		BeamSpacing:= Settings.BeamSpacing_HeightUpper, 
+		MaxMeasuredValue=> ,
+		LiveValue => CtrlOut.Measurement_Height_Upper, 
+		LightGridClear=> LightGrid_Height_Upper_Clear, 
+		StartMeasurement:= _StartMeasurement);
+	
+	_fbMeasureHeightLeft(
+		LastBeamBlocked:= Inputs.LBB_WidthLeft, 
+		Offset:= Settings.LightGrid_Offset_Width_Left, 
+		BeamSpacing:= Settings.BeamSpacing_WidthLeft, 
+		MaxMeasuredValue=> Max_Measurement_Width_Left,
+		LiveValue => CtrlOut.Measurement_Width_Left,  
+		LightGridClear=> LightGrid_Width_Left_Clear, 
+		StartMeasurement:= _StartMeasurement);
+	
+	_fbMeasureHeightRight(
+		LastBeamBlocked:= Inputs.LBB_WidthRight, 
+		Offset:= Settings.LightGrid_Offset_Width_Right, 
+		BeamSpacing:= Settings.BeamSpacing_WidthRight, 
+		MaxMeasuredValue=> Max_Measurement_Width_Right, 
+		LiveValue => CtrlOut.Measurement_Width_Right, 
+		LightGridClear=> LightGrid_Width_Right_Clear, 
+		StartMeasurement:= _StartMeasurement);
+	
+	CtrlOut.Measurement_Length_Front := Settings.LightGrid_Offset_Length_Front - (UINT_TO_INT(Inputs.LBB_Length) * Settings.BeamSpacing_Length);
+	CtrlOut.Measurement_Length_Rear := (UINT_TO_INT(Inputs.FBB_Length) * Settings.BeamSpacing_Length) - Settings.LightGrid_Offset_Length_Rear;	
+	
+	IF (Inputs.LBB_Length) = 65535 THEN //65535(uint) = -1 (int) = no beams blocked
+		LightGrid_Length_Clear := TRUE;
+	ELSE 
+		LightGrid_Length_Clear := FALSE;
+	END_IF
+	
+	IF(LightGrid_Height_Lower_Clear
+	   AND LightGrid_Width_Left_Clear
+	   AND LightGrid_Width_Right_Clear
+	   AND LightGrid_Length_Clear) THEN
+		CtrlOut.ProfileGaugeBlocked := FALSE;
+	ELSE
+		CtrlOut.ProfileGaugeBlocked := TRUE;
+	END_IF
+
+(**************************************************************************************************************
+   Detect Trigger
+***************************************************************************************************************)
+
+IF Settings.EnableExternalTrigger AND Inputs.TransportData.NumberOfPresentTUs>0 AND NOT Inputs.TransportData.Occupied THEN
+	_Trigger := CtrlIn.Trigger;
+ELSE
+	//Automatically trig measurement
+	//Check if the destination is to this function and zone, then if takevoer state is active we shall trigg the scanner
+	IF(F_PB_GetTuDestination(SettingsFunction.FunctionLink.eFunctionNumber,
+							 SettingsFunction.FunctionLink.ZoneNumber,1) = SettingsFunction.FunctionLink.eFunctionNumber 
+	   AND Inputs.TransportData.eTakeOverState = E_TakeOverState.ACTIVE) THEN
+		_Trigger := TRUE;
+	END_IF
+END_IF
+//turn trigger off when zone is occupied
+IF(Inputs.TransportData.Occupied) THEN
+	_Trigger := FALSE;
+END_IF
+
+CASE ProfileCheckState.eState OF
+
+	(**************************************************************************************
+   		INIT
+	***************************************************************************************)
+	E_ProfileCheckState.INIT:
+		// If element/group is started
+		IF FunctionInterface.In.Element.OperationState.eState = E_PositionState.STARTED THEN
+			// Change state
+			ProfileCheckState.eLastState := ProfileCheckState.eState;
+			ProfileCheckState.eState := E_ProfileCheckState.READY;
+		END_IF
+
+	(**************************************************************************************
+   		READY
+	***************************************************************************************)
+	E_ProfileCheckState.READY:
+		_StartMeasurement := FALSE;
+		// Measurement is started, start with checking that light grids are unblocked.
+		IF _Trigger  THEN
+			ProfileCheckState.eLastState := ProfileCheckState.eState;
+			ProfileCheckState.eState := E_ProfileCheckState.SENSOR_CHECK;
+		END_IF
+
+	(**************************************************************************************
+   		SENSOR CHECK
+	***************************************************************************************)
+	E_ProfileCheckState.SENSOR_CHECK:
+		_MeasurementRearDone 	:= FALSE;
+		_MeasurementFrontDone 	:= FALSE;
+		// Check that all active light grids are unblocked
+		IF NOT CtrlOut.ProfileGaugeBlocked THEN
+			ProfileCheckState.eLastState := ProfileCheckState.eState;
+			ProfileCheckState.eState := E_ProfileCheckState.MEASURING;
+		ELSE
+			IF NOT LightGrid_Height_Lower_Clear THEN
+				// Error
+				F_SetError(
+					ErrorType 	:= E_ErrorType.ERROR,
+					ErrorParam 	:= 'Lightgrid Height Lower Blocked',
+					ErrorMsg 	:= E_ErrorConv.INCORRECT_SENSOR_SIGNAL,
+					ErrorData 	:= FunctionData.ErrorData.ErrorDataSet[2]);
+			ELSIF NOT LightGrid_Width_Left_Clear THEN
+				// Error
+				F_SetError(
+					ErrorType 	:= E_ErrorType.ERROR,
+					ErrorParam 	:= 'Lightgrid Left Blocked',
+					ErrorMsg 	:= E_ErrorConv.INCORRECT_SENSOR_SIGNAL,
+					ErrorData 	:= FunctionData.ErrorData.ErrorDataSet[2]);
+			ELSIF NOT LightGrid_Width_Right_Clear THEN 
+				// Error
+				F_SetError(
+					ErrorType 	:= E_ErrorType.ERROR,
+					ErrorParam 	:= 'Lightgrid Right Blocked',
+					ErrorMsg 	:= E_ErrorConv.INCORRECT_SENSOR_SIGNAL,
+					ErrorData 	:= FunctionData.ErrorData.ErrorDataSet[2]);
+			ELSIF NOT LightGrid_Length_Clear THEN 
+				// Error
+				F_SetError(
+					ErrorType 	:= E_ErrorType.ERROR,
+					ErrorParam 	:= 'Lightgrid Length Blocked',
+					ErrorMsg 	:= E_ErrorConv.INCORRECT_SENSOR_SIGNAL,
+					ErrorData 	:= FunctionData.ErrorData.ErrorDataSet[2]);
+			END_IF
+			// If any of the sensors are blocked raise sensor error
+			ProfileCheckState.eLastState := ProfileCheckState.eState;
+			ProfileCheckState.eState := E_ProfileCheckState.ERROR;
+		END_IF
+
+	(**************************************************************************************
+   		MEASURING
+	***************************************************************************************)
+	E_ProfileCheckState.MEASURING:
+		_StartMeasurement := TRUE;
+		
+	(************************************* Measure Length Front  ***************************************)
+		IF(NOT _MeasurementFrontDone AND CtrlOut.Measurement_Height_Lower > 0) THEN
+			MeasurementTempFront := -1;
+			MeasurementTempFront := Settings.LightGrid_Offset_Length_Front - (UINT_TO_INT(Inputs.LBB_Length) * Settings.BeamSpacing_Length);
+			IF MeasurementTempFront > -1 THEN
+				Measurement_Length_Front := MeasurementTempFront;
+			ELSE
+				Measurement_Length_Front := 0;
+			END_IF
+			Max_Measurement_Length_Front := Measurement_Length_Front;
+			_MeasurementFrontDone	:= TRUE;
+		END_IF
+
+	(************************************* Measure Length Rear  ***************************************)
+		IF NOT _MeasurementRearDone  THEN
+		
+			IF _MeasurementFrontDone AND LightGrid_Height_Lower_Clear THEN
+				MeasurementTempRear := -1;
+				MeasurementTempRear := (UINT_TO_INT(Inputs.FBB_Length) * Settings.BeamSpacing_Length) - Settings.LightGrid_Offset_Length_Rear;
+				
+				IF MeasurementTempRear < -20 THEN
+					Measurement_Length_Rear := settings.ReportValue_Measurement_Error_Rear;
+				ELSIF MeasurementTempRear > -1 THEN
+					Measurement_Length_Rear := MeasurementTempRear;
+				ELSE
+					Measurement_Length_Rear := 0;
+				END_IF
+				
+				Max_Measurement_Length_Rear := Measurement_Length_Rear;
+				_MeasurementRearDone := TRUE;
+			END_IF
+		END_IF
+		
+		IF NOT _Trigger AND CtrlOut.ProfileGaugeBlocked THEN
+			// Error
+			F_SetError(
+				ErrorType 	:= E_ErrorType.ERROR,
+				ErrorParam 	:= 'Profilegauge blocked after measurement',
+				ErrorMsg 	:= E_ErrorConv.INCORRECT_SENSOR_SIGNAL,
+				ErrorData 	:= FunctionData.ErrorData.ErrorDataSet[2]);
+			
+			TU_DataTable[Inputs.TransportData.TU_DataIndex].Profile.Height := Settings.ReportValue_Measurement_Error_Height;
+			TU_DataTable[Inputs.TransportData.TU_DataIndex].Profile.ProfileFront := Settings.ReportValue_Measurement_Error_Front;
+			TU_DataTable[Inputs.TransportData.TU_DataIndex].Profile.ProfileLeft := Settings.ReportValue_Measurement_Error_Left;
+			TU_DataTable[Inputs.TransportData.TU_DataIndex].Profile.ProfileRear := Settings.ReportValue_Measurement_Error_Rear;
+			TU_DataTable[Inputs.TransportData.TU_DataIndex].Profile.ProfileRight := Settings.ReportValue_Measurement_Error_Right;
+			
+			ProfileCheckState.eLastState := ProfileCheckState.eState;
+			ProfileCheckState.eState := E_ProfileCheckState.ERROR;
+
+		ELSIF NOT _Trigger THEN
+			ProfileCheckState.eLastState := ProfileCheckState.eState;
+			ProfileCheckState.eState := E_ProfileCheckState.DATA_AVAIABLE;
+		END_IF
+
+	(**************************************************************************************
+   		DATA AVAIABLE
+	***************************************************************************************)
+	E_ProfileCheckState.DATA_AVAIABLE:
+		
+	(*************************************  Height  ***************************************)
+		IF Settings.ReportRealMeasureHeight THEN
+			TU_DataTable[Inputs.TransportData.TU_DataIndex].Profile.Height := Max_Measurement_Height;
+		ELSE
+			// Report value for height
+			TU_DataTable[Inputs.TransportData.TU_DataIndex].Profile.Height := Settings.ReportValue_Measurement_Error_Height;
+			FOR Idx := 1 TO 9 DO
+				IF (Settings.ProfileRule_Height[Idx].TU_Type = 0 OR
+					Settings.ProfileRule_Height[Idx].TU_Type = TU_DataTable[Inputs.TransportData.TU_DataIndex].DataSet.TU_Type) AND
+ 					Settings.ProfileRule_Height[Idx].Minimum <= Max_Measurement_Height AND
+				  	Settings.ProfileRule_Height[Idx].Maximum >= Max_Measurement_Height THEN
+						TU_DataTable[Inputs.TransportData.TU_DataIndex].Profile.Height := Settings.ProfileRule_Height[Idx].ReportValue;
+						EXIT;
+				END_IF
+			END_FOR
+		END_IF
+		
+	(*************************************  Length Rear  ***************************************)
+		IF Settings.ReportRealMeasureRear THEN
+			TU_DataTable[Inputs.TransportData.TU_DataIndex].Profile.ProfileRear := Max_Measurement_Length_Rear;
+		ELSE
+		// Report value for overhang rear
+			TU_DataTable[Inputs.TransportData.TU_DataIndex].Profile.ProfileRear := Settings.ReportValue_Measurement_Error_Rear;
+			FOR Idx := 1 TO 9 DO
+				IF (Settings.ProfileRule_OverhangRear[Idx].TU_Type = 0 OR
+				  	Settings.ProfileRule_OverhangRear[Idx].TU_Type = TU_DataTable[Inputs.TransportData.TU_DataIndex].DataSet.TU_Type) AND
+				  	Settings.ProfileRule_OverhangRear[Idx].Minimum <= Measurement_Length_Rear AND
+				 	Settings.ProfileRule_OverhangRear[Idx].Maximum >= Measurement_Length_Rear THEN
+						TU_DataTable[Inputs.TransportData.TU_DataIndex].Profile.ProfileRear := Settings.ProfileRule_OverhangRear[Idx].ReportValue;
+						EXIT;
+				END_IF
+			END_FOR
+		END_IF
+		
+	(*************************************  Length Front  ***************************************)
+		IF Settings.ReportRealMeasureFront THEN
+			TU_DataTable[Inputs.TransportData.TU_DataIndex].Profile.ProfileFront := Max_Measurement_Length_Front;
+		ELSE
+			// Report value for overhang front
+			TU_DataTable[Inputs.TransportData.TU_DataIndex].Profile.ProfileFront := Settings.ReportValue_Measurement_Error_Front;
+			FOR Idx := 1 TO 9 DO
+				IF (Settings.ProfileRule_OverhangFront[Idx].TU_Type = 0 OR
+				  	Settings.ProfileRule_OverhangFront[Idx].TU_Type = TU_DataTable[Inputs.TransportData.TU_DataIndex].DataSet.TU_Type) AND
+				  	Settings.ProfileRule_OverhangFront[Idx].Minimum <= Measurement_Length_Front AND
+				  	Settings.ProfileRule_OverhangFront[Idx].Maximum >= Measurement_Length_Front THEN
+						TU_DataTable[Inputs.TransportData.TU_DataIndex].Profile.ProfileFront := Settings.ProfileRule_OverhangFront[Idx].ReportValue;
+						EXIT;
+				END_IF
+			END_FOR 
+		END_IF
+		
+	(*************************************  Width Left  ***************************************)
+		IF Settings.ReportRealMeasureLeft THEN
+			TU_DataTable[Inputs.TransportData.TU_DataIndex].Profile.ProfileLeft := Max_Measurement_Width_Left;
+		ELSE
+			// Report value for width left
+			TU_DataTable[Inputs.TransportData.TU_DataIndex].Profile.ProfileLeft := Settings.ReportValue_Measurement_Error_Left;
+			FOR Idx := 1 TO 9 DO
+				IF (Settings.ProfileRule_OverhangLeft[Idx].TU_Type = 0 OR
+				 	Settings.ProfileRule_OverhangLeft[Idx].TU_Type = TU_DataTable[Inputs.TransportData.TU_DataIndex].DataSet.TU_Type) AND
+				 	Settings.ProfileRule_OverhangLeft[Idx].Minimum <= Max_Measurement_Width_Left AND
+				  	Settings.ProfileRule_OverhangLeft[Idx].Maximum >= Max_Measurement_Width_Left THEN
+						TU_DataTable[Inputs.TransportData.TU_DataIndex].Profile.ProfileLeft := Settings.ProfileRule_OverhangLeft[Idx].ReportValue;
+						EXIT;
+				END_IF
+			END_FOR
+		END_IF
+
+	(*************************************  Width Right  ***************************************)		
+		IF Settings.ReportRealMeasureRight THEN			
+			TU_DataTable[Inputs.TransportData.TU_DataIndex].Profile.ProfileRight := Max_Measurement_Width_Right;		
+		ELSE			
+			// Report value for width right
+			TU_DataTable[Inputs.TransportData.TU_DataIndex].Profile.ProfileRight := Settings.ReportValue_Measurement_Error_Right;
+			FOR Idx := 1 TO 9 DO
+				IF (Settings.ProfileRule_OverhangRight[Idx].TU_Type = 0 OR
+				  	Settings.ProfileRule_OverhangRight[Idx].TU_Type = TU_DataTable[Inputs.TransportData.TU_DataIndex].DataSet.TU_Type) AND
+				  	Settings.ProfileRule_OverhangRight[Idx].Minimum <= Max_Measurement_Width_Right AND
+				  	Settings.ProfileRule_OverhangRight[Idx].Maximum >= Max_Measurement_Width_Right THEN
+						TU_DataTable[Inputs.TransportData.TU_DataIndex].Profile.ProfileRight := Settings.ProfileRule_OverhangRight[Idx].ReportValue;
+						EXIT;
+				END_IF					
+			END_FOR
+		END_IF		
+		F_PB_SetPalletOrientation(Settings.ePalletOrientation,Inputs.TransportData.TU_DataIndex); // Call function to change data according to change in orientation.
+
+		ProfileCheckState.eLastState := ProfileCheckState.eState;
+		ProfileCheckState.eState := E_ProfileCheckState.DONE;	
+
+	(**************************************************************************************
+   		DONE
+	***************************************************************************************)		
+	E_ProfileCheckState.DONE:
+		IF NOT Inputs.TransportData.Occupied THEN
+			ProfileCheckState.eLastState := ProfileCheckState.eState;
+			ProfileCheckState.eState := E_ProfileCheckState.READY;
+		END_IF 		
+
+	(**************************************************************************************
+   		ERROR 
+	***************************************************************************************)	
+	E_ProfileCheckState.ERROR:
+		// Wait until error is resetted
+		IF FunctionData.ErrorData.Error.ErrorType <> E_ErrorType.ERROR THEN
+			// Go back to init
+			ProfileCheckState.eLastState := ProfileCheckState.eState;
+			ProfileCheckState.eState := E_ProfileCheckState.INIT;
+		END_IF	
+END_CASE
+]]></ST>
+      </Implementation>
+    </Action>
+    <LineIds Name="FB_ProfileCheckAddon">
+      <LineId Id="3" Count="34" />
+      <LineId Id="2" Count="0" />
+      <LineId Id="39" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ProfileCheckAddon.A_Init">
+      <LineId Id="2" Count="39" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ProfileCheckAddon.A_InputMapping">
+      <LineId Id="42" Count="1" />
+      <LineId Id="45" Count="0" />
+      <LineId Id="47" Count="0" />
+      <LineId Id="46" Count="0" />
+      <LineId Id="44" Count="0" />
+      <LineId Id="48" Count="0" />
+      <LineId Id="39" Count="0" />
+      <LineId Id="13" Count="17" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ProfileCheckAddon.A_OutputMapping">
+      <LineId Id="28" Count="0" />
+      <LineId Id="12" Count="7" />
+      <LineId Id="34" Count="0" />
+      <LineId Id="20" Count="6" />
+      <LineId Id="1" Count="0" />
+      <LineId Id="29" Count="1" />
+      <LineId Id="32" Count="1" />
+      <LineId Id="31" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ProfileCheckAddon.A_ProfileCheckStates">
+      <LineId Id="1843" Count="324" />
+      <LineId Id="657" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

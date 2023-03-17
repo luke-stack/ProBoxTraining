@@ -1,0 +1,13 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <DUT Name="ST_HW_InputsFastDoor" Id="{c1b439c7-17df-40a0-9aca-ce4fdc619da9}">
+    <Declaration><![CDATA[TYPE ST_HW_InputsFastDoor :
+STRUCT
+	Ready		: BOOL; //Door is ready and conveyor can operate
+	Closed		: BOOL; //Door is closed, conveyor is idle
+	Open		: BOOL; //Door is open, TU can move through the fast door	
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

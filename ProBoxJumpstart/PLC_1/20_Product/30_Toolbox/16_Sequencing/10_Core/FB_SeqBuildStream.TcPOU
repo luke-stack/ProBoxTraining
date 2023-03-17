@@ -1,0 +1,593 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.4">
+  <POU Name="FB_SeqBuildStream" Id="{94b392ee-516c-49cb-9050-de8819ed4d49}" SpecialFunc="None">
+    <Declaration><![CDATA[/// Builds a list of TUs of one stream considering configured branch
+/// Remark: Request sequence information are included.
+FUNCTION_BLOCK FB_SeqBuildStream
+(************************************************************************************** 
+* 	Application 		: BoxControl Framework 
+* 	Revision 			: $Revision: 404877 $ 
+* 	Revision date 		: $Date: 2018-04-26 14:10:34 +0200 (Thu, 26 Apr 2018) $ 
+* 	Last changed by 	: $Author: b7ernsb $ 
+* 	URL 				: $URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/21_Projects/BCF_2.0/trunk/BCF/BCF/JumpStart/20_Product/10_App/12_E_Functions/10_Lib/10_Conv/FB_FunctionConv.TcPOU $ 
+* ------------------------------------------------------------------------------------ 
+* 	© Swisslog AG 
+* 	Swisslog is not liable for any usage of this source code that is not agreed 
+* 	on between Swisslog and the other party. The mandatory legal liability remains 
+* 	unaffected. 
+* ------------------------------------------------------------------------------------ 
+* 	Revision History: 
+* 
+ * VERSION DATE         INITIALS     DESCRIPTION
+ * 0.0     DD.MM.YYYY   (name)       (explain customized modifications)
+* 
+**************************************************************************************)
+VAR_INPUT
+	Execute						: BOOL; // Rising edge, starts new search process
+	Destination					: ST_PositionIdent; // Destination of stream to build
+	DestinationSlot				: INT; // Destination slot of stream to build
+	BranchExclusionMode			: BOOL := FALSE; // False = TU on a branch is possible next, TRUE = TU on a branch is excluded as possible next
+	Branch						: I_BranchCheckpoint; // Branch to check
+END_VAR
+VAR_OUTPUT
+	Busy						: BOOL; // Process ongoing
+	EntryCounter				: INT; // Entries in range list
+	NextTU_Index				: DINT; // Next expected TU_Index which is not located or found on branch (First of list)
+	NextTU_Checkpoint			: STRING(5); // Checkpoint location of next TU at point when it was detected
+	StreamList					: ARRAY[1..MAX_Stream_LIST] OF ST_SeqEntry; // Stream list of TUs, priority ascending (1 = First)
+	Error 						: BOOL; // Error configuration, Reset with new trigger
+END_VAR
+VAR_IN_OUT
+	TU_Table					: ARRAY[0..Conveyor.NUMBER_OF_TU_DATA] OF ST_TU_Data; // TU Table
+END_VAR
+VAR
+	EntriesPerCycle				: DINT := SequencingParameter.SCAN_ENTRIES_PER_CYCLE; // Entries scanned per cylce
+	EntryIdx					: DINT; // Entry iterator
+	MinArrayIndex				: DINT; // Minimum index of TU Array
+	MaxArrayIndex				: DINT; // Maximum index of TU Array
+	StartIndex					: DINT; // Start index of current iteration
+	EndIndex					: DINT; // End index of current iteration
+	IterationCounter			: DINT; // Iteration counter
+	FoundOnBranch				: BOOL; // Checkpoint ID found on one of the configured branches
+	BranchRecursive				: BOOL := TRUE; // Recursive branch search active (Default = True)
+	State						: INT; // State machine, 0=Idle, 1 = Search
+	fbTrigExecute				: R_TRIG; // Trigger new request
+	rTU_DataEntry				: REFERENCE TO ST_TU_Data; // Currently checked entry
+END_VAR
+VAR CONSTANT
+	MAX_STREAM_LIST				: INT := SequencingParameter.MAX_STREAMBUILDER_LIST; // Max limit of entries
+END_VAR]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[// Monitor new request trigger
+fbTrigExecute(CLK := Execute);
+
+CASE State OF
+	// Idle - State
+	0:
+		// Wait for new start trigger
+		IF fbTrigExecute.Q THEN
+			// Validate inputs
+			IF Destination.eFunctionNumber = E_FunctionNumber.F_BEGIN_FUNCTION OR
+			   Branch = 0 THEN
+			   // Invalid inputs
+			   Error := TRUE;
+			   RETURN;
+			END_IF
+			
+			// Initialize 
+			Error := FALSE;
+			Busy := TRUE;
+			
+			// Clear range list
+			MEMSET(ADR(StreamList), 0, SIZEOF(StreamList));
+
+			IterationCounter := 0;
+			NextTU_Index := 0;
+			NextTU_Checkpoint := '';
+			
+			MinArrayIndex := 1; //LOWER_BOUND(TU_Table,1);
+			MaxArrayIndex := Conveyor.NUMBER_OF_TU_DATA; //UPPER_BOUND(TU_Table,1);
+			State := 1;
+		END_IF
+		
+	// Iterate over multiple cycles through TU Table	
+	1:
+		StartIndex := MinArrayIndex + IterationCounter * EntriesPerCycle;
+		EndIndex   := StartIndex + EntriesPerCycle;
+	
+		FOR EntryIdx := StartIndex TO EndIndex DO
+			// When scan is completed
+			IF EntryIdx > MaxArrayIndex THEN
+				
+				IF StreamList[1].TU_Index = 0 THEN
+					NextTU_Checkpoint := '';
+					NextTU_Index := 0;
+				// Otherwise, validate found indexes
+				ELSE
+					// Get index and checkpoint of next tu
+					NextTU_Index := M_GetValidNextIndex(TU_Table);
+					
+					IF NextTU_Index > 0 THEN
+						NextTU_Checkpoint := TU_Table[NextTU_Index].DataSet.CheckpointID;
+					ELSE
+						NextTU_Checkpoint := '';
+					END_IF
+				END_IF
+				
+				Busy := FALSE;
+			
+				State := 0;
+				RETURN;
+			END_IF
+			
+			rTU_DataEntry REF= TU_Table[EntryIdx];
+			
+			// Skip this loop if...
+            // - Empty data set is found
+			// - Data set without job present is found ( no destination)
+            IF NOT rTU_DataEntry.DataSet.DataPresent OR 
+               NOT rTU_DataEntry.DataSet.JobPresent THEN
+				CONTINUE;
+			END_IF
+			
+			// Check if TU has same Destination and Destination slot, 
+			// otherwise it is not relevant for sequencing of requesting TU
+			IF rTU_DataEntry.Destination[1].eFunctionNumber = Destination.eFunctionNumber AND
+			   rTU_DataEntry.Destination[1].ZoneNumber = Destination.ZoneNumber THEN
+				IF rTU_DataEntry.DataSet.DestinationSlot = DestinationSlot THEN
+					
+					// TU's can be ignored if...
+					// - Sequence is 0 and is therefore not part of a sequence
+					IF rTU_DataEntry.DataSet.Sequence = 0 THEN
+						// Skip
+						;
+				
+					// Sequence is in a valid range for a possible next
+					// - All TU's with same destination AND
+					// - Higher sequence information than requesting
+					// - AND (NOT)* on Branch  
+					//   * based on mode (Default, Exclusion)
+					ELSE
+						// Check if current comapared TU is:
+						// - Not located,
+						// - Found on branch (Default mode) or Not found on a branch (Exclusion mode) 
+						// Sequencing is temporarily haltet for this TU
+						// so its a possible next TU
+						FoundOnBranch := Branch.M_IsOnBranches(BranchRecursive, rTU_DataEntry.DataSet.CheckpointId);
+						
+						IF 	(FoundOnBranch AND NOT BranchExclusionMode) OR
+							(NOT FoundOnBranch AND BranchExclusionMode) OR
+						  	rTU_DataEntry.DataSet.CheckpointID = '' OR
+							rTU_DataEntry.DataSet.HaltSequencing THEN
+						   // TU is possible next, update range list
+						   M_AddToStreamList(EntryIdx, rTU_DataEntry);
+						END_IF
+					END_IF
+				END_IF
+			END_IF
+		END_FOR
+
+		IterationCounter := IterationCounter + 1;
+ELSE
+	// Default
+	State := 0;
+END_CASE
+]]></ST>
+    </Implementation>
+    <Method Name="M_AddToStreamList" Id="{e7118321-c0c3-436b-a673-d5c5aa162529}">
+      <Declaration><![CDATA[/// Add Entry sorted to Range list.
+METHOD PRIVATE M_AddToStreamList
+VAR_INPUT
+	mTU_Index	: DINT; // TU index which should be added
+END_VAR
+VAR_IN_OUT
+	mTU_Data	: ST_TU_Data; // TU data set to add
+END_VAR
+VAR
+	mIdx		: INT; // Iterator
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+FOR mIdx := 1 TO MAX_STREAM_LIST DO
+	// If slot is empty, take over data
+	IF StreamList[mIdx].TU_Index = 0 THEN
+		StreamList[mIdx].TU_Index := mTU_Index;
+		StreamList[mIdx].Sequence := mTU_Data.DataSet.Sequence;
+		StreamList[mIdx].SubSequence := mTU_Data.DataSet.SubSequence;
+		StreamList[mIdx].Destination := mTU_Data.Destination[1];
+		StreamList[mIdx].DestinationSlot := mTU_Data.DataSet.DestinationSlot;
+		StreamList[mIdx].TU_ID_HashCode := mTU_Data.TU_ID.HashCode;
+		StreamList[mIdx].TU_ID := mTU_Data.TU_ID.ASCII;
+		StreamList[mIdx].AssignmentID := mTU_Data.AssignmentID;
+		StreamList[mIdx].CheckpointID := mTU_Data.DataSet.CheckpointID;
+	
+		EntryCounter := EntryCounter + 1;
+		EXIT;
+	ELSE
+		// When requesting Sequence information are equal, compare subsequence
+		IF mTU_Data.DataSet.Sequence = StreamList[mIdx].Sequence THEN
+			// If sub sequence is lower, replace and shift list
+			IF mTU_Data.DataSet.SubSequence < StreamList[mIdx].SubSequence THEN
+				//Shift list
+				M_ShiftAndClearSlot(mIdx);
+				// Insert new data set, with all relevant data, to validate later
+				StreamList[mIdx].TU_Index := mTU_Index;
+				StreamList[mIdx].Sequence := mTU_Data.DataSet.Sequence;
+				StreamList[mIdx].SubSequence := mTU_Data.DataSet.SubSequence;
+				StreamList[mIdx].Destination := mTU_Data.Destination[1];
+				StreamList[mIdx].DestinationSlot := mTU_Data.DataSet.DestinationSlot;
+				StreamList[mIdx].TU_ID_HashCode := mTU_Data.TU_ID.HashCode;
+				StreamList[mIdx].TU_ID := mTU_Data.TU_ID.ASCII;
+				StreamList[mIdx].AssignmentID := mTU_Data.AssignmentID;
+				StreamList[mIdx].CheckpointID := mTU_Data.DataSet.CheckpointID;
+				
+				EntryCounter := EntryCounter + 1;
+				EXIT;
+			END_IF	
+		// When requesting Sequence information are lower or equal
+		ELSIF mTU_Data.DataSet.Sequence <= StreamList[mIdx].Sequence THEN
+			//Shift list
+			M_ShiftAndClearSlot(mIdx);
+			// Insert new data set, with all relevant data, to validate later
+			StreamList[mIdx].TU_Index := mTU_Index;
+			StreamList[mIdx].Sequence := mTU_Data.DataSet.Sequence;
+			StreamList[mIdx].SubSequence := mTU_Data.DataSet.SubSequence;
+			StreamList[mIdx].Destination := mTU_Data.Destination[1];
+			StreamList[mIdx].DestinationSlot := mTU_Data.DataSet.DestinationSlot;
+			StreamList[mIdx].TU_ID_HashCode := mTU_Data.TU_ID.HashCode;
+			StreamList[mIdx].TU_ID := mTU_Data.TU_ID.ASCII;
+			StreamList[mIdx].AssignmentID := mTU_Data.AssignmentID;
+			StreamList[mIdx].CheckpointID := mTU_Data.DataSet.CheckpointID;
+			
+			EntryCounter := EntryCounter + 1;
+			EXIT;	
+		END_IF
+	END_IF
+END_FOR
+
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_GetValidNextIndex" Id="{619ac78f-8537-4bfe-8124-1c194d7a8008}">
+      <Declaration><![CDATA[// Returns next valid tu index
+// Remark: This check is required after the search over multiple cycles, 
+// because during search the state of index could have changed (Race condition).
+METHOD PROTECTED M_GetValidNextIndex : DINT // 0= No next index, >0 Next TU Index
+VAR_IN_OUT
+	mTU_Table					: ARRAY[0..Conveyor.NUMBER_OF_TU_DATA] OF ST_TU_Data; // TU Table
+END_VAR
+VAR
+	mIdx					: INT; // Iterator
+	mrTU_DataEntry			: REFERENCE TO ST_TU_Data; // Currently checked entry
+END_VAR
+VAR_INST
+	NextIndex				: DINT; // Nextindex to be checked
+	SequenceDataPresent		: BOOL; // Sequence data present
+	TU_IsPartOfDestSequence	: BOOL; // Sequence data are for requested destination
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[M_GetValidNextIndex := 0;
+
+IF EntryCounter = 0 THEN
+	RETURN;
+END_IF
+
+// Get highest prioritized next tu index
+FOR mIdx := 1 TO EntryCounter DO
+	
+	NextIndex := StreamList[mIdx].TU_Index;
+	
+	IF NextIndex = 0 THEN
+		RETURN;
+	END_IF
+	
+	mrTU_DataEntry REF= mTU_Table[NextIndex];
+	
+	// Check reference is valid
+	IF NOT __ISVALIDREF(mrTU_DataEntry) THEN
+		RETURN;
+	END_IF
+	
+	// Validate its TU data
+	// - Sequencing, 
+	// - Part of that sequence (destination)
+	// - Still at the detected checkpoint
+	SequenceDataPresent := mrTU_DataEntry.DataSet.Sequence > 0 AND
+						   mrTU_DataEntry.Destination[1].eFunctionNumber > 0;
+						   
+	TU_IsPartOfDestSequence := mrTU_DataEntry.Destination[1].eFunctionNumber = Destination.eFunctionNumber AND
+							   mrTU_DataEntry.Destination[1].ZoneNumber = Destination.ZoneNumber AND
+							   mrTU_DataEntry.DataSet.DestinationSlot = DestinationSlot;
+	
+	IF SequenceDataPresent AND
+       TU_IsPartOfDestSequence THEN			   
+		IF M_IsTU_Next(mrTU_DataEntry) THEN
+		   M_GetValidNextIndex := NextIndex;
+		   EXIT;
+		END_IF
+	END_IF
+END_FOR]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_IsTU_Next" Id="{5455b421-6aac-4a32-88fb-25addceb7908}">
+      <Declaration><![CDATA[/// Check if current comapared TU is:
+/// - Not located,
+/// - Found on branch (Default mode) or Not found on a branch (Exclusion mode) 
+/// Sequencing is temporarily haltet for this TU				
+/// so its a possible next TU
+METHOD PROTECTED M_IsTU_Next : BOOL // Returns true if it is a possible next
+VAR_INPUT
+	mrTU_DataEntry		: REFERENCE TO ST_TU_Data; // Currently checked entry
+END_VAR
+VAR
+	mFoundOnBranch		: BOOL;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[M_IsTU_Next := FALSE;
+
+// Ensure it is still a problem for the branch	
+mFoundOnBranch := Branch.M_IsOnBranches(BranchRecursive, mrTU_DataEntry.DataSet.CheckpointID);
+
+IF (mFoundOnBranch AND NOT BranchExclusionMode) OR
+   (NOT mFoundOnBranch AND BranchExclusionMode) OR
+   (mrTU_DataEntry.DataSet.CheckpointID = '') OR
+    mrTU_DataEntry.DataSet.HaltSequencing THEN
+   
+   M_IsTU_Next := TRUE;
+END_IF
+
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_IsTU_OnStream" Id="{f9078b99-4585-424c-9fc2-e5bdf753032f}">
+      <Declaration><![CDATA[/// Checks whether a TU is part of stream list or not. 
+METHOD M_IsTU_OnStream : BOOL // Returns True if found in stream list
+VAR_INPUT
+	mRangeLimit		: INT; // Specifies how many entries of the list serve as valid. (0=All available)
+	mTU_Index		: DINT; // Requesting TU Index
+END_VAR
+VAR_IN_OUT
+	mTU_Data			: ST_TU_Data; // Tu Data
+END_VAR
+VAR
+	mIdx				: INT; // Iterator
+	mMax				: INT; // Max entries
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[M_IsTU_OnStream := FALSE;
+
+// Check inputs
+IF mTU_Index = 0 THEN
+	RETURN;
+END_IF
+
+IF mRangeLimit > 0 THEN
+	mMax := mRangeLimit;
+ELSE
+	mMax := EntryCounter;
+END_IF
+
+// Check border
+IF mMax > MAX_STREAM_LIST THEN
+	mMax := MAX_STREAM_LIST;
+ELSIF mMax < 1 THEN
+	mMax := 1;
+END_IF
+
+FOR mIdx := 1 TO mMax DO
+	// Check if an index is recorded as next
+	IF mTU_Index = StreamList[mIdx].TU_Index THEN
+		/// Ensure that recorded tu data entry is still the same as requesting Tu data
+		IF mTU_Data.DataSet.Sequence = StreamList[mIdx].Sequence AND
+		   mTU_Data.DataSet.SubSequence = StreamList[mIdx].SubSequence AND
+		   mTU_Data.TU_ID.ASCII = StreamList[mIdx].TU_ID AND
+		   mTU_Data.Destination[1].eFunctionNumber = StreamList[mIdx].Destination.eFunctionNumber AND
+		   mTU_Data.Destination[1].ZoneNumber = StreamList[mIdx].Destination.ZoneNumber AND 
+		   mTU_Data.DataSet.DestinationSlot = StreamList[mIdx].DestinationSlot THEN
+		   
+			M_IsTU_OnStream := TRUE;
+			RETURN;
+		END_IF	
+	END_IF
+END_FOR
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_ShiftAndClearSlot" Id="{6cec778b-4d9e-40ce-b6a4-503120f38a5b}">
+      <Declaration><![CDATA[/// Shift entries and update entry counter
+METHOD PRIVATE M_ShiftAndClearSlot : BOOL
+VAR_INPUT
+	mListIdx		: INT; // Index to be moved
+END_VAR
+VAR_INST
+	NoError					: BOOL; // No error during process
+	LastSlotInUse			: BOOL; // Last slot was already in use
+	SizeOneSlot				: UDINT; // Size in bytes of one slot
+	NumberOfBytes			: UDINT; // Number of bytes
+	NumberOfEntriesToShift	: INT; // Number of entries to shift
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[// Init values
+LastSlotInUse := FALSE;
+
+// Shift following entries
+IF mListIdx <= EntryCounter THEN
+   
+	SizeOneSlot	:= SIZEOF(StreamList[1]);
+
+	// Check if last slot is already in use
+	IF StreamList[MAX_STREAM_LIST].TU_Index <> 0 THEN
+		LastSlotInUse := TRUE;
+	END_IF
+	
+	// Calculate entries which need to be shifted
+	NumberOfEntriesToShift := EntryCounter - mListIdx + 1;
+	
+	// Check based on the destination, if the amount of entries would exceed memory area
+	IF mListIdx + NumberOfEntriesToShift > MAX_STREAM_LIST THEN
+		NumberOfEntriesToShift := MAX_STREAM_LIST - mListIdx;
+	END_IF 
+	
+	IF NumberOfEntriesToShift > 0 THEN
+		NumberOfBytes :=  INT_TO_UDINT(NumberOfEntriesToShift)* SizeOneSlot;
+		NoError := MEMCPY(ADR(StreamList[mListIdx+1]), ADR(StreamList[mListIdx]), NumberOfBytes) > 0;
+	END_IF
+	
+	// Clear entry afterwards
+	NoError := MEMSET(ADR(StreamList[mListIdx]), 0, SizeOneSlot) > 0 AND NoError;
+	
+	// If last slot was moved out of the list, decrease entry counter
+	IF NoError AND LastSlotInUse THEN
+		EntryCounter := EntryCounter - 1;
+		
+		IF EntryCounter < 0 THEN
+			EntryCounter := 0;
+		END_IF
+	END_IF
+	
+	M_ShiftAndClearSlot := NoError;
+ELSE
+	M_ShiftAndClearSlot := TRUE;
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Property Name="P_BranchRecursive" Id="{f14f72ff-be38-43e0-a32e-c19a2100d303}">
+      <Declaration><![CDATA[{attribute 'monitoring' := 'call'}
+/// Recursive branch search active. Remark: No automated loop detection.
+PROPERTY P_BranchRecursive : BOOL]]></Declaration>
+      <Get Name="Get" Id="{073251e5-ab79-45f3-ad40-f7c4bac0c5c4}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[P_BranchRecursive := BranchRecursive;]]></ST>
+        </Implementation>
+      </Get>
+      <Set Name="Set" Id="{61621cd9-a775-4bf6-9406-0da5758d4492}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[BranchRecursive := P_BranchRecursive;]]></ST>
+        </Implementation>
+      </Set>
+    </Property>
+    <LineIds Name="FB_SeqBuildStream">
+      <LineId Id="3" Count="9" />
+      <LineId Id="14" Count="14" />
+      <LineId Id="155" Count="0" />
+      <LineId Id="29" Count="13" />
+      <LineId Id="411" Count="0" />
+      <LineId Id="402" Count="0" />
+      <LineId Id="406" Count="0" />
+      <LineId Id="421" Count="0" />
+      <LineId Id="408" Count="1" />
+      <LineId Id="414" Count="6" />
+      <LineId Id="410" Count="0" />
+      <LineId Id="407" Count="0" />
+      <LineId Id="281" Count="0" />
+      <LineId Id="43" Count="36" />
+      <LineId Id="344" Count="0" />
+      <LineId Id="80" Count="2" />
+      <LineId Id="338" Count="5" />
+      <LineId Id="88" Count="10" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_SeqBuildStream.M_AddToStreamList">
+      <LineId Id="3" Count="11" />
+      <LineId Id="83" Count="0" />
+      <LineId Id="15" Count="3" />
+      <LineId Id="71" Count="0" />
+      <LineId Id="54" Count="13" />
+      <LineId Id="84" Count="0" />
+      <LineId Id="115" Count="0" />
+      <LineId Id="69" Count="1" />
+      <LineId Id="53" Count="0" />
+      <LineId Id="19" Count="1" />
+      <LineId Id="23" Count="10" />
+      <LineId Id="85" Count="0" />
+      <LineId Id="34" Count="2" />
+      <LineId Id="38" Count="3" />
+      <LineId Id="98" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_SeqBuildStream.M_GetValidNextIndex">
+      <LineId Id="117" Count="0" />
+      <LineId Id="141" Count="0" />
+      <LineId Id="140" Count="0" />
+      <LineId Id="142" Count="1" />
+      <LineId Id="49" Count="0" />
+      <LineId Id="7" Count="1" />
+      <LineId Id="38" Count="0" />
+      <LineId Id="41" Count="0" />
+      <LineId Id="85" Count="0" />
+      <LineId Id="95" Count="0" />
+      <LineId Id="98" Count="0" />
+      <LineId Id="97" Count="0" />
+      <LineId Id="158" Count="0" />
+      <LineId Id="160" Count="4" />
+      <LineId Id="159" Count="0" />
+      <LineId Id="102" Count="0" />
+      <LineId Id="43" Count="0" />
+      <LineId Id="52" Count="8" />
+      <LineId Id="44" Count="0" />
+      <LineId Id="80" Count="0" />
+      <LineId Id="82" Count="0" />
+      <LineId Id="74" Count="0" />
+      <LineId Id="79" Count="0" />
+      <LineId Id="78" Count="0" />
+      <LineId Id="72" Count="0" />
+      <LineId Id="81" Count="0" />
+      <LineId Id="39" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_SeqBuildStream.M_IsTU_Next">
+      <LineId Id="15" Count="1" />
+      <LineId Id="7" Count="5" />
+      <LineId Id="19" Count="0" />
+      <LineId Id="13" Count="1" />
+      <LineId Id="5" Count="0" />
+      <LineId Id="21" Count="0" />
+      <LineId Id="20" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_SeqBuildStream.M_IsTU_OnStream">
+      <LineId Id="3" Count="0" />
+      <LineId Id="43" Count="0" />
+      <LineId Id="39" Count="3" />
+      <LineId Id="4" Count="5" />
+      <LineId Id="50" Count="0" />
+      <LineId Id="45" Count="0" />
+      <LineId Id="44" Count="0" />
+      <LineId Id="46" Count="0" />
+      <LineId Id="48" Count="1" />
+      <LineId Id="47" Count="0" />
+      <LineId Id="10" Count="16" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_SeqBuildStream.M_ShiftAndClearSlot">
+      <LineId Id="3" Count="4" />
+      <LineId Id="66" Count="0" />
+      <LineId Id="8" Count="6" />
+      <LineId Id="46" Count="0" />
+      <LineId Id="43" Count="0" />
+      <LineId Id="73" Count="0" />
+      <LineId Id="75" Count="0" />
+      <LineId Id="77" Count="0" />
+      <LineId Id="79" Count="0" />
+      <LineId Id="78" Count="0" />
+      <LineId Id="76" Count="0" />
+      <LineId Id="74" Count="0" />
+      <LineId Id="51" Count="0" />
+      <LineId Id="15" Count="0" />
+      <LineId Id="47" Count="1" />
+      <LineId Id="45" Count="0" />
+      <LineId Id="16" Count="13" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_SeqBuildStream.P_BranchRecursive.Get">
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_SeqBuildStream.P_BranchRecursive.Set">
+      <LineId Id="2" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

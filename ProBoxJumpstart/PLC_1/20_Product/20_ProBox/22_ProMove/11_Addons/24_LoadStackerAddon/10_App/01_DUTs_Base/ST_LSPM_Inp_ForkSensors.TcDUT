@@ -1,0 +1,12 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.4">
+  <DUT Name="ST_LSPM_Inp_ForkSensors" Id="{d4650229-69e4-444c-98c1-e1670148366d}">
+    <Declaration><![CDATA[TYPE ST_LSPM_Inp_ForkSensors :
+STRUCT	
+	ForksIn			: BOOL; // Sensor position forks home position.		
+	ForksOut		: BOOL; // Sensor position forks engaged into pallet	
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

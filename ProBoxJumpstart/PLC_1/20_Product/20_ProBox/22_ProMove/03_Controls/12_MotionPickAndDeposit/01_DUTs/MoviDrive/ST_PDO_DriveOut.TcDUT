@@ -1,0 +1,13 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.12">
+  <DUT Name="ST_PDO_DriveOut" Id="{1e5c2091-9349-49ea-8053-e226e9ae56e6}">
+    <Declaration><![CDATA[TYPE ST_PDO_DriveOut :
+STRUCT
+	SEW_MovidriveControlWord				: ST_MoviDriveCtrlWord;
+	ABB_ACS880_ControlWord					: ST_ABBDriveCtrlWord;
+	
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

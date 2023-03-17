@@ -1,0 +1,97 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <POU Name="F_PalletEvaluation" Id="{9bcb2984-acbe-444e-9612-8a68d8765e81}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION F_PalletEvaluation : BOOL  // TRUE=TU is valid
+VAR_INPUT
+	_ePalletOrientation : E_PalletOrientation;
+	TUProfileValues	: ST_Profile;
+	IndexNo			: DINT;
+	MaxTUValues 	: ST_MaxProfileValues;
+	_OutputsToPanel : REFERENCE TO  ST_OutputsRejectPanel;	
+END_VAR
+VAR_OUTPUT
+	
+END_VAR
+VAR
+
+	
+	
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[
+IF _ePalletOrientation = E_PalletOrientation.OrientationZero THEN
+_OutputsToPanel.ZeroDegProfileFrontError :=TUProfileValues.ProfileFront > MaxTUValues.Max_ProfileFront ;
+_OutputsToPanel.ZeroDegProfileLeftError:=TUProfileValues.ProfileLeft > MaxTUValues.Max_ProfileLeft ;
+_OutputsToPanel.ZeroDegProfileRearError:=TUProfileValues.ProfileRear > MaxTUValues.Max_ProfileRear ;
+_OutputsToPanel.ZeroDegProfileRightError:=TUProfileValues.ProfileRight > MaxTUValues.Max_ProfileRight ;	
+
+ELSIF _ePalletOrientation = E_PalletOrientation.OrientationNinty THEN
+_OutputsToPanel.NintyDegProfileFrontError:=TUProfileValues.ProfileFront > MaxTUValues.Max_ProfileFront ;
+_OutputsToPanel.NintyDegProfileLeftError:=TUProfileValues.ProfileLeft > MaxTUValues.Max_ProfileLeft;
+_OutputsToPanel.NintyDegProfileRearError:=TUProfileValues.ProfileRear > MaxTUValues.Max_ProfileRear;
+_OutputsToPanel.NintyDEgProfileRightError:=TUProfileValues.ProfileRight > MaxTUValues.Max_ProfileRight;	
+ELSIF _ePalletOrientation = E_PalletOrientation.OrientationOneEighty THEN
+_OutputsToPanel.OneEightyDegProfileFrontError:=TUProfileValues.ProfileFront > MaxTUValues.Max_ProfileFront ;
+_OutputsToPanel.OneEightyDegProfileLeftError:=TUProfileValues.ProfileLeft > MaxTUValues.Max_ProfileLeft;
+_OutputsToPanel.OneEightyDegProfileRearError:=TUProfileValues.ProfileRear > MaxTUValues.Max_ProfileRear;
+_OutputsToPanel.OneEightyDegProfileRightError:=TUProfileValues.ProfileRight > MaxTUValues.Max_ProfileRight;
+ELSIF _ePalletOrientation = E_PalletOrientation.OrientationTwoSeventy THEN	
+_OutputsToPanel.TwoSeventyDegProfileFrontError:=TUProfileValues.ProfileFront > MaxTUValues.Max_ProfileFront ;
+_OutputsToPanel.TwoSeventyDegProfileLeftError:=TUProfileValues.ProfileLeft > MaxTUValues.Max_ProfileLeft;
+_OutputsToPanel.TwoSeventyDegProfileRearError:=TUProfileValues.ProfileRear > MaxTUValues.Max_ProfileRear;
+_OutputsToPanel.TwoSeventyDegProfileRightError:=TUProfileValues.ProfileRight > MaxTUValues.Max_ProfileRight;
+END_IF
+
+//Profile Infromation and its OPeration to display errors on Reject Panel //
+_OutputsToPanel.HeightError:= TUProfileValues.Height > MaxTUValues.Max_Height;
+_OutputsToPanel.WeightError:=TUProfileValues.Weight > MaxTUValues.Max_Weight;
+_OutputsToPanel.LabelReadError:=TU_DataTable[IndexNo].Label.ASCII = '';  //non label is not allowed
+//_OutputsToPanel.DirectionEnableShortSide:= TU_DataTable[IndexNo].DataSet.Orientation  = 'SSL';
+//_OutputsToPanel.DirectionEnableLongSide:=TU_DataTable[IndexNo].DataSet.Orientation = 'LSL';
+_OutputsToPanel.RunnerError:= TUProfileValues.Runner <>1;
+_OutputsToPanel.TunnelError:= TUProfileValues.Runner <>1;
+	
+
+
+IF 	NOT _OutputsToPanel.ZeroDegProfileFrontError AND NOT _OutputsToPanel.ZeroDegProfileLeftError AND NOT _OutputsToPanel.ZeroDegProfileRearError AND NOT _OutputsToPanel.ZeroDegProfileRightError AND
+  	NOT _OutputsToPanel.NintyDegProfileLeftError AND NOT _OutputsToPanel.NintyDegProfileFrontError AND NOT _OutputsToPanel.NintyDegProfileRearError AND NOT _OutputsToPanel.NintyDegProfileRightError AND 
+	NOT _OutputsToPanel.OneEightyDegProfileFrontError AND NOT _OutputsToPanel.OneEightyDegProfileLeftError AND NOT _OutputsToPanel.OneEightyDegProfileRearError AND NOT _OutputsToPanel.OneEightyDegProfileRightError AND
+	NOT _OutputsToPanel.TwoSeventyDegProfileLeftError AND NOT _OutputsToPanel.TwoSeventyDegProfileRightError AND NOT _OutputsToPanel.TwoSeventyDegProfileFrontError AND NOT _OutputsToPanel.TwoSeventyDegProfileRearError AND NOT _OutputsToPanel.HeightError AND NOT _OutputsToPanel.WeightError AND NOT _OutputsToPanel.LabelReadError AND NOT _OutputsToPanel.RunnerError AND NOT _OutputsToPanel.TunnelError THEN
+   F_PalletEvaluation:= TRUE;
+ELSE
+   F_PalletEvaluation:= FALSE;                          
+END_IF             ]]></ST>
+    </Implementation>
+    <LineIds Name="F_PalletEvaluation">
+      <LineId Id="139" Count="0" />
+      <LineId Id="136" Count="0" />
+      <LineId Id="142" Count="2" />
+      <LineId Id="140" Count="0" />
+      <LineId Id="183" Count="0" />
+      <LineId Id="146" Count="0" />
+      <LineId Id="149" Count="2" />
+      <LineId Id="148" Count="0" />
+      <LineId Id="152" Count="0" />
+      <LineId Id="154" Count="2" />
+      <LineId Id="153" Count="0" />
+      <LineId Id="157" Count="0" />
+      <LineId Id="162" Count="0" />
+      <LineId Id="160" Count="1" />
+      <LineId Id="158" Count="0" />
+      <LineId Id="141" Count="0" />
+      <LineId Id="145" Count="0" />
+      <LineId Id="60" Count="0" />
+      <LineId Id="64" Count="0" />
+      <LineId Id="73" Count="6" />
+      <LineId Id="84" Count="1" />
+      <LineId Id="2" Count="0" />
+      <LineId Id="105" Count="0" />
+      <LineId Id="166" Count="0" />
+      <LineId Id="118" Count="0" />
+      <LineId Id="106" Count="0" />
+      <LineId Id="111" Count="0" />
+      <LineId Id="113" Count="1" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

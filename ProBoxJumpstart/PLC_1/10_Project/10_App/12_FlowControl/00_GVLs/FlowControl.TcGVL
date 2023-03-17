@@ -1,0 +1,12 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <GVL Name="FlowControl" Id="{58151bc5-f0ba-4d8e-a2b7-fbeba26f720e}">
+    <Declaration><![CDATA[///Automatically created by BoxConfigurator
+VAR_GLOBAL
+	///Main merging service
+	fbMergingService: FB_MergingService;
+	///Main routing service
+	fbRoutingService: FB_RoutingService;
+END_VAR]]></Declaration>
+  </GVL>
+</TcPlcObject>

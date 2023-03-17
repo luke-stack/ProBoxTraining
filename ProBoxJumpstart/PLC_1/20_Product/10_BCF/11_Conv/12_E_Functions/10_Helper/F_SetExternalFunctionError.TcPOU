@@ -1,0 +1,75 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.12">
+  <POU Name="F_SetExternalFunctionError" Id="{cecf8fcc-6b8f-4290-8d08-b033c92ce7f4}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION F_SetExternalFunctionError : BOOL
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 404529 $
+ *	Revision date	:	$Date: 2018-04-23 08:21:38 +0200 (Mo., 23 Apr 2018) $
+ *	Last changed by	:	$Author: b7bolm $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/trunk/01_Software/BCF/BCF/JumpStart/20_Product/10_App/12_E_Functions/10_Lib/10_Conv/10_Functions/F_SetExternalFunctionError.TcPOU $
+ *
+ *	Purpose			:	Set external error
+ *						Add an External error, which will be reported over the configured
+ *						position.
+ *						
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+VAR_INPUT
+	eFunctionNumber : E_FunctionNumber; 
+	ZoneNumber		: INT;
+	ErrorType		: E_ErrorType; // Error message type
+	ErrorParam		: STRING(System.ERROR_PARAM_STRINGLENGTH); // Error parameter
+	ErrorMsg		: INT; // Error message as String (Will be mapped to error code)
+END_VAR
+
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[
+// Validate inputs
+IF eFunctionNumber > E_FunctionNumber.F_BEGIN_FUNCTION THEN
+	IF __ISVALIDREF(FunctionRegistry[eFunctionNumber].rFunction) THEN
+		// Set external error on instance
+		FunctionRegistry[eFunctionNumber].rFunction.M_SetExternalError(
+			mZoneNumber := ZoneNumber,
+			mErrorType 	:= ErrorType,
+			mErrorParam := ErrorParam,
+			mErrorCode 	:= ErrorMsg);
+	END_IF
+END_IF
+
+]]></ST>
+    </Implementation>
+    <ObjectProperties>
+      <XmlArchive>
+        <Data>
+          <o xml:space="preserve" t="UMLStereoTypeContainerObject">
+            <v n="IsType" t="UMLType">BaseArea</v>
+            <v n="Stereotype">""</v>
+            <d n="Stereotypes" t="Hashtable" />
+          </o>
+        </Data>
+        <TypeList>
+          <Type n="Hashtable">System.Collections.Hashtable</Type>
+          <Type n="String">System.String</Type>
+          <Type n="UMLStereoTypeContainerObject">{30250973-b110-4e31-b562-c102e042dca4}</Type>
+          <Type n="UMLType">{0197b136-405a-42ee-bb27-fd08b621d0cf}</Type>
+        </TypeList>
+      </XmlArchive>
+    </ObjectProperties>
+    <LineIds Name="F_SetExternalFunctionError">
+      <LineId Id="3" Count="12" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

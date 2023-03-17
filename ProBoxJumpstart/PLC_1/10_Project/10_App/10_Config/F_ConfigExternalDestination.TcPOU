@@ -1,0 +1,18 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <POU Name="F_ConfigExternalDestination" Id="{f56759ed-2a31-4a2b-b4cc-47283f0eba82}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION F_ConfigExternalDestination : BOOL
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[
+
+;
+
+]]></ST>
+    </Implementation>
+    <LineIds Name="F_ConfigExternalDestination">
+      <LineId Id="3" Count="3" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

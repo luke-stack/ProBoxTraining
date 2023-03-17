@@ -1,0 +1,43 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <DUT Name="ST_HW_OutputsSickScanner" Id="{6ccb1cb2-fb81-413e-9595-d36d913059b5}">
+    <Declaration><![CDATA[TYPE ST_HW_OutputsSickScanner :
+STRUCT
+	ControlWordOut	: UINT;
+	ConfMessageOut	: ARRAY[0..31] OF BYTE;
+END_STRUCT
+END_TYPE
+(*
+Ctrl bits Out
+D0 := Outputs.Trigger;
+D1 := Outputs.SensorIdle;
+D2 := Outputs.TeachIn_1;
+D3 := Outputs.TeachIn_2;
+D4 := Outputs.ExternalOutput_1;
+D5 := Outputs.ExternalOutput_2;
+D6 := Outputs.Result_1;
+D7 := Outputs.Result_2;
+D12 := Outputs.DistanceConfig_0;
+D13 := Outputs.DistanceConfig_1;
+D14 := Outputs.DistanceConfig_2;
+D15 := Outputs.DistanceConfig_3;
+*)]]></Declaration>
+    <ObjectProperties>
+      <XmlArchive>
+        <Data>
+          <o xml:space="preserve" t="UMLStereoTypeContainerObject">
+            <v n="IsType" t="UMLType">BaseArea</v>
+            <v n="Stereotype">""</v>
+            <d n="Stereotypes" t="Hashtable" />
+          </o>
+        </Data>
+        <TypeList>
+          <Type n="Hashtable">System.Collections.Hashtable</Type>
+          <Type n="String">System.String</Type>
+          <Type n="UMLStereoTypeContainerObject">{30250973-b110-4e31-b562-c102e042dca4}</Type>
+          <Type n="UMLType">{0197b136-405a-42ee-bb27-fd08b621d0cf}</Type>
+        </TypeList>
+      </XmlArchive>
+    </ObjectProperties>
+  </DUT>
+</TcPlcObject>

@@ -1,0 +1,192 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.12">
+  <GVL Name="SIS_6_0" Id="{4e8881e1-c6bc-42ab-8797-3a6121222608}">
+    <Declaration><![CDATA[(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 404529 $
+ *	Revision date	:	$Date: 2018-04-23 08:21:38 +0200 (Mo., 23 Apr 2018) $
+ *	Last changed by	:	$Author: b7bolm $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/trunk/01_Software/BCF/BCF/JumpStart/20_Product/10_App/11_Com/10_Lib/10_Conv/12_MFCS/11_SIS/00_GVLs/SIS_6_0.TcGVL $
+ *
+ *	Purpose			:	SIS V6.0 constants
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+VAR_GLOBAL CONSTANT
+	APP_DATA_OFFSET									: INT := 3; // OFFSET - First sign of Application data after type
+
+	POSITION_STRINGLENGTH  							: INT := 12; // SIS Location MM-GGG-EEEE-FF-Z
+	CONTROLCODE_STRINGLENGTH						: INT := 2; // Control code 
+	CONTROLVARIABLE_STRINGLENGTH					: INT := 8; // Control variable 
+	
+	GVQ_CODE_STRINGLENGTH							: INT := 1; // Code
+	GVQ_NUMBER_STRINGLENGTH							: INT := 4; // Number
+	GVQ_QUANTITY_STRINGLENGTH						: INT := 2; // Quantity
+	GVQ_VARIABLE_STRINGLENGTH						: INT := 6; // Variable
+	
+	GVR_CODE_STRINGLENGTH							: INT := 1; // Code
+	GVR_NUMBER_STRINGLENGTH							: INT := 4; // Number
+	GVR_QUANTITY_STRINGLENGTH						: INT := 2; // Quantity
+	GVR_VARIABLE_STRINGLENGTH						: INT := 6; // Variable
+
+	IRQ_SIGNALTYPE_STRINGLENGTH						: INT := 1; // type
+	IRQ_START_SIGNAL_NUMBER_STRINGLENGTH			: INT := 4; // start number
+	IRQ_DATALENGTH_STRINGLENGTH						: INT := 2; // data length
+	
+	ISR_SIGNALTYPE_STRINGLENGTH 					: INT := 1; // signal type
+	ISR_SIGNALNUMBER_STRINGLENGTH 					: INT := 4; // signal number
+	ISR_DATALENGTH_STRINGLENGTH 					: INT := 2; // data length
+	ISR_INFORMATION_STRINGLENGTH					: INT := 99; //(HEX) information 
+	
+	ERR_CODE_STRINGLENGTH							: INT := 1;
+	
+	IPR_HEIGHT_STRINGLENGTH							: INT := 4; //  height
+	IPR_WIDTHRIGHT_STRINGLENGTH						: INT := 4; // width right
+	IPR_WIDTHLEFT_STRINGLENGTH						: INT := 4; // width left
+	IPR_LENGTHFRONT_STRINGLENGTH					: INT := 4; // front
+	IPR_LENGTHREAR_STRINGLENGTH						: INT := 4; // rear
+	IPR_WEIGHT_STRINGLENGTH							: INT := 8; // weight
+	IPR_TUNNEL_STRINGLENGTH							: INT := 1; // tunnel
+	IPR_RUNNER_STRINGLENGTH							: INT := 1; // runner
+	IPR_VALIDLABELSTRING_STRINGLENGTH				: INT := 3; // Valid label string
+	
+	VIQ_NUMBER_OF_KEYS_STRINGLENGTH					: INT := 2; // value
+	VIQ_KEY_STRINGLENGTH							: INT := 30; // key length
+
+	VIR_NUM_OF_KEYVALUEPAIRS_STRINGLENGTH			: INT := 2; // Digit
+	VIR_KEY_STRINGLENGTH							: INT := 30; // Key length
+	VIR_VALUE_STRINGLENGTH							: INT := 18;  // Value length
+	
+	MCR_CODE_STRINGLENGTH							: INT := 1; // mode
+	MCR_MODE_STRINGLENGTH							: INT := 1; // mode
+	MCR_SPEED_STRINGLENGTH							: INT := 1; // speed
+	MCR_AXIS_STRINGLENGTH							: INT := 1; // Axis
+	MCR_FORMAT_STRINGLENGTH							: INT := 2; // format
+	
+	MCQ_CODE_STRINGLENGTH							: INT := 1; // code
+	MCQ_SPEED_STRINGLENGTH							: INT := 1; // speed
+	MCQ_AXIS_STRINGLENGTH							: INT := 1; // Axis
+	MCQ_BUTTON_STRINGLENGTH							: INT := 1; // button
+	
+	POR_LOADINFORMATION_STRINGLENGTH				: INT := 1; // load info
+	
+	SDO_SIGNAL_NUMBER_STRINGLENGTH					: INT := 4; // signal number
+	SDO_SIGNALSTATE_STRINGLENGTH					: INT := 1; // status
+	
+	SDI_SIGNALNUMBER_STRINGLENGTH					: INT := 4; // Signal number
+	SDI_SIGNALSTATE_STRINGLENGTH					: INT := 1; // Signal status
+	
+	SIR_CODE_STRINGLENGTH							: INT := 1; // code
+	SIR_COUNTER_STRINGLENGTH						: INT := 6; // counter
+	
+	TTA_IO_DATA_STRINGLENGTH						: INT := 3; // I/O data
+	TTA_LOWER_LIMIT_STRINGLENGTH					: INT := 8; // limit
+	TTA_UPPER_LIMIT_STRINGLENGTH					: INT := 8; // limit
+	TTA_GROUPINFO_STRINGLENGTH						: INT := 4; // group info
+	TTA_SEQUENCE_STRINGLENGTH						: INT := 4; // sequence
+	TTA_NO_IN_SEQUENCE_STRINGLENGTH					: INT := 4; // sequence
+	TTA_NO_OF_DESTINATIONS_STRINGLENGTH				: INT := 2; // number
+	TTA_DESTINATIONS								: INT := 20; // Max dest in TTA
+	TTA_WEIGHT										: INT := 8; // weight
+	TTA_TU_PARAMETER								: INT := 4; // parameter
+	TTA_ORIENTATION									: INT := 3; // parameter
+	
+	TUR_IO_DATA_STRINGLENGTH						: INT := 3; // I/O
+	TUR_LOWERLIMIT_STRINGLENGTH						: INT := 8; // lower limit
+	TUR_UPPERLIMIT_STRINGLENGTH						: INT := 8; // upper limit
+	TUR_GROUPINFO_STRINGLENGTH						: INT := 4; // group info
+	TUR_SEQUENCE_STRINGLENGTH						: INT := 4; // sequence
+	TUR_NUMBER_IN_SEQUENCE_STRINGLENGTH				: INT := 4; // no in sequence
+	TUR_NUMBER_OF_DESTINATIONS_STRINGLENGTH			: INT := 2; // no of destinations
+	
+	TTQ_NUMBER_OF_TT_STRINGLENGTH 					: INT := 3; // number of TT's
+	TTQ_NUMBER_OF_TU_ID_STRINGLENGTH 				: INT := 1; // number of TU-IDs
+	SIQ_CODE_STRINGLENGTH							: INT := 1; // code
+	
+	TDQ_CODE_STRINGLENGTH							: INT := 1; // code
+	
+	FSR_STATES_STRINGLENGTH							: INT := 2; // variable
+	FSR_LOADINFORMATION_STRINGLENGTH				: INT := 1; // variable
+	FSR_VARIABLE_STRINGLENGTH						: INT := 8; // variable
+	
+	SSR_SYSTEM_INFO									: INT := 1; // system info
+	
+	SNR_INFO_CODE_STRINGLENGTH						: INT := 4; // info code
+	
+	ERRORCODE_STRINGLENGTH							: INT := 4; // error code
+	ERRORTYPE_STRINGLENGTH							: INT := 1;	// error type
+	ERRORSTATE_STRINGLENGTH							: INT := 1; // error state
+	ERRORINFORMATION_STRINGLENGTH					: INT := 50; //error info
+	
+	MSG_SEQUENCE_STRINGLENGTH						: INT := 3; // sequence
+	MODE_STRINGLENGTH								: INT := 1; // string length
+	ENABLED_STRINGLENGTH							: INT := 1; // enabled
+	STATE_STRINGLENGTH								: INT := 1; // state
+	TU_ID_STRINGLENGTH								: INT := 18; //  id
+	ASSIGNMENT_ID_STRINGLENGTH						: INT := 8; // assignment od
+	TU_TYPE_STRINGLENGTH							: INT := 4; // type
+	TU_DATAINDEX_STRINGLENGTH						: INT := 6; // data index
+	TIMESTAMP_STRINGLENGTH							: INT := 19; // time stamp YYYY-MM-DD-hh:mm:ss
+	DIMENSIONS										: INT := 4; // dimension
+
+	RAA_COMMAND_DATA_INDEX_STRINGLENGTH				: INT := 4; // variable
+	RAA_COMMAND_PRIORITY_STRINGLENGTH				: INT := 1; // variable
+	RAA_ASSIGNMENT_ID_STRINGLENGTH					: INT := 8; // variable
+	RAA_SEQUENCE_INDEX_STRINGLENGTH					: INT := 4; // variable
+	RAA_SEQUENCE_SIZE_STRINGLENGTH					: INT := 4; // variable
+	RAA_COMMAND_ARGS_COUNT_STRINGLENGTH				: INT := 2; // variable
+	RAA_NUMBER_OF_COMMAND_ARGS						: INT := 99; // variable
+	RAA_COMMAND_ARGS_KEY_STRINGLENGTH				: INT := 32; // variable
+	RAA_COMMAND_ARGS_VALUE_STRINGLENGTH 			: INT := 32; // variable
+	RAA_ROBOT_COMMAND_STRINGLENGTH					: INT := 20000; // variable
+	
+	RAC_COMMAND_DATA_INDEX_STRINGLENGTH				: INT := 4; // variable 
+	RAC_ASSIGNMENT_ID_STRINGLENGTH					: INT := 8; // variable
+	RAC_COMMAND_SEQUENCE_INDEX_STRINGLENGTH			: INT := 4; // variable
+	
+	RDQ_COMMAND_DATA_INDEX_STRINGLENGTH				: INT := 4; // value
+	RDQ_COMMAND_SEQUENCE_INDEX_STRINGLENGTH			: INT := 4; // value
+	
+	RDR_COMMAND_DATA_INDEX_STRINGLENGTH				: INT := 4; // value
+	RDR_COMMAND_SEQUENCE_INDEX_STRINGLENGTH			: INT := 4; // value
+		
+	DATA_ACQUISITION_SET							: INT := 54; // one Set Size
+	DATA_ACQUISITION_CODE							: INT := 1; // 1 Digit dimension	
+	DATA_ACQUISITION_NUMBEROFSETS					: INT := 2; // 1 Digit dimension	
+	DATA_ACQUISITION_VARIABLENAME					: INT := 20; // 10 Digit dimension	
+	DATA_ACQUISITION_MAXREPORTTIME					: INT := 8; // 8 Digit dimension	
+	DATA_ACQUISITION_SAMPLETIME						: INT := 12; // 12 Digit dimension	
+	DATA_ACQUISITION_THRESHOLD						: INT := 8; // 8 Digit dimension
+	DATA_ACQUISITION_BIT							: INT := 1; // 1 Digit dimension
+
+    GATHERED_DATA_VARIABLE							: INT := 20;// 10 Character String;
+    GATHERED_DATA_SEQUENCE							: INT := 4; // 4 Digit dimension	
+END_VAR]]></Declaration>
+    <ObjectProperties>
+      <XmlArchive>
+        <Data>
+          <o xml:space="preserve" t="UMLStereoTypeContainerObject">
+            <v n="IsType" t="UMLType">BaseArea</v>
+            <v n="Stereotype">""</v>
+            <d n="Stereotypes" t="Hashtable" />
+          </o>
+        </Data>
+        <TypeList>
+          <Type n="Hashtable">System.Collections.Hashtable</Type>
+          <Type n="String">System.String</Type>
+          <Type n="UMLStereoTypeContainerObject">{30250973-b110-4e31-b562-c102e042dca4}</Type>
+          <Type n="UMLType">{0197b136-405a-42ee-bb27-fd08b621d0cf}</Type>
+        </TypeList>
+      </XmlArchive>
+    </ObjectProperties>
+  </GVL>
+</TcPlcObject>

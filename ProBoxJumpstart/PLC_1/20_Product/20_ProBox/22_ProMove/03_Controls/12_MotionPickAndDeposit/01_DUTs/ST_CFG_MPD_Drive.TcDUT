@@ -1,0 +1,18 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <DUT Name="ST_CFG_MPD_Drive" Id="{ef1a2af6-fa16-432f-98b7-b1c7a9d71cc5}">
+    <Declaration><![CDATA[//Motion Pickup n Deposit drive configuration parameters
+TYPE ST_CFG_MPD_Drive :
+STRUCT
+	TimeReleaseBrake				: TIME := T#1S; 
+	MinimumPosition					: DINT; // [mm]
+	MaximumPosition					: DINT; // [mm]
+	DriveParameter					: ARRAY [1..5] OF ST_ParametersDrive; 
+	MaxDriveParamAuto				: ST_ParametersDrive;		
+	MaxDriveParamMan				: ST_ParametersDrive;
+	InverterType					: E_DriveMoverInverterType;	//Motion driver type (ABB/SEW)				
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

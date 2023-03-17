@@ -1,0 +1,29 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4020.6">
+  <POU Name="F_SampleTime_TO_TIME" Id="{759eea2c-9f7d-4594-b6a4-453e7bcf2228}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION F_SampleTime_TO_TIME : TIME
+VAR_INPUT
+	SampleTimeString : STRING;
+END_VAR
+VAR
+	TempOT : OTSTRUCT;
+	
+	
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[//'12:34:56:789';
+
+
+TempOT.wHour			:= STRING_TO_WORD(LEFT(SampleTimeString,2));
+TempOT.wMinute			:= STRING_TO_WORD(MID(SampleTimeString,2,4));
+TempOT.wSecond			:= STRING_TO_WORD(MID(SampleTimeString,2,7));
+TempOT.wMilliseconds	:= STRING_TO_WORD(RIGHT(SampleTimeString,3));
+
+
+F_SampleTime_TO_TIME:= OTSTRUCT_TO_TIME(TempOT);
+
+	]]></ST>
+    </Implementation>
+  </POU>
+</TcPlcObject>

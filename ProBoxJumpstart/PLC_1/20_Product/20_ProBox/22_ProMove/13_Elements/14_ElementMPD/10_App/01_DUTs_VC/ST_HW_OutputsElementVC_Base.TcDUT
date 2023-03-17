@@ -1,0 +1,30 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <DUT Name="ST_HW_OutputsElementVC_Base" Id="{cd743fda-0f1b-4d01-bd26-2f8ac9d99e8e}">
+    <Declaration><![CDATA[TYPE ST_HW_OutputsElementVC_Base :
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: $
+ *	Revision date	:	$Date: $
+ *	Last changed by	:	$Author: $
+ *	URL				:	$$
+ *
+ *	Purpose			:	VC Element - Hardware outputs
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION 
+ *
+ **************************************************************************************)
+STRUCT	
+	VCDrive						:ST_HW_OutputsMotionDrive; //Outputs to Motion Driver	
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

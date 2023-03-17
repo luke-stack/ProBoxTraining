@@ -1,0 +1,629 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <POU Name="FB_InOutFeedAddon" Id="{e099a508-e21d-4a8f-8413-3fc2d58deedd}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK FB_InOutFeedAddon  EXTENDS FB_FunctionConv
+
+VAR_INPUT
+	Config					: ST_CFG_InOutFeed;
+	HW_Inputs				: ST_HW_InputsInOutFeed;
+	CtrlIn					: ST_CtrlInInOutFeed;
+END_VAR
+
+VAR_OUTPUT
+	HW_Outputs				: ST_HW_OutputsInOutFeed;
+	CtrlOut					: ST_CtrlOutInOutFeed;	// User function control outputs
+
+END_VAR
+
+VAR
+	Inputs						: ST_InputsInOutFeed;
+	Outputs						: ST_OutputsInOutFeed;
+	InOutFeedState				: ST_InOutFeedStates;
+	fbAddOnErrHandler			: FB_AddOnErrHandler;
+	InOutFeedData				: ST_InOutFeedData;
+END_VAR
+
+VAR PERSISTENT
+	Settings				: ST_CFG_InOutFeed;
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[(**************************************************************************************************************
+   Input mapping
+***************************************************************************************************************)
+A_InputMapping();
+
+(**************************************************************************************************************
+   Initialization
+***************************************************************************************************************)
+A_Init();
+
+(**************************************************************************************************************
+   State control 
+***************************************************************************************************************)
+A_StateControl();
+
+(**************************************************************************************************************
+   Error handler
+***************************************************************************************************************)
+A_ErrorHandler();
+fbAddOnErrHandler(AddOnSettingsFunction:= SettingsFunction, AddOnFunctionData:= FunctionData);
+
+(**************************************************************************************************************
+   Infeed states
+***************************************************************************************************************)
+_M_InOutFeedStates();
+
+(**************************************************************************************************************
+	Control lift
+***************************************************************************************************************)
+_M_ControlLift();
+
+(**************************************************************************************************************
+   Interface handler out
+***************************************************************************************************************)
+M_ITC_ProcessOut();
+
+(**************************************************************************************************************
+   Output mapping
+***************************************************************************************************************)
+A_OutputMapping();
+
+]]></ST>
+    </Implementation>
+    <Method Name="_M_ControlLift" Id="{9f3c727b-64e3-45ea-aa2d-76af6d7ab813}">
+      <Declaration><![CDATA[METHOD PRIVATE _M_ControlLift : BOOL
+VAR
+	TakeoverWait	: BOOL;
+	HandoverWait	: BOOL; 
+END_VAR
+
+VAR_INST
+	fbLiftControl 				: FB_LiftControl;
+	fbProBoxMotorControlLift	: FB_ProBoxMotorControl;
+	LiftOrderPos				: E_Positions_LiftControl;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[IF (NOT __ISVALIDREF(FunctionRegistry[SettingsFunction.FunctionLink.eFunctionNumber].rFunctionInterface)) THEN
+	RETURN;
+END_IF
+
+IF NOT Settings.LiftEnabled THEN
+	InOutFeedData.LiftEnableTransport := TRUE;
+	RETURN; 
+END_IF
+
+F_ResetError(FALSE,	FunctionData.ErrorData.ErrorDataSet[3]);
+F_ResetError(FALSE,	FunctionData.ErrorData.ErrorDataSet[4]);
+
+InOutFeedData.PrevFunction := FunctionRegistry[SettingsFunction.FunctionLink.eFunctionNumber].rFunctionInterface.In.ePrevFunctionNumber > F_BEGIN_FUNCTION;
+InOutFeedData.NextFunction := FunctionRegistry[SettingsFunction.FunctionLink.eFunctionNumber].rFunctionInterface.In.eNextFunctionNumber > F_BEGIN_FUNCTION;
+
+TakeoverWait := InOutFeedData.TransportData.eTakeOverState = E_TakeOverState.ACTIVE OR InOutFeedData.TransportData.eTakeOverState = E_TakeOverState.STOP OR 
+				InOutFeedData.TransportData.eTakeOverState = E_TakeOverState.INTERRUPTED;
+
+HandoverWait := InOutFeedData.TransportData.eHandOverState = E_HandOverState.ACTIVE OR InOutFeedData.TransportData.eHandOverState = E_HandOverState.STOP OR
+				InOutFeedData.TransportData.eHandOverState = E_HandOverState.INTERRUPTED;
+
+//Raise lift when liftup is set, controlled in InOutFeedStates
+IF InOutFeedData.LiftUp THEN 
+	LiftOrderPos := E_Positions_LiftControl.UP;
+	
+//Lower lift when handover or takeover is done
+ELSIF NOT (InOutFeedData.PrevFunction OR (InOutFeedData.NextFunction AND InOutFeedData.TransportData.Occupied) OR TakeoverWait OR HandoverWait) THEN
+	LiftOrderPos := E_Positions_LiftControl.DOWN;
+END_IF
+
+fbLiftControl(	
+				LinkedElementNumber		:= SettingsFunction.eElementLink,			
+				FunctionData 			:= FunctionData, 
+				Sensor_Pos_Down 		:= Inputs.HW.Sensor_Pos_Down, 
+				Sensor_Pos_Up 			:= Inputs.HW.Sensor_Pos_Up, 
+				TimeoutValueLift 		:= Settings.TimeoutValueLift, 
+				OrderPos 				:= LiftOrderPos,
+				HomePos					:= E_Positions_LiftControl.UNDIFINED,
+				ErrorData 				:= FunctionData.ErrorData.ErrorDataSet[3]);
+
+fbProBoxMotorControlLift(
+							Run 					:= fbLiftControl.Drive_Run_UpDown,
+							MotorSpeed 				:= E_ProBoxMotorSpeed.NORMAL, 
+							MotorDirection 			:= E_ProBoxMotorDirection.MOTOR_FORWARD,
+							MotorStarterOK 			:= Inputs.HW.Signal_MotorUnitOK,
+							Forward					=> Outputs.HW.Drive_Run_UpDown,
+							ErrorData 				:= FunctionData.ErrorData.ErrorDataSet[4]);
+							
+InOutFeedData.LiftEnableTransport := fbLiftControl.EnableTransport AND fbLiftControl.OrderPos = E_Positions_LiftControl.UP;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_InOutFeedStates" Id="{152c5bf3-7c10-427a-8748-241d1f14ecfd}">
+      <Declaration><![CDATA[METHOD PRIVATE _M_InOutFeedStates : BOOL
+VAR
+	TU_DataIndex				: DINT;
+END_VAR
+
+VAR_INST
+	fbTUSensor					: FB_Timer;
+	fbFLTClear					: FB_Timer;
+	fbInternalTimer				: FB_Timer;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[fbFLTClear.IN := FALSE;
+fbTUSensor.IN := FALSE;
+fbInternalTimer.IN := FALSE;
+fbFLTClear.PT:= Settings.tFTLClearTime;
+fbTUSensor.PT := Settings.tTUSensorTime;
+fbInternalTimer.PT := T#2S; // Time latency before removing a TU on Infeed if not detected by TUsensor
+
+// Reset Error - Infeed addon failed to add TU Data Index during TU detection.
+F_ResetError(
+	Reset 	  := FALSE,
+	ErrorData := FunctionData.ErrorData.ErrorDataSet[1]);
+	
+// Reset Error - Outfeed addon failed to delete TU Data Index during FLT_Clear state.
+F_ResetError(
+	Reset 	  := FALSE,
+	ErrorData := FunctionData.ErrorData.ErrorDataSet[2]);
+	
+TU_DataIndex := 0;
+
+CASE InOutFeedState.eState OF
+(**************************************************************************************************************
+   INIT
+***************************************************************************************************************)
+	E_InOutFeedState.INIT:
+	
+		Outputs.EnableHandover := FALSE;
+		Outputs.EnableTakeover := FALSE;			
+		Outputs.HW.OKToDeposit := FALSE;
+		Outputs.HW.OKToRemove := FALSE;
+
+		IF FunctionData.ErrorData.Error.ErrorType <> E_ErrorType.ERROR AND
+			FunctionInterface.In.Element.OperationState.eState = E_PositionState.STARTED THEN
+			
+			InOutFeedState.eLastState := InOutFeedState.eState;
+			InOutFeedState.eState := E_InOutFeedState.CHECK_ZONE;
+			
+		ELSIF FunctionData.ErrorData.Error.ErrorType = E_ErrorType.ERROR THEN
+			// Change state
+			InOutFeedState.eLastState := InOutFeedState.eState;
+			InOutFeedState.eState := E_InOutFeedState.ERROR;
+		END_IF
+
+(**************************************************************************************************************
+   CHECK_ZONE
+***************************************************************************************************************)		
+	E_InOutFeedState.CHECK_ZONE:
+		
+		InOutFeedState.eLastState := InOutFeedState.eState;
+		InOutFeedState.eState := E_InOutFeedState.EMPTY;
+		
+
+(**************************************************************************************************************
+   EMPTY
+***************************************************************************************************************)	
+	E_InOutFeedState.EMPTY:
+		Outputs.EnableTakeover := TRUE;	
+		fbInternalTimer.IN := FALSE;
+		
+		IF Inputs.Ctrl.DisableInFeed OR InOutFeedData.PrevFunction THEN
+			InOutFeedData.LiftUp := TRUE;
+		ELSE
+			InOutFeedData.LiftUp := FALSE;	
+		END_IF
+		
+		IF(FunctionInterface.In.Element.OperationState.eState <> E_PositionState.STARTED) THEN
+			InOutFeedState.eLastState := InOutFeedState.eState;
+			InOutFeedState.eState := E_InOutFeedState.CHECK_ZONE;
+		ELSE
+			Outputs.HW.OKToDeposit := TRUE;
+			Outputs.HW.OKToRemove  := FALSE;
+			Outputs.EnableHandover := Inputs.Ctrl.DisableOutFeed;			
+			fbTUSensor.IN := Inputs.HW.TUSensor;
+			fbFLTClear.IN := FALSE;
+			
+			// If no TU data index then select infeed
+			IF InOutFeedData.TransportData.NumberOfPresentTUs = 0 AND fbTUSensor.Q AND NOT Inputs.Ctrl.DisableInFeed AND
+	 		   (InOutFeedData.TransportData.eTransportState = E_TransportState.FREE OR InOutFeedData.TransportData.eTransportState = E_TransportState.IDLE OR InOutFeedData.TransportData.eTakeOverState = E_TakeOverState.READY) THEN
+		 		InOutFeedState.eLastState := InOutFeedState.eState;
+				InOutFeedState.eState := E_InOutFeedState.INFEED_OCCUPIED;
+				
+			// If TU data index exists then select outfeed 
+			ELSIF InOutFeedData.TransportData.NumberOfPresentTUs > 0 AND InOutFeedData.TransportData.Occupied THEN						
+				InOutFeedState.eLastState := InOutFeedState.eState;
+				InOutFeedState.eState := E_InOutFeedState.OUTFEED_OCCUPIED;
+			END_IF
+		END_IF	
+
+(**************************************************************************************************************
+   INFEED_OCCUPIED
+***************************************************************************************************************)
+	E_InOutFeedState.INFEED_OCCUPIED:
+		Outputs.HW.OKToDeposit := FALSE;
+		Outputs.EnableHandover := FALSE;
+		Outputs.EnableTakeover := FALSE;		
+		
+		F_SetOccupied(eFunctionNumber := SettingsFunction.FunctionLink.eFunctionNumber,
+					  ZoneNumber := SettingsFunction.FunctionLink.ZoneNumber);
+				
+		// If no index was found for that label
+		IF  InOutFeedData.TransportData.TU_DataIndex = 0 THEN
+			// Create new data set
+			TU_DataIndex := F_InsertTU_Data(
+								SettingsFunction.FunctionLink.eFunctionNumber, 
+								SettingsFunction.FunctionLink.ZoneNumber);	
+	
+			// If a new index was created
+			IF TU_DataIndex > 0 THEN
+				// Update new TU Data set				
+				TU_DataTable[TU_DataIndex].DataSet.TU_Type := Inputs.Ctrl.TU_Type;
+				
+				//Set the TU data set with valid destination data (Destination <> F_BEGIN_FUNCTION)
+				F_PB_SetDestination(
+							TuDataIndex		:= TU_DataIndex, 
+							Destination		:= Inputs.Ctrl.DestinationFunction, 
+							DestinationZone	:= Inputs.Ctrl.DestinationZone, 
+							ForceOverwrite	:= FALSE, 
+							AssignTuType	:= TRUE, 
+							TuType			:= Inputs.Ctrl.TU_Type, 
+							InsertFunction	:= SettingsFunction.FunctionLink.eFunctionNumber, 
+							InsertZone		:= SettingsFunction.FunctionLink.ZoneNumber);
+				
+				
+				F_AssignTU_DataIndexToZone(
+										eFunctionNumber:= SettingsFunction.FunctionLink.eFunctionNumber, 
+										ZoneNumber:= SettingsFunction.FunctionLink.ZoneNumber, 
+										TU_DataIndex:= TU_DataIndex);
+			
+			// Otherwise no free image slot available
+			ELSE
+				// Error, no free index
+				F_SetError(
+					ErrorType 	:= E_ErrorType.ERROR,
+					ErrorParam 	:= 'InOutFeed - No TU Data found',
+					ErrorMsg 	:= E_ErrorConv.NO_FREE_TU_DATA_SET,
+					ErrorData 	:= FunctionData.ErrorData.ErrorDataSet[1]);
+				
+				// Go to "ERROR"
+				InOutFeedState.eLastState := InOutFeedState.eState;
+				InOutFeedState.eState := E_InOutFeedState.ERROR;
+			END_IF
+		END_IF
+	
+
+
+InOutFeedState.eLastState := InOutFeedState.eState;
+InOutFeedState.eState := E_InOutFeedState.INFEED_FLT_CLEAR;
+
+(**************************************************************************************************************
+   INFEED_FLT_CLEAR
+***************************************************************************************************************)	
+	E_InOutFeedState.INFEED_FLT_CLEAR:
+			
+		//Wait for FLT sensor to be off-> enable Handover so that the TU can be transferred out.
+		fbFLTClear.IN := NOT Inputs.HW.FLTSensor;
+		IF Inputs.HW.TUSensor AND fbFLTClear.Q  THEN
+			Outputs.EnableHandover:=TRUE;
+			InOutFeedData.LiftUp := TRUE;
+		END_IF
+		//Wait for TU to be transfered out from InFeeder.
+		IF Outputs.EnableHandover AND NOT InOutFeedData.TransportData.Occupied THEN 
+			InOutFeedState.eLastState := InOutFeedState.eState;
+			InOutFeedState.eState := E_InOutFeedState.EMPTY;
+		END_IF
+			
+			
+		// Check if TU has been removed from Infeed. Next states will delete remove the pallet from the system
+		fbInternalTimer.IN := NOT Inputs.HW.FLTSensor AND NOT Inputs.HW.TUSensor AND InOutFeedData.TransportData.TU_DataIndex > 0;
+		IF fbInternalTimer.Q THEN
+			Outputs.EnableHandover:=FALSE;
+			InOutFeedState.eLastState := InOutFeedState.eState;
+			InOutFeedState.eState := E_InOutFeedState.OUTFEED_TU_SENSOR_CLEAR;	
+		END_IF
+		
+
+(**************************************************************************************************************
+   OUTFEED_OCCUPIED
+***************************************************************************************************************)	
+	E_InOutFeedState.OUTFEED_OCCUPIED:
+		Outputs.HW.OKToRemove := TRUE;
+		Outputs.HW.OKToDeposit := FALSE;
+		Outputs.EnableTakeover := FALSE;
+		
+		//If next function defined
+		IF InOutFeedData.NextFunction THEN 
+			InOutFeedData.LiftUp := TRUE;
+		ELSE
+			InOutFeedData.LiftUp := FALSE; 
+		END_IF
+		
+	IF(FunctionInterface.In.Element.OperationState.eState = E_PositionState.STARTED) THEN
+		fbTUSensor.IN := NOT Inputs.HW.TUSensor;
+		Outputs.EnableHandover := Inputs.Ctrl.DisableOutFeed;
+		
+		//Outfeed being disabled, wait for zone to be free, however it is possible to remove TU if not detected anymore.
+		IF(Inputs.Ctrl.DisableOutFeed AND InOutFeedData.TransportData.Occupied) THEN
+			InOutFeedState.eLastState := InOutFeedState.eState;
+			InOutFeedState.eState := E_InOutFeedState.empty;			
+		
+		ELSIF fbTUSensor.Q THEN
+			fbFLTClear.IN := FALSE;
+			InOutFeedState.eLastState := InOutFeedState.eState;
+			InOutFeedState.eState := E_InOutFeedState.OUTFEED_TU_SENSOR_CLEAR;	
+		END_IF
+	ELSE
+		InOutFeedState.eLastState := InOutFeedState.eState;
+		InOutFeedState.eState := E_InOutFeedState.INIT;
+	END_IF
+	
+		
+(**************************************************************************************************************
+   TU_SENSOR_CLEAR
+***************************************************************************************************************)		
+	E_InOutFeedState.OUTFEED_TU_SENSOR_CLEAR:
+	
+		fbFLTClear.IN := NOT Inputs.HW.FLTSensor;
+		
+		IF (fbFLTClear.Q AND InOutFeedData.TransportData.eTransportState <> E_TransportState.FREE AND
+							 InOutFeedData.TransportData.eTransportState <> E_TransportState.TAKEOVER) THEN
+			InOutFeedState.eLastState := InOutFeedState.eState;
+			InOutFeedState.eState := E_InOutFeedState.OUTFEED_FLT_CLEAR;						
+		END_IF
+		
+		//TU does not exists anymore? can happen if a TU was added by InFeed, but later removed.
+		IF(fbFLTClear.Q AND InOutFeedData.TransportData.eTransportState = E_TransportState.FREE AND NOT InOutFeedData.TransportData.Occupied) THEN
+			InOutFeedState.eLastState := InOutFeedState.eState;
+			InOutFeedState.eState := E_InOutFeedState.EMPTY;
+		END_IF
+
+(**************************************************************************************************************
+   OUTFEED_FLT_CLEAR
+***************************************************************************************************************)	
+	E_InOutFeedState.OUTFEED_FLT_CLEAR:
+	
+		IF NOT F_ResetOccupied(
+				eFunctionNumber := SettingsFunction.FunctionLink.eFunctionNumber,
+				ZoneNumber := SettingsFunction.FunctionLink.ZoneNumber) THEN					
+			 
+				F_SetError(
+					ErrorType 	:= E_ErrorType.ERROR,
+					ErrorParam 	:= 'InOutFeed - Position Not Correct Occupied',
+					ErrorMsg 	:= E_ErrorConv.POSITION_NOT_CORRECT_OCCUPIED,
+					ErrorData 	:= FunctionData.ErrorData.ErrorDataSet[2]);
+
+				InOutFeedState.eLastState := InOutFeedState.eState;
+				InOutFeedState.eState := E_InOutFeedState.ERROR;
+			
+		ELSE
+			F_DeleteTU_Data(
+						TU_DataIndex	:= InOutFeedData.TransportData.TU_DataIndex,
+						//CallSource		:= 'FB_Outfeed',
+						NoTTC 			:= FALSE);		
+			
+			InOutFeedState.eLastState := InOutFeedState.eState;
+			InOutFeedState.eState := E_InOutFeedState.EMPTY;
+		END_IF	
+		
+		
+(**************************************************************************************************************
+   ERROR
+***************************************************************************************************************)	
+	E_InOutFeedState.ERROR:
+	
+		Outputs.HW.OKToDeposit := FALSE;
+		Outputs.EnableHandover := FALSE;
+		Outputs.HW.OKToRemove := FALSE;
+		
+		// Wait until error is resetted
+		IF FunctionData.ErrorData.Error.ErrorType <> E_ErrorType.ERROR THEN
+			InOutFeedState.eLastState := InOutFeedState.eState;
+			InOutFeedState.eState := E_InOutFeedState.INIT;
+		END_IF
+		
+(**************************************************************************************************************)
+END_CASE
+
+//	Update timers
+fbTUSensor();
+fbFLTClear();
+fbInternalTimer();]]></ST>
+      </Implementation>
+    </Method>
+    <Action Name="A_Init" Id="{212518fe-5d48-4646-b066-5e74cfc15033}">
+      <Implementation>
+        <ST><![CDATA[// Update Registry
+M_UpdateRegistry();
+
+IF NOT FunctionData.Init AND FunctionData.InitRunning THEN
+	// When the subsystem is started, 
+	// and its released to initialize
+	IF FunctionData.OperationState.Info.SystemReady AND
+	   SettingsFunction.eFunctionNumber < FunctionData.OperationState.InitRelease.eLimitFunctionNumber THEN
+	   
+	   IF M_InitFunction(FALSE) THEN
+			// Function initialized - and initialization done
+			FunctionData.Init := TRUE;
+			FunctionData.InitRunning := FALSE;
+			
+			InOutFeedState.eLastState := InOutFeedState.eState;
+			InOutFeedState.eState := E_InOutFeedState.INIT;
+			
+			// Set reset cmd
+			FunctionData.ErrorData.Error.ResetError := TRUE;
+			
+			DebugMsg := CONCAT('Initialization done. Function: ', ConfigFunction.FunctionName);
+			fbDebugMsg.M_SendInfoMsg(DebugMsg);
+		END_IF
+	END_IF
+ELSIF NOT FunctionData.Init THEN
+	InOutFeedState.eLastState := InOutFeedState.eState;
+	InOutFeedState.eState := E_InOutFeedState.INIT;
+	
+	FunctionData.OperationState := FunctionBase.PositionStateEmpty;
+	
+	Settings := Config;
+	
+	M_PreInit();
+	
+	FunctionData.InitRunning := SettingsFunction.eFunctionNumber > 0 AND
+								SettingsFunction.eElementLink > 0;
+	
+END_IF]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="A_InputMapping" Id="{583dd2f9-e924-4748-b2fa-430381a2e2dd}">
+      <Implementation>
+        <ST><![CDATA[Inputs.HW := HW_Inputs;
+Inputs.Ctrl := CtrlIn;
+
+InOutFeedData.TransportData := F_GetTransportControlData(
+							eFunctionNumber	:= SettingsFunction.FunctionLink.eFunctionNumber,
+							ZoneNumber 		:= SettingsFunction.FunctionLink.ZoneNumber);
+							
+(**************************************************************************************
+   Element states
+***************************************************************************************)
+// Get status of the corresponding element
+M_GetElementStates(); 
+
+
+(**************************************************************************************
+   AddOn states
+***************************************************************************************)
+// Get status of all corresponding AddOn functions and store it in FunctionInterface.In.AddOnOrder
+M_GetAddOnOrder();]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="A_OutputMapping" Id="{76fa779f-c5b7-472d-8391-ff9b2746b963}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_OutputMapping
+ * 	FUNCTION	Output mapping
+ **************************************************************************************)
+ CtrlOut.OKToDeposit	:= Outputs.HW.OKToDeposit;
+ CtrlOut.OKToRemove		:= Outputs.HW.OKToRemove;
+ 
+(**************************************************************************************
+   Hardware outputs
+***************************************************************************************)
+
+IF(settings.LiftEnabled) THEN
+	HW_Outputs.Drive_Run_UpDown 	:= Outputs.HW.Drive_Run_UpDown;
+END_IF
+
+(**************************************************************************************
+   Order outputs (Commands to corresponding element)
+***************************************************************************************)
+// Drive run not needed
+FunctionInterface.Out.FunctionOrders.ReqDriveRun := FALSE;
+FunctionInterface.Out.FunctionOrders.ReqDriveRun_34 := FALSE;
+
+// Allow element to drive
+FunctionInterface.Out.FunctionOrders.Enable := TRUE;
+FunctionInterface.Out.FunctionOrders.Enable_34 := TRUE;
+
+(**************************************************************************************
+   AddOn outputs
+***************************************************************************************)
+
+FunctionInterface.Out.AddOnOrders.DataReady := TRUE;
+FunctionInterface.Out.AddOnOrders.Enable := FunctionData.ErrorData.Error.ErrorType <> E_ErrorType.ERROR AND InOutFeedData.LiftEnableTransport;
+FunctionInterface.Out.AddOnOrders.EnableHandover := Outputs.EnableHandover;
+FunctionInterface.Out.AddOnOrders.EnableTakeover := NOT Inputs.HW.FLTSensor AND Outputs.EnableTakeover; 
+
+(**************************************************************************************
+   Inhibit stopping during active comunication
+***************************************************************************************)
+THIS^.InhibitStopping := HW_Outputs.Drive_Run_UpDown; //Override group stopping while transfering TU to/from crane]]></ST>
+      </Implementation>
+    </Action>
+    <LineIds Name="FB_InOutFeedAddon">
+      <LineId Id="3" Count="18" />
+      <LineId Id="66" Count="0" />
+      <LineId Id="22" Count="4" />
+      <LineId Id="96" Count="0" />
+      <LineId Id="98" Count="0" />
+      <LineId Id="101" Count="0" />
+      <LineId Id="100" Count="0" />
+      <LineId Id="97" Count="0" />
+      <LineId Id="27" Count="10" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_InOutFeedAddon._M_ControlLift">
+      <LineId Id="159" Count="0" />
+      <LineId Id="163" Count="0" />
+      <LineId Id="162" Count="0" />
+      <LineId Id="8" Count="0" />
+      <LineId Id="5" Count="0" />
+      <LineId Id="230" Count="0" />
+      <LineId Id="232" Count="0" />
+      <LineId Id="234" Count="0" />
+      <LineId Id="231" Count="0" />
+      <LineId Id="9" Count="0" />
+      <LineId Id="14" Count="0" />
+      <LineId Id="164" Count="1" />
+      <LineId Id="212" Count="0" />
+      <LineId Id="202" Count="0" />
+      <LineId Id="214" Count="0" />
+      <LineId Id="216" Count="0" />
+      <LineId Id="215" Count="0" />
+      <LineId Id="218" Count="0" />
+      <LineId Id="220" Count="0" />
+      <LineId Id="219" Count="0" />
+      <LineId Id="226" Count="0" />
+      <LineId Id="179" Count="0" />
+      <LineId Id="126" Count="0" />
+      <LineId Id="134" Count="0" />
+      <LineId Id="182" Count="0" />
+      <LineId Id="142" Count="0" />
+      <LineId Id="129" Count="0" />
+      <LineId Id="127" Count="0" />
+      <LineId Id="51" Count="0" />
+      <LineId Id="24" Count="6" />
+      <LineId Id="183" Count="0" />
+      <LineId Id="32" Count="2" />
+      <LineId Id="42" Count="0" />
+      <LineId Id="35" Count="2" />
+      <LineId Id="228" Count="0" />
+      <LineId Id="23" Count="0" />
+      <LineId Id="237" Count="0" />
+      <LineId Id="236" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_InOutFeedAddon._M_InOutFeedStates">
+      <LineId Id="7" Count="94" />
+      <LineId Id="322" Count="1" />
+      <LineId Id="103" Count="10" />
+      <LineId Id="118" Count="0" />
+      <LineId Id="300" Count="1" />
+      <LineId Id="305" Count="7" />
+      <LineId Id="303" Count="1" />
+      <LineId Id="119" Count="4" />
+      <LineId Id="294" Count="0" />
+      <LineId Id="124" Count="150" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_InOutFeedAddon.A_Init">
+      <LineId Id="2" Count="15" />
+      <LineId Id="22" Count="20" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_InOutFeedAddon.A_InputMapping">
+      <LineId Id="26" Count="0" />
+      <LineId Id="30" Count="0" />
+      <LineId Id="5" Count="15" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_InOutFeedAddon.A_OutputMapping">
+      <LineId Id="31" Count="9" />
+      <LineId Id="70" Count="0" />
+      <LineId Id="68" Count="1" />
+      <LineId Id="66" Count="0" />
+      <LineId Id="41" Count="16" />
+      <LineId Id="80" Count="0" />
+      <LineId Id="58" Count="0" />
+      <LineId Id="30" Count="0" />
+      <LineId Id="79" Count="0" />
+      <LineId Id="63" Count="2" />
+      <LineId Id="61" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

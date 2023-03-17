@@ -1,0 +1,19 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.12">
+  <Itf Name="I_HandoverListener" Id="{1329ef7b-f0a9-45a6-9dda-e7dfc50fb37e}">
+    <Declaration><![CDATA[INTERFACE I_HandoverListener
+]]></Declaration>
+    <Method Name="M_HandoverCompleteEvent" Id="{7be36221-1f02-4a4d-b9ff-61384a829a59}">
+      <Declaration><![CDATA[METHOD M_HandoverCompleteEvent
+VAR_INPUT
+END_VAR
+]]></Declaration>
+    </Method>
+    <Method Name="M_HandoverStartEvent" Id="{51fe2f8e-3e77-4e6e-bf3f-57913ac9a02c}">
+      <Declaration><![CDATA[METHOD M_HandoverStartEvent
+VAR_INPUT
+END_VAR
+]]></Declaration>
+    </Method>
+  </Itf>
+</TcPlcObject>

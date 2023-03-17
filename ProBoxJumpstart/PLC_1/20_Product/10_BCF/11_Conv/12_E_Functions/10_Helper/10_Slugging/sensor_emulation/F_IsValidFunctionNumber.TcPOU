@@ -1,0 +1,37 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.4">
+  <POU Name="F_IsValidFunctionNumber" Id="{4eb24052-6441-42bc-8e08-b63fe4f13acb}" SpecialFunc="None">
+    <Declaration><![CDATA[///Test if the function number is valid within the subsystem
+FUNCTION F_IsValidFunctionNumber : BOOL
+(**************************************************************************************
+ *  Application     :   BoxControl Framework
+ *  Revision date   :   $Date: 2021-04-09 08:29:02 +0200 (fre, 09 apr 2021) $
+ *  Author          :   CDC
+ * ------------------------------------------------------------------------------------
+ *  © Swisslog AG
+ *  Swisslog is not liable for any usage of this source code that is not agreed 
+ *  on between Swisslog and the other party. The mandatory legal liability remains 
+ *  unaffected.
+ * ------------------------------------------------------------------------------------
+ *  Revision History: 
+ *
+ *  VERSION DATE         INITIALS     DESCRIPTION
+ *  0.0     DD.MM.YYYY   (name)       (explain customized modifications)
+ *
+ **************************************************************************************)
+VAR_INPUT
+    eFunctionNumber : E_FunctionNumber;
+END_VAR
+VAR
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[F_IsValidFunctionNumber := E_FunctionNumber.F_BEGIN_FUNCTION < eFunctionNumber AND 
+                            eFunctionNumber < E_FunctionNumber.F_END_FUNCTION;]]></ST>
+    </Implementation>
+    <LineIds Name="F_IsValidFunctionNumber">
+      <LineId Id="3" Count="0" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

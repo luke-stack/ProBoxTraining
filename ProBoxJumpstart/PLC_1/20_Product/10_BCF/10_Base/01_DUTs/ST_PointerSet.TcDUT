@@ -1,0 +1,12 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.12">
+  <DUT Name="ST_PointerSet" Id="{35b13515-ed8b-485f-8fcd-3f712857d75c}">
+    <Declaration><![CDATA[TYPE ST_PointerSet :
+STRUCT
+	pAdr	: PVOID;
+	Len		: UDINT;
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

@@ -1,0 +1,29 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.12">
+  <POU Name="F_PB_GetZoneITC" Id="{617e4b42-8cf0-4c08-ac53-f2cbbee96776}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION F_PB_GetZoneITC : ST_ITC_Zone
+VAR_INPUT
+		eFunctionNumber		: E_FunctionNumber; // Function number
+		ZoneNumber			: INT := 1;
+END_VAR
+VAR
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[// Check if function number is validas
+IF eFunctionNumber > E_FunctionNumber.F_BEGIN_FUNCTION AND
+   eFunctionNumber < E_FunctionNumber.F_END_FUNCTION THEN
+  
+	// Check reference is valid
+	IF __ISVALIDREF(FunctionRegistry[eFunctionNumber].rFunctionInterface) THEN
+   		// Return function interlock
+   		F_PB_GetZoneITC := FunctionRegistry[eFunctionNumber].rFunction.ITC.ZoneITC[ZoneNumber];
+	END_IF
+END_IF]]></ST>
+    </Implementation>
+    <LineIds Name="F_PB_GetZoneITC">
+      <LineId Id="8" Count="8" />
+      <LineId Id="7" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

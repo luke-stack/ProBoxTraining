@@ -1,0 +1,76 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.12">
+  <POU Name="FB_LowLiftControlEmulation" Id="{2bca095e-2849-4ed9-8a76-92162cd1c6da}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK FB_LowLiftControlEmulation
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: q8hedls $
+ *	Revision date	:	$Date: $
+ *	Last changed by	:	$Author:  $
+ *	URL				:	$URL:  $
+ *
+ *	Purpose			:	Emulation low lift control emulation NOTE NOT FINISHED...
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				26.04.2019		SHE					LowLiftUnitEmulation
+ *
+ **************************************************************************************)
+
+VAR_INPUT	
+	Config					: ST_CFG_LowLiftUnitEmulation; // emulation config	
+	DriveRun_Lift			: BOOL;  // lift is moving
+END_VAR
+
+VAR_OUTPUT
+	Lift_Pos_Down			: BOOL;
+	Lift_Pos_Up				: BOOL;
+END_VAR
+
+VAR
+	ActualPosition			: INT;
+	CountPositive			: BOOL;
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[
+// When lift is moving
+IF DriveRun_Lift THEN
+	IF CountPositive THEN
+		IF ActualPosition < Config.Position_Max_Up THEN
+			ActualPosition := ActualPosition + 1;
+		ELSE
+			CountPositive := FALSE;
+		END_IF;	
+	ELSE
+		IF ActualPosition > Config.Position_Max_Down THEN
+			ActualPosition := ActualPosition - 1;
+		ELSE
+			CountPositive := TRUE;
+		END_IF;					
+	END_IF
+END_IF
+
+// Update positions
+IF ActualPosition = Config.Position_Down THEN
+	 Lift_Pos_Down := TRUE;
+ELSIF ActualPosition = Config.Position_Up THEN
+	 Lift_Pos_Up := TRUE;
+ELSE
+	Lift_Pos_Down := FALSE;
+	Lift_Pos_Up := FALSE;
+END_IF
+]]></ST>
+    </Implementation>
+    <LineIds Name="FB_LowLiftControlEmulation">
+      <LineId Id="66" Count="26" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

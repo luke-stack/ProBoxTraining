@@ -1,0 +1,66 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <POU Name="F_ProfileCheckSensorConverter" Id="{aad18ed6-3ccb-4792-abd0-263f828a8779}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION F_ProfileCheckSensorConverter : BOOL
+VAR_INPUT
+	Sensor : ARRAY[1..10] OF ST_CFG_SingelSensor; 
+	SettingsProfileCheck : ST_CFG_ProfileCheck;
+	LightGridLocation : E_LightgridType;
+	
+END_VAR
+VAR
+	i : INT;
+	TempMeasurement : INT; 
+END_VAR
+
+VAR_OUTPUT
+	LastBeamBlocked : UINT;
+END_VAR
+
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[
+TempMeasurement	:= -1; 
+//Take the largest value
+FOR i := 1 TO 10 DO 
+	IF Sensor[i].Enable THEN 
+		IF TempMeasurement < Sensor[i].Measurement_Value THEN 
+			TempMeasurement := Sensor[i].Measurement_Value;
+		END_IF
+	END_IF
+END_FOR
+
+
+//Convert to LastBeamBlocked.
+IF LightGridLocation = E_LightgridType.Height AND TempMeasurement > -1 THEN 
+	LastBeamBlocked := INT_TO_UINT((TempMeasurement + SettingsProfileCheck.LightGrid_Offset_Height_Lower) / SettingsProfileCheck.BeamSpacing_HeightLower); 
+ELSIF LightGridLocation = E_LightgridType.WidthLeft AND TempMeasurement > -1 THEN 
+	LastBeamBlocked := INT_TO_UINT((TempMeasurement + SettingsProfileCheck.LightGrid_Offset_Width_Left) / SettingsProfileCheck.BeamSpacing_WidthLeft);
+ELSIF LightGridLocation = E_LightgridType.WidthRight AND TempMeasurement > -1 THEN 
+	LastBeamBlocked := INT_TO_UINT((TempMeasurement + SettingsProfileCheck.LightGrid_Offset_Width_Right) / SettingsProfileCheck.BeamSpacing_WidthRight); 	
+ELSIF TempMeasurement = -1 THEN
+	LastBeamBlocked := 65535;	
+END_IF
+
+]]></ST>
+    </Implementation>
+    <LineIds Name="F_ProfileCheckSensorConverter">
+      <LineId Id="39" Count="1" />
+      <LineId Id="12" Count="0" />
+      <LineId Id="20" Count="0" />
+      <LineId Id="35" Count="1" />
+      <LineId Id="41" Count="1" />
+      <LineId Id="37" Count="0" />
+      <LineId Id="32" Count="0" />
+      <LineId Id="53" Count="1" />
+      <LineId Id="43" Count="1" />
+      <LineId Id="46" Count="0" />
+      <LineId Id="48" Count="0" />
+      <LineId Id="50" Count="2" />
+      <LineId Id="87" Count="1" />
+      <LineId Id="47" Count="0" />
+      <LineId Id="45" Count="0" />
+      <LineId Id="13" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

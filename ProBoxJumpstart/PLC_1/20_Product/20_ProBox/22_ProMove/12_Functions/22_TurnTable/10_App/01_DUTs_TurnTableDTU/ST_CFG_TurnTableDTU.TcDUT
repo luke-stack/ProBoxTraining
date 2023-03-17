@@ -1,0 +1,41 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <DUT Name="ST_CFG_TurnTableDTU" Id="{215964a9-96fe-4ca3-b753-3d005946db99}">
+    <Declaration><![CDATA[//Configuration for the Turn table DTU LV (Driven transfer unit with lift) 
+TYPE ST_CFG_TurnTableDTU :
+
+STRUCT	
+	TurnTimeoutValue 			: TIME := T#30S; 			// Timeout value for turning
+	TurnBrakeDelayTime			: TIME := T#2S; 			// Turning Brake release time	
+	TurnHomePosFree				: E_Positions_TurnControl; // Homeposition turn table when zone free
+	TurnHomePosOccupied			: E_Positions_TurnControl; // Homeposition turn table when zone occupied
+	
+	LiftTimeoutValue 			: TIME := T#15S; 			// Timeout value for lifting
+	LiftHomePosFree				: E_Positions_LiftControl; // Homeposition lift when zone free
+	LiftHomePosOccupied			: E_Positions_LiftControl; // Homeposition lift when zone occupied	
+	
+	AdjacentSideElementType		: ARRAY[1..4] OF E_AdjacentSideType;		// the type of the adjacent element ie chain or roller conveyor
+	LiftControlChain			: BOOL;						// Set to True if lift controlling chain instead of rollers		
+	LiftnTurnSimultaneously		: BOOL :=TRUE;				// Run Lift and turning simultaneously to reduce time. Default ON	
+END_STRUCT
+END_TYPE
+]]></Declaration>
+    <ObjectProperties>
+      <XmlArchive>
+        <Data>
+          <o xml:space="preserve" t="UMLStereoTypeContainerObject">
+            <v n="IsType" t="UMLType">BaseArea</v>
+            <v n="Stereotype">""</v>
+            <d n="Stereotypes" t="Hashtable" />
+          </o>
+        </Data>
+        <TypeList>
+          <Type n="Hashtable">System.Collections.Hashtable</Type>
+          <Type n="String">System.String</Type>
+          <Type n="UMLStereoTypeContainerObject">{30250973-b110-4e31-b562-c102e042dca4}</Type>
+          <Type n="UMLType">{0197b136-405a-42ee-bb27-fd08b621d0cf}</Type>
+        </TypeList>
+      </XmlArchive>
+    </ObjectProperties>
+  </DUT>
+</TcPlcObject>

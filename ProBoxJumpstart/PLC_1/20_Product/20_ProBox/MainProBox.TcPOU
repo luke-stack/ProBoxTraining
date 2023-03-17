@@ -1,0 +1,94 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <POU Name="MainProBox" Id="{0516c6bc-8e87-48f5-94c4-5ebe723f98ef}" SpecialFunc="None">
+    <Declaration><![CDATA[PROGRAM MainProBox
+(**************************************************************************************
+ * 	Application		:	ProBox
+ *	Revision		:	$$
+ *	Revision date	:	$$
+ *	Last changed by	:	$$
+ *	URL				:	$$
+ *
+ *	Purpose			:	ProBox main application.
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+VAR
+	fbHardwareInputs					: FB_HardwareInputs;
+	fbHardwareOutputs					: FB_HardwareOutputs;	
+	fbSafetyCustomization				: FB_SafetyCompositionCustomized;
+END_VAR
+VAR_TEMP
+BCFisInitiaded:BOOL;
+		
+END_VAR
+
+
+
+
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[ 
+(***************************************************************************************************************
+  
+***************************************************************************************************************)
+BCFisInitiaded :=MainConv.Init;
+
+EMULATION_ENABLED := TRUE;
+IF(EMULATION_ENABLED) THEN
+	MainConvEmulation();
+END_IF
+
+IF(BCFisInitiaded) THEN 
+	IF(NOT EMULATION_ENABLED) THEN
+		// Get HW Inputs
+		fbHardwareInputs();
+	END_IF		
+	// run Custom debug functions
+	F_DebugCompositionCustomization();  
+END_IF
+	
+// Custom safety functions 
+fbSafetyCustomization(_InitSafety:=BCFisInitiaded AND NOT EMULATION_ENABLED);
+//run BCF
+MainConv();
+
+//if MainConv is initiated and not emulation enabled
+IF(BCFisInitiaded) THEN
+	//Set HW Outputs
+	fbHardwareOutputs();		
+END_IF
+]]></ST>
+    </Implementation>
+    <ObjectProperties>
+      <XmlArchive>
+        <Data>
+          <o xml:space="preserve" t="UMLStereoTypeContainerObject">
+            <v n="IsType" t="UMLType">BaseArea</v>
+            <v n="Stereotype">""</v>
+            <d n="Stereotypes" t="Hashtable" />
+          </o>
+        </Data>
+        <TypeList>
+          <Type n="Hashtable">System.Collections.Hashtable</Type>
+          <Type n="String">System.String</Type>
+          <Type n="UMLStereoTypeContainerObject">{30250973-b110-4e31-b562-c102e042dca4}</Type>
+          <Type n="UMLType">{0197b136-405a-42ee-bb27-fd08b621d0cf}</Type>
+        </TypeList>
+      </XmlArchive>
+    </ObjectProperties>
+    <LineIds Name="MainProBox">
+      <LineId Id="3" Count="29" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

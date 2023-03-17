@@ -1,0 +1,38 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4020.6">
+  <DUT Name="E_CPU_InfoStates" Id="{3ce34622-9f48-4a9d-ac8c-b31d4c4719c7}">
+    <Declaration><![CDATA[{attribute 'qualified_only'}
+{attribute 'strict'}
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 404529 $
+ *	Revision date	:	$Date: 2018-04-23 08:21:38 +0200 (Mo., 23 Apr 2018) $
+ *	Last changed by	:	$Author: b7bolm $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/trunk/01_Software/BCF/BCF/JumpStart/30_Toolbox/99_Misc/01_DUTs/E_CPU_InfoStates.TcDUT $
+ *
+ *	Purpose			:	Gathering CPU data
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+TYPE E_CPU_InfoStates :
+(
+	INIT, 
+	READ_DEVICE,
+	READ_TEMPERATURE,
+	READ_USAGE,
+	READ_FAN,
+	DONE
+);
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

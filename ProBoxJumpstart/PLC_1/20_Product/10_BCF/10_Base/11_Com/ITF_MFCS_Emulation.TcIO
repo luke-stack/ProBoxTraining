@@ -1,0 +1,52 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.12">
+  <Itf Name="ITF_MFCS_Emulation" Id="{ac4dec07-6438-43fe-9e46-5e2f196bb5bf}">
+    <Declaration><![CDATA[INTERFACE ITF_MFCS_Emulation EXTENDS __SYSTEM.IQueryInterface
+]]></Declaration>
+    <Method Name="M_ProcessData" Id="{16c4a1a3-69a8-48e2-90e3-8132f6828a4f}">
+      <Declaration><![CDATA[METHOD M_ProcessData : BOOL
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 352632 $
+ *	Revision date	:	$Date: 2015-07-20 08:49:54 +0200 (Mon, 20 Jul 2015) $
+ *	Last changed by	:	$Author: b7bolm $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/trunk/01_Software/BoxControlFramework/BoxControlFramework/JumpStart/11_Library/10_Application/11_Communication/11_ITC/ITF_MsgManageable.TcIO $
+ *
+ *	Purpose			:	Process emulation data
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+VAR_INPUT
+	meChannelSrc	: E_MFCS_Channel; // MFCS Channel
+	mData			: ST_PointerSet; // Data
+END_VAR
+]]></Declaration>
+    </Method>
+    <ObjectProperties>
+      <XmlArchive>
+        <Data>
+          <o xml:space="preserve" t="UMLStereoTypeContainerObject">
+            <v n="IsType" t="UMLType">BaseArea</v>
+            <v n="Stereotype">""</v>
+            <d n="Stereotypes" t="Hashtable" />
+          </o>
+        </Data>
+        <TypeList>
+          <Type n="Hashtable">System.Collections.Hashtable</Type>
+          <Type n="String">System.String</Type>
+          <Type n="UMLStereoTypeContainerObject">{30250973-b110-4e31-b562-c102e042dca4}</Type>
+          <Type n="UMLType">{0197b136-405a-42ee-bb27-fd08b621d0cf}</Type>
+        </TypeList>
+      </XmlArchive>
+    </ObjectProperties>
+  </Itf>
+</TcPlcObject>

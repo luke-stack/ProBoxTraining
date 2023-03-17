@@ -1,0 +1,13 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <DUT Name="ST_CFG_ShuttleForkLift" Id="{bcc6ba79-99ab-4f85-ace2-7ed1c2f76834}">
+    <Declaration><![CDATA[TYPE ST_CFG_ShuttleForkLift :
+STRUCT
+	DriveCFG			: ST_CFG_MPD_Drive;		// LHD lift handling device drive configuration parameters
+	EncoderHoming		: ST_EncoderHoming;	//parameters for Homing...	
+	EncoderHomePosValue	: DINT; //Lift encoder value at center position
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

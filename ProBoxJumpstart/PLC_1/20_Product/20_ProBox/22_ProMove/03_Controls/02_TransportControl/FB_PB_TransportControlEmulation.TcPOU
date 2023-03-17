@@ -1,0 +1,38 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.4">
+  <POU Name="FB_PB_TransportControlEmulation" Id="{b44972de-ebb2-4321-a955-69dc6ed1b94f}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK FB_PB_TransportControlEmulation EXTENDS FB_TransportControlEmulation
+(**************************************************************************************
+ * 	Application		:	Pro Box
+ *	Revision		:	$Revision:  $
+ *	Revision date	:	$Date: $
+ *	Last changed by	:	$Author: q8hedls $
+ *	URL				:	$$
+ *
+ *	Purpose			:	Override BCF Transport control emulation
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ **************************************************************************************)
+VAR_INPUT
+	
+END_VAR
+
+VAR_IN_OUT
+	//ZoneData				: ST_ZoneDataEmulation; // Zone data
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[
+SUPER^(ZoneData :=ZoneData);
+]]></ST>
+    </Implementation>
+    <LineIds Name="FB_PB_TransportControlEmulation">
+      <LineId Id="164" Count="1" />
+      <LineId Id="61" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

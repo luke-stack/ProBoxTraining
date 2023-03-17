@@ -1,0 +1,714 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <POU Name="FB_StraightBase" Id="{364cef85-796a-46d1-97ef-052dedd3645f}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK INTERNAL FB_StraightBase EXTENDS FB_PB_FunctionConv
+(**************************************************************************************
+ * 	Application		:	ProBox
+ *	Revision		:	$Revision: $
+ *	Revision date	:	$Date: $
+ *	Last changed by	:	$Author: $
+ *	URL				:	$URL: $
+ *
+ *	Purpose			:	Base functionality for a straight transport 					
+ *
+ **************************************************************************************)
+VAR_INPUT
+END_VAR
+VAR_OUTPUT
+END_VAR
+VAR
+	BaseFunctionData		: ST_StraightBase;		
+	fbProBoxSpeedControl	: FB_ProBoxSpeedControl; // Speed control for each zone		
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[]]></ST>
+    </Implementation>
+    <Method Name="_M_AssignTransportParam" Id="{87f36ac7-3fdd-489d-8c0d-28f3f8668a2b}">
+      <Declaration><![CDATA[METHOD PRIVATE _M_AssignTransportParam : BOOL
+VAR_INPUT
+	ZoneIdx	: INT;
+END_VAR
+VAR
+	Idx 	: INT;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_AssignTransportParam
+ * 	FUNCTION	Assign the variable transport parameter based to the current side
+ **************************************************************************************)
+ 
+(**********************************************************************************************************
+	 Get current valid transport parameters
+***********************************************************************************************************)
+// Init var
+ZoneData[ZoneIdx].TransportControlData.TransportParam.ZoneEndLength := 0;
+ZoneData[ZoneIdx].TransportControlData.TransportParam.StopDelayDistance := 0;
+// Set zone length
+ZoneData[ZoneIdx].TransportControlData.TransportParam.ZoneLength := SettingsFunction.Zone[ZoneIdx].Length[1];
+
+ 
+// Process all 4 sides 
+FOR Idx := 1 TO 4 DO
+	// If a previous function number is existing
+	IF FunctionInterface.In.ePrevFunctionNumber > E_FunctionNumber.F_BEGIN_FUNCTION AND FunctionInterface.In.ePrevFunctionNumber < E_FunctionNumber.F_END_FUNCTION OR
+		FunctionInterface.In.ePrevFunctionNumber > E_FunctionNumber.F_BEGIN_EXTERN_FUNCTION AND FunctionInterface.In.ePrevFunctionNumber < E_FunctionNumber.F_END_EXTERN_FUNCTION THEN
+		// Update stop delay distance based on previous function number
+		IF FunctionInterface.In.ePrevFunctionNumber = SettingsFunction.eAdjacentFunctionNumberSide[Idx] THEN
+			ZoneData[ZoneIdx].TransportControlData.TransportParam.StopDelayDistance := SettingsFunction.Zone[ZoneIdx].StopDelayDistanceFromSide[Idx];
+		END_IF
+	END_IF
+
+	// If the zone is occupied	
+	IF ZoneData[ZoneIdx].TransportControlData.Occupied THEN
+		// If a next function number is existing
+		IF FunctionInterface.In.eNextFunctionNumber > E_FunctionNumber.F_BEGIN_FUNCTION AND FunctionInterface.In.eNextFunctionNumber < E_FunctionNumber.F_END_FUNCTION OR
+			FunctionInterface.In.eNextFunctionNumber > E_FunctionNumber.F_BEGIN_EXTERN_FUNCTION AND FunctionInterface.In.eNextFunctionNumber < E_FunctionNumber.F_END_EXTERN_FUNCTION THEN
+			// Update zone end length based on next function number
+			IF FunctionInterface.In.eNextFunctionNumber = SettingsFunction.eAdjacentFunctionNumberSide[Idx] THEN
+				ZoneData[ZoneIdx].TransportControlData.TransportParam.ZoneEndLength := SettingsFunction.Zone[ZoneIdx].ZoneEndLengthToSide[Idx];
+			END_IF
+		END_IF
+	END_IF
+END_FOR
+
+// If the zone is not occupied	
+IF NOT ZoneData[ZoneIdx].TransportControlData.Occupied THEN
+	// If a previous function number is existing
+	IF FunctionInterface.In.ePrevFunctionNumber > E_FunctionNumber.F_BEGIN_FUNCTION AND FunctionInterface.In.ePrevFunctionNumber < E_FunctionNumber.F_END_FUNCTION OR
+		FunctionInterface.In.ePrevFunctionNumber > E_FunctionNumber.F_BEGIN_EXTERN_FUNCTION AND FunctionInterface.In.ePrevFunctionNumber < E_FunctionNumber.F_END_EXTERN_FUNCTION THEN
+		// Update zone end length based on previous function number
+		IF FunctionInterface.In.ePrevFunctionNumber = SettingsFunction.eAdjacentFunctionNumberSide[1] THEN
+			ZoneData[ZoneIdx].TransportControlData.TransportParam.ZoneEndLength := SettingsFunction.Zone[ZoneIdx].ZoneEndLengthToSide[2];
+		ELSIF FunctionInterface.In.ePrevFunctionNumber = SettingsFunction.eAdjacentFunctionNumberSide[2] THEN
+			ZoneData[ZoneIdx].TransportControlData.TransportParam.ZoneEndLength := SettingsFunction.Zone[ZoneIdx].ZoneEndLengthToSide[1];
+		ELSIF FunctionInterface.In.ePrevFunctionNumber = SettingsFunction.eAdjacentFunctionNumberSide[3] THEN
+			ZoneData[ZoneIdx].TransportControlData.TransportParam.ZoneEndLength := SettingsFunction.Zone[ZoneIdx].ZoneEndLengthToSide[4];
+		ELSIF FunctionInterface.In.ePrevFunctionNumber = SettingsFunction.eAdjacentFunctionNumberSide[4] THEN
+			ZoneData[ZoneIdx].TransportControlData.TransportParam.ZoneEndLength := SettingsFunction.Zone[ZoneIdx].ZoneEndLengthToSide[3];
+		END_IF
+	END_IF
+END_IF
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_Check_HW_SensorInput" Id="{705d5b27-cf44-4579-8c0e-c1c07ed69eb1}">
+      <Declaration><![CDATA[METHOD PROTECTED _M_Check_HW_SensorInput : BOOL
+VAR_INPUT
+	Sensor_Stop_12 		: BOOL;
+	Sensor_Stop_21 		: BOOL;
+	Sensor_Slug_12		: BOOL;
+	Sensor_Slug_21		: BOOL;
+	Sensor_Creep_12		: BOOL;
+	Sensor_Creep_21		: BOOL;
+	FlowDirectionREV	: BOOL;	//Transport direction is Reverse	
+	HasSluggingSensor	: BOOL;	//Is conveyor equipped with a slugging sensor on first zone 
+	ExtRunSynteticSensor: BOOL;
+END_VAR
+VAR_OUTPUT
+	StopSensorOccupied	: BOOL;
+	SlugSensorOccupied	: BOOL;
+	CreepSensor			: BOOL;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+//If first zone occupied (or initiating), it does not matter if it is stop12 or stop21 is occupied, this to enabled bi directional drive of an single zone function
+	IF(SettingsFunction.NumberOfZones=1 AND (ZoneData[1].TransportControlData.Occupied OR ZoneData[1].TransportControlData.eTransportState = E_TransportState.IDLE)) THEN
+			StopSensorOccupied := Sensor_Stop_12 OR Sensor_Stop_21 OR ExtRunSynteticSensor;		
+			SlugSensorOccupied := FALSE;
+	ELSE
+		StopSensorOccupied := (Sensor_Stop_12 AND NOT FlowDirectionREV) OR
+							  (Sensor_Stop_21 AND     FlowDirectionREV ) OR  
+							   ExtRunSynteticSensor;
+		
+		SlugSensorOccupied := (Sensor_Slug_12 AND NOT FlowDirectionREV OR 
+							   Sensor_Slug_21 AND     FlowDirectionREV) AND 
+							   HasSluggingSensor;		
+	END_IF
+	
+	//Creep Sensor
+	CreepSensor	:= (Sensor_Creep_12 AND NOT FlowDirectionREV) OR
+					(Sensor_Creep_21 AND  FlowDirectionREV);
+	
+	]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_DefineTransportDirection" Id="{afce5586-e39d-4631-b038-f575562b2c94}">
+      <Declaration><![CDATA[//Detect and define the transport direction.
+//Return: TRUE = Reverse.
+METHOD PROTECTED _M_DefineTransportDirection : BOOL
+VAR_IN_OUT	
+	ErrorData	: ST_ErrorDataSet;
+END_VAR
+
+VAR
+	Ix : INT;
+	TransportActive		: BOOL;	
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+IF(SettingsFunction.NumberOfZones > NUMBER_OF_ZONES_PER_FUNCTION) THEN
+	F_SetError(E_ErrorType.ERROR, 'To many configuered number of zones', ErrorMsg:= E_ErrorConv.CONFIGURATION_ERROR, ErrorData:= ErrorData);
+	RETURN;
+END_IF
+
+//Check if transport is active.
+FOR Ix:= 1 TO SettingsFunction.NumberOfZones DO
+	TransportActive := TransportActive OR (ZoneData[Ix].TransportControlData.eTakeOverState=E_TakeOverState.COMPLETE OR ZoneData[Ix].TransportControlData.TransportActive);
+END_FOR
+
+//default use previous defined transport direction.
+_M_DefineTransportDirection := SettingsFunction.FlowDirectionREV;
+
+IF( NOT TransportActive) THEN
+	// All zones are free.	
+	IF(F_CheckAllFree(SettingsFunction.eFunctionNumber)) THEN
+		IF( FunctionInterface.In.ePrevFunctionNumber <> E_FunctionNumber.F_BEGIN_FUNCTION) THEN
+			//Previus function defined, check if this is reverse direction.
+			_M_DefineTransportDirection :=  FunctionInterface.In.ePrevFunctionNumber = SettingsFunction.eAdjacentFunctionNumberSide[2] OR 
+											FunctionInterface.In.ePrevFunctionNumber = SettingsFunction.eAdjacentFunctionNumberSide[4];			
+		END_IF
+	ELSE
+	// Any zone(s) is occupied.
+		IF( FunctionInterface.In.eNextFunctionNumber <> E_FunctionNumber.F_BEGIN_FUNCTION) THEN
+			//Next function defined, check if this is reverse direction.*)
+			_M_DefineTransportDirection :=  FunctionInterface.In.eNextFunctionNumber = SettingsFunction.eAdjacentFunctionNumberSide[1] OR 
+											FunctionInterface.In.eNextFunctionNumber = SettingsFunction.eAdjacentFunctionNumberSide[3];
+						
+		//check if prev is defined and set drive direction occording to prev.
+		ELSIF( FunctionInterface.In.ePrevFunctionNumber <> E_FunctionNumber.F_BEGIN_FUNCTION) THEN
+			//Previus function defined, check if this is reverse direction.
+			_M_DefineTransportDirection :=  FunctionInterface.In.ePrevFunctionNumber = SettingsFunction.eAdjacentFunctionNumberSide[2] OR 
+											FunctionInterface.In.ePrevFunctionNumber = SettingsFunction.eAdjacentFunctionNumberSide[4];			
+		END_IF
+	END_IF
+END_IF
+
+//set first and last zone index
+BaseFunctionData.FirstZoneIx 	:= SEL(_M_DefineTransportDirection,1,SettingsFunction.NumberOfZones);
+BaseFunctionData.LastZoneIx 	:= SEL(_M_DefineTransportDirection,SettingsFunction.NumberOfZones,1); 
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_GetZoneOrderSummary" Id="{867e1936-2bd7-4240-b28e-71e11d2a3197}">
+      <Declaration><![CDATA[METHOD PROTECTED _M_GetZoneOrderSummary : BOOL
+VAR_INPUT
+	
+END_VAR
+VAR_OUTPUT
+	SummaryFunctionOrder : ST_StraightBaseZoneOrders;
+END_VAR
+VAR
+	ZoneOrders  : REFERENCE TO ARRAY[1..NUMBER_OF_ZONES_PER_FUNCTION] OF ST_StraightBaseZoneOrders;
+	idx:INT;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	FUNCTION	Summarize requests from all zones
+ **************************************************************************************)
+
+ ZoneOrders REF= BaseFunctionData.ZoneOrders;
+ 
+ 
+// Initialize
+SummaryFunctionOrder.Enable := TRUE;
+SummaryFunctionOrder.Drive_Run := FALSE;
+SummaryFunctionOrder.Drive_RunRev := FALSE;
+SummaryFunctionOrder.Speed := E_ProBoxMotorSpeed.NORMAL;
+
+// Go trough all zones
+FOR Idx := 1 TO SettingsFunction.NumberOfZones DO	   
+	
+	// Summarize zone enables 
+	IF NOT ZoneOrders[Idx].Enable THEN
+		SummaryFunctionOrder.Enable := FALSE;
+	END_IF
+	
+	// Summarize requests
+	SummaryFunctionOrder.Drive_Run := SummaryFunctionOrder.Drive_Run OR ZoneOrders[Idx].Drive_Run;
+	SummaryFunctionOrder.Drive_RunRev := SummaryFunctionOrder.Drive_RunRev OR ZoneOrders[Idx].Drive_RunRev;																													
+														  
+	// Calculate lowest possible speed
+	IF SummaryFunctionOrder.Drive_Run OR SummaryFunctionOrder.Drive_RunRev THEN
+		IF SummaryFunctionOrder.Speed > ZoneOrders[Idx].Speed THEN
+		   // Update speed request
+		   SummaryFunctionOrder.Speed := ZoneOrders[Idx].Speed;   
+		END_IF
+	END_IF
+END_FOR
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_TransportLink" Id="{a0c0b7a1-677c-42cd-a118-ebd1a24d6cd1}">
+      <Declaration><![CDATA[//Get transport links for the function.
+METHOD PROTECTED _M_TransportLink : BOOL
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_TransportLink
+ * 	Method		Links the element functions for transportation
+ **************************************************************************************)
+
+// If previous function is not static use merging service
+IF SettingsFunction.ePrevFunctionNumber = E_FunctionNumber.F_BEGIN_FUNCTION THEN
+ 
+	// Previous element function assignement
+	IF BaseFunctionData.DeletePrevTransportData THEN
+		FunctionInterface.In.ePrevFunctionNumber := E_FunctionNumber.F_BEGIN_FUNCTION;
+	END_IF
+	
+	IF BaseFunctionData.RequestPrevTransportData THEN
+		// Call merging service
+		fbMergingService(
+			eFunctionNumber 	:= SettingsFunction.eFunctionNumber,
+			ePrevFunctionNumber => FunctionInterface.In.ePrevFunctionNumber);
+	END_IF	
+ELSE
+	// Use static link
+	FunctionInterface.In.ePrevFunctionNumber := SettingsFunction.ePrevFunctionNumber;
+END_IF
+
+
+// If next function is not static use routing service
+IF SettingsFunction.eNextFunctionNumber = E_FunctionNumber.F_BEGIN_FUNCTION THEN
+
+	// Next element function assignement
+	IF BaseFunctionData.DeleteNextTransportData THEN
+		FunctionInterface.In.eNextFunctionNumber := E_FunctionNumber.F_BEGIN_FUNCTION;
+	END_IF
+	
+	IF BaseFunctionData.RequestNextTransportData THEN
+		// Call routing service
+		fbRoutingService(
+			eFunctionNumber 	:= SettingsFunction.eFunctionNumber,
+			eNextFunctionNumber => FunctionInterface.In.eNextFunctionNumber);
+	END_IF
+ELSE
+	// Use static link
+	FunctionInterface.In.eNextFunctionNumber := SettingsFunction.eNextFunctionNumber;
+END_IF
+
+//Delete internal transport link variables.
+BaseFunctionData.RequestPrevTransportData := BaseFunctionData.DeletePrevTransportData := BaseFunctionData.RequestNextTransportData := BaseFunctionData.DeleteNextTransportData := FALSE;
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_ExternalSTI" Id="{1cf8a4ff-ca7b-451a-82bd-a7dbd30b6f7e}">
+      <Declaration><![CDATA[//External Subsystem transport interface
+METHOD PROTECTED M_ExternalSTI : BOOL
+VAR_INPUT
+END_VAR
+VAR
+	Idx:INT;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+(**************************************************************************************
+   External Subsystem transport interfaces
+***************************************************************************************)
+FOR Idx := 1 TO NUMBER_OF_STI DO
+	// Is an external Subsystem transport interface configured
+	IF SettingsFunction.eExternalSTI_FunctionNumber[Idx] > E_FunctionNumber.F_BEGIN_EXTERN_FUNCTION AND
+	   SettingsFunction.eExternalSTI_FunctionNumber[Idx] < E_FunctionNumber.F_END_EXTERN_FUNCTION THEN
+	   
+		// When interface is valid
+		IF __QUERYINTERFACE(fbSTI_Channels[SettingsFunction.eExternalSTI_FunctionNumber[Idx]].Instance,FunctionBase.STI_Instance) THEN
+			// Call external inbound interface
+			fbSTI_Channels[SettingsFunction.eExternalSTI_FunctionNumber[Idx]].Instance.M_CallInterface(
+				mErrorData				:= FunctionData.ErrorData.ErrorDataSet[1]);
+		END_IF
+	END_IF
+END_FOR
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_ManualControl" Id="{4ec71c6a-6a83-40cd-9641-e73e6911cd99}">
+      <Declaration><![CDATA[//Control manual movement
+METHOD PROTECTED M_ManualControl : BOOL
+VAR_INPUT
+END_VAR
+VAR
+	EmptyManualCommands		: ST_ITC_ManualMotion; // Empty manual commands
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+(**************************************************************************************
+   Reset manual commands
+***************************************************************************************)
+
+// If function is not in manual mode
+IF FunctionData.OperationState.eMode <> E_PositionMode.MANUAL_MODE THEN
+	// Reset manual commands
+	ITC.ManualMotion := EmptyManualCommands;
+END_IF
+
+(**************************************************************************************
+   Enable available axis, buttons, features
+***************************************************************************************)
+// Example:
+//	ITC.ManualMotion.Axis[1].Forward.Enable := TRUE;
+
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_OutputMapping" Id="{a4b0bb20-df16-409e-bd5c-bcb1597f06cb}">
+      <Declaration><![CDATA[METHOD PROTECTED M_OutputMapping : BOOL
+VAR_INPUT
+	Orientation_Axis		: E_Axis_Orientation := E_Axis_Orientation.Element_12;
+	Ext_Disable				: BOOL; //Extern Disable. TRUE = override transport control and set FunctionOrders.Enable to FALSE	
+END_VAR
+
+VAR
+    FunctionOrders  : ST_FunctionOrders;
+	Outputs			: ST_StraightBaseZoneOrders;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+//Get the summary of transport control output of all zones 
+_M_GetZoneOrderSummary(SummaryFunctionOrder=>Outputs);
+
+// Initialize variables
+FunctionInterface.Out.FunctionOrders.Enable := TRUE;
+FunctionInterface.Out.FunctionOrders.ReqDriveRun := FALSE;
+FunctionInterface.Out.FunctionOrders.ReqDriveDirection := FALSE;
+FunctionInterface.Out.FunctionOrders.ReqSpeed := 0;
+FunctionInterface.Out.FunctionOrders.Enable_34 := TRUE;
+FunctionInterface.Out.FunctionOrders.ReqDriveRun_34 := FALSE;
+FunctionInterface.Out.FunctionOrders.ReqDriveDirection_34 := FALSE;
+FunctionInterface.Out.FunctionOrders.ReqSpeed_34 := 0;	
+
+FunctionOrders := F_ProBoxToFunctionOrders(
+                    CreepSpeed_12	:= Outputs.Speed = E_ProBoxMotorSpeed.CREEP_SPEED, 
+                    LowSpeed_12		:= Outputs.Speed = E_ProBoxMotorSpeed.LOW_SPEED, 
+                    Forward_12		:= Outputs.Drive_Run, 
+                    Reverse_12		:= Outputs.Drive_RunRev,
+                    Enable_12		:= Outputs.Enable,	 
+                    CreepSpeed_34	:= FALSE, 
+                    LowSpeed_34		:= FALSE, 
+                    Forward_34		:= FALSE, 
+                    Reverse_34		:= FALSE,
+                    Enable_34 		:= FALSE);
+
+// If axis 1-2 is requested by the element axis 1-2 in the any direction
+IF Orientation_Axis = E_Axis_Orientation.Element_12 OR Orientation_Axis = E_Axis_Orientation.Element_21 THEN
+	FunctionInterface.Out.FunctionOrders.Enable 			:= FunctionOrders.Enable AND NOT Ext_Disable;
+	FunctionInterface.Out.FunctionOrders.ReqDriveRun 		:= FunctionOrders.ReqDriveRun;
+	FunctionInterface.Out.FunctionOrders.ReqSpeed 			:= FunctionOrders.ReqSpeed;
+	FunctionInterface.Out.FunctionOrders.ReqDriveDirection 	:= FunctionOrders.ReqDriveDirection;
+// If axis 1-2 is requested by the element axis 3-4 in any direction
+ELSIF Orientation_Axis = E_Axis_Orientation.Element_34 OR Orientation_Axis = E_Axis_Orientation.Element_43 THEN
+	FunctionInterface.Out.FunctionOrders.Enable_34 				:= FunctionOrders.Enable AND NOT Ext_Disable;
+	FunctionInterface.Out.FunctionOrders.ReqDriveRun_34 		:= FunctionOrders.ReqDriveRun;
+	FunctionInterface.Out.FunctionOrders.ReqSpeed_34 			:= FunctionOrders.ReqSpeed;
+	FunctionInterface.Out.FunctionOrders.ReqDriveDirection_34 	:= FunctionOrders.ReqDriveDirection;	
+END_IF;
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_StraightTransport" Id="{d4d2a630-8f8d-4de1-9f0a-75781d5ccc37}">
+      <Declaration><![CDATA[METHOD PROTECTED M_StraightTransport : BOOL
+VAR_INPUT
+	fbTransportControl		: REFERENCE TO FB_ProBoxTransportControl;
+	ZoneIx					: INT :=1;	// Zone index
+	ExtDisableTakeover		: BOOL; // optionally disable takeover
+	ExtDisableHandover		: BOOL; // optionally disable handover
+	ExtDisableTransport		: BOOL; // optionally disable transport
+	CreepHwSensor			: BOOL; // HW input creep speed sensor
+	CtrlInputPbTc			: REFERENCE TO ST_CtrlInPbTc; //Control input for Probox transportControl
+	Orientation_Axis		: E_Axis_Orientation := E_Axis_Orientation.Element_12;
+END_VAR
+
+VAR	
+	ElementEnableTransport	: BOOL; // Feedback enable transport from element
+	ElementDriveRunning		: BOOL; // Feedback drive is running from element	
+	TransportEnable			: BOOL; // Transport enable
+	TransportEnableTakeOver : BOOL; // Transport enable takeover 
+	TransportEnableHandOver : BOOL; // Transport enable handover
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[(**********************************************************************************************************
+   Message handler zone (do this before call to transport control in order to avoid deletion of destination to next cycle
+***********************************************************************************************************)
+IF(NOT ZoneData[ZoneIx].TransportControlData.Occupied) THEN
+	M_MsgHandlerZone(mZoneNumber := ZoneIx);
+END_IF
+
+	 
+{region "SPEED_CONTROL"}
+(**********************************************************************************************************
+	   Speed control
+***********************************************************************************************************)
+	
+	//Define normal speed as default
+	BaseFunctionData.ZoneOrders[ZoneIx].Speed := E_ProBoxMotorSpeed.NORMAL;
+	//only last zone run the speed control
+	IF(	ZoneIx = BaseFunctionData.LastZoneIx) THEN	
+		fbProBoxSpeedControl(			
+					CreepSpeed		:= CreepHwSensor,
+				TransportCtrl	:= ZoneData[ZoneIx].TransportControlData); 			
+		BaseFunctionData.ZoneOrders[ZoneIx].Speed := fbProBoxSpeedControl.Speed;
+	END_IF
+	
+{endregion}	
+	
+{region "ASSIGN_TRANSPORT_DATA"}
+	(**********************************************************************************************************
+	   Assign transport data
+	***********************************************************************************************************)
+	_M_AssignTransportParam(ZoneIx);
+{endregion}
+		  
+{region "BASE_TRANSPORT_CONTROL"}
+	
+	(**********************************************************************************************************
+	   Transport control
+	***********************************************************************************************************)
+		
+	
+	// Assign feedback from element		
+	ElementEnableTransport := FALSE;	// Initialize for each zone for loop
+	ElementDriveRunning := FALSE;		// Initialize for each zone in for loop
+	
+	// If axis 1-2 is requested by the element axis 1-2
+	IF Orientation_Axis = E_Axis_Orientation.Element_12 OR Orientation_Axis = E_Axis_Orientation.Element_21 THEN
+		ElementEnableTransport := FunctionInterface.In.Element.State.DriveReady;
+		ElementDriveRunning := FunctionInterface.In.Element.State.DriveRunning;	
+	// If axis 1-2 is requested by the element axis 3-4
+	ELSIF Orientation_Axis = E_Axis_Orientation.Element_34 OR Orientation_Axis = E_Axis_Orientation.Element_43 THEN
+		ElementEnableTransport := FunctionInterface.In.Element.State.DriveReady_34;
+		ElementDriveRunning := FunctionInterface.In.Element.State.DriveRunning_34;					
+	END_IF;	
+
+		
+	// Assign transport enable
+	TransportEnable := ZoneData[ZoneIx].AddOn.Orders.Enable AND // Addon enables transport
+						ZoneData[ZoneIx].ErrorData.ErrorState <> E_ErrorState.ERROR AND // Zone has no error	
+						FunctionData.ErrorData.ErrorState <> E_ErrorState.ERROR AND // Function has no error
+						NOT FunctionInterface.In.Element.State.Error AND // Element has no error
+						ElementEnableTransport AND
+						NOT ExtDisableTransport;
+					   
+	TransportEnableTakeOver := ZoneData[ZoneIx].AddOn.Orders.EnableTakeover AND // Addon enables takeover
+							   ElementEnableTransport AND
+							   NOT ExtDisableTakeover;
+									
+	TransportEnableHandOver := ZoneData[ZoneIx].AddOn.Orders.EnableHandover AND // Addon enables handover
+							   ElementEnableTransport AND 
+							   NOT ExtDisableHandover;
+	
+	
+	// If axis 1-2 is requested by the element axis 3-4
+	IF Orientation_Axis = E_Axis_Orientation.Element_34 OR Orientation_Axis = E_Axis_Orientation.Element_43 THEN
+		fbTransportControl.EncoderValue := FunctionInterface.In.Element.State.EncoderValue_34;
+	ELSE
+		fbTransportControl.EncoderValue := FunctionInterface.In.Element.State.EncoderValue;			 
+	END_IF
+		 
+																
+	//run transport controller
+	fbTransportControl(	
+				Param							:= M_GetTransportControlParam(mZoneNumber := ZoneIx), // Parameter of transport control
+				PrevTransportData				:= M_GetPreviousTransportData(mzoneNumber := Zoneix), // Previous transport data
+				NextTransportData				:= M_GetNextTransportData(mZoneNumber := ZoneIx), // Next transport data
+				TransportEnable					:= TransportEnable, // Transport enable                   
+				TransportEnableTakeOver			:= TransportEnableTakeOver, // Transport enable takeover  
+				TransportEnableHandOver			:= TransportEnableHandOver, // Transport enable handover  
+				CtrlInPbTc						:= CtrlInputPbTc, 
+				DriveRunning					:= ElementDriveRunning, 
+				DriveReady						:= TRUE, 
+				CurrentSpeed					:= fbProBoxSpeedControl.Speed, //FunctionInterface.In.Element.State.Speed_12,				
+				Acceleration					:= 0, 
+				StoppingDistance				:= 0, 
+				//EncoderValue					:= //Defined above
+				ZoneData						:= ZoneData[ZoneIx], // Zone data
+				ErrorData						:= ZoneData[ZoneIx].ErrorData.ErrorDataSet[1]);// Error data);	
+	
+
+	// Enable transport axis 1-2
+	BaseFunctionData.ZoneOrders[ZoneIx].Enable := ZoneData[ZoneIx].AddOn.Orders.Enable AND // Addon enables transport
+									ZoneData[ZoneIx].ErrorData.ErrorState <> E_ErrorState.ERROR AND // Zone has no error
+				       				FunctionData.ErrorData.Error.ErrorType <> E_ErrorType.ERROR; // Function has no error
+			
+	// Drive run command axis 1-2 forward or reverse
+	IF (fbTransportControl.Outputs.DriveTakeoverRun OR fbTransportControl.Outputs.DriveHandoverRun) THEN		
+		BaseFunctionData.ZoneOrders[ZoneIx].Drive_Run 	 := NOT SettingsFunction.FlowDirectionREV;  //drive forward
+		BaseFunctionData.ZoneOrders[ZoneIx].Drive_RunRev := SettingsFunction.FlowDirectionREV;		 //drive reverse
+	ELSE
+		BaseFunctionData.ZoneOrders[ZoneIx].Drive_Run := FALSE;
+		BaseFunctionData.ZoneOrders[ZoneIx].Drive_RunRev := FALSE;
+	END_IF	
+	
+	//Set Transport link options		
+	BaseFunctionData.DeletePrevTransportData 	:= BaseFunctionData.DeletePrevTransportData OR fbTransportControl.Outputs.DeletePrevTransportData;
+	BaseFunctionData.RequestPrevTransportData	:= BaseFunctionData.RequestPrevTransportData OR fbTransportControl.Outputs.RequestPrevTransportData;
+	BaseFunctionData.DeleteNextTransportData	:= BaseFunctionData.DeleteNextTransportData OR fbTransportControl.Outputs.DeleteNextTransportData;
+	BaseFunctionData.RequestNextTransportData	:= BaseFunctionData.RequestNextTransportData OR fbTransportControl.Outputs.RequestNextTransportData;
+		   
+{endregion}	
+	
+{region "ITC_PROCESSING"}
+(**********************************************************************************************************
+   Message handler zone
+***********************************************************************************************************)
+IF(ZoneData[ZoneIx].TransportControlData.Occupied) THEN
+	M_MsgHandlerZone(mZoneNumber := ZoneIx);
+END_IF
+
+(**********************************************************************************************************
+   ITC Zone output
+***********************************************************************************************************)
+M_ITC_ProcessOutZone(mZoneNumber := ZoneIx);
+{endregion}
+
+
+
+]]></ST>
+      </Implementation>
+    </Method>
+    <LineIds Name="FB_StraightBase">
+      <LineId Id="9" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_StraightBase._M_AssignTransportParam">
+      <LineId Id="6" Count="55" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_StraightBase._M_Check_HW_SensorInput">
+      <LineId Id="12" Count="6" />
+      <LineId Id="37" Count="2" />
+      <LineId Id="21" Count="0" />
+      <LineId Id="34" Count="0" />
+      <LineId Id="36" Count="0" />
+      <LineId Id="5" Count="0" />
+      <LineId Id="54" Count="0" />
+      <LineId Id="60" Count="0" />
+      <LineId Id="63" Count="0" />
+      <LineId Id="66" Count="0" />
+      <LineId Id="65" Count="0" />
+      <LineId Id="56" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_StraightBase._M_DefineTransportDirection">
+      <LineId Id="162" Count="0" />
+      <LineId Id="107" Count="0" />
+      <LineId Id="163" Count="0" />
+      <LineId Id="165" Count="0" />
+      <LineId Id="164" Count="0" />
+      <LineId Id="306" Count="0" />
+      <LineId Id="258" Count="0" />
+      <LineId Id="257" Count="0" />
+      <LineId Id="259" Count="1" />
+      <LineId Id="256" Count="0" />
+      <LineId Id="216" Count="1" />
+      <LineId Id="262" Count="0" />
+      <LineId Id="190" Count="0" />
+      <LineId Id="214" Count="0" />
+      <LineId Id="240" Count="0" />
+      <LineId Id="203" Count="0" />
+      <LineId Id="238" Count="0" />
+      <LineId Id="302" Count="0" />
+      <LineId Id="315" Count="0" />
+      <LineId Id="305" Count="0" />
+      <LineId Id="206" Count="0" />
+      <LineId Id="195" Count="0" />
+      <LineId Id="215" Count="0" />
+      <LineId Id="272" Count="0" />
+      <LineId Id="307" Count="0" />
+      <LineId Id="316" Count="0" />
+      <LineId Id="310" Count="0" />
+      <LineId Id="199" Count="0" />
+      <LineId Id="271" Count="0" />
+      <LineId Id="210" Count="0" />
+      <LineId Id="311" Count="0" />
+      <LineId Id="317" Count="0" />
+      <LineId Id="263" Count="0" />
+      <LineId Id="235" Count="0" />
+      <LineId Id="233" Count="0" />
+      <LineId Id="146" Count="1" />
+      <LineId Id="5" Count="0" />
+      <LineId Id="52" Count="0" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_StraightBase._M_GetZoneOrderSummary">
+      <LineId Id="132" Count="1" />
+      <LineId Id="135" Count="0" />
+      <LineId Id="166" Count="0" />
+      <LineId Id="164" Count="0" />
+      <LineId Id="136" Count="0" />
+      <LineId Id="165" Count="0" />
+      <LineId Id="137" Count="25" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_StraightBase._M_TransportLink">
+      <LineId Id="6" Count="41" />
+      <LineId Id="5" Count="0" />
+      <LineId Id="74" Count="1" />
+      <LineId Id="73" Count="0" />
+      <LineId Id="76" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_StraightBase.M_ExternalSTI">
+      <LineId Id="11" Count="16" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_StraightBase.M_ManualControl">
+      <LineId Id="8" Count="16" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_StraightBase.M_OutputMapping">
+      <LineId Id="48" Count="0" />
+      <LineId Id="46" Count="0" />
+      <LineId Id="44" Count="0" />
+      <LineId Id="103" Count="0" />
+      <LineId Id="106" Count="8" />
+      <LineId Id="105" Count="0" />
+      <LineId Id="66" Count="10" />
+      <LineId Id="88" Count="6" />
+      <LineId Id="96" Count="6" />
+      <LineId Id="65" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_StraightBase.M_StraightTransport">
+      <LineId Id="371" Count="5" />
+      <LineId Id="370" Count="0" />
+      <LineId Id="270" Count="0" />
+      <LineId Id="23" Count="5" />
+      <LineId Id="173" Count="0" />
+      <LineId Id="168" Count="1" />
+      <LineId Id="29" Count="3" />
+      <LineId Id="171" Count="1" />
+      <LineId Id="180" Count="0" />
+      <LineId Id="33" Count="0" />
+      <LineId Id="181" Count="0" />
+      <LineId Id="34" Count="3" />
+      <LineId Id="182" Count="2" />
+      <LineId Id="38" Count="19" />
+      <LineId Id="60" Count="6" />
+      <LineId Id="159" Count="0" />
+      <LineId Id="67" Count="2" />
+      <LineId Id="160" Count="0" />
+      <LineId Id="70" Count="5" />
+      <LineId Id="251" Count="4" />
+      <LineId Id="250" Count="0" />
+      <LineId Id="319" Count="0" />
+      <LineId Id="323" Count="0" />
+      <LineId Id="83" Count="8" />
+      <LineId Id="318" Count="0" />
+      <LineId Id="93" Count="0" />
+      <LineId Id="325" Count="0" />
+      <LineId Id="94" Count="2" />
+      <LineId Id="99" Count="0" />
+      <LineId Id="101" Count="10" />
+      <LineId Id="113" Count="8" />
+      <LineId Id="135" Count="0" />
+      <LineId Id="295" Count="2" />
+      <LineId Id="294" Count="0" />
+      <LineId Id="293" Count="0" />
+      <LineId Id="365" Count="3" />
+      <LineId Id="139" Count="0" />
+      <LineId Id="369" Count="0" />
+      <LineId Id="221" Count="6" />
+      <LineId Id="218" Count="0" />
+      <LineId Id="228" Count="0" />
+      <LineId Id="231" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

@@ -1,0 +1,67 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.12">
+  <DUT Name="ST_TTA_6_0" Id="{f6a9b22c-b0ee-4b2b-93de-5c0d621ca28f}">
+    <Declaration><![CDATA[TYPE ST_TTA_6_0 :
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 404529 $
+ *	Revision date	:	$Date: 2018-04-23 08:21:38 +0200 (Mo., 23 Apr 2018) $
+ *	Last changed by	:	$Author: b7bolm $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/trunk/01_Software/BCF/BCF/JumpStart/20_Product/10_App/11_Com/10_Lib/10_Conv/12_MFCS/11_SIS/01_DUTs/10_SIS_6_0/ST_TTA_6_0.TcDUT $
+ *
+ *	Purpose			:	TTA Structure
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+STRUCT
+	Position				: STRING(SIS_6_0.POSITION_STRINGLENGTH); // 12 Digit SIS Location MM-GGG-EEEE-FF-Z 
+	TU_DataIndex			: STRING(SIS_6_0.TU_DATAINDEX_STRINGLENGTH); // 6 Digit Tu Index
+	MsgSequence				: STRING(SIS_6_0.MSG_SEQUENCE_STRINGLENGTH); // 3 Digit Msg Sequence
+	TU_ID					: STRING(SIS_6_0.TU_ID_STRINGLENGTH); // 18 Digit TU ID 
+	TU_Type					: STRING(SIS_6_0.TU_TYPE_STRINGLENGTH); // 2 Digit TU-Type 
+	AssignmentID			: STRING(SIS_6_0.ASSIGNMENT_ID_STRINGLENGTH); // 8 Digit assignment
+	Length					: STRING(SIS_6_0.DIMENSIONS); // 4 Digit dimension
+	Width					: STRING(SIS_6_0.DIMENSIONS); // 4 Digit dimension
+	Height					: STRING(SIS_6_0.DIMENSIONS); // 4 Digit dimension
+	Weight					: STRING(SIS_6_0.TTA_WEIGHT); // 8 Digit weight
+	Orientation				: STRING(SIS_6_0.TTA_ORIENTATION);
+	TU_Parameter 			: STRING(SIS_6_0.TTA_TU_PARAMETER); // 4 Digit parameter
+	IO_Data					: STRING(SIS_6_0.TTA_IO_DATA_STRINGLENGTH); // 3 Digit IO Data 
+	LowerLimit				: STRING(SIS_6_0.TTA_LOWER_LIMIT_STRINGLENGTH); // 7 Digit Lower Limit 
+	UpperLimit				: STRING(SIS_6_0.TTA_UPPER_LIMIT_STRINGLENGTH); // 7 Digit Upper Limit 
+	GroupInfo				: STRING(SIS_6_0.TTA_GROUPINFO_STRINGLENGTH); // 4 Digit Group Info 
+	Sequence				: STRING(SIS_6_0.TTA_SEQUENCE_STRINGLENGTH); // 4 Digit Sequence Number 
+	NumberInSequence		: STRING(SIS_6_0.TTA_NO_IN_SEQUENCE_STRINGLENGTH); // 4 Digit Number in Sequence 
+	NumberOfDestinations	: STRING(SIS_6_0.TTA_NO_OF_DESTINATIONS_STRINGLENGTH); // 2 Digit Numner of Destinations 
+	Destination				: ARRAY [1..SIS_6_0.TTA_DESTINATIONS] OF STRING(SIS_6_0.POSITION_STRINGLENGTH); // Array of 12 Digit SIS Destinations 
+END_STRUCT
+END_TYPE
+]]></Declaration>
+    <ObjectProperties>
+      <XmlArchive>
+        <Data>
+          <o xml:space="preserve" t="UMLStereoTypeContainerObject">
+            <v n="IsType" t="UMLType">BaseArea</v>
+            <v n="Stereotype">""</v>
+            <d n="Stereotypes" t="Hashtable" />
+          </o>
+        </Data>
+        <TypeList>
+          <Type n="Hashtable">System.Collections.Hashtable</Type>
+          <Type n="String">System.String</Type>
+          <Type n="UMLStereoTypeContainerObject">{30250973-b110-4e31-b562-c102e042dca4}</Type>
+          <Type n="UMLType">{0197b136-405a-42ee-bb27-fd08b621d0cf}</Type>
+        </TypeList>
+      </XmlArchive>
+    </ObjectProperties>
+  </DUT>
+</TcPlcObject>

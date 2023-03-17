@@ -1,0 +1,15 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <DUT Name="ST_VC_AccessPanelOutputs" Id="{857d2387-6bf7-4e29-9036-f77badbbca63}">
+    <Declaration><![CDATA[TYPE ST_VC_AccessPanelOutputs :
+STRUCT
+	LED_MainContactorActivated :BOOL; // LED-lamp main contactor is activated
+	LED_AutoIsOn : BOOL; // LED-lamp automatic mode is activated
+	LED_ClearEnterance : BOOL; // LED-lamp clear to enter
+	LED_EmergencyStop : BOOL; // LED-lamp emergency stop
+	LED_Error : BOOL; // LED-lamp error
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

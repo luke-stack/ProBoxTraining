@@ -1,0 +1,14 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <DUT Name="ST_HW_OutputsFastDoor" Id="{2df688b0-254e-4b77-af6b-33e221ca7fc2}">
+    <Declaration><![CDATA[TYPE ST_HW_OutputsFastDoor :
+STRUCT
+	OpenDoor		: BOOL; //TU present at door entry, door will open
+	KeepDoorOpen	: BOOL; //New TU present
+	CloseDoor		: BOOL; //No TU present, if timer elapsed close door
+	StopDrive		: BOOL; //Stop drive on element/elements in case off error during transport
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

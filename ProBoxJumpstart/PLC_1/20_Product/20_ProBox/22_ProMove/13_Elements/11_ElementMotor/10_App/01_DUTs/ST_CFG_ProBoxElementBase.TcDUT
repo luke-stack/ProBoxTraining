@@ -1,0 +1,12 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <DUT Name="ST_CFG_ProBoxElementBase" Id="{a14f2824-1a9d-4f8d-a82c-0e1b1bdf6a1f}">
+    <Declaration><![CDATA[TYPE ST_CFG_ProBoxElementBase :
+STRUCT
+	BrakeTime		: TIME:=T#0.5S; // Time before the brake is applied after running
+	ElementSpeed	: ST_ElementSpeed;
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

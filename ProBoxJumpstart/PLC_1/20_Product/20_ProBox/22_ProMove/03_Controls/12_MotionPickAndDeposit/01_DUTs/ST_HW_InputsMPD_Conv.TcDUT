@@ -1,0 +1,14 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <DUT Name="ST_HW_InputsMPD_Conv" Id="{99e34913-44c0-4c8f-84af-5e70051e9643}">
+    <Declaration><![CDATA[// Motion Pickup n Deposit conveyor HW inputs
+TYPE ST_HW_InputsMPD_Conv :
+
+STRUCT
+	SensorOverhangLeft	: BOOL;	//Overhang sensor on left side (side 1 or 3)	
+	SensorOverhangRight	: BOOL; //Overhang sensor on right side (side 2 or 4)
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

@@ -1,0 +1,12 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.12">
+  <Itf Name="I_HandoverEmulationListener" Id="{3c9120bb-8369-45ac-b8fa-2f0f357dfd44}">
+    <Declaration><![CDATA[INTERFACE I_HandoverEmulationListener
+]]></Declaration>
+    <Method Name="M_HandoverStartEvent" Id="{d0b4c508-af0a-478b-bfaa-a163cdeda0c0}">
+      <Declaration><![CDATA[METHOD M_HandoverStartEvent
+
+]]></Declaration>
+    </Method>
+  </Itf>
+</TcPlcObject>

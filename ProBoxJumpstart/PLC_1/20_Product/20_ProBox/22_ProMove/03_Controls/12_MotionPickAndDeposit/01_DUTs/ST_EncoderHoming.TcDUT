@@ -1,0 +1,14 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.12">
+  <DUT Name="ST_EncoderHoming" Id="{cbbd17b5-29e5-4f4f-aa73-ebc03cbeab20}">
+    <Declaration><![CDATA[TYPE ST_EncoderHoming :
+STRUCT
+	HomingFunctionNumber		: E_FunctionNumber;
+	HomingEnable				: BOOL;
+	NetId          				: T_AmsNetId := '172.31.3.1.2.1'; (* NetId of EtherCAT Master *)
+    SlaveAddr      				: UINT := 1030; (* Port Number of EtherCAT Slave *)
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

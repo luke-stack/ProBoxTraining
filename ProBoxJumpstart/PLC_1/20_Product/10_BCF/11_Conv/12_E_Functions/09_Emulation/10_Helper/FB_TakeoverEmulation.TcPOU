@@ -1,0 +1,176 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.4">
+  <POU Name="FB_TakeoverEmulation" Id="{3cbc5926-18e6-4c15-8ea0-08f6527b9dfe}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK FB_TakeoverEmulation
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 355136 $
+ *	Revision date	:	$Date: 2015-09-21 07:38:56 +0200 (Mo, 21 Sep 2015) $
+ *	Last changed by	:	$Author: d7mangc $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/trunk/01_Software/BoxControlFramework/BoxControlFramework/JumpStart/11_Library/10_Application/12_ElementFunctions/10_Functions/FB_TransportControl.TcPOU $
+ *
+ *	Purpose			:	Takes over emulation TU with standard transport handshake and inserts it to encoder tracking.
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+VAR_INPUT
+	Param 					: ST_TransportControlParam; // Parameter of the transport control
+	PrevTransportData  		: ST_TransportDataEmulation; // Previous transport data
+	DriveRunning			: BOOL; // Feedback drive is running
+	iListener				: I_TakeoverEmulationListener;
+END_VAR
+VAR_IN_OUT
+	ZoneData				: ST_ZoneDataEmulation; // Zone data
+END_VAR
+VAR
+	Init					: BOOL; // Init flag
+	fbDebugMsg				: FB_DebugMsg; // Debug instance
+	DebugMsg				: T_MAXSTRING; // Debug message
+	TrackingIdent			: E_FunctionNumber;
+	TransitionTU_DataIndex 	: DINT; // Transition TU-data index at takeover from previous zone to tracking
+	TU_Length				: INT; // Tu length
+	TU_FrontEdgePosition	: UDINT; // Tu front edge position
+	EncoderData 			: ST_EncoderData; // Encoder data
+END_VAR]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[(**************************************************************************************************************
+   Init
+***************************************************************************************************************)
+A_Init();
+
+(**************************************************************************************************************
+   Takeover state
+***************************************************************************************************************)
+
+CASE ZoneData.TransportControlData.eTakeOverState OF
+(*************************************************************************
+  Idle
+*************************************************************************)
+	E_TakeOverState.IDLE:
+		// Zone is ready to takeover
+		IF DriveRunning THEN
+			ZoneData.TransportControlData.eTakeOverState := E_TakeOverState.READY;
+		END_IF
+
+		
+(*************************************************************************
+  Ready
+*************************************************************************)
+	E_TakeOverState.READY:
+		IF NOT DriveRunning THEN
+			ZoneData.TransportControlData.eTakeOverState := E_TakeOverState.IDLE;
+
+			// If previous zone is ready to handover and handover is active at real object
+		ELSIF PrevTransportData.rTransportControlData.eHandOverState = E_HandOverState.READY AND
+			   PrevTransportData.rRealObjTrspControlData.eHandOverState = E_HandOverState.ACTIVE THEN
+
+			// Move TU-data index from previous to own zone
+			TransitionTU_DataIndex := F_MoveTU_DataIndexEmulation(
+										eFunctionNumber := PrevTransportData.eFunctionNumber,
+										mZoneNumber 	:= PrevTransportData.ZoneNumber);
+
+			IF iListener <> 0 THEN
+				iListener.M_TakeoverTU_IndexMovedEvent(TransitionTU_DataIndex);
+			END_IF
+			
+			// If TU data are available	
+			IF TransitionTU_DataIndex <> 0 THEN
+				ZoneData.TransportControlData.eTakeOverState := E_TakeOverState.ACTIVE;
+			ELSE
+				// Debug message
+				DebugMsg := CONCAT('Emulation: A_TakeOverState: No TU data index found: ', Param.rSettings.ZoneName);
+				fbDebugMsg.M_SendInfoMsg(DebugMsg);	
+				// Do not accept TU
+				ZoneData.TransportControlData.eTakeOverState := E_TakeOverState.COMPLETE;		
+			END_IF
+		END_IF
+
+		
+(*************************************************************************
+  Active
+*************************************************************************)
+	E_TakeOverState.ACTIVE:
+		ZoneData.TransportControlData.eTakeOverState := E_TakeOverState.COMPLETE;
+			
+		
+(*************************************************************************
+  Complete
+*************************************************************************)
+	E_TakeOverState.COMPLETE:
+		// Transfer is finish at previous zone
+		IF PrevTransportData.rTransportControlData.eHandOverState <> E_HandOverState.ACTIVE AND 
+			PrevTransportData.rTransportControlData.eHandOverState <> E_HandOverState.COMPLETE THEN
+			ZoneData.TransportControlData.eTakeOverState := E_TakeOverState.IDLE;
+		END_IF	
+
+		
+(*************************************************************************
+  State error
+*************************************************************************)
+ELSE
+	(* Software error *)
+	DebugMsg := CONCAT('Emulation: A_TakeOverState: Software error: ', Param.rSettings.ZoneName);
+	fbDebugMsg.M_SendInfoMsg(DebugMsg);
+	ZoneData.TransportControlData.eTakeOverState := E_TakeOverState.IDLE;
+END_CASE
+]]></ST>
+    </Implementation>
+    <Action Name="A_Init" Id="{5b92a1b4-53aa-46a2-aeb1-f6cc2c0f6651}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_Init
+ * 	FUNCTION	Initialize
+ **************************************************************************************)
+// When init is ongoing
+IF NOT ZoneData.Init OR NOT Init THEN
+
+	// Reset internal variables
+	ZoneData.TransportControlData.eTakeOverState := E_TakeOverState.IDLE;
+
+	TrackingIdent := Param.reFunctionNumber;
+
+	ZoneData.Init := TRUE;
+	Init := TRUE;
+		
+	DebugMsg := CONCAT('Initialization done. TrackingTakeoverControlEmulation: ', Param.rSettings.ZoneName);
+	fbDebugMsg.M_SendInfoMsg(DebugMsg);
+END_IF
+]]></ST>
+      </Implementation>
+    </Action>
+    <ObjectProperties>
+      <XmlArchive>
+        <Data>
+          <o xml:space="preserve" t="UMLStereoTypeContainerObject">
+            <v n="IsType" t="UMLType">BaseArea</v>
+            <v n="Stereotype">""</v>
+            <d n="Stereotypes" t="Hashtable" />
+          </o>
+        </Data>
+        <TypeList>
+          <Type n="Hashtable">System.Collections.Hashtable</Type>
+          <Type n="String">System.String</Type>
+          <Type n="UMLStereoTypeContainerObject">{30250973-b110-4e31-b562-c102e042dca4}</Type>
+          <Type n="UMLType">{0197b136-405a-42ee-bb27-fd08b621d0cf}</Type>
+        </TypeList>
+      </XmlArchive>
+    </ObjectProperties>
+    <LineIds Name="FB_TakeoverEmulation">
+      <LineId Id="122" Count="79" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_TakeoverEmulation.A_Init">
+      <LineId Id="2" Count="17" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

@@ -1,0 +1,29 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.12">
+  <Itf Name="I_BranchCheckpoint" Id="{648ed2db-1639-4e25-a434-6b815aad4338}">
+    <Declaration><![CDATA[/// Branch interface 
+INTERFACE I_BranchCheckpoint
+]]></Declaration>
+    <Method Name="M_IsOnBranches" Id="{9d42856d-7a8b-4d8a-99f5-82852842eadd}">
+      <Declaration><![CDATA[/// Searches if a checkpoint can be found on a specific branch
+/// Returns true if found, false = not found 
+METHOD M_IsOnBranches : BOOL
+VAR_INPUT
+	mRecursive	: BOOL := FALSE; // Search recursive through the whole tree
+END_VAR
+VAR_IN_OUT CONSTANT
+	mCheckpointID	: STRING(5); // Last checkpoint id	
+END_VAR
+]]></Declaration>
+    </Method>
+    <Property Name="P_CheckpointID" Id="{f435f8b8-eed7-4224-996e-74fcdb1c5189}">
+      <Declaration><![CDATA[/// Identifier for checkpoint
+{attribute 'monitoring' := 'call'}
+{attribute 'suppress_wrn_C0410'}
+PROPERTY P_CheckpointID : REFERENCE TO STRING(5)]]></Declaration>
+      <Get Name="Get" Id="{b2fb0d37-5095-48b4-9a4d-79c07f4894a9}">
+        <Declaration><![CDATA[]]></Declaration>
+      </Get>
+    </Property>
+  </Itf>
+</TcPlcObject>

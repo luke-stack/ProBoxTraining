@@ -1,0 +1,29 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <DUT Name="E_MPD_States" Id="{66c15b1b-9e4e-4063-9fd4-c901608994e0}">
+    <Declaration><![CDATA[{attribute 'qualified_only'}
+{attribute 'strict'}
+//Motion Pickup n Deposit states
+TYPE E_MPD_States :
+(	
+	E_INIT,
+	E_IDLE,
+	
+	E_SEMI_MODE, //Semi Automatic or Semi Manual Mode
+	
+	E_START_PICKUP,	
+	E_MOVE_TO_PICKUP,
+	E_PICKUP_POSITION_REACHED,	
+	E_PICKINGUP,	
+	
+	E_START_DEPOSIT,
+	E_MOVE_TO_DEPOSIT,
+	E_DEPOSIT_POSITION_REACHED,
+	E_DEPOSITING,
+	
+	E_CYCLE_COMPLETE
+);
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

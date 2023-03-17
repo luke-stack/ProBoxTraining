@@ -1,0 +1,32 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <DUT Name="ST_HW_OutputsProBoxElementShuttleForks" Id="{54f4bb04-d31b-467b-982a-017fd4b9c345}">
+    <Declaration><![CDATA[TYPE ST_HW_OutputsProBoxElementShuttleForks :
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: $
+ *	Revision date	:	$Date: $
+ *	Last changed by	:	$Author: $
+ *	URL				:	$$
+ *
+ *	Purpose			:	Shuttle Element - Hardware outputs
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION 
+ *
+ **************************************************************************************)
+STRUCT
+	//DriveCV						: ST_HW_OutputsProBoxElementMotorShuttle; //Conv A outp
+	ShuttleDrive				: ST_HW_OutputsMotionDrive;	//Outputs to Motion Driver of shuttle car
+	LiftDrive					: ST_HW_OutputsMotionDrive;	//Outputs to Motion Driver fork lift
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

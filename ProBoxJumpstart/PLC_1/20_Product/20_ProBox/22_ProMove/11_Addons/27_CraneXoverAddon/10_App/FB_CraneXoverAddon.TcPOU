@@ -1,0 +1,913 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <POU Name="FB_CraneXoverAddon" Id="{bbc27563-6a72-4d20-9639-15c7fb14e24d}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK FB_CraneXoverAddon EXTENDS FB_FunctionConv
+(**************************************************************************************
+ * 	Application		:	ProBox
+ *	Revision		:	$Revision:  $
+ *	Revision date	:	$Date: 2019-04-10 $
+ *	Last changed by	:	$Author: q8hedlus $
+ *	URL				:	$URL: $
+ *
+ *	Purpose			:	Addon, crane deposit and crane pickup.
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+VAR_INPUT
+	Config					: ST_CFG_CraneXover; 		// Configuration
+	HW_Inputs				: ST_HW_InputsCraneXover; //ST_HW_InputsCranePickup; // Hardware inputs 
+	CtrlIn					: ST_CtrlInCraneXover; 
+END_VAR
+
+VAR_OUTPUT
+	CtrlOut						: ST_CtrlOutCraneXover; // Function specific outputs
+	HW_Outputs				: ST_HW_OutputsCraneXover; // Hardware outputs
+END_VAR
+
+VAR
+	Outputs						: ST_OutputsCraneXover; // Function specific outputs
+	Inputs						: ST_InputsCraneXover; // Function specific inputs		
+	fbLiftControl				: FB_LiftControl; // Lift control	
+	fbProBoxMotorControlLift	: FB_ProBoxMotorControl; // Motor control for lift	
+	fb_CraneCvStateHandler		: FB_Crane_CV_StateHandler;  //the handler for Crane deposit
+	fb_AddOnErrHandler			: FB_AddOnErrHandler();
+
+	//Private globals	
+	_CurrentCraneHandlerType	: E_CvCraneHandlerType:= E_CvCraneHandlerType.eTYPE_TAKEOVER;	
+	_XoverState					: INT :=0;
+	_TU_ConveyorTransferPending : BOOL :=FALSE;
+	_CRANEDEBUG					: BOOL := FALSE;  //Shall only be used during debuging with crane
+	_CraneSettllingTmr			: TON; //timer to stay in handover / takeover state after finished trasfer
+	//_CRANEDEBUGTMR			: TON;	
+	
+	_TransferTuMotorDriver		:ST_MotorDriver;	//Motorcontroller to fransfer TU from CV to Crane
+	_DriveRunTimer				: TON; 				//timer for drive when motor transfer is enabled.
+	_fbCranePlcTcpcom			: FB_PlcCraneTcpIpCom;	
+END_VAR
+VAR_TEMP
+	ZoneIdx						: INT; // Iterator
+	CheckError					: BOOL;
+END_VAR
+
+VAR PERSISTENT
+	Settings					: ST_CFG_CraneXover; // Settings - activated configuration 
+END_VAR]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[(**************************************************************************************************************
+   Input mapping
+   
+***************************************************************************************************************)
+A_InputMapping();
+_M_Crane_Communication();
+
+(**************************************************************************************************************
+   Initialization
+***************************************************************************************************************)
+A_Init();
+
+
+(**************************************************************************************************************
+   External Subsystem transport interface
+***************************************************************************************************************)
+//A_ExternalSTI();
+
+(**************************************************************************************************************
+   State control
+***************************************************************************************************************)
+A_StateControl();
+
+(**************************************************************************************************************
+   Error handler
+***************************************************************************************************************)
+A_ErrorHandler();
+fb_AddOnErrHandler(AddOnSettingsFunction :=SettingsFunction, AddOnFunctionData:=FunctionData);
+
+
+(************************************************************************************************************
+   Check for errors
+	-Must be called before _M_XoverStates();
+***********************************************************************************************************)
+CheckError:=_M_CheckErrors();
+
+
+(**********************************************************************************************************
+   State handler
+***********************************************************************************************************)
+_M_XoverStates(CheckError);
+(************************************************************************************************************
+control Lift
+***********************************************************************************************************)
+_M_ControlLift();
+
+(************************************************************************************************************
+   Control conveyor motor drive when transfering TU on conveyor to crane
+***********************************************************************************************************)
+_TransferTuMotorDriver:=_M_MotorTransferTU();
+
+(**************************************************************************************************************
+   Interface handler out
+***************************************************************************************************************)
+M_ITC_ProcessOut();
+
+(**************************************************************************************************************
+   Output mapping
+***************************************************************************************************************)
+A_OutputMapping();		]]></ST>
+    </Implementation>
+    <Method Name="_M_CheckErrors" Id="{ebd3209f-e73f-481a-a2fb-5de1729aca45}">
+      <Declaration><![CDATA[METHOD PRIVATE _M_CheckErrors : BOOL
+VAR_INPUT
+END_VAR
+VAR
+	Check:BOOL; //Condition for checking error is met
+	FromCrane 	: REFERENCE TO ST_Conveyor_Interface_5_1:= Inputs.HandshakeCraneInterfaceReceive; // the crane
+	ToCrane 	: REFERENCE TO ST_Conveyor_Interface_5_1:= Outputs.HandshakeCraneInterfaceSend; //the conveoyr
+END_VAR
+VAR_INST
+	OverHangSensorStartCheck:BOOL;
+	OverHangSensorCheckOK:BOOL;	
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[// ------------------------------------------------------------------------------------------------------
+	// Check for errors
+	// ------------------------------------------------------------------------------------------------------
+	
+	F_ResetError(FALSE,	FunctionData.ErrorData.ErrorDataSet[5]);
+	IF(Settings.CfgMotorTransfer.EnableMotorTransferTU) THEN	
+		// ------------------------------------------------------------------------------------------------------
+		// Check conditions for  OverhangSensor
+		// ------------------------------------------------------------------------------------------------------
+		Check:=FALSE;
+		Check := Check OR ToCrane.HandOverState = E_Conveyor_InterfaceState.IDLE;
+		Check := Check OR ToCrane.HandOverState = E_Conveyor_InterfaceState.READYTOHANDOVER;
+		Check := Check OR ToCrane.HandOverState = E_Conveyor_InterfaceState.HANDOVERACTIVE AND 
+						  FromCrane.TakeOverState = E_Conveyor_InterfaceState.TAKEOVERCOMPLETE;	
+		Check := Check OR ToCrane.TakeOverState = E_Conveyor_InterfaceState.IDLE;
+		Check := Check OR ToCrane.TakeOverState = E_Conveyor_InterfaceState.READYFORTAKEOVER;
+		Check := Check OR ToCrane.TakeOverState = E_Conveyor_InterfaceState.TAKEOVERACTIVE AND 
+						  HW_inputs.HW_InputsMotorTransfer.TakeoverSensorStop;
+					  
+		
+		IF(Check AND NOT HW_inputs.HW_InputsMotorTransfer.Sensor_Overhang) THEN		
+			//Overhang sensor should not be blocked
+			F_SetError(
+						ErrorType	:= E_ErrorType.ERROR,
+						ErrorParam	:= 'Overhang sensor blocked',
+						ErrorMsg 	:= E_ErrorConv.INCORRECT_SENSOR_SIGNAL,
+						ErrorData	:= FunctionData.ErrorData.ErrorDataSet[5]);
+		END_IF
+		
+		
+		
+		// ------------------------------------------------------------------------------------------------------		
+		// Check if overhang sensor toggles during an transport
+		// ------------------------------------------------------------------------------------------------------
+				
+		IF( ToCrane.TakeOverState= E_Conveyor_InterfaceState.TAKEOVERACTIVE OR
+			ToCrane.HandOverState= E_Conveyor_InterfaceState.HANDOVERACTIVE) THEN 
+			OverHangSensorStartCheck:=TRUE;			
+		END_IF
+
+		//Stop test if sequence started over
+        IF(ToCrane.TakeOverState = E_Conveyor_InterfaceState.IDLE OR
+           	ToCrane.TakeOverState = E_Conveyor_InterfaceState.UNKNOWN OR 
+			ToCrane.HandOverState = E_Conveyor_InterfaceState.IDLE OR
+           	ToCrane.HandOverState = E_Conveyor_InterfaceState.UNKNOWN)THEN
+          	  OverHangSensorStartCheck:=FALSE;
+        END_IF
+		
+		IF(OverHangSensorStartCheck AND NOT HW_inputs.HW_InputsMotorTransfer.Sensor_Overhang) THEN
+			// check if overhang sensor was toggled during an transfer			
+			OverHangSensorCheckOK:=TRUE;			
+		END_IF
+		
+		//Set error if toggle was not detected
+		Check:=FALSE;
+		Check := Check OR ToCrane.HandOverState = E_Conveyor_InterfaceState.HANDOVERCOMPLETE;						  
+		Check := Check OR ToCrane.TakeOverState = E_Conveyor_InterfaceState.TAKEOVERCOMPLETE;
+		IF(Check AND OverHangSensorStartCheck) THEN			
+			
+			IF(NOT OverHangSensorCheckOK) THEN
+				//Overhang sensor was not toggled/broken during transport
+				F_SetError(
+							ErrorType	:= E_ErrorType.ERROR,
+							ErrorParam	:= 'Overhang sensor was not broken during transport',
+							ErrorMsg 	:= E_ErrorConv.INCORRECT_SENSOR_SIGNAL,
+							ErrorData	:= FunctionData.ErrorData.ErrorDataSet[5]);
+			END_IF	
+			
+			//Test is complete, reset variables. (If test raised an error, we are able to acknowledge the error and continute without need of toggle OH sensor)
+			OverHangSensorCheckOK:=FALSE;
+			OverHangSensorStartCheck:=FALSE;			
+		END_IF
+		
+		// ------------------------------------------------------------------------------------------------------
+		// Check conditions for Takeover stop sensor
+		// ------------------------------------------------------------------------------------------------------	
+		Check:=FALSE;
+		Check := Check OR ToCrane.TakeOverState = E_Conveyor_InterfaceState.READYFORTAKEOVER;
+		
+		IF(Check AND HW_inputs.HW_InputsMotorTransfer.TakeoverSensorStop) THEN		
+			//Tekeover stop sensor is detecting an TU, but should not
+			F_SetError(
+						ErrorType	:= E_ErrorType.ERROR,
+						ErrorParam	:= 'Takeover stop sensor active',
+						ErrorMsg 	:= E_ErrorConv.INCORRECT_SENSOR_SIGNAL,
+						ErrorData	:= FunctionData.ErrorData.ErrorDataSet[5]);
+		END_IF
+		
+		// ------------------------------------------------------------------------------------------------------
+		// Check SRM present (Crane) 
+		// ------------------------------------------------------------------------------------------------------
+		Check:=FALSE;
+		Check := Check OR ToCrane.HandOverState = E_Conveyor_InterfaceState.HANDOVERACTIVE;
+		Check := Check OR ToCrane.TakeOverState = E_Conveyor_InterfaceState.TAKEOVERACTIVE; 
+		
+		IF(Check  AND NOT Inputs.HW_InputsMotorTransfer.Sensor_SRM_Present) THEN
+					//SRM present sensor must be active
+					F_SetError(
+								ErrorType	:= E_ErrorType.ERROR,
+								ErrorParam	:= 'SRM sensor not set',
+								ErrorMsg 	:= E_ErrorConv.INCORRECT_SENSOR_SIGNAL,
+								ErrorData	:= FunctionData.ErrorData.ErrorDataSet[5]);	
+		END_IF
+	END_IF
+	
+	// ------------------------------------------------------------------------------------------------------
+	// Set output
+	// ------------------------------------------------------------------------------------------------------
+	_M_CheckErrors := FunctionData.ErrorData.ErrorDataSet[5].ErrorType = E_ErrorType.ERROR;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_ControlLift" Id="{4d073394-c0d3-4a8a-9d98-1d695ec7e4a9}">
+      <Declaration><![CDATA[METHOD PRIVATE _M_ControlLift
+
+VAR
+	LiftOrderPos				:E_Positions_LiftControl := E_Positions_LiftControl.UNDIFINED;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[	
+	IF(Settings.LiftEnabled) THEN
+		F_ResetError(FALSE,	FunctionData.ErrorData.ErrorDataSet[2]);
+		F_ResetError(FALSE,	FunctionData.ErrorData.ErrorDataSet[3]);	
+		
+		// Upon handing over TU to Crane, the lift (if enabled) must be up.
+		// upon taking over TU from crane, the lift (if enabled) shall be down.
+		// order lift up if zone is occupied, keep up until handover state is completed (CraneHandlerType <> eTYPE_HANDOVER)
+		IF ((Inputs.TransportData.eTransportState = E_TransportState.OCCUPIED AND _CurrentCraneHandlerType = E_CvCraneHandlerType.eTYPE_HANDOVER) OR
+			(fbLiftControl.OrderPos = Settings.HomePosOccupied AND _CurrentCraneHandlerType = E_CvCraneHandlerType.eTYPE_HANDOVER)) THEN
+			LiftOrderPos := Settings.HomePosOccupied; //Lift Up
+		ELSE
+			LiftOrderPos := Settings.HomePosFree;     //Lift down
+		END_IF
+	
+		fbLiftControl(	
+						LinkedElementNumber		:= SettingsFunction.eElementLink,			
+						FunctionData 			:= FunctionData, 
+						Sensor_Pos_Down 		:= Inputs.Sensor_Pos_Down, 
+						Sensor_Pos_Up 			:= Inputs.Sensor_Pos_Up, 
+						TimeoutValueLift 		:= Settings.TimeoutValueLift, 
+						OrderPos 				:= LiftOrderPos, 
+						HomePos 				:= Settings.HomePosFree, 
+						ErrorData 				:= FunctionData.ErrorData.ErrorDataSet[2]);
+	
+		fbProBoxMotorControlLift(	Run 					:= fbLiftControl.Drive_Run_UpDown,
+									MotorSpeed 				:= E_ProBoxMotorSpeed.NORMAL, 
+									MotorDirection 			:= E_ProBoxMotorDirection.MOTOR_FORWARD,
+									MotorStarterOK 			:= Inputs.Signal_MotorUnitOK,
+									ErrorData 				:= FunctionData.ErrorData.ErrorDataSet[3]);
+	
+	END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_Crane_Communication" Id="{7b20337e-10dd-420d-808f-6c1136886dc0}">
+      <Declaration><![CDATA[METHOD PRIVATE _M_Crane_Communication : BOOL
+VAR_INPUT
+END_VAR
+VAR
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+
+(*//////////////////////////// TCP IP config ////////////////////////////
+Settings.CraneCom.TCP_IP_Config.ChannelName                     := 'CraneTCPIPcom';
+Settings.CraneCom.TCP_IP_Config.EnableConnection                := TRUE;
+Settings.CraneCom.TCP_IP_Config.RemoteHost                      := '192.168.1.2';
+Settings.CraneCom.TCP_IP_Config.RemotePort                      := 2011;
+Settings.CraneCom.TCP_IP_Config.LocalHost                       := '0.0.0.0';
+Settings.CraneCom.TCP_IP_Config.LocalPort                       := 5001;
+Settings.CraneCom.TCP_IP_Config.Server                          := FALSE;
+Settings.CraneCom.TCP_IP_Config.ConnectTimeout                  := T#10S;
+Settings.CraneCom.TCP_IP_Config.ClientRetryInterval             := T#5S;
+Settings.CraneCom.TCP_IP_Config.ServerRetryInterval             := T#1S;
+Settings.CraneCom.TCP_IP_Config.AcceptPollInterval              := T#10S;
+Settings.CraneCom.TCP_IP_Config.EnableDebugMsg                  := TRUE;		// True during debug..?
+*)
+	
+		                        
+		
+IF Settings.CraneCom.ComType = E_CraneCommunicationType.TCP_IP THEN 
+	_fbCranePlcTcpcom(
+			Config:=Settings.CraneCom.TCP_IP_Config, 
+			pSendData:= ADR(Outputs.HandshakeCraneInterfaceSend),			
+			SizeOfSendData:= SIZEOF(Outputs.HandshakeCraneInterfaceSend),	
+			pReceiveData:= ADR(HW_Inputs.HandshakeCraneInterfaceReceive),		
+			SizeOfReceiveData:= SIZEOF(HW_Inputs.HandshakeCraneInterfaceReceive));
+
+ELSIF Settings.CraneCom.ComType = E_CraneCommunicationType.EAP THEN 
+	;	
+ELSE
+	;//Error?
+END_IF	]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_DecideXoverState" Id="{f5655a89-ec92-4d4a-a09a-bf7cd4f7a851}">
+      <Declaration><![CDATA[METHOD PRIVATE _M_DecideXoverState : E_CvCraneHandlerType
+VAR_INPUT
+	Conv_State : ST_Conveyor_Interface_5_1;		// output to crane
+	Crane_State: ST_Conveyor_Interface_5_1;		// input from crane
+END_VAR
+
+VAR
+	
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+// Keeps track of current operation, ie. Crane deposit or Crane pickup.
+
+_M_DecideXoverState  := E_CvCraneHandlerType.eType_UNDEFINED;
+
+CASE _XoverState OF
+	0: // init state and default state
+		_TU_ConveyorTransferPending :=FALSE;
+		_CraneSettllingTmr(IN:=FALSE);		
+		IF(Conv_State.TakeOverState >= E_Conveyor_InterfaceState.TAKEOVERACTIVE  AND
+			  (settings.CraneXoverType = E_CvCraneXoverType.eCOMBINATION  OR settings.CraneXoverType = E_CvCraneXoverType.eTAKEOVER)) THEN
+			_XoverState := 1; //Takeover active
+		ELSIF(Conv_State.HandOverState <= E_Conveyor_InterfaceState.IDLE AND
+			  Inputs.TransportData.TU_DataIndex>0 AND
+			  Inputs.TransportData.eTransportState = E_TransportState.OCCUPIED AND
+			  (settings.CraneXoverType = E_CvCraneXoverType.eCOMBINATION  OR settings.CraneXoverType = E_CvCraneXoverType.eHANDOVER) ) THEN
+			_XoverState := 100; //handover active
+		END_IF
+	//------------------------------------------------------------------------------------------------	
+	//takeover active, wait for taking over TU to complete and TU is moved out from position.
+	//------------------------------------------------------------------------------------------------
+	1:
+		IF(Conv_State.TakeOverState = E_Conveyor_InterfaceState.TAKEOVERCOMPLETE) THEN
+			_XoverState := _XoverState+1;			
+		END_IF	
+	2: //wait for crane to finish comunication
+		IF( Crane_State.HandOverState = E_Conveyor_InterfaceState.HANDOVERCOMPLETE OR 
+			Crane_State.HandOverState = E_Conveyor_InterfaceState.IDLE) THEN
+			_XoverState := _XoverState+1;
+		END_IF
+		
+	3: //wait for conveyor to finish comunication
+		_TU_ConveyorTransferPending :=TRUE;
+		IF(Conv_State.TakeOverState = E_Conveyor_InterfaceState.IDLE) THEN
+			_XoverState := _XoverState+1;
+		END_IF
+		
+	4: 		
+		IF NOT Inputs.TransportData.Occupied THEN
+			_XoverState :=0; //done	
+		END_IF		
+		IF(_CRANEDEBUG)THEN	_XoverState :=10; END_IF
+	
+					
+	//Debug, test crane without having sync replying with TTA on TTQ request.
+	10:
+		F_SetOccupied(eFunctionNumber := ConfigFunction.FunctionLink.eFunctionNumber,ZoneNumber := ConfigFunction.FunctionLink.ZoneNumber);
+		F_AssignTU_DataIndexToZone(eFunctionNumber:= ConfigFunction.FunctionLink.eFunctionNumber, ZoneNumber:= ConfigFunction.FunctionLink.ZoneNumber,TU_DataIndex:= F_InsertTU_Data(ConfigFunction.FunctionLink.eFunctionNumber, 1));
+		_XoverState :=0; //done	
+	
+	
+	//------------------------------------------------------------------------------------------------
+	//handover active. wait for handing over is complete
+	//------------------------------------------------------------------------------------------------
+	
+	100:
+		IF( Conv_State.HandOverState = E_Conveyor_InterfaceState.HANDOVERACTIVE) THEN
+			_XoverState := _XoverState+1;
+		ELSIF(Inputs.TransportData.eTransportState <> E_TransportState.OCCUPIED) THEN
+			_XoverState := 0; // Cancel handover
+		END_IF
+
+	101: 
+		IF(Conv_State.HandOverState <= E_Conveyor_InterfaceState.IDLE) THEN
+			_XoverState := _XoverState+1;
+		END_IF
+	102:
+		IF( Crane_State.TakeOverState = E_Conveyor_InterfaceState.TAKEOVERCOMPLETE OR 
+			Crane_State.TakeOverState = E_Conveyor_InterfaceState.IDLE) THEN
+			_XoverState := _XoverState+1;
+		END_IF		
+	103:	
+		_CraneSettllingTmr(IN:=TRUE);
+		IF(_CraneSettllingTmr.Q) THEN
+			_XoverState := 0;	
+		END_IF
+			
+END_CASE
+
+//Set Xover state type	
+IF( _XoverState<100) THEN
+	_M_DecideXoverState := E_CvCraneHandlerType.eTYPE_TAKEOVER;  //Default state
+ELSE
+	_M_DecideXoverState := E_CvCraneHandlerType.eTYPE_HANDOVER;
+END_IF
+
+
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_GetCraneCommunicationActive" Id="{755744a8-211b-4343-9a2b-74fe2437800f}">
+      <Declaration><![CDATA[METHOD PRIVATE _M_GetCraneCommunicationActive : BOOL
+
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[//Check handover active
+_M_GetCraneCommunicationActive:= (Outputs.HandshakeCraneInterfaceSend.HandOverState >  E_Conveyor_InterfaceState.READYTOHANDOVER AND 
+				 			   	  Outputs.HandshakeCraneInterfaceSend.HandOverState <=  E_Conveyor_InterfaceState.HANDOVERCOMPLETE);
+							 
+//Check takever active
+
+_M_GetCraneCommunicationActive:= _M_GetCraneCommunicationActive OR
+							    (Outputs.HandshakeCraneInterfaceSend.TakeOverState >  E_Conveyor_InterfaceState.READYFORTAKEOVER AND 
+				 			 	 Outputs.HandshakeCraneInterfaceSend.TakeOverState <=  E_Conveyor_InterfaceState.TAKEOVERCOMPLETE);
+							 ]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_GetFunctionAnyZoneBusy" Id="{1998fa1b-0c04-404d-8cea-06af5ecd651b}">
+      <Declaration><![CDATA[METHOD PRIVATE _M_GetFunctionAnyZoneBusy : BOOL
+VAR_INPUT
+	LinkedFunctionNumber : E_FunctionNumber;  // typically SettingsFunction.FunctionLink.eFunctionNumber
+END_VAR
+
+VAR
+	LinkedFunctionSettings : ST_CFG_Function;
+	LinkedFunctionZoneData : ST_ZoneData;
+	i:INT;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+
+//Get the linked function zones transport state, if element consists of multiple zones, itereate through all adn check if any is busy
+//Do not takeover TU from crane while chain is moving
+
+
+LinkedFunctionSettings := F_GetFunctionSettings(LinkedFunctionNumber);
+
+	
+ FOR i:=1 TO LinkedFunctionSettings.NumberOfZones DO
+	 LinkedFunctionZoneData := F_GetZoneData(LinkedFunctionNumber, i);
+	 IF(	LinkedFunctionZoneData.TransportControlData.eHandOverState = E_HandOverState.ACTIVE OR
+			LinkedFunctionZoneData.TransportControlData.eHandOverState = E_HandOverState.INTERRUPTED OR
+			LinkedFunctionZoneData.TransportControlData.eHandOverState = E_HandOverState.STOP OR
+			LinkedFunctionZoneData.TransportControlData.eTakeOverState = E_TakeOverState.ACTIVE OR
+			LinkedFunctionZoneData.TransportControlData.eTakeOverState = E_TakeOverState.INTERRUPTED OR
+			LinkedFunctionZoneData.TransportControlData.eTakeOverState = E_TakeOverState.STOP) THEN
+		_M_GetFunctionAnyZoneBusy := TRUE;
+		RETURN;	 
+	 END_IF
+ END_FOR
+ 
+ _M_GetFunctionAnyZoneBusy := FALSE;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_LiftPositionSafe" Id="{b248e2da-18c1-4dfd-9d72-eb14903ba07d}">
+      <Declaration><![CDATA[METHOD PRIVATE _M_LiftPositionSafe : BOOL
+VAR_INPUT
+	desiredPosition : E_Positions_LiftControl;
+END_VAR
+
+//Purpose: Return TRUE if desired position is reached.]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+_M_LiftPositionSafe := FALSE;
+
+ IF( NOT Settings.LiftEnabled OR
+	((desiredPosition = E_Positions_LiftControl.UP AND inputs.Sensor_Pos_Up) OR 
+	(desiredPosition = E_Positions_LiftControl.DOWN AND inputs.Sensor_Pos_Down) AND 
+	NOT fbLiftControl.Drive_Run_UpDown)) THEN
+	
+		_M_LiftPositionSafe := TRUE;
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_MotorTransferTU" Id="{808acd9a-66d4-4de9-bd63-7ea2d7ceddd9}">
+      <Declaration><![CDATA[(**************************************************************************************
+ * 	Application		:	ProBox Framework
+ *	Purpose			:	When feature enabled for tranfering TU to and from crane with conveyour chain.
+ 						The motor is active during LOCATIONINTERFACE_HANDOVERACTIVE / LOCATIONINTERFACE_TAKEOVERACTIVE
+						This method will set drive request, direction and speed to be transfered to element.						
+ *  Return			:	ST_MotorDriver
+ **************************************************************************************)
+METHOD PRIVATE _M_MotorTransferTU : ST_MotorDriver
+
+VAR
+	Check                   :BOOL; //Condition for checking error is met
+	//FromCrane 	          : REFERENCE TO ST_Conveyor_Interface_5_1:= Inputs.HandshakeCraneInterfaceReceive; // the crane
+	ToCrane 	            : REFERENCE TO ST_Conveyor_Interface_5_1:= Outputs.HandshakeCraneInterfaceSend; //the conveoyr
+	fbProBoxSpeedControl 	: FB_ProBoxSpeedControl; // Speed control for each zone
+	FunctionOrders 	        : ST_FunctionOrders;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[	
+	//init drive request
+	_M_MotorTransferTU.ReqDriveRun:=FALSE;
+	_M_MotorTransferTU.FeatureEnabled:=Settings.CfgMotorTransfer.EnableMotorTransferTU;
+	_M_MotorTransferTU.HW_InputsMotorTransfer := Inputs.HW_InputsMotorTransfer;
+	_DriveRunTimer.PT:=Settings.CfgMotorTransfer.MotorDriveTimeout;
+	F_ResetError(FALSE,	FunctionData.ErrorData.ErrorDataSet[4]);
+	
+	//set drive request
+	
+	IF( Settings.CfgMotorTransfer.EnableMotorTransferTU) THEN
+		IF(_DriveRunTimer.Q AND ToCrane.HandOverState = E_Conveyor_InterfaceState.HANDOVERACTIVE)THEN
+			F_SetError( ErrorType := E_ErrorType.ERROR, 
+						ErrorParam := 'TimeOut Transfer to crane', 
+						ErrorMsg := E_ErrorConv.TIMEOUT_HANDOVER, 
+						ErrorData := FunctionData.ErrorData.ErrorDataSet[4]);		
+		ELSIF(_DriveRunTimer.Q AND ToCrane.TakeOverState = E_Conveyor_InterfaceState.TAKEOVERACTIVE)THEN
+			F_SetError( ErrorType := E_ErrorType.ERROR, 
+						ErrorParam := 'TimeOut Transfer from crane', 
+						ErrorMsg := E_ErrorConv.TIMEOUT_TAKEOVER, 
+						ErrorData := FunctionData.ErrorData.ErrorDataSet[4]);
+		END_IF
+	END_IF					
+	
+	IF( Settings.CfgMotorTransfer.EnableMotorTransferTU AND FunctionData.ErrorData.Error.ErrorType <> E_ErrorType.ERROR) THEN	
+		//is handing or takeing over active
+		IF (ToCrane.HandOverState = E_Conveyor_InterfaceState.HANDOVERACTIVE 
+            OR (ToCrane.TakeOverState = E_Conveyor_InterfaceState.TAKEOVERACTIVE  
+            AND NOT _M_MotorTransferTU.HW_InputsMotorTransfer.TakeoverSensorStop)) THEN
+			
+			_M_MotorTransferTU.ReqDriveRun:=TRUE;
+			_M_MotorTransferTU.ReqDriveDirection :=((ToCrane.HandOverState = E_Conveyor_InterfaceState.HANDOVERACTIVE AND
+													 Settings.CfgMotorTransfer.HandoverMotorDir = E_DriveDirection.FWD) OR
+													(ToCrane.TakeOverState = E_Conveyor_InterfaceState.TAKEOVERACTIVE AND
+													 Settings.CfgMotorTransfer.HandoverMotorDir = E_DriveDirection.FWD));
+
+            FunctionOrders := F_ProBoxToFunctionOrders(
+                                CreepSpeed_12  := Settings.CfgMotorTransfer.MotorSpeed = E_ProBoxMotorSpeed.CREEP_SPEED,
+                                LowSpeed_12    := Settings.CfgMotorTransfer.MotorSpeed = E_ProBoxMotorSpeed.LOW_SPEED,
+                                Forward_12     := FALSE,
+                                Reverse_12     := FALSE,
+                                CreepSpeed_34  := FALSE,
+                                LowSpeed_34    := FALSE,
+                                Forward_34     := FALSE,
+                                Reverse_34     := FALSE,
+                                Enable_12      := FALSE,
+                                Enable_34      := FALSE);
+                
+			_M_MotorTransferTU.ReqSpeed :=FunctionOrders.ReqSpeed;
+		END_IF
+	END_IF	
+	
+	_DriveRunTimer(IN:=_M_MotorTransferTU.ReqDriveRun);
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_XoverStates" Id="{60dc0fba-d092-43e0-9e43-43c94ea0aa32}">
+      <Declaration><![CDATA[METHOD PRIVATE _M_XoverStates
+VAR_INPUT
+	ActiveErrors:BOOL;
+END_VAR
+VAR
+	LiftSafePosition : BOOL :=FALSE;
+	AllZonesIdle	: BOOL := FALSE; //True if all zonses (if any) being Not busy
+	NoError			: BOOL;
+	StateStarted	: BOOL;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[//   Get Xover type ie if handing over or taking over
+_CurrentCraneHandlerType:= _M_DecideXoverState(Outputs.HandshakeCraneInterfaceSend,Inputs.HandshakeCraneInterfaceReceive);
+
+(**********************************************************************************************************
+   State handler
+***********************************************************************************************************)
+//craneXover addon defined as both deposit and pickup
+
+F_ResetError(FALSE,	FunctionData.ErrorData.ErrorDataSet[1]);
+
+IF( _CurrentCraneHandlerType = E_CvCraneHandlerType.eTYPE_HANDOVER) THEN						
+	LiftSafePosition := _M_LiftPositionSafe(Settings.HomePosOccupied);(*Lift in occupied position, ie up*)
+	AllZonesIdle := TRUE;
+ELSIF(_CurrentCraneHandlerType = E_CvCraneHandlerType.eTYPE_TAKEOVER) THEN
+	LiftSafePosition := _M_LiftPositionSafe(Settings.HomePosFree);(*Lift in home position, ie down*)
+	AllZonesIdle := Settings.LiftEnabled=FALSE OR NOT _M_GetFunctionAnyZoneBusy(LinkedFunctionNumber:=SettingsFunction.FunctionLink.eFunctionNumber);
+END_IF
+
+NoError	:= NOT ActiveErrors AND FunctionData.ErrorData.Error.ErrorType <> E_ErrorType.ERROR AND NOT FunctionInterface.In.Element.State.Error;
+StateStarted := FunctionInterface.In.Element.OperationState.eState= E_PositionState.STARTED OR 
+				_M_GetCraneCommunicationActive();
+
+fb_CraneCvStateHandler.M_SetConfig(SettingsFunction:=ConfigFunction,HandlerType := _CurrentCraneHandlerType);
+fb_CraneCvStateHandler.M_ProcessXover(	ConvInterfaceFromCrane	:= Inputs.HandshakeCraneInterfaceReceive,
+										PositionOccupied 		:= Inputs.Sensor_Occupied,
+										Enable					:=  NoError AND StateStarted AND LiftSafePosition AND AllZonesIdle AND NOT _TU_ConveyorTransferPending AND NOT CtrlIn.ExternalDisable,
+										MotorDriveTransfer      := _TransferTuMotorDriver,
+										ConvInterfaceToCrane 	:= Outputs.HandshakeCraneInterfaceSend,
+										ErrorData 				:= FunctionData.ErrorData.ErrorDataSet[1]);
+]]></ST>
+      </Implementation>
+    </Method>
+    <Action Name="A_Init" Id="{b14fc245-fc66-4ab8-bb84-c520df16592e}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_Init
+ * 	FUNCTION	Initialize function
+ **************************************************************************************)
+ 
+// Update Registry
+M_UpdateRegistry();
+
+// Init ongoing - Wait until init is released (Sequencial startup)
+IF NOT FunctionData.Init AND FunctionData.InitRunning THEN
+	// When the subsystem is started, 
+	// When its released to initialize
+	IF FunctionData.OperationState.Info.SystemReady AND
+	   SettingsFunction.eFunctionNumber < FunctionData.OperationState.InitRelease.eLimitFunctionNumber THEN
+	   
+	   IF M_InitFunction(FALSE) THEN		   
+			// Function initialized - and initialization done
+			FunctionData.Init := TRUE;
+			FunctionData.InitRunning := FALSE;
+			
+			// Set reset cmd
+			FunctionData.ErrorData.Error.ResetError := TRUE;
+			
+			DebugMsg := CONCAT('Initialization done. Function: ', ConfigFunction.FunctionName);
+			fbDebugMsg.M_SendInfoMsg(DebugMsg);
+		END_IF
+	END_IF
+(*
+If the function is not initialized,
+clean all values and wait until init is released
+*)
+ELSIF NOT FunctionData.Init THEN
+	// Reset internal variables
+	FunctionData.OperationState := FunctionBase.PositionStateEmpty;
+
+	// Initiate initialization of all zones
+	FOR ZoneIdx := 1 TO SettingsFunction.NumberOfZones DO
+		ZoneData[ZoneIdx].Init := FALSE;
+	END_FOR;
+	
+	// Load function specific configuration to settings
+	Settings := Config;
+	
+	// Reset values and load config
+	M_PreInit();	
+	
+	// To start init a valid functionnumber and element link is needed
+	FunctionData.InitRunning := SettingsFunction.eFunctionNumber > 0 AND
+								SettingsFunction.eElementLink > 0;
+								
+								
+	_CraneSettllingTmr.PT:=T#1S;
+END_IF
+
+// Init zones
+IF FunctionData.Init THEN
+	// Set init flag after one cycle
+	FOR ZoneIdx := 1 TO SettingsFunction.NumberOfZones DO
+		// If a zone is not initialized, wait one cycle to finish init
+		IF NOT ZoneData[ZoneIdx].Init THEN
+			IF ZoneData[ZoneIdx].InitRunning THEN
+				ZoneData[ZoneIdx].InitRunning := FALSE;
+				ZoneData[ZoneIdx].Init := TRUE;
+				ZoneData[ZoneIdx].ErrorData.Error.ResetError := TRUE;
+			ELSE	
+				ZoneData[ZoneIdx].InitRunning := TRUE;
+			END_IF
+		END_IF
+	END_FOR;
+END_IF]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="A_InputMapping" Id="{bced81b7-55b9-43f6-a14a-39356c4416f6}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_InputMapping
+ * 	FUNCTION	Input mapping
+ **************************************************************************************)
+ 
+(**************************************************************************************
+   Hardware Inputs
+***************************************************************************************)
+// Adapt input logic state high/low
+// Since no feeddback singnal from the drive is available the HW output signal for the drive is used at fbTransportControl instead.
+//Inputs.DriveRunning := Settings.HW_InputInverted.DriveRunning XOR HW_Inputs.DriveRunning;
+
+inputs.HandshakeCraneInterfaceReceive	:= HW_Inputs.HandshakeCraneInterfaceReceive;
+Inputs.Sensor_Occupied					:= HW_Inputs.Sensor_Occupied;
+Inputs.Sensor_Pos_Down					:= HW_Inputs.Sensor_Pos_Down;
+Inputs.Sensor_Pos_Up					:= HW_Inputs.Sensor_Pos_Up;
+Inputs.Signal_MotorUnitOK				:= HW_Inputs.Signal_MotorUnitOK;
+Inputs.HW_InputsMotorTransfer			:= HW_Inputs.HW_InputsMotorTransfer;
+
+//Inputs.HandshakeCraneFinishedPickup		:= HW_Inputs.HandshakeCraneFinishedPickup;
+//Inputs.HandshakeCraneReadyToPickup		:= HW_Inputs.HandshakeCraneReadyToPickup;*)
+
+
+(**************************************************************************************
+   Element states
+***************************************************************************************)
+// Get status of the corresponding element
+M_GetElementStates(); 
+
+(**************************************************************************************
+   Transport data of corresponding zone
+***************************************************************************************)
+// Get transport state of corresponding conveyor to generate a proper trigger
+//TransportData			: ST_TransportControlData; // Transport control data of corresponding zone
+Inputs.TransportData := F_GetTransportControlData(
+							eFunctionNumber	:= SettingsFunction.FunctionLink.eFunctionNumber,
+							ZoneNumber 		:= SettingsFunction.FunctionLink.ZoneNumber);
+
+						
+(**************************************************************************************
+   AddOn states
+***************************************************************************************)
+// Get status of all corresponding AddOn functions and store it in FunctionInterface.In.AddOnOrder
+//Addons do not have addons..
+//M_GetAddOnOrder();
+
+]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="A_OutputMapping" Id="{a45ac16c-0269-46e9-a5eb-056a4235143a}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_OutputMapping
+ * 	FUNCTION	Output mapping
+ **************************************************************************************)
+
+(**************************************************************************************
+   Order outputs (Commands to corresponding element)
+***************************************************************************************)
+
+// Initialize variables	
+MEMSET(ADR(FunctionInterface.Out.FunctionOrders),0,SIZEOF(ST_FunctionOrders)); 
+FunctionInterface.Out.FunctionOrders.Enable := TRUE;
+FunctionInterface.Out.FunctionOrders.Enable_34 := TRUE;
+//FunctionInterface.Out.FunctionOrders.Enable_12 := FunctionData.ErrorData.Error.ErrorType = E_ErrorType.NO_ERROR_PENDING AND NOT FunctionData.ErrorData.ZoneErrorPending;
+
+// if transfer TU via conveyor/chain... 
+IF(_TransferTuMotorDriver.FeatureEnabled) THEN
+	FunctionInterface.Out.FunctionOrders.ReqDriveRun 		:= _TransferTuMotorDriver.ReqDriveRun;
+	FunctionInterface.Out.FunctionOrders.ReqDriveDirection 	:= _TransferTuMotorDriver.ReqDriveDirection AND FunctionInterface.Out.FunctionOrders.ReqDriveRun;	
+	FunctionInterface.Out.FunctionOrders.ReqSpeed 			:= _TransferTuMotorDriver.ReqSpeed;
+END_IF
+
+(**************************************************************************************
+   AddOn outputs
+***************************************************************************************)
+FunctionInterface.Out.AddOnOrders.Enable := FunctionData.ErrorData.Error.ErrorType <> E_ErrorType.ERROR;
+//pickup, handover to Crane, and takeover from previous conveyor function
+IF(_CurrentCraneHandlerType = E_CvCraneHandlerType.eTYPE_HANDOVER AND _M_LiftPositionSafe(Settings.HomePosFree)(*Lift in home position*)) THEN
+	FunctionInterface.Out.AddOnOrders.EnableHandover := TRUE;
+	FunctionInterface.Out.AddOnOrders.EnableTakeover := outputs.HandshakeCraneInterfaceSend.HandOverState <= E_Conveyor_InterfaceState.IDLE;														
+
+//Deposit, takeover from crane, handover to next conveyor function		
+ELSIF(_CurrentCraneHandlerType = E_CvCraneHandlerType.eTYPE_TAKEOVER AND _M_LiftPositionSafe(Settings.HomePosFree)(*Lift in home position*)) THEN									
+	FunctionInterface.Out.AddOnOrders.EnableHandover := outputs.HandshakeCraneInterfaceSend.TakeOverState <= E_Conveyor_InterfaceState.READYFORTAKEOVER; 
+	FunctionInterface.Out.AddOnOrders.EnableTakeover := outputs.HandshakeCraneInterfaceSend.TakeOverState <= E_Conveyor_InterfaceState.READYFORTAKEOVER;  													
+ELSE
+	FunctionInterface.Out.AddOnOrders.EnableHandover := FALSE;
+	FunctionInterface.Out.AddOnOrders.EnableTakeover := FALSE;
+END_IF
+
+(**************************************************************************************
+   Hardware outputs
+***************************************************************************************)
+HW_Outputs.HandshakeCraneInterfaceSend	:= Outputs.HandshakeCraneInterfaceSend;
+IF(settings.LiftEnabled) THEN
+	HW_Outputs.Drive_Run_UpDown 		:= fbProBoxMotorControlLift.Forward;
+END_IF
+
+
+(**************************************************************************************
+   output features
+***************************************************************************************)
+CtrlOut.BusyXover :=  _M_LiftPositionSafe(Settings.HomePosFree) AND _XoverState>0; // Busy with handover/takeover to/from crane and lift is down(IF enabled) = safe to run chain to transfer new TU's
+CtrlOut.TuTakenOver	 := _TU_ConveyorTransferPending; // True = TU was taken over from crane and are about or waiting for transport	
+	 
+
+(**************************************************************************************
+   Inhibit stopping during active comunication
+***************************************************************************************)
+THIS^.InhibitStopping := _M_GetCraneCommunicationActive(); //Override group stopping while transfering TU to/from crane]]></ST>
+      </Implementation>
+    </Action>
+    <LineIds Name="FB_CraneXoverAddon">
+      <LineId Id="3" Count="1" />
+      <LineId Id="306" Count="0" />
+      <LineId Id="5" Count="1" />
+      <LineId Id="246" Count="0" />
+      <LineId Id="7" Count="21" />
+      <LineId Id="116" Count="0" />
+      <LineId Id="118" Count="2" />
+      <LineId Id="186" Count="0" />
+      <LineId Id="121" Count="1" />
+      <LineId Id="117" Count="0" />
+      <LineId Id="29" Count="8" />
+      <LineId Id="180" Count="2" />
+      <LineId Id="184" Count="1" />
+      <LineId Id="53" Count="8" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_CraneXoverAddon._M_CheckErrors">
+      <LineId Id="178" Count="107" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_CraneXoverAddon._M_ControlLift">
+      <LineId Id="3" Count="30" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_CraneXoverAddon._M_Crane_Communication">
+      <LineId Id="86" Count="1" />
+      <LineId Id="66" Count="12" />
+      <LineId Id="115" Count="0" />
+      <LineId Id="121" Count="0" />
+      <LineId Id="79" Count="0" />
+      <LineId Id="95" Count="0" />
+      <LineId Id="80" Count="0" />
+      <LineId Id="124" Count="4" />
+      <LineId Id="96" Count="0" />
+      <LineId Id="114" Count="0" />
+      <LineId Id="97" Count="0" />
+      <LineId Id="105" Count="0" />
+      <LineId Id="100" Count="2" />
+    </LineIds>
+    <LineIds Name="FB_CraneXoverAddon._M_DecideXoverState">
+      <LineId Id="3" Count="53" />
+      <LineId Id="111" Count="0" />
+      <LineId Id="98" Count="5" />
+      <LineId Id="110" Count="0" />
+      <LineId Id="61" Count="24" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_CraneXoverAddon._M_GetCraneCommunicationActive">
+      <LineId Id="6" Count="8" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_CraneXoverAddon._M_GetFunctionAnyZoneBusy">
+      <LineId Id="3" Count="21" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_CraneXoverAddon._M_LiftPositionSafe">
+      <LineId Id="3" Count="8" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_CraneXoverAddon._M_MotorTransferTU">
+      <LineId Id="105" Count="6" />
+      <LineId Id="113" Count="16" />
+      <LineId Id="131" Count="0" />
+      <LineId Id="193" Count="1" />
+      <LineId Id="275" Count="1" />
+      <LineId Id="133" Count="4" />
+      <LineId Id="195" Count="0" />
+      <LineId Id="298" Count="1" />
+      <LineId Id="331" Count="0" />
+      <LineId Id="322" Count="8" />
+      <LineId Id="332" Count="0" />
+      <LineId Id="317" Count="0" />
+      <LineId Id="200" Count="0" />
+      <LineId Id="190" Count="2" />
+      <LineId Id="302" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_CraneXoverAddon._M_XoverStates">
+      <LineId Id="83" Count="28" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_CraneXoverAddon.A_Init">
+      <LineId Id="2" Count="68" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_CraneXoverAddon.A_InputMapping">
+      <LineId Id="2" Count="45" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_CraneXoverAddon.A_OutputMapping">
+      <LineId Id="61" Count="58" />
+      <LineId Id="56" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

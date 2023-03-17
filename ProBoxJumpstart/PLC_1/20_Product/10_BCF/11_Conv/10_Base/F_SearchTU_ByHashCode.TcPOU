@@ -1,0 +1,94 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.4">
+  <POU Name="F_SearchTU_ByHashCode" Id="{719e549c-8716-4632-860e-b0b8bc48f33c}" SpecialFunc="None">
+    <Declaration><![CDATA[// searches TU table for a specific TU and return their index if found, otherwise zero
+FUNCTION PUBLIC F_SearchTU_ByHashCode : DINT
+
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 404529 $
+ *	Revision date	:	$Date: 2018-04-23 08:21:38 +0200 (Mo., 23 Apr 2018) $
+ *	Last changed by	:	$Author: b7bolm $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/trunk/01_Software/BCF/BCF/JumpStart/20_Product/10_App/10_Base/10_Lib/10_Conv/F_SearchTU_ByHashCode.TcPOU $
+ *
+ *	Purpose			:	The function searchs searches for the TU-Data of the specified 
+ *						barcode in the TU-Data Table and then the ElementName.
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+
+VAR_INPUT
+	TU_ID				: T_MaxString		:= '';	// TU ID as string 
+END_VAR
+
+VAR
+	HashCode			: UDINT				:= 0;
+	Idx					: DINT				:= 0; 
+END_VAR]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[
+// valid TuID?
+IF TU_ID = Conveyor.TU_ID_UNKNOWN THEN
+	F_SearchTU_ByHashCode := 0;
+	RETURN;
+END_IF
+
+
+// prepare hash code to compare
+HashCode := F_CreateHashCode(TU_ID);
+
+// Loop over all TU_Data sets 
+FOR Idx := 0  TO NUMBER_OF_TU_DATA DO
+	// entry used?
+	IF NOT TU_DataTable[Idx].DataSet.DataPresent THEN
+		CONTINUE;
+	END_IF
+
+	// hash code equal?
+	IF TU_DataTable[Idx].TU_ID.HashCode <> HashCode THEN
+		CONTINUE;
+	END_IF
+
+	// TU-ID equal?
+	IF TU_DataTable[Idx].TU_ID.ASCII <> TU_ID THEN
+		CONTINUE;
+	END_IF
+
+	// found -> return TU-Index
+	F_SearchTU_ByHashCode := Idx;
+	RETURN;
+
+END_FOR
+
+// nothing found
+F_SearchTU_ByHashCode := 0;
+]]></ST>
+    </Implementation>
+    <ObjectProperties>
+      <XmlArchive>
+        <Data>
+          <o xml:space="preserve" t="UMLStereoTypeContainerObject">
+            <v n="IsType" t="UMLType">BaseArea</v>
+            <v n="Stereotype">""</v>
+            <d n="Stereotypes" t="Hashtable" />
+          </o>
+        </Data>
+        <TypeList>
+          <Type n="Hashtable">System.Collections.Hashtable</Type>
+          <Type n="String">System.String</Type>
+          <Type n="UMLStereoTypeContainerObject">{30250973-b110-4e31-b562-c102e042dca4}</Type>
+          <Type n="UMLType">{0197b136-405a-42ee-bb27-fd08b621d0cf}</Type>
+        </TypeList>
+      </XmlArchive>
+    </ObjectProperties>
+  </POU>
+</TcPlcObject>

@@ -1,0 +1,12 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.4">
+  <DUT Name="ST_TransferPanel" Id="{6755beb7-942c-4798-a343-6400e96780ae}">
+    <Declaration><![CDATA[TYPE ST_TransferPanel :
+STRUCT
+	inputs : ST_TransferPanelInputs;
+	outputs : ST_TransferPanelOutputs;
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

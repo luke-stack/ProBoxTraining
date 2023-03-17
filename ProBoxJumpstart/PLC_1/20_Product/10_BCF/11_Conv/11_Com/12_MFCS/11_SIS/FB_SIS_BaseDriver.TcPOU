@@ -1,0 +1,1267 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.12">
+  <POU Name="FB_SIS_BaseDriver" Id="{08c7a5c1-276f-411c-af9d-7a3538e5a94f}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK FB_SIS_BaseDriver
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 413222 $
+ *	Revision date	:	$Date: 2018-08-31 17:45:01 +0200 (Fri, 31 Aug 2018) $
+ *	Last changed by	:	$Author: b7bolm $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/trunk/01_Software/BCF/BCF/JumpStart/20_Product/10_App/11_Com/10_Lib/10_Conv/12_MFCS/11_SIS/FB_SIS_BaseDriver.TcPOU $
+ *
+ *	Purpose			:	Implements basis Swisslog Interface Standard driver.
+ *
+ *						Principal:
+ *						SIS Basedriver includes a TCP/IP driver to exchange data.
+ *						The constant variable MAX__STREAM_LENGTH represents the
+ *						amount of data, which is possible to be received in one cycle.
+ *						Such a block is called "Receive stream".
+ *						One telegram needs to be smaller than MAX_STREAM_LENGTH. A telegram could 
+ *						be splitted over several TCP blocks.
+ *
+ *						Attention:
+ *						To use this implementation efficiently, the layer above has to takeover
+ *						available data immediately to ensure optimal performance.
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+VAR_INPUT
+	Settings					: ST_CFG_SIS_BaseDriver; // Config for this FunctionBlock
+	pRecvAppData				: PVOID; // Address of receie structure for incoming application data
+	RecvAppDataLen				: UDINT; // Length of received structure (Maximum which could be received)
+END_VAR
+
+VAR_OUTPUT
+	NewAppData					: BOOL; // New application data received 
+	ReceivedAppDataLen			: UDINT; // Received app data length
+	Connected					: BOOL; // Connected
+	SendBufferQuantity			: UDINT; // Amount of waiting send messages			
+END_VAR
+
+VAR
+	Init						: BOOL := FALSE; // Instance is initialized
+	fbTCP_Driver				: FB_TCP_Driver; // Tcp driver
+	fbDebugMsg					: FB_DebugMsg; // Debug Messages
+	DebugMsg					: T_MaxString; // String to compose the logmessage
+	Idx							: DINT; // Index for iteration
+	
+	ReceivedStream				: ARRAY[1..MAX_STREAM_LENGTH] OF BYTE; // From TCP/IP Received stream
+	ReceivedStreamLen			: UDINT; // Received stream length
+	RecvTelegram				: ARRAY[1..MAX_STREAM_LENGTH] OF BYTE; // Telegram out of a stream (A stream could consist of trash or multiple Telegrams)
+	
+	CharacterStream				: ARRAY[1..MAX_STREAM_LENGTH] OF BYTE; // Actual constructed message
+	NextAppData					: ARRAY[1..MAX_STREAM_LENGTH] OF BYTE; // Next app data out of send buffer
+	StringToSend				: T_MAXSTRING; // Message composed by SIS framing telegrams
+	
+	fbRecvBuffer				: FB_MemRingBuffer; // Receive buffer
+	fbSendBuffer				: FB_MemRingBuffer; // Send buffer
+	
+	StreamIdx					: DINT; // Temporary receive index
+	LastRecvMsg					: T_MaxString; // Last received message (For debugging)
+	LastSendMsg					: T_MaxString; // Last sent message (For debugging)
+	LastProcessedMsg			: T_MaxString; // Last processed message (For debugging)
+	LastAppData					: T_MaxString; // Last app data (For debugging)
+	IncomingTrash				: T_MaxString; // Data trash between telegrams
+	
+	StartDelimiterActive		: BOOL; // Start delimiter found (Telegram validation)
+	
+	
+	// Header information
+	STX							: STRING(1); // Starting Character read from the incoming message
+	ETX							: STRING(1); // End character read from the incoming message
+	CRC							: STRING(2); // Last two digits before end character - Default '00'
+	Confirmation				: STRING(1); // Confirmation Character read from the incoming message
+	SequenceNumber				: STRING(SEQUENCE_NO_LENGTH); // Sequence number read from the incoming message
+	Destination					: STRING(6); // Destination station name from the incoming message
+	Source						: STRING(6); // Source station name from the incoming message
+	TelegramType				: STRING(3); // SIS Telegram type from the incoming message
+	TelegramSubTypeNCK			: STRING(1); // SIS Telegram sub-type from the incoming message (NCK only!)
+	Unconfirmed					: STRING(1) := '0'; // Text string to represent a Zero
+	Confirmed					: STRING(1) := '1'; // Text string to represent a One
+	
+	AckNckNo					: STRING(4); // String representation of the sequence number to use in ACK/NCK telegrams
+	RecvSeqNo					: INT; // Last Received sequence number
+	TeleRepetition				: BOOL; // Telegram is a repetition
+
+	SequenceNo					: INT; // Sequence no
+
+	ExpectedRecvSequenceNo		: INT; // Expected receive sequence number
+	SavedRecvSequenceNo			: INT; // Saved receive sequence number
+	ExpectedSendSequenceNo		: INT; // Expected send sequence number
+	SavedSendSequenceNo			: INT; // Saved send sequence number
+	ExpectedSendSequenceNoString: STRING(SEQUENCE_NO_LENGTH);
+	
+	RecvError					: BOOL; // Error in the received message
+	RecvStatus					: T_MAXSTRING; // Status set by Pseudo Constants
+	SentStatus					: T_MAXSTRING; // Status set by Pseudo Constants
+	SendStatus					: T_MAXSTRING; // Status set by Pseudo Constants
+	PreviousRecvStatus			: T_MAXSTRING; // Flag to detect a change
+	PreviousSendStatus			: T_MAXSTRING; // Flag to detect a change
+	
+	StatusNoRecvTele			: T_MAXSTRING := 'StatusNoRecvTele'; // No telegram recieved
+	StatusTeleReceived			: T_MAXSTRING := 'StatusTeleReceived'; // Telegram received
+	StatusRecvTeleRepeat		: T_MAXSTRING := 'StatusRecvTeleRepeat'; // Received telegram is a repeat
+	StatusRecvACK				: T_MAXSTRING := 'StatusRecvACK'; // ACK Received
+	StatusRecvDUM				: T_MAXSTRING := 'StatusRecvDUM'; // DUM Received
+	StatusRecvDUA				: T_MAXSTRING := 'StatusRecvDUA'; // DUA Received 
+	StatusRecvSYN				: T_MAXSTRING := 'StatusRecvSYN'; // SYN Received	
+	StatusRecvSeqNoFault		: T_MAXSTRING := 'StatusRecvSeqNoFault'; // Sequence fault in received telegram
+	StatusRecvBufferFull		: T_MAXSTRING := 'StatusRecvBufferFull'; // Receive buffer is full
+	StatusNoSendTele			: T_MAXSTRING := 'StatusNoSendTele'; // No telegram to send
+	StatusTeleSent				: T_MAXSTRING := 'StatusTeleSent'; // Telegram sent
+	StatusSendTeleRepeat		: T_MAXSTRING := 'StatusSendTeleRepeat'; // Repeated telegram sent
+	StatusSendAPPwithACK		: T_MAXSTRING := 'StatusSendAPPwithACK'; // Send telegram with ACK requirement
+	StatusTeleComplete			: T_MAXSTRING := 'StatusTeleComplete'; // Sending completed - ACK was received
+	StatusSendAPP				: T_MAXSTRING := 'StatusSendAPP'; // Send telegram without ACK requirement
+	StatusSendACK				: T_MAXSTRING := 'StatusSendACK'; // Send ACK telegram
+	StatusSendDUM				: T_MAXSTRING := 'StatusSendDUM'; // Send DUM telegram
+	StatusSendDUA				: T_MAXSTRING := 'StatusSendDUA'; // Send DUA telegram
+	StatusSendSYN				: T_MAXSTRING := 'StatusSendSYN'; // Send SYN telegram
+	StatusSendSeqNoFault		: T_MAXSTRING := 'StatusSendSeqNoFault'; // Sequence fault in sending telegram
+	StatusSendBufferFull		: T_MAXSTRING := 'StatusSendBufferFull'; // Sending buffer is full 
+	
+	StartCharMissing			: T_MAXSTRING := 'StartCharMissing'; // Start character fault
+	CRCCharMissing				: T_MAXSTRING := 'CRCCharMissing'; // CRC character fault
+	EndCharMissing				: T_MAXSTRING := 'EndCharMissing'; // End character fault
+	SourceFault					: T_MAXSTRING := 'SourceFault'; // Source in telegram is different to the configured partner
+	DestinationFault			: T_MAXSTRING := 'DestinationFault'; // Destination in telegram is for a different station
+	TeleNumberFault				: T_MAXSTRING := 'TeleNumberFault'; // Telegram number fault
+	CodeUnknown					: T_MAXSTRING := 'CodeUnknown'; 	// Telegram code is not recognised
+	ErrorTeleRepeat				: T_MAXSTRING := 'ErrorTeleRepeat';
+	RepeatCounterDown			: T_MAXSTRING := 'RepeatCounterDown';
+	SendTeleTooLong				: T_MAXSTRING := 'SendTeleTooLong';
+	
+	ResetRepeatTimeout			: BOOL; // Reset the repeat timer
+	
+	fbRepeatTimeoutDelay		: TON := (PT := REPEAT_TIMEOUT); // Timer for ACK timeout of confirmed telegrams (repeat send)
+	fbIdleTimeoutDelay			: TON := (PT := IDLE_TIMEOUT); // Timer for IDLE timeout (initiates sending of a DUM)
+	fbConnectionMonitorTimeout	: TON := (PT := LINK_LOSS_TIMEOUT); //Timer FOR DUA awaits the response after a DUM
+	
+	String1						: STRING(1); // Temporary String length 1
+	String4						: STRING(4); // Temporary String length 4
+END_VAR
+
+VAR PERSISTENT
+	RecvBufferSpace				: ARRAY[1.. NUMBER_OF_MESSAGES * UDINT_TO_DINT(MAX_STREAM_LENGTH)] OF BYTE; // Space for receive messages
+	SendBufferSpace				: ARRAY[1.. NUMBER_OF_MESSAGES * UDINT_TO_DINT(MAX_STREAM_LENGTH)] OF BYTE; // Space for send messages
+	SendTelegram				: ARRAY[1..MAX_STREAM_LENGTH] OF BYTE; // Current active Send telegram
+	WritePointer				: UDINT; // Write Pointer 
+	SendACK						: BOOL; // Memory to send an ACK telegram
+	SendNCK_SequenceFault		: BOOL; // Memory to send a NCK1 telegram
+	SendNCK_BufferFull			: BOOL; // Memory to send a NCK2 telegram
+	SendSYN						: BOOL; // Memory to send a SYN telegram
+	SendDUM						: BOOL; // Memory to send a DUM telegram
+	SendDUA						: BOOL; // Memory to send a DUA telegram
+	RecvNCK_SequenceFault		: BOOL; // Memory that a NCK1 was received
+	RecvNCK_BufferFull			: BOOL; // Memory that a NCK2 was received
+	WaitForACK					: BOOL; // Memory that an ACK has not yet been recieved for a confirmed telegram
+END_VAR
+
+VAR CONSTANT
+	//REPEAT_TIMEOUT				: TIME := T#10S; // Time after a message will be repeated (Send)
+	//IDLE_TIMEOUT				: TIME := T#1M; // Time after a DUM telegram is sent
+	//LINK_LOSS_TIMEOUT   		: TIME := T#1M10S; // Time after connection will be reestablished 
+	DEFAULT_CRC					: STRING(2) := '00'; // Default CRC type
+	NUMBER_OF_MESSAGES			: DINT := 50; // Number of messages to calculated needed message buffer
+	MAX_STREAM_LENGTH			: UDINT := 30000; // Number of bytes of one message
+	SEQUENCE_NO_LENGTH			: INT := 4; // Number of sequence length
+END_VAR]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[// Cyclic initialized variables
+TeleRepetition := FALSE;
+String1	:= '';
+String4	:= '';
+SequenceNo	:= 0;
+
+(**************************************************************************************************************
+ 	Initialization
+***************************************************************************************************************)
+M_Init(mInit := FALSE);
+
+(**************************************************************************************************************
+   Call TCP/IP Driver
+***************************************************************************************************************)
+fbTCP_Driver(
+	Config 			:= Settings.TCP_Driver,
+	pReceiveData 	:= ADR(ReceivedStream),
+	ReceiveDataLen 	:= SIZEOF(ReceivedStream),
+	ReceivedBytes	=> ReceivedStreamLen,
+	Connected		=> Connected);
+
+// If connection gets lost
+IF NOT fbTCP_Driver.Connected THEN
+	// Init all variables
+	RecvNCK_BufferFull := FALSE;
+	RecvNCK_SequenceFault := FALSE;
+	ExpectedRecvSequenceNo := 1;
+	SavedRecvSequenceNo	:= 0;
+	AckNckNo := '0001';
+
+	// Are we expecting an ACK to come?
+	IF WaitForACK THEN
+		// Update the expected/saved values to include the telegram which is pending 
+		ExpectedSendSequenceNo := 2;
+		SavedSendSequenceNo    := 1;
+
+		// UpdateSequenceNumber in the last sent telegram 
+		String4 := '0001';
+ 		MEMCPY(destAddr := ADR(SendTelegram[3]), srcAddr := ADR(String4), n := INT_TO_UDINT(LEN(String4)));
+	ELSE
+		// Update the expected/saved values to start from the beginning 
+		ExpectedSendSequenceNo := 1;
+		SavedSendSequenceNo    := 0;
+	END_IF
+
+	fbIdleTimeoutDelay(IN := FALSE);
+END_IF
+
+(**************************************************************************************************************
+ 	Receive (Separation of incoming stream into telegrams)
+***************************************************************************************************************)
+A_RecvTelegrams();
+
+(**************************************************************************************************************
+ 	Processed receive telegrams (Interpretation of telegrams)
+***************************************************************************************************************)
+A_RecvProcess();
+
+(**************************************************************************************************************
+ 	Send
+***************************************************************************************************************)
+A_SendProcess();
+
+(**************************************************************************************************************
+ 	Monitor timer
+***************************************************************************************************************)
+(*
+Call connection monitor. If no telegram will be received in 
+LINK_LOSS_TIMEOUT - connection will reestablished.
+
+Will be resetted on each received telegram
+*)
+fbConnectionMonitorTimeout(IN := fbIdleTimeoutDelay.IN);
+IF fbConnectionMonitorTimeout.Q THEN
+	fbConnectionMonitorTimeout(IN := FALSE);
+	fbTCP_Driver.M_RestartCom();
+END_IF
+
+(* 
+Call telegram exchange timer fbIdleTimeoutDelay
+
+At least each IDLE_TIMEOUT a telegram needs to be sent to
+ensure the communication is running. Everytime a new telegram
+is received, fbIdleTimeoutDelay will be resetted. If timer
+reaches IDLE_TIMEOUT, a DUM will be sent.
+
+*)
+fbIdleTimeoutDelay(IN := TRUE);
+IF fbIdleTimeoutDelay.Q THEN
+	// Timeout occoured, send a DUM 
+	SendDUM := TRUE;
+END_IF
+
+(**************************************************************************************************************
+ 	Debug
+***************************************************************************************************************)
+// Only if debug msgs are enabled
+IF Settings.EnableDebugMsg THEN
+	// Compare states
+	IF PreviousRecvStatus <> RecvStatus THEN
+		fbDebugMsg.M_SendInfoMsg(concat('Receive Status: ', RecvStatus));
+	END_IF
+	
+	// Compare states
+	IF PreviousSendStatus <> SendStatus THEN
+		fbDebugMsg.M_SendInfoMsg(concat('Send Status: ', SendStatus));
+	END_IF
+	
+	// Store last states
+	PreviousRecvStatus := RecvStatus;
+	PreviousSendStatus := SendStatus;
+END_IF
+]]></ST>
+    </Implementation>
+    <Action Name="A_RecvProcess" Id="{3b491bf6-1cfc-4461-a14d-87485b746fe2}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************************************
+ 	Receive process: Incoming telegrams will be interpreted and processed
+***************************************************************************************************************)
+// Check if the Buffer contains data to be processed
+// and a valid receive structure is configured
+IF fbRecvBuffer.nCount > 0 AND
+   pRecvAppData > 0 AND
+   RecvAppDataLen > 0 THEN
+   
+	// Read out of buffer
+	fbRecvBuffer.A_RemoveHead(
+		pBuffer := ADR(RecvBufferSpace), 
+		cbBuffer := SIZEOF(RecvBufferSpace), 
+		pRead := ADR(RecvTelegram), 
+		cbRead := SIZEOF(RecvTelegram));
+
+	// If it was not possible to read out of the buffer, bOk = False
+	// cbReturn returns then the required size
+	IF NOT fbRecvBuffer.bOk THEN
+		DebugMsg := CONCAT('CRITICAL - Error A_RecvProcess: Buffer read out. ReturnValue:', UDINT_TO_STRING(fbRecvBuffer.cbReturn));
+		fbDebugMsg.M_SendErrorMsg(DebugMsg);	
+	END_IF
+
+	// Get received telegram as string for debugging
+	F_BlockCopy(
+		pSrc:= ADR(RecvTelegram), 
+		LenSrc:= SIZEOF(RecvTelegram), 
+		pDest:= ADR(LastProcessedMsg), 
+		LenDest:= SIZEOF(LastProcessedMsg));
+
+	// Get the Header information from the telegram and check it for consistancy 
+	MEMCPY(destAddr := ADR(STX), srcAddr := ADR(RecvTelegram[1]), n := 1);
+	MEMCPY(destAddr := ADR(Confirmation), srcAddr := ADR(RecvTelegram[2]), n := 1);
+	MEMCPY(destAddr := ADR(SequenceNumber), srcAddr := ADR(RecvTelegram[3]), n := 4);
+	MEMCPY(destAddr := ADR(Destination), srcAddr := ADR(RecvTelegram[7]), n := 6);
+	MEMCPY(destAddr := ADR(Source), srcAddr := ADR(RecvTelegram[13]), n := 6);
+	MEMCPY(destAddr := ADR(CRC), srcAddr := ADR(RecvTelegram[UDINT_TO_DINT(fbRecvBuffer.cbReturn -2)]), n := 2);
+	MEMCPY(destAddr := ADR(ETX), srcAddr := ADR(RecvTelegram[UDINT_TO_DINT(fbRecvBuffer.cbReturn)]), n := 1);
+
+	// Check start delimiter
+	IF STX <> Settings.StartChar THEN
+		// Error - Start Character is missing 
+		RecvError  := TRUE;
+		RecvStatus := StartCharMissing;
+	
+	// Check destination
+	ELSIF Destination <> Settings.StationName THEN
+		// Error - Telegram destination is NOT this station 
+		RecvError  := TRUE;
+		RecvStatus := DestinationFault;
+	
+	// Check source
+	ELSIF Source <> Settings.PartnerName THEN
+		// Error - Telegram source is NOT from the configured partner 
+		RecvError  := TRUE;
+		RecvStatus := SourceFault;
+		// Check source
+	ELSIF CRC <> DEFAULT_CRC THEN
+		// Error - CRC not available 
+		RecvError  := TRUE;
+		RecvStatus := CRCCharMissing;
+		// Check source
+	ELSIF ETX <> Settings.EndChar THEN
+		// Error - Telegram end char is missing 
+		RecvError  := TRUE;
+		RecvStatus := EndCharMissing;
+	ELSE
+		// If a confirmation is requested
+		IF Confirmation = '1' THEN
+			// Calculate the sequence number 
+			RecvSeqNo := STRING_TO_INT(SequenceNumber);
+
+			// Save the Sequence Number so it can be returned in the ACK/NCK telegram 
+			AckNckNo := SequenceNumber;
+
+			// If received sequence matches the expected sequence
+			IF RecvSeqNo = ExpectedRecvSequenceNo THEN
+				// Confirm this telegram
+				SendACK := TRUE;
+			
+			// If the sequence number is the same like before
+			ELSIF RecvSeqNo = SavedRecvSequenceNo THEN
+				// Telegram repetation
+				SendACK := TRUE;
+				TeleRepetition := TRUE;
+				// Update status
+				RecvStatus := StatusRecvTeleRepeat;
+			ELSE
+				// This telegram sequence number is unknown/out of range,
+				IF fbTCP_Driver.Config.Server THEN
+					// send a SYN if communication is configured as a server					
+					SendSYN := TRUE;
+					RecvNCK_SequenceFault 	:= FALSE;
+					ExpectedRecvSequenceNo	:= 1;
+					SavedRecvSequenceNo	:= 0;
+					AckNckNo		:= '0001';
+					RecvError  		:= TRUE;
+					
+					// Update status
+					RecvStatus 		:= TeleNumberFault;								
+				ELSE
+					// send a NCK with the expected sequence number
+					AckNckNo := INT_TO_STRING(ExpectedRecvSequenceNo);
+					
+					AckNckNo := F_StuffString(
+									InputString := AckNckNo, 
+									StringLength := SEQUENCE_NO_LENGTH, 
+									StuffCharacter := '0',
+									LeftAligned		:= FALSE);
+	
+					SendNCK_SequenceFault := TRUE;
+					RecvError  := TRUE;
+					RecvStatus := TeleNumberFault;					
+				END_IF
+			END_IF
+		END_IF
+	END_IF
+	
+	// Report error status
+	IF RecvError THEN
+		fbFormatString(
+			sFormat := 'Error in SIS msg ReceiveStatus: %s, messsage:  %s', 
+			arg1 := F_String(RecvStatus), 
+			arg2 := F_String(LastProcessedMsg));
+			
+		fbDebugMsg.M_SendErrorMsg(fbFormatString.sOut);		
+	END_IF
+	
+	// Assuming no error or repitition was found in the received telegram 
+	IF NOT RecvError AND NOT TeleRepetition THEN
+		// Get the TYPE of telegram which was received 
+		MEMCPY(destAddr := ADR(TelegramType), srcAddr := ADR(RecvTelegram[19]), n := 3);
+
+		// Something was received - reset idle timer (Connection monitor)
+		fbIdleTimeoutDelay(IN := FALSE);
+		
+		// ACK telegram was received 
+		IF TelegramType = 'ACK' THEN
+			// Clear down NCK fault status 
+			RecvNCK_SequenceFault := FALSE;
+			RecvNCK_BufferFull    := FALSE;
+			RecvStatus := StatusRecvACK;
+			
+			// Get the Sequence Number that was contained in the ACK 
+			MEMCPY(destAddr := ADR(String4), srcAddr := ADR(RecvTelegram[23]), n := 4);
+			SequenceNo := STRING_TO_INT(String4);
+
+			// If this ACK sequence number matches the number of the last sent telegram
+			// there is no need to wait any more
+			IF SequenceNo = SavedSendSequenceNo AND WaitForACK THEN
+				WaitForACK := FALSE;
+			END_IF
+			
+			// Send received telegram as a debug message
+			IF Settings.EnableDebugMsg THEN
+				fbDebugMsg.M_SendInfoMsg(LastProcessedMsg);
+			END_IF
+
+			SentStatus := StatusTeleComplete;
+
+		// NCK telegram was received 
+		ELSIF TelegramType = 'NCK' THEN
+			// Get the SubType of NCK which was recieved 
+			MEMCPY(destAddr := ADR(TelegramSubtypeNCK), srcAddr := ADR(RecvTelegram[22]), n := 1);
+
+			// NCK recieved because of SequenceFault 
+			IF TelegramSubTypeNCK = '1' THEN
+				RecvNCK_BufferFull    := FALSE;
+				RecvNCK_SequenceFault := TRUE;
+				RecvError	      := TRUE;
+				RecvStatus	      := StatusRecvSeqNoFault;
+
+				// Is auto re-sync enabled? 
+				IF Settings.DoAutoSync THEN
+					SendSYN := TRUE;
+					RecvNCK_SequenceFault 	:= FALSE;
+					ExpectedRecvSequenceNo	:= 1;
+					SavedRecvSequenceNo	:= 0;
+					AckNckNo		:= '0001';
+
+					// Are we expecting an ACK to come? 
+					IF WaitForACK THEN
+						// Update the expected/saved values to include the telegram which is pending 
+						ExpectedSendSequenceNo := 2;
+						SavedSendSequenceNo    := 1;
+					ELSE
+						// Update the expected/saved values to start from the beginning 
+						ExpectedSendSequenceNo := 1;
+						SavedSendSequenceNo    := 0;
+					END_IF
+				END_IF
+
+			// NCK received because of BufferFull 
+			ELSIF TelegramSubTypeNCK = '2' THEN
+				// The telegram should be repeated after the BufferFull timeout has elapsed 
+				RecvNCK_SequenceFault := FALSE;
+				RecvNCK_BufferFull    := TRUE;
+				ResetRepeatTimeout    := TRUE;
+				RecvStatus := StatusRecvBufferFull;
+
+			// SubType code was not recognised - Only codes 1 and 2 are valid 
+			ELSE
+				RecvNCK_SequenceFault := TRUE;
+				RecvNCK_BufferFull    := FALSE;
+				RecvError	      := TRUE;
+				RecvStatus := CodeUnknown;
+			END_IF
+
+			// Send received telegram as a debug message
+			IF Settings.EnableDebugMsg THEN
+				fbDebugMsg.M_SendInfoMsg(LastProcessedMsg);
+			END_IF
+		
+		// SYN telegram was received 
+		ELSIF TelegramType = 'SYN' THEN
+			RecvStatus := StatusRecvSYN;
+			// Init all variables 
+			RecvNCK_BufferFull	:= FALSE;
+			RecvNCK_SequenceFault	:= FALSE;
+			ExpectedRecvSequenceNo	:= 1;
+			SavedRecvSequenceNo	:= 0;
+			AckNckNo		:= '0001';
+
+			// Are we expecting an ACK to come? 
+			IF WaitForACK THEN
+				// Update the expected/saved values to include the telegram which is pending 
+				ExpectedSendSequenceNo := 2;
+				SavedSendSequenceNo    := 1;
+
+				// UpdateSequenceNumber in the last sent telegram 
+				String4 := '0001';
+		 		MEMCPY(destAddr := ADR(SendTelegram[3]), srcAddr := ADR(String4), n := INT_TO_UDINT(LEN(String4)));
+
+			ELSE
+				// Update the expected/saved values to start from the beginning 
+				ExpectedSendSequenceNo := 1;
+				SavedSendSequenceNo    := 0;
+			END_IF
+
+			// Send received telegram as a debug message
+			IF Settings.EnableDebugMsg THEN
+				fbDebugMsg.M_SendInfoMsg(LastProcessedMsg);
+			END_IF
+
+		// DUM telegram was received 
+		ELSIF TelegramType = 'DUM' THEN
+			RecvStatus := StatusRecvDUM;
+			// Respond with a DUA 
+			SendDUA := TRUE;
+
+			// Send received telegram as a debug message
+			IF Settings.EnableDebugMsg THEN
+				fbDebugMsg.M_SendInfoMsg(LastProcessedMsg);
+			END_IF
+			
+		// DUA telegram was received 
+		ELSIF TelegramType = 'DUA' THEN
+			RecvStatus := StatusRecvDUA;
+
+			// Send received telegram as a debug message
+			IF Settings.EnableDebugMsg THEN
+				fbDebugMsg.M_SendInfoMsg(LastProcessedMsg);
+			END_IF
+
+		// If still are data ready
+		ELSIF NewAppData THEN
+			// Update state
+			RecvStatus := StatusRecvBufferFull;
+			// Send receive buffer full
+			SendNCK_BufferFull := TRUE;
+			
+			// Reset ACK and idle timer
+			SendACK := FALSE;
+			
+		// Application telegram was recieved 
+		ELSE
+			// Clear 
+			MEMSET(destAddr := pRecvAppData, fillByte := 0, n := RecvAppDataLen);
+			ReceivedAppDataLen := 0;
+			NewAppData := FALSE;
+			
+			// Check that there is application data available
+			IF UDINT_TO_DINT(fbRecvBuffer.cbReturn - 21) > 0 THEN
+				(* 
+				Fill in the application payload
+				Example:
+						<00000DESTINSOURCEABC1234555555666667777700>
+										  | Application payload |
+						| Header len 18   |                     | 3 |  = 21
+				*)
+				F_BlockCopy(
+					pSrc:= ADR(RecvTelegram[19]), 
+					LenSrc:= fbRecvBuffer.cbReturn - 21, 
+					pDest:= pRecvAppData, 
+					LenDest:= RecvAppDataLen);
+				
+				(*
+				When escape characters are enabled 
+				Replacing: < = %(
+				           > = %)
+						   % = %%
+				*)
+				IF Settings.EnableEscapeCharacters THEN
+					F_MemStringReplace(pSrc:= pRecvAppData, SrcLen:=RecvAppDataLen, FindString:= '%(', Replacement:= '<');
+					F_MemStringReplace(pSrc:= pRecvAppData, SrcLen:=RecvAppDataLen, FindString:= '%)', Replacement:= '>');
+					F_MemStringReplace(pSrc:= pRecvAppData, SrcLen:=RecvAppDataLen, FindString:= '%%', Replacement:= '%');
+				END_IF	
+				// Notify highlevel processor
+				NewAppData := TRUE;
+				
+				// Store length
+				ReceivedAppDataLen := fbRecvBuffer.cbReturn - 21;
+				
+				// Store last processed application data (Debugging)
+				F_BlockCopy(
+					pSrc:= pRecvAppData, 
+					LenSrc:= fbRecvBuffer.cbReturn - 21, 
+					pDest:= ADR(LastAppData), 
+					LenDest:= SIZEOF(LastAppData));
+				
+				// Send received telegram as a log message
+				IF Settings.EnableDebugMsg THEN
+					fbDebugMsg.M_SendInfoMsg(LastAppData);
+				END_IF
+				
+				// Do we need to send an ACK? 
+				IF SendAck THEN
+					// Update the Expected and Saved RecvSequenceNo variables 
+					SavedRecvSequenceNo := ExpectedRecvSequenceNo;
+					// So long as limit is not reached, increment the Expected. 
+					IF ExpectedRecvSequenceNo = 9999 THEN
+						ExpectedRecvSequenceNo := 1;
+					ELSE
+						ExpectedRecvSequenceNo := ExpectedRecvSequenceNo + 1;
+					END_IF
+				END_IF
+			ELSE
+				DebugMsg := 'Warning, Telegram received with no application data';
+				fbDebugMsg.M_SendErrorMsg(DebugMsg);
+			END_IF
+		END_IF
+	ELSE
+		// Clear the error 
+		RecvError := FALSE;
+		RecvStatus := StatusNoRecvTele;
+    END_IF
+	
+	//Clear struct
+	MEMSET(destAddr := ADR(RecvTelegram), fillByte := 0, n := SIZEOF(RecvTelegram));
+END_IF]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="A_RecvTelegrams" Id="{d61f3e58-a663-46eb-b522-3b5611557bf4}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************************************
+ 	Receive : Separate incoming stream into telegrams
+***************************************************************************************************************)
+(*
+Data can be received over multiple input streams. 
+Example:
+
+	TCPFrame1 :  <ABCDEF
+	TCPFrame2 :  GHI><AS
+	TCPFrame3 :  AS>
+	
+	Output:  <ABCDEFGHI> , <ASAS>
+*)
+// Process new message which comes from the TCP_Driver  
+IF fbTCP_Driver.NewData THEN
+	// Process Chars of the IncomingMsg one by one 
+	FOR Idx := 1 TO UDINT_TO_DINT(ReceivedStreamLen) DO
+		// Compare to start sign - New start of message found 
+		IF ReceivedStream[Idx] = F_ToASC(Settings.StartChar) THEN
+			(* 
+			If as last control sign a start delimiter was detected already, 
+			print the trash between these start delimiters.
+			
+			Example:  <ABCD<HITHEREIAMVALID>
+					  => Trash : <ABCD
+			*)
+			IF StartDelimiterActive THEN
+				// Get received telegram as string for debugging
+				F_BlockCopy(
+					pSrc:= ADR(CharacterStream), 
+					LenSrc:= SIZEOF(CharacterStream), 
+					pDest:= ADR(IncomingTrash), 
+					LenDest:= SIZEOF(IncomingTrash));
+
+				DebugMsg := CONCAT('Second start delimiter detected. Print Trash:',IncomingTrash);
+				fbDebugMsg.M_SendErrorMsg(DebugMsg);
+			END_IF
+			// Remember start delimiter
+			StartDelimiterActive := TRUE;
+			
+			// Clear internal buffer and reset counter
+			MEMSET(destAddr := ADR(CharacterStream), fillByte := 0, n := MAX_STREAM_LENGTH);
+			StreamIdx := 0;
+			
+			// Increment the BufferIdx for the next iteration 
+			StreamIdx := StreamIdx + 1;
+			
+			// Copy the start char to the beginning of the IncomingBuffer 
+			CharacterStream[StreamIdx] := ReceivedStream[Idx];
+			
+		// Compare to end sign - End of Message found 
+		ELSIF ReceivedStream[Idx] = F_ToASC(Settings.EndChar) THEN
+			// Increment the BufferIdx for the next iteration 
+			StreamIdx := StreamIdx + 1;
+			
+			// Copy the byte to the IncomingBuffer 
+			CharacterStream[StreamIdx] := ReceivedStream[Idx];
+			
+			// Fill buffer
+			fbRecvBuffer.A_AddTail(
+				pBuffer := ADR(RecvBufferSpace), 
+				cbBuffer := SIZEOF(RecvBufferSpace), 
+				pWrite := ADR(CharacterStream), 
+				cbWrite := DINT_TO_UDINT(StreamIdx));
+				
+			// Get received telegram as string for debugging
+			F_BlockCopy(
+				pSrc:= ADR(CharacterStream), 
+				LenSrc:= SIZEOF(CharacterStream), 
+				pDest:= ADR(LastRecvMsg), 
+				LenDest:= SIZEOF(LastRecvMsg));
+
+			// Clear internal buffer and reset counter 
+			MEMSET(destAddr := ADR(CharacterStream), fillByte := 0, n := MAX_STREAM_LENGTH);
+			
+			// Reset values
+			StreamIdx := 0;
+			StartDelimiterActive := FALSE;
+		ELSE
+			// Increment the BufferIdx for the next iteration 
+			StreamIdx := StreamIdx + 1;
+			
+			// Copy the byte to the IncomingBuffer 
+			CharacterStream[StreamIdx] := ReceivedStream[Idx];
+		END_IF
+		
+		// Check for overflow
+		IF StreamIdx > UDINT_TO_DINT(MAX_STREAM_LENGTH) THEN
+			(*
+			Even telegrams could be received separated
+			in several TCP Frames, the size of one telegram
+			cannot be bigger than MAX_RECEIVE_STREAM_LENGTH
+			*)
+			fbDebugMsg.M_SendErrorMsg(CONCAT('Telegram longer than MAX_RECEIVE_STREAM_LENGTH',UDINT_TO_STRING(MAX_STREAM_LENGTH)));
+			// Reset
+			StreamIdx := 0;
+		END_IF
+	END_FOR
+	
+	// Inform TCP Driver data was processed
+	fbTCP_Driver.M_DataProcessed();
+END_IF]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="A_SendProcess" Id="{c4c50d20-7a30-475d-bb58-88cf7f7dcfbf}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************************************
+ 	Send process: Handle outgoing messages
+***************************************************************************************************************)
+// Update output
+SendBufferQuantity := fbSendBuffer.nCount;
+
+// If the outgoing channel is free to send a new message
+IF NOT fbTCP_Driver.SendBusy THEN
+	// Does a SYN need to be sent? 
+	IF SendSYN THEN
+		// Compose the message 
+		StringToSend := CONCAT(Settings.StartChar, Unconfirmed); // Unconfirmed Telegram 
+		StringToSend := CONCAT(StringToSend, '0000'); // 0000 Sequence Number 
+		StringToSend := CONCAT(StringToSend, Settings.PartnerName); // Add destination 
+		StringToSend := CONCAT(StringToSend, Settings.StationName); // Add source 
+		StringToSend := CONCAT(StringToSend, 'SYN00000'); // Add application data 
+		StringToSend := CONCAT(StringToSend, '00');	// Add crc field 
+		StringToSend := CONCAT(StringToSend, Settings.EndChar); // Add terminating character 
+		
+		fbTCP_Driver.M_Send(
+			mpSendData := ADR(StringToSend),
+			mSendDataLen := INT_TO_UDINT(LEN(StringToSend)));
+		
+		// Send telegram as a log message
+		IF Settings.EnableDebugMsg THEN
+			fbDebugMsg.M_SendInfoMsg(StringToSend);
+		END_IF
+			
+		// Update status 
+		SendSYN := FALSE;
+		fbRepeatTimeoutDelay(IN := FALSE);
+		fbIdleTimeoutDelay(IN := FALSE);
+		SendStatus := StatusSendSYN;
+
+	// Does a DUM need to be sent? 
+	ELSIF SendDUM THEN
+		// Compose the message 
+		StringToSend := CONCAT(Settings.StartChar, Unconfirmed); // Unconfirmed Telegram 
+		StringToSend := CONCAT(StringToSend, '0000'); // 0000 Sequence Number 
+		StringToSend := CONCAT(StringToSend, Settings.PartnerName); // Add destination 
+		StringToSend := CONCAT(StringToSend, Settings.StationName); // Add source 
+		StringToSend := CONCAT(StringToSend, 'DUM00000'); // Add application data 
+		StringToSend := CONCAT(StringToSend, '00');	// Add crc field 
+		StringToSend := CONCAT(StringToSend, Settings.EndChar); // Add terminating character 
+
+		fbTCP_Driver.M_Send(
+			mpSendData := ADR(StringToSend),
+			mSendDataLen := INT_TO_UDINT(LEN(StringToSend)));
+		
+		// Send telegram as a log message
+		IF Settings.EnableDebugMsg THEN
+			fbDebugMsg.M_SendInfoMsg(StringToSend);
+		END_IF
+		
+		// Update status 
+		SendDUM := FALSE;
+		fbIdleTimeoutDelay(IN := FALSE);
+		SendStatus := StatusSendDUM;
+
+	// Does an ACK need to be sent? 
+	ELSIF SendACK THEN
+		// Compose the message 
+		StringToSend := CONCAT(Settings.StartChar, Unconfirmed); 	// Unconfirmed Telegram 
+		StringToSend := CONCAT(StringToSend, '0000'); // 0000 Sequence Number 
+		StringToSend := CONCAT(StringToSend, Settings.PartnerName); // Add destination 
+		StringToSend := CONCAT(StringToSend, Settings.StationName); // Add source 
+		StringToSend := CONCAT(StringToSend, 'ACK0'); // Add application data 
+		StringToSend := CONCAT(StringToSend, AckNckNo);	// Add application data 
+		StringToSend := CONCAT(StringToSend, '00');	// Add crc field 
+		StringToSend := CONCAT(StringToSend, Settings.EndChar); // Add terminating character 
+
+		fbTCP_Driver.M_Send(
+			mpSendData := ADR(StringToSend),
+			mSendDataLen := INT_TO_UDINT(LEN(StringToSend)));
+		
+		// Send telegram as a log message
+		IF Settings.EnableDebugMsg THEN
+			fbDebugMsg.M_SendInfoMsg(StringToSend);
+		END_IF
+		
+		// Update status 
+		SendACK := FALSE;
+		fbIdleTimeoutDelay(IN := FALSE);
+		SendStatus := StatusSendACK;
+
+	// Does a NCK Sequence Fault need to be sent? 
+	ELSIF SendNCK_SequenceFault THEN
+		// Compose the message 
+		StringToSend := CONCAT(Settings.StartChar, Unconfirmed); 	// Unconfirmed Telegram 
+		StringToSend := CONCAT(StringToSend, '0000'); // 0000 Sequence Number 
+		StringToSend := CONCAT(StringToSend, Settings.PartnerName); // Add destination 
+		StringToSend := CONCAT(StringToSend, Settings.StationName); // Add source 
+		StringToSend := CONCAT(StringToSend, 'NCK1'); // Add application data 
+		StringToSend := CONCAT(StringToSend, AckNckNo);	// Add application data 
+		StringToSend := CONCAT(StringToSend, '00');	// Add crc field 
+		StringToSend := CONCAT(StringToSend, Settings.EndChar); // Add terminating character 
+
+		fbTCP_Driver.M_Send(
+			mpSendData := ADR(StringToSend),
+			mSendDataLen := INT_TO_UDINT(LEN(StringToSend)));
+		
+		// Send telegram as a log message
+		IF Settings.EnableDebugMsg THEN
+			fbDebugMsg.M_SendInfoMsg(StringToSend);
+		END_IF
+		
+		// Update status 
+		SendNCK_SequenceFault := FALSE;
+		fbIdleTimeoutDelay(IN := FALSE);
+		SendStatus := StatusSendSeqNoFault;
+
+	// Does a NCK BufferFull need to be sent? 
+	ELSIF SendNCK_BufferFull THEN
+		// Compose the message 
+		StringToSend := CONCAT(Settings.StartChar, Unconfirmed); 	// Unconfirmed Telegram 
+		StringToSend := CONCAT(StringToSend, '0000'); // 0000 Sequence Number 
+		StringToSend := CONCAT(StringToSend, Settings.PartnerName); // Add destination 
+		StringToSend := CONCAT(StringToSend, Settings.StationName); // Add source 
+		StringToSend := CONCAT(StringToSend, 'NCK20000'); // Add application data 
+		StringToSend := CONCAT(StringToSend, '00');	// Add crc field 
+		StringToSend := CONCAT(StringToSend, Settings.EndChar); // Add terminating character 
+
+		fbTCP_Driver.M_Send(
+			mpSendData := ADR(StringToSend),
+			mSendDataLen := INT_TO_UDINT(LEN(StringToSend)));
+		
+		// Send telegram as a log message
+		IF Settings.EnableDebugMsg THEN
+			fbDebugMsg.M_SendInfoMsg(StringToSend);
+		END_IF
+		
+		// Update status 
+		SendNCK_BufferFull := FALSE;
+		fbRepeatTimeoutDelay(IN := FALSE);
+		fbIdleTimeoutDelay(IN := FALSE);
+		SendStatus := StatusSendBufferFull;
+
+	// Does a DUA need to be sent? 
+	ELSIF SendDUA THEN
+		// Compose the message 
+		StringToSend := CONCAT(Settings.StartChar, Unconfirmed); // Unconfirmed Telegram 
+		StringToSend := CONCAT(StringToSend, '0000'); // 0000 Sequence Number 
+		StringToSend := CONCAT(StringToSend, Settings.PartnerName); // Add destination 
+		StringToSend := CONCAT(StringToSend, Settings.StationName); // Add source 
+		StringToSend := CONCAT(StringToSend, 'DUA00000'); // Add application data 
+		StringToSend := CONCAT(StringToSend, '00');	// Add crc field 
+		StringToSend := CONCAT(StringToSend, Settings.EndChar); // Add terminating character 
+
+		fbTCP_Driver.M_Send(
+			mpSendData := ADR(StringToSend),
+			mSendDataLen := INT_TO_UDINT(LEN(StringToSend)));
+		
+		// Send telegram as a log message
+		IF Settings.EnableDebugMsg THEN
+			fbDebugMsg.M_SendInfoMsg(StringToSend);
+		END_IF
+		
+		// Update status 
+		SendDUA := FALSE;
+		fbIdleTimeoutDelay(IN := FALSE);
+		SendStatus := StatusSendDUA;
+
+	// An ACK was requested - wait until response was received
+	ELSIF WaitForACK THEN
+		// Wait until response...
+		fbRepeatTimeoutDelay(IN := TRUE);
+
+		IF fbRepeatTimeoutDelay.Q THEN
+			// Retry - send message again...
+			fbRepeatTimeoutDelay(IN := FALSE);
+			fbIdleTimeoutDelay(IN := FALSE);
+
+			// Send 
+			fbTCP_Driver.M_Send(
+				mpSendData := ADR(SendTelegram),
+				mSendDataLen := WritePointer);
+				
+			IF Settings.EnableDebugMsg THEN
+				F_BlockCopy(
+					pSrc := ADR(SendTelegram),
+					LenSrc := WritePointer, 
+					pDest := ADR(StringToSend),
+					LenDest := SIZEOF(StringToSend));
+					
+				DebugMsg := CONCAT('WaitForAck Send, Telegram:', StringToSend);
+				DebugMsg := CONCAT(', Length:', UDINT_TO_STRING(WritePointer));
+				fbDebugMsg.M_SendInfoMsg(DebugMsg);
+			END_IF
+
+		END_IF
+
+	// Check if something needs to be sent
+	ELSIF fbSendBuffer.nCount > 0 THEN	
+		// Clean send telegram structure and reset temporary values
+		MEMSET(destAddr := ADR(SendTelegram), 0, SIZEOF(SendTelegram));
+		WritePointer := 0;
+		
+		// Add start delimiter STX
+		F_AssembleByteStream(
+			pSrc := ADR(Settings.StartChar),
+			SrcLen := INT_TO_UDINT(LEN(Settings.StartChar)), 
+			pDest := ADR(SendTelegram), 
+			DestLen := SIZEOF(SendTelegram),
+			WritePointer := WritePointer);
+		
+		// Confirmed or Unconfirmed
+		IF Settings.Confirmed THEN
+			// Add confirmation flag
+			F_AssembleByteStream(
+				pSrc := ADR(Confirmed), 
+				SrcLen := INT_TO_UDINT(LEN(Confirmed)),
+				pDest := ADR(SendTelegram), 
+				DestLen := SIZEOF(SendTelegram),
+				WritePointer := WritePointer);
+			
+			// Add leading 0 to sequence number
+			ExpectedSendSequenceNoString := F_StuffString(
+												InputString := INT_TO_STRING(ExpectedSendSequenceNo), 
+												StringLength := SEQUENCE_NO_LENGTH, 
+												StuffCharacter := '0',
+												LeftAligned		:= FALSE);
+				
+			// Add sequence number
+			F_AssembleByteStream(
+				pSrc := ADR(ExpectedSendSequenceNoString), 
+				SrcLen := INT_TO_UDINT(LEN(ExpectedSendSequenceNoString)),
+				pDest := ADR(SendTelegram), 
+				DestLen := SIZEOF(SendTelegram),
+				WritePointer := WritePointer);
+			
+			// Set flag that this telegram needs to be acknowledged	
+			WaitForAck := TRUE;
+
+			// Update Sequence No in preparation for next telegram 
+			SavedSendSequenceNo := ExpectedSendSequenceNo;
+			IF ExpectedSendSequenceNo = 9999 THEN
+				ExpectedSendSequenceNo := 1;
+			ELSE
+				ExpectedSendSequenceNo := ExpectedSendSequenceNo + 1;
+			END_IF
+		// Unconfirmed
+		ELSE
+			// Add unconfirmation flag
+			F_AssembleByteStream(
+				pSrc := ADR(Unconfirmed), 
+				SrcLen := INT_TO_UDINT(LEN(Unconfirmed)),
+				pDest := ADR(SendTelegram), 
+				DestLen := SIZEOF(SendTelegram),
+				WritePointer := WritePointer);
+
+			// Append the default SequenceNo. 
+			F_AssembleByteStream(
+				pSrc := ADR('0000'), 
+				SrcLen := 4,
+				pDest := ADR(SendTelegram), 
+				DestLen := SIZEOF(SendTelegram),
+				WritePointer := WritePointer);
+		END_IF
+
+		// Append destination
+		F_AssembleByteStream(
+			pSrc := ADR(Settings.PartnerName),
+			SrcLen := INT_TO_UDINT(LEN(Settings.PartnerName)),
+			pDest := ADR(SendTelegram), 
+			DestLen := SIZEOF(SendTelegram),
+			WritePointer := WritePointer);
+		
+		// Append source
+		F_AssembleByteStream(
+			pSrc := ADR(Settings.StationName), 
+			SrcLen := INT_TO_UDINT(LEN(Settings.StationName)),
+			pDest := ADR(SendTelegram), 
+			DestLen := SIZEOF(SendTelegram),
+			WritePointer := WritePointer);
+		
+		// Read application data out of buffer
+		fbSendBuffer.A_RemoveHead(
+			pBuffer := ADR(SendBufferSpace), 
+			cbBuffer := SIZEOF(SendBufferSpace), 
+			pRead := ADR(NextAppData), 
+			cbRead := SIZEOF(NextAppData));
+			
+		// If a problem happend during buffer read out
+		IF fbSendBuffer.bOk THEN
+			// Move application data into full telegram
+			F_BlockCopy(
+				pSrc := ADR(NextAppData),
+				LenSrc := fbSendBuffer.cbReturn, 
+				pDest := ADR(SendTelegram) + WritePointer,
+				LenDest := SIZEOF(SendTelegram) - WritePointer);
+				
+			// Update pointer
+			WritePointer := WritePointer + fbSendBuffer.cbReturn;
+		ELSE
+			DebugMsg := CONCAT('CRITICAL - Error A_SendProcess: Buffer read out. ReturnValue:', UDINT_TO_STRING(fbSendBuffer.cbReturn));
+			fbDebugMsg.M_SendErrorMsg(DebugMsg);
+		END_IF
+			
+		// Append crc
+		F_AssembleByteStream(
+			pSrc := ADR('00'),
+			SrcLen := 2, 
+			pDest := ADR(SendTelegram), 
+			DestLen := SIZEOF(SendTelegram),
+			WritePointer := WritePointer);
+
+		// Append EndChar
+		F_AssembleByteStream(
+			pSrc := ADR(Settings.EndChar),
+			SrcLen := INT_TO_UDINT(LEN(Settings.EndChar)),
+			pDest := ADR(SendTelegram), 
+			DestLen := SIZEOF(SendTelegram),
+			WritePointer := WritePointer);
+
+		// Forward assembled message to TCP driver
+		// Length WritePointer is correct because it starts with 0
+		fbTCP_Driver.M_Send(
+			mpSendData := ADR(SendTelegram),
+			mSendDataLen := WritePointer);
+		
+		// Get send telegram as string for debugging
+		F_BlockCopy(
+			pSrc := ADR(SendTelegram),
+			LenSrc := WritePointer, 
+			pDest := ADR(LastSendMsg),
+			LenDest := SIZEOF(LastSendMsg));
+
+		// Send telegram as a log message
+		IF Settings.EnableDebugMsg THEN
+			fbDebugMsg.M_SendInfoMsg(LastSendMsg);
+		END_IF
+
+		fbRepeatTimeoutDelay(IN := FALSE);
+		fbIdleTimeoutDelay(IN := FALSE);
+	END_IF
+END_IF]]></ST>
+      </Implementation>
+    </Action>
+    <Method Name="M_Init" Id="{08cc96bb-de2a-48f4-978b-0bf9e5a8c776}">
+      <Declaration><![CDATA[METHOD M_Init : BOOL
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 413222 $
+ *	Revision date	:	$Date: 2018-08-31 17:45:01 +0200 (Fri, 31 Aug 2018) $
+ *	Last changed by	:	$Author: b7bolm $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/trunk/01_Software/BCF/BCF/JumpStart/20_Product/10_App/11_Com/10_Lib/10_Conv/12_MFCS/11_SIS/FB_SIS_BaseDriver.TcPOU $
+ *
+ *	Purpose			:	Initialize SIS Base driver.
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+VAR_INPUT
+	mInit		: BOOL; // Force init
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[// If instance is not initialized or init is forced
+IF NOT Init OR mInit THEN
+    // Send log message
+    fbDebugMsg.M_SendInfoMsg('Initialization done');
+	// reestablish connection
+	fbTCP_Driver.Config := Settings.TCP_Driver;
+	fbTCP_Driver.M_Init(TRUE);
+	// Init done
+    Init := TRUE;
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_ProcessedMsg" Id="{f074be41-545f-40e0-8f52-df73f0528a7e}">
+      <Declaration><![CDATA[METHOD M_ProcessedMsg : BOOL
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 413222 $
+ *	Revision date	:	$Date: 2018-08-31 17:45:01 +0200 (Fri, 31 Aug 2018) $
+ *	Last changed by	:	$Author: b7bolm $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/trunk/01_Software/BCF/BCF/JumpStart/20_Product/10_App/11_Com/10_Lib/10_Conv/12_MFCS/11_SIS/FB_SIS_BaseDriver.TcPOU $
+ *
+ *	Purpose			:	Data processed - Reset new data.
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+VAR_INPUT
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+// Reset new data ready flag
+NewAppData := FALSE;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_SendAppData" Id="{ace38e54-2984-4d87-89f6-40537cd4ed4f}">
+      <Declaration><![CDATA[METHOD M_SendAppData : BOOL
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 413222 $
+ *	Revision date	:	$Date: 2018-08-31 17:45:01 +0200 (Fri, 31 Aug 2018) $
+ *	Last changed by	:	$Author: b7bolm $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/trunk/01_Software/BCF/BCF/JumpStart/20_Product/10_App/11_Com/10_Lib/10_Conv/12_MFCS/11_SIS/FB_SIS_BaseDriver.TcPOU $
+ *
+ *	Purpose			:	Add application data to SIS Base Driver.
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+VAR_INPUT
+	mpSendData		: PVOID; // Address to the send data storage
+	mSendDataLen	: UDINT; // Data length which need to be sent
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[(*
+When escape characters are enabled 
+Replacing: < = %(
+		   > = %)
+		   % = %%
+*)
+IF Settings.EnableEscapeCharacters THEN
+	F_MemStringReplace(pSrc:= mpSendData, SrcLen:=mSendDataLen, FindString:= '<', Replacement:= '%(');
+	F_MemStringReplace(pSrc:= mpSendData, SrcLen:=mSendDataLen, FindString:= '>', Replacement:= '%)');
+	F_MemStringReplace(pSrc:= mpSendData, SrcLen:=mSendDataLen, FindString:= '%', Replacement:= '%%');
+END_IF	
+
+// If less space is in buffer available, than requested
+IF (fbSendBuffer.cbBuffer - fbSendBuffer.cbSize) < mSendDataLen THEN
+	// IF overwirte is activated, clear buffer
+	IF Settings.EnableBufferOverwrite THEN
+		fbSendBuffer.A_Reset();
+	END_IF
+END_IF
+
+// Fill buffer
+fbSendBuffer.A_AddTail(
+	pBuffer := ADR(SendBufferSpace), 
+	cbBuffer := SIZEOF(SendBufferSpace), 
+	pWrite := mpSendData, 
+	cbWrite := mSendDataLen);
+	
+M_SendAppData := fbSendBuffer.bOk;]]></ST>
+      </Implementation>
+    </Method>
+    <ObjectProperties>
+      <XmlArchive>
+        <Data>
+          <o xml:space="preserve" t="UMLStereoTypeContainerObject">
+            <v n="IsType" t="UMLType">BaseArea</v>
+            <v n="Stereotype">""</v>
+            <d n="Stereotypes" t="Hashtable" />
+          </o>
+        </Data>
+        <TypeList>
+          <Type n="Hashtable">System.Collections.Hashtable</Type>
+          <Type n="String">System.String</Type>
+          <Type n="UMLStereoTypeContainerObject">{30250973-b110-4e31-b562-c102e042dca4}</Type>
+          <Type n="UMLType">{0197b136-405a-42ee-bb27-fd08b621d0cf}</Type>
+        </TypeList>
+      </XmlArchive>
+    </ObjectProperties>
+    <LineIds Name="FB_SIS_BaseDriver">
+      <LineId Id="3" Count="111" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_SIS_BaseDriver.A_RecvProcess">
+      <LineId Id="2" Count="348" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_SIS_BaseDriver.A_RecvTelegrams">
+      <LineId Id="2" Count="100" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_SIS_BaseDriver.A_SendProcess">
+      <LineId Id="2" Count="334" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_SIS_BaseDriver.M_Init">
+      <LineId Id="3" Count="8" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_SIS_BaseDriver.M_ProcessedMsg">
+      <LineId Id="3" Count="1" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_SIS_BaseDriver.M_SendAppData">
+      <LineId Id="3" Count="26" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

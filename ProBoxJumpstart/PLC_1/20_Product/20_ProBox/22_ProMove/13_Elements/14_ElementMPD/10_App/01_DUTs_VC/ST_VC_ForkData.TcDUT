@@ -1,0 +1,23 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <DUT Name="ST_VC_ForkData" Id="{f28def70-5185-4791-b779-fdf4075017d0}">
+    <Declaration><![CDATA[TYPE ST_VC_ForkData :
+STRUCT
+	(*Request_MoveFork_Out	: BOOL; //reguest fork to outer (left or right) position.
+	Request_MoveFork_Home	: BOOL; //request fork to home (center) position
+	Request_Fork			: E_FunctionForkOrder;
+
+	Fork_IsHome				: BOOL; //Current ForkPos is in center position
+	Fork_IsOutLeft			: BOOL;	//Current ForkPos is in out left position
+	Fork_IsOutRight			: BOOL;	//Current ForkPos is in out right position*)
+	
+	State					: INT; // state in state machine
+	ForkStatus				: ST_ForkState;
+	ForkRequest				: ST_ForkRequest;
+	ForkEnableDrive			: BOOL; // Enable drive ready on element
+	
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

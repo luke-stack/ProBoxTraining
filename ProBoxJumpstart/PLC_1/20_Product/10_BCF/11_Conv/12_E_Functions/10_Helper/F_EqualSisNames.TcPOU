@@ -1,0 +1,97 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.4">
+  <POU Name="F_EqualSisNames" Id="{6590e064-bcb8-4303-a901-e2e8a490a845}" SpecialFunc="None">
+    <Declaration><![CDATA[// compares two sis names, all characters (except numbers and letters) will be ignored
+FUNCTION PUBLIC F_EqualSisNames : BOOL
+
+(**************************************************************************************
+ * Application   : BoxControl Framework
+ * Revision date : $Date: 2013-09-23 11:26:06 +0200 (Wed, 23 Sep 2015) $
+ * Author        : CDC
+ * ------------------------------------------------------------------------------------
+ * © Swisslog AG * Swisslog is not liable for any usage of this source code that is not agreed
+ * on between Swisslog and the other party. The mandatory legal liability remains * unaffected.
+ * ------------------------------------------------------------------------------------
+ * Project revision history:
+ *
+ * VERSION DATE         INITIALS     DESCRIPTION
+ * 0.0     DD.MM.YYYY   (name)       (explain customized modifications)
+ *
+ **************************************************************************************)
+
+//***********************************************************************************************************
+VAR_INPUT
+  Name1                 : STRING[NAME_LENGTH]         := '';
+  Name2                 : STRING[NAME_LENGTH]         := '';
+END_VAR
+
+//***********************************************************************************************************
+VAR
+  Idx1                  : WORD                        := 0;
+  Idx2                  : WORD                        := 0;
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[
+//***********************************************************************************************************
+//** check each character ***********************************************************************************
+Idx1:= 0;
+Idx2:= 0;
+
+WHILE TRUE DO
+	//-- seek next number @ Name1 ---------------------------------------------------------
+	WHILE Name1[Idx1] <> 16#00 DO	// hint: AND connects stronger than OR, but brackets are not recommended by coding "guidelines"
+		//-- is number/letter -> stopp --------------
+		IF(Name1[Idx1] >= 16#30)AND(Name1[Idx1] <= 16#39)       // 0..9
+		OR(Name1[Idx1] >= 16#41)AND(Name1[Idx1] <= 16#5A)       // A..Z
+		OR(Name1[Idx1] >= 16#61)AND(Name1[Idx1] <= 16#7A) THEN  // a..z
+			EXIT;
+		END_IF
+		//-- continue -------------------------------
+		Idx1:= Idx1 + 1;
+	END_WHILE
+
+	//-- seek next number @ Name2 ---------------------------------------------------------
+	WHILE Name2[Idx2] <> 16#00 DO	// hint: AND connects stronger than OR, but brackets are not recommended by coding "guidelines"
+		//-- is number/letter -> stopp --------------
+		IF (Name2[Idx2] >= 16#30)AND(Name2[Idx2] <= 16#39)      // 0..9
+		 OR(Name2[Idx2] >= 16#41)AND(Name2[Idx2] <= 16#5A)      // A..Z
+		 OR(Name2[Idx2] >= 16#61)AND(Name2[Idx2] <= 16#7A) THEN // a..z
+
+			EXIT;
+		END_IF
+		//-- continue -------------------------------
+		Idx2:= Idx2 + 1;
+	END_WHILE
+
+	//-- both names end here toghether ----------------------------------------------------
+	IF Name1[Idx1] = 16#00 AND Name2[Idx2] = 16#00 THEN
+		EXIT;
+
+	//-- one of the names end here --------------------------------------------------------
+	ELSIF Name1[Idx1] = 16#00 OR Name2[Idx2] = 16#00 THEN
+		F_EqualSisNames:= FALSE;
+		RETURN;
+
+	//-- compare --------------------------------------------------------------------------
+	ELSIF Name1[Idx1] <> Name2[Idx2] THEN
+		F_EqualSisNames:= FALSE;
+		RETURN;
+	END_IF
+
+	// next characters --------------------------------------------------------------------
+	Idx1:= Idx1 + 1;
+	Idx2:= Idx2 + 1;
+
+END_WHILE
+
+
+
+
+//***********************************************************************************************************
+//** done ***************************************************************************************************
+F_EqualSisNames:= TRUE;
+]]></ST>
+    </Implementation>
+  </POU>
+</TcPlcObject>

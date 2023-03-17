@@ -1,0 +1,260 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.12">
+  <POU Name="FB_SeqEstimateAllNextTUs" Id="{65233042-375c-4e0c-af63-8376f6905d6f}" SpecialFunc="None">
+    <Declaration><![CDATA[/// Estimates next TU after the requesting one. Does the same as FB_SeqEstimateNextTU
+/// but can handle multiple destination streams.
+FUNCTION_BLOCK FB_SeqEstimateAllNextTUs IMPLEMENTS I_SeqEstimateNext
+(************************************************************************************** 
+* 	Application 		: BoxControl Framework 
+* 	Revision 			: $Revision: 404877 $ 
+* 	Revision date 		: $Date: 2018-04-26 14:10:34 +0200 (Thu, 26 Apr 2018) $ 
+* 	Last changed by 	: $Author: b7ernsb $ 
+* 	URL 				: $URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/21_Projects/BCF_2.0/trunk/BCF/BCF/JumpStart/20_Product/10_App/12_E_Functions/10_Lib/10_Conv/FB_FunctionConv.TcPOU $ 
+* ------------------------------------------------------------------------------------ 
+* 	© Swisslog AG 
+* 	Swisslog is not liable for any usage of this source code that is not agreed 
+* 	on between Swisslog and the other party. The mandatory legal liability remains 
+* 	unaffected. 
+* ------------------------------------------------------------------------------------ 
+* 	Revision History: 
+* 
+* 	VERSION 		DATE 			INITIALS 			DESCRIPTION 
+* 	0.1 			23.05.2018 		mbo 				Created.
+*	0.2				08.02.2019		mbo					Racecondition fixed
+* 
+**************************************************************************************)
+VAR_INPUT
+	Execute					: BOOL; // Requires rising edge for new request
+	TU_Present				: BOOL; // A TU is present on branch A
+	TU_Index				: DINT; // Waiting TU data index A
+	Branch					: I_BranchCheckpoint; // Branch to check for next branch
+	BranchExclusionMode		: BOOL := FALSE; // False = TU on a branch is possible next, TRUE = TU on a branch is excluded as possible next
+END_VAR
+VAR_OUTPUT
+	Busy					: BOOL; // Process ongoing
+	Error					: BOOL; // Error during process (configuration error)
+	NextTU_List				: ARRAY[1..MAX_LIST_ENTRIES] OF ST_SeqEntry; // List of next expected TUs for all passing sequences
+	ListCount				: INT; // Available entries in list
+END_VAR
+VAR_IN_OUT
+	TU_Table				: ARRAY[0..Conveyor.NUMBER_OF_TU_DATA] OF ST_TU_Data; // TU Table
+END_VAR
+VAR
+	State					: INT; // State machine 0: Request 1: Search
+	fbTrigExecute			: R_TRIG; // Trigger new request
+	SequenceDataPresent 	: BOOL; // Sequence data available
+	RequestedDestination	: ST_PositionIdent; // Requested destination for search
+	RequestedDestinationSlot: INT; // Requested destination slot for search
+	fbSeqGetNextTU			: FB_SeqGetNextTU; // Get next following TU of this sequence
+	NextTU_Index			: DINT;
+END_VAR
+VAR CONSTANT
+	MAX_LIST_ENTRIES		: INT := SequencingParameter.MAX_ESTIMATE_ALL_NEXT_LIST;
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[// Monitor new request trigger
+fbTrigExecute(CLK := Execute);
+
+CASE State OF
+	// Wait for a new TU
+	0:
+		// Wait for new start trigger
+		IF fbTrigExecute.Q THEN
+			// Validate inputs
+			IF Branch = 0 THEN
+				Error := TRUE;
+				RETURN;
+			END_IF
+			
+			// Process started...
+			Busy := TRUE;
+			Error := FALSE;
+			NextTU_Index := 0;
+			RequestedDestination.eFunctionNumber := E_FunctionNumber.F_BEGIN_FUNCTION;
+			RequestedDestination.ZoneNumber := 0;
+
+			// When a requesting TU is present
+			IF TU_Present THEN
+
+				IF TU_Index > 0 THEN
+					// If the TU consists of sequencing information
+					SequenceDataPresent := TU_Table[TU_Index].DataSet.Sequence > 0 AND
+					                       TU_Table[TU_Index].Destination[1].eFunctionNumber > 0;
+										   
+					IF SequenceDataPresent  THEN
+						// Store destination to valid after search
+						RequestedDestination := TU_Table[TU_Index].Destination[1];
+						RequestedDestinationSlot := TU_Table[TU_Index].DataSet.DestinationSlot;
+						
+						// Search next tu for this sequence
+						fbSeqGetNextTU(
+							Execute:= TRUE, 
+							TU_Index:= TU_Index, 
+							Destination:= TU_Table[TU_Index].Destination[1], 
+							DestinationSlot:= TU_Table[TU_Index].DataSet.DestinationSlot, 
+							Sequence:= TU_Table[TU_Index].DataSet.Sequence, 
+							SubSequence:= TU_Table[TU_Index].DataSet.SubSequence, 
+							Branch := Branch,
+							BranchExclusionMode := BranchExclusionMode,
+							TU_Table := TU_Table);
+
+						State := 1;
+					ELSE
+						// Invalid TU data
+						Busy := FALSE;
+						State := 0;
+					END_IF
+				ELSE
+					// No TU data, not part of a sequence
+					Busy := FALSE;
+					State := 0;	
+				END_IF
+			ELSE
+				// No TU, stay
+				Busy := FALSE;
+				State := 0;
+			END_IF
+		END_IF
+	
+	// Search Next TU
+	1:
+		fbSeqGetNextTU(Execute:= FALSE, TU_Table := TU_Table);
+		
+		IF NOT fbSeqGetNextTU.Busy THEN
+			IF NOT fbSeqGetNextTU.Error THEN
+				NextTU_Index := fbSeqGetNextTU.NextTU_Index;
+				// A next was found, store information to detect TU Data changes
+				IF NextTU_Index > 0 THEN			
+					M_AddToList(NextTU_Index, TU_Table[NextTU_Index]);
+				END_IF
+				
+				Busy := FALSE;
+				State := 0;
+			ELSE
+				// Error during search
+				Error := TRUE;
+				Busy := FALSE;
+				State := 0;
+			END_IF
+		END_IF
+ELSE
+	// Default
+	State := 0;
+END_CASE
+]]></ST>
+    </Implementation>
+    <Method Name="M_AddToList" Id="{064a754f-37cb-4910-a43d-6fc8120c0cbd}">
+      <Declaration><![CDATA[/// Add found data set to list
+METHOD PRIVATE M_AddToList : BOOL
+VAR_INPUT
+	mTU_Index		: DINT;
+END_VAR
+VAR_IN_OUT
+	mTU_Data		: ST_TU_Data;
+END_VAR
+VAR
+	mIdx			: INT;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[M_AddToList := FALSE;
+		
+FOR mIdx := 1 TO MAX_LIST_ENTRIES DO
+	/// Check if already a slot is used for that destination
+	IF NextTU_List[mIdx].Destination.eFunctionNumber = mTU_Data.Destination[1].eFunctionNumber AND
+       NextTU_List[mIdx].Destination.ZoneNumber = mTU_Data.Destination[1].ZoneNumber AND
+	   NextTU_List[mIdx].DestinationSlot = mTU_Data.DataSet.DestinationSlot THEN
+	   
+	    // Replace and store TU Data
+	   	NextTU_List[mIdx].TU_Index := mTU_Index;
+		NextTU_List[mIdx].Sequence := mTU_Data.DataSet.Sequence;
+		NextTU_List[mIdx].SubSequence := mTU_Data.DataSet.SubSequence;
+		NextTU_List[mIdx].Destination := mTU_Data.Destination[1];
+		NextTU_List[mIdx].DestinationSlot := mTU_Data.DataSet.DestinationSlot;
+		NextTU_List[mIdx].TU_ID_HashCode := mTU_Data.TU_ID.HashCode;
+		NextTU_List[mIdx].TU_ID := mTU_Data.TU_ID.ASCII;
+		NextTU_List[mIdx].AssignmentID := mTU_Data.AssignmentID;
+	   	
+		M_AddToList := TRUE;
+	
+	// If an empty slot is found
+	ELSIF NextTU_List[mIdx].Destination.eFunctionNumber = E_FunctionNumber.F_BEGIN_FUNCTION THEN
+		// Store TU Data
+	   	NextTU_List[mIdx].TU_Index := mTU_Index;
+		NextTU_List[mIdx].Sequence := mTU_Data.DataSet.Sequence;
+		NextTU_List[mIdx].SubSequence := mTU_Data.DataSet.SubSequence;
+		NextTU_List[mIdx].Destination := mTU_Data.Destination[1];
+		NextTU_List[mIdx].DestinationSlot := mTU_Data.DataSet.DestinationSlot;
+		NextTU_List[mIdx].TU_ID_HashCode := mTU_Data.TU_ID.HashCode;
+		NextTU_List[mIdx].TU_ID := mTU_Data.TU_ID.ASCII;
+		NextTU_List[mIdx].AssignmentID := mTU_Data.AssignmentID;
+		
+		M_AddToList := TRUE;
+		
+		ListCount := ListCount + 1;
+	END_IF	
+END_FOR]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_ClearList" Id="{6046a491-d37d-4b2d-80d5-2e1ef8a27287}">
+      <Declaration><![CDATA[/// Clears next TU list.
+/// Returns true if succesful.
+METHOD M_ClearList : BOOL
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[M_ClearList := MEMSET(ADR(NextTU_List), 0, SIZEOF(NextTU_List)) > 0;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_IsNextInSequence" Id="{93455205-cce0-4a2d-8a96-323072b12545}">
+      <Declaration><![CDATA[/// Checks if requesting TU is next in sequence
+METHOD M_IsNextInSequence : BOOL // True = Next in Sequence, otherwise FALSE
+VAR_INPUT
+	mTU_Index		: DINT; // Requesting TU Index
+END_VAR
+VAR_IN_OUT
+	mTU_Data		: ST_TU_Data; // Tu Data
+END_VAR
+VAR
+	mIdx			: INT; // Iterator
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[M_IsNextInSequence := FALSE;
+		
+FOR mIdx := 1 TO ListCount DO
+	// Check if an index is recorded as next
+	IF mTU_Index = NextTU_List[mIdx].TU_Index THEN
+		/// Ensure that recorded tu data entry is still the same as requesting Tu data
+		IF mTU_Data.DataSet.Sequence = NextTU_List[mIdx].Sequence AND
+		   mTU_Data.DataSet.SubSequence = NextTU_List[mIdx].SubSequence AND
+		   mTU_Data.TU_ID.ASCII = NextTU_List[mIdx].TU_ID AND
+		   mTU_Data.Destination[1].eFunctionNumber = NextTU_List[mIdx].Destination.eFunctionNumber AND
+		   mTU_Data.Destination[1].ZoneNumber = NextTU_List[mIdx].Destination.ZoneNumber AND 
+		   mTU_Data.DataSet.DestinationSlot = NextTU_List[mIdx].DestinationSlot THEN
+		   
+			M_IsNextInSequence := TRUE;
+			RETURN;
+		END_IF	
+	END_IF
+END_FOR]]></ST>
+      </Implementation>
+    </Method>
+    <LineIds Name="FB_SeqEstimateAllNextTUs">
+      <LineId Id="3" Count="72" />
+      <LineId Id="86" Count="0" />
+      <LineId Id="91" Count="14" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_SeqEstimateAllNextTUs.M_AddToList">
+      <LineId Id="3" Count="35" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_SeqEstimateAllNextTUs.M_ClearList">
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_SeqEstimateAllNextTUs.M_IsNextInSequence">
+      <LineId Id="3" Count="16" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

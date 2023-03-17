@@ -1,0 +1,112 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.12">
+  <POU Name="F_ITC_SendTUR" Id="{09e53aa0-a7ac-4278-8861-800c2d0ba1a9}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION F_ITC_SendTUR : BOOL
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 416339 $
+ *	Revision date	:	$Date: 2018-10-31 13:50:31 +0100 (Wed, 31 Oct 2018) $
+ *	Last changed by	:	$Author: b7bolm $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/branches/R1.5.x/01_Software/BCF/BCF/JumpStart/20_Product/10_App/11_Com/10_Lib/10_Conv/11_ITC/F_ITC_SendTUR.TcPOU $
+ *
+ *	Purpose			:	Wrap message - TUR
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+VAR_INPUT
+	eChannelSrc				: E_MFCS_Channel; // Source communicaton channel	
+	LastPositionName		: STRING(Conveyor.POSITION_STRINGLENGTH); // Position
+	TU_DataIndex			: DINT; // Data index
+	TU_ID					: STRING(Conveyor.TU_ID_STRINGLENGTH); // TU ID
+	TU_Type					: INT; // TU Type
+	AssignmentID			: UDINT; // Assignment ID
+	Length					: INT; // Length
+	Width					: INT; // Width
+	Height					: INT; // Height
+	Weight					: DINT; // Weight
+	Orientation				: STRING(Conveyor.ORIENTATION_STRINGLENGTH); // 3 Digit orientation
+	TU_Parameter			: INT; // TU Parameter
+	IO_Data					: INT; // IO Data
+	LowerLimit				: DINT; // Lower Limit
+	UpperLimit				: DINT; // Upper Limit
+	Sequence				: ULINT; // Global sequence identifier
+	SubSequence				: DINT; // Position in the sequence
+	SequenceSize			: DINT; // Number of TU's in the sequence
+	GroupID					: ULINT; // Global group identifier 
+	GroupSize				: DINT; // Number of TU's in the group ID
+	DestinationSlot         : INT; // Logical sub destination of destination
+	eReturnCode				: E_ErrorConv; // Return code
+	NumberOfDestinations	: INT; // Number of Destinations
+	Destination				: ARRAY [1..Conveyor.NUMBER_OF_DESTINATIONS] OF STRING(Conveyor.POSITION_STRINGLENGTH); // Array of SIS Destinations
+END_VAR
+VAR
+	TUR						: ST_ITC_TUR; 
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[// Map values
+TUR.Position := LastPositionName;
+TUR.TU_DataIndex := TU_DataIndex;
+TUR.TU_ID := TU_ID;
+TUR.TU_Type := TU_Type;
+TUR.AssignmentID := AssignmentID;
+TUR.Length := Length;
+TUR.Width := Width;
+TUR.Height := Height;
+TUR.Weight := Weight;
+TUR.Orientation := Orientation;
+TUR.TU_Parameter := TU_Parameter;
+TUR.IO_Data := IO_Data;
+TUR.LowerLimit := LowerLimit;
+TUR.UpperLimit := UpperLimit;
+TUR.Sequence := Sequence;
+TUR.SubSequence := SubSequence;
+TUR.SequenceSize := SequenceSize;
+TUR.GroupID := GroupID;
+TUR.GroupSize := GroupSize;
+TUR.DestinationSlot := DestinationSlot;
+TUR.ReturnCode := eReturnCode;
+TUR.NumberOfDestinations := NumberOfDestinations;
+TUR.Destination := Destination;
+
+// Forward to ITC
+F_ITC_SendTUR := fbITC_Manager.M_SendData(
+					meChannel	:= eChannelSrc,
+					mMsgType	:= E_ITC_MsgTypeConv.TRANSPORT_UNIT_REPORT,
+					mpData		:= ADR(TUR),
+					mLen		:= SIZEOF(TUR));
+
+]]></ST>
+    </Implementation>
+    <ObjectProperties>
+      <XmlArchive>
+        <Data>
+          <o xml:space="preserve" t="UMLStereoTypeContainerObject">
+            <v n="IsType" t="UMLType">BaseArea</v>
+            <v n="Stereotype">""</v>
+            <d n="Stereotypes" t="Hashtable" />
+          </o>
+        </Data>
+        <TypeList>
+          <Type n="Hashtable">System.Collections.Hashtable</Type>
+          <Type n="String">System.String</Type>
+          <Type n="UMLStereoTypeContainerObject">{30250973-b110-4e31-b562-c102e042dca4}</Type>
+          <Type n="UMLType">{0197b136-405a-42ee-bb27-fd08b621d0cf}</Type>
+        </TypeList>
+      </XmlArchive>
+    </ObjectProperties>
+    <LineIds Name="F_ITC_SendTUR">
+      <LineId Id="3" Count="31" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

@@ -1,0 +1,27 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <POU Name="FB_SafetyCompositionCustomized" Id="{065010de-5397-4e15-b987-4489b2f1ef56}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK FB_SafetyCompositionCustomized
+VAR_INPUT
+	///true if initializing is active
+	_InitSafety: BOOL;
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[
+IF(_InitSafety) Then
+	//Add project specific safety code that shall execute during PLC init/reinit. 
+	;
+ELSE
+	//Add project specific safety code here. 
+	//renamed from Com_Error to FB_SafetyCompositionCustomized
+	;
+END_IF
+]]></ST>
+    </Implementation>
+    <LineIds Name="FB_SafetyCompositionCustomized">
+      <LineId Id="3" Count="8" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

@@ -1,0 +1,823 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <POU Name="FB_ProBoxSubsystem" Id="{e9c9bd91-bec1-45f4-9970-2e69ec6c64c8}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK FB_ProBoxSubsystem EXTENDS FB_SubsystemConv
+VAR_INPUT
+	Config						: ST_CFG_ProBoxSubsystem; // Configuration 
+	HW_Inputs					: ST_HW_InputsSubsystemManager; // Hardware inputs
+END_VAR
+
+VAR_OUTPUT
+	HW_Outputs					: ST_HW_OutputsSubsystemManager; // Hardware outputs
+	Outputs						: ST_OutputsSubsystemManager; // Outputs
+END_VAR
+
+VAR
+	Inputs						: ST_InputsSubsystemManager; // Inputs
+	EtherCatSupervision			: ARRAY [1..NUMBERS_OF_ETHERCAT_SLAVE_DIAG] OF ST_EtherCatDeviceStates; // EtherCAT supervision
+	StopAllGroups				: BOOL; // Flag to stop all groups
+
+	fbCpuUsage					: TC_CpuUsage; // Reads CPU usage 
+	fbSysLatency				: TC_SysLatency; // Reads CPU latency 
+	MaxCpuUsage 				: INT; // Max Cpu usage: [%] 
+	
+	CycleTime					: UDINT; // Cycle time of task: Time in [us] 
+	ActExecutionTime			: UDINT; // Actual execution time of task: Time in [us] 
+	MaxActExecutionTime     	: UDINT; // Maximum execution time of task: Time in [us] 
+
+	fbUpdateSystemTime			: NT_SetLocalTime; // FB to set the RTC of th eIPC 
+	LastSystemTimeUpdate		: DATE_AND_TIME; // TimeStamp of the last SystemTime update 
+	UpdateSystemTime			: BOOL; // SystemTime update necessary 
+	
+	TimeSyncActive				: BOOL; // Time sync is active
+	fbTimeReqReset				: TON; // Reset request after a certain time
+	fbStoppingDelayTimer		: TON; // Delay stopping
+	fbStartUpDelayTimer			: TON; // Timer delayed start up functions 
+	
+	Idx							: INT; // Iterator
+	Name						: T_MaxString; // Name with alpha numeric signs only
+	fbSystemInfo				: FB_SystemInfo; // Gathering system info
+	fbGetCurTaskIdx  			: GETCURTASKINDEX; // Returns the actual task index	
+	CpuUsageResetTimer			: TON :=(PT:=T#10S); // timer for reseting CPU usage error/warning
+END_VAR
+
+VAR PERSISTENT
+	Settings					: ST_CFG_ProBoxSubsystem; // Settings
+END_VAR]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[
+(**************************************************************************************************************
+   Input mapping
+***************************************************************************************************************)
+A_InputMapping();
+
+
+(**************************************************************************************************************
+  Initialization
+***************************************************************************************************************)
+A_Init();
+
+
+(**************************************************************************************************************
+  Control system initialization
+***************************************************************************************************************)
+M_InitControl();
+
+
+(**************************************************************************************************************
+   Mode control
+***************************************************************************************************************)
+A_ModeControl();
+
+
+(**************************************************************************************************************
+   State control
+***************************************************************************************************************)
+A_StateControl();
+
+
+(**************************************************************************************************************
+ Subsystem monitoring
+***************************************************************************************************************)
+// Delay timer
+fbStartUpDelayTimer(IN := SubsystemData.Init, PT := Settings.tDelayMonitoring);
+
+// Wait until Subsystem is started up completely 
+IF fbStartUpDelayTimer.Q THEN
+	(**************************************************************************************************************
+	   Monitor EtherCat master status
+	***************************************************************************************************************)
+	F_MonitorEtherCAT_Master(
+		MasterDeviceState			:= UINT_TO_INT(HW_Inputs.EtherCAT_MasterState),
+		MasterDeviceWorkingCounter	:= HW_Inputs.EtherCAT_MasterWorkingCounter,
+		ErrorData					:= SubsystemData.ErrorData.ErrorDataSet[1]); 
+		
+		
+	(**************************************************************************************************************
+	   Monitor EtherCAT slaves
+	***************************************************************************************************************)	
+	A_SlaveDeviceSupervision();
+	
+	
+	(**************************************************************************************************************
+	   Monitor CPU states (temperature, fan)
+	***************************************************************************************************************)
+	A_MonitorCpuHardware();
+	
+	
+	(**************************************************************************************************************
+	   Monitor TwinCat (cpu usage, latency )
+	***************************************************************************************************************)
+	A_MonitorCpuUsage();
+	
+	
+	(**************************************************************************************************************
+	   Monitor MFCS connections (E.g. AM, SPOC)
+	***************************************************************************************************************)
+	A_MonitorMFCS_Connections();
+END_IF
+
+
+(**************************************************************************************************************
+   Update SystemTime
+***************************************************************************************************************)
+A_UpdateSystemTime();
+
+
+(**************************************************************************************************************
+  Monitor subsystem errors
+***************************************************************************************************************)
+M_MonitorSubsystemErrors();
+
+
+(**************************************************************************************************************
+   ITC Handler Out
+***************************************************************************************************************)
+M_ITC_ProcessOut();
+
+
+(**************************************************************************************************************
+   Output mapping
+***************************************************************************************************************)
+A_OutputMapping();
+]]></ST>
+    </Implementation>
+    <Action Name="A_Init" Id="{0ee11b81-0ce0-4ecb-8933-381862ca557c}">
+      <Implementation>
+        <ST><![CDATA[// Update registry
+M_UpdateRegistry();
+ 
+// Set init-flag after one cycle 
+IF NOT SubsystemData.Init AND SubsystemData.InitRunning THEN
+	
+	IF M_InitSubsystem(FALSE) THEN
+		// Send status report - System restart
+		ITC.Commands.SystemRestartInfo := TRUE;
+	
+		SubsystemData.Init := TRUE;
+		SubsystemData.InitRunning := FALSE;
+		
+		// Set reset cmd
+		SubsystemData.ErrorData.Error.ResetError := TRUE;
+		
+		// Print debug
+		DebugMsg := CONCAT('Initialization done. Subsystem: ', SettingsSubsystem.SubsystemName);
+		fbDebugMsg.M_SendInfoMsg(DebugMsg);
+	END_IF
+// If instance is not initialized
+ELSIF NOT SubsystemData.Init THEN
+	
+	// Reset internal variables
+	SubsystemData.OperationState := SubsystemBase.OperationStateEmpty;
+	
+	// Initialize values
+	MaxActExecutionTime := 0;
+	MaxCpuUsage := 0;
+	UpdateSystemTime := FALSE;
+	StopAllGroups := FALSE;
+	CycleTime := 0;
+	ActExecutionTime := 0;
+	MaxActExecutionTime := 0;
+	UpdateSystemTime := 0;
+	TimeSyncActive := FALSE;
+	SubsystemInterface.IN.MasterSpeed := 100;
+	// Load configuration 
+	Settings := Config;
+	
+	// Reset values and load config
+	M_PreInit();
+	
+	// Init ongoing
+	SubsystemData.InitRunning := TRUE;
+END_IF]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="A_InputMapping" Id="{d4e19044-74db-437c-88e5-e7b0ae43469c}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_InputMapping
+ * 	FUNCTION	Input mapping
+ **************************************************************************************)
+ 
+ 
+(**************************************************************************************************************
+   HW input mapping
+***************************************************************************************************************)
+
+Inputs.EtherCAT_MasterState				:= HW_Inputs.EtherCAT_MasterState;
+Inputs.EtherCAT_MasterWorkingCounter	:= HW_Inputs.EtherCAT_MasterWorkingCounter;
+Inputs.DeviceState						:= HW_Inputs.DeviceState;
+
+(**************************************************************************************************************
+  Get system info
+***************************************************************************************************************)
+fbSystemInfo();
+
+Inputs.CPU_Temperatur		:= fbSystemInfo.CPU_Temperatur;
+Inputs.CPU_Usage			:= fbSystemInfo.CPU_Usage;
+Inputs.SystemUsage			:= fbSystemInfo.SystemUsage;
+Inputs.FanSpeed				:= fbSystemInfo.FanSpeed;
+]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="A_ModeControl" Id="{97b657bf-f180-4b2b-95d8-3294c25afcea}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_ModeControl
+ * 	FUNCTION	Handle subsystem mode
+ **************************************************************************************)
+ 
+ // Subsystem mode
+CASE SubSystemData.OperationState.eMode OF
+
+	(*******************************************************************************
+	  Unknown mode 
+	********************************************************************************)
+	E_PositionMode.UNKNOWN_MODE:
+		// Switch to automated mode
+		SubSystemData.OperationState.eMode := E_PositionMode.AUTO_MODE;
+	
+	(*******************************************************************************
+	  Automatic mode
+	********************************************************************************)
+	E_PositionMode.AUTO_MODE:
+		// Subsystem always in auto mode
+		;
+	
+(********************************************************************************
+	Error case
+*********************************************************************************)
+ELSE
+	// Programming error
+	DebugMsg := CONCAT(	'Programming error - Invalid SubSystem mode: ', 
+					   	INT_TO_STRING(SubSystemData.OperationState.eMode));
+		
+	fbDebugMsg.M_SendErrorMsg(DebugMsg);
+END_CASE]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="A_MonitorCpuHardware" Id="{48b6d540-04ca-4c95-bb18-9de8ed5205dc}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_MonitorCpuHardware
+ * 	FUNCTION	Monitor the CPU as temperatures and fan speed
+ *
+ **************************************************************************************)
+
+(**************************************************************************************
+   Monitor CPU temperatur
+***************************************************************************************)
+// If cpu temperatur is under 80 °C
+IF Inputs.CPU_Temperatur < Settings.CPU_TemperatureWarning THEN
+	// Reset error
+	F_ResetError(Reset := TRUE, ErrorData := SubSystemData.ErrorData.ErrorDataSet[3]);
+
+// Warning > 85°C and < 95° C
+ELSIF Inputs.CPU_Temperatur >= Settings.CPU_TemperatureWarning AND 
+	  Inputs.CPU_Temperatur < Settings.CPU_TemperatureError THEN
+	// Set warning
+	F_SetError(	
+		ErrorType	:= E_ErrorType.WARNING,
+		ErrorParam	:= INT_TO_STRING(Inputs.CPU_Temperatur),
+		ErrorMsg	:= E_ErrorConv.OVER_TEMPEREATURE_CPU,
+		ErrorData	:= SubSystemData.ErrorData.ErrorDataSet[3]);
+	
+// Set error > 95°C
+ELSIF Inputs.CPU_Temperatur >= Settings.CPU_TemperatureError THEN
+	// Set error
+	F_SetError(	
+		ErrorType	:= E_ErrorType.ERROR,
+		ErrorParam	:= INT_TO_STRING(Inputs.CPU_Temperatur),
+		ErrorMsg	:= E_ErrorConv.OVER_TEMPEREATURE_CPU,
+		ErrorData	:= SubSystemData.ErrorData.ErrorDataSet[3]);
+END_IF
+
+(**************************************************************************************
+   Monitor Fan speed
+***************************************************************************************)
+// If fan is activated
+IF Settings.CPU_FanExists THEN
+	// Check fan speed
+	IF Inputs.FanSpeed > Settings.MinFanSpeed THEN
+		// Reset error
+		F_ResetError(Reset := TRUE, ErrorData := SubSystemData.ErrorData.ErrorDataSet[4]);
+	ELSE
+		// Set error
+		F_SetError(	
+			ErrorType	:= E_ErrorType.ERROR,
+			ErrorParam	:= UINT_TO_STRING(Inputs.FanSpeed),
+			ErrorMsg	:= E_ErrorConv.FAN_ERROR_CPU,
+			ErrorData	:= SubSystemData.ErrorData.ErrorDataSet[4]);
+	END_IF
+END_IF]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="A_MonitorCpuUsage" Id="{7c4fb8a7-557d-4c85-88a2-883b7aae1256}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_MonitorCpuUsage
+ * 	FUNCTION	Monitor CPU usage
+ *
+ **************************************************************************************)
+
+(**************************************************************************************
+   CPU usage
+***************************************************************************************)
+// Reset error
+CpuUsageResetTimer(IN:= (SubSystemData.ErrorData.ErrorDataSet[5].ErrorType = E_ErrorType.ERROR AND Inputs.CPU_Usage < Settings.CPU_UsageError) OR
+						(SubSystemData.ErrorData.ErrorDataSet[5].ErrorType = E_ErrorType.WARNING AND Inputs.CPU_Usage < Settings.CPU_UsageWarning));
+
+//reset error via SIS telegram or reset button
+F_ResetError(
+		Reset 		:= FALSE, 
+		ErrorData 	:= SubSystemData.ErrorData.ErrorDataSet[5]);
+
+//reset error automatically after 10 sec of no error / warning
+IF(CpuUsageResetTimer.Q) THEN
+	F_ResetError(
+		Reset 		:= TRUE,
+		ErrorData 	:= SubSystemData.ErrorData.ErrorDataSet[5]);
+END_IF
+
+// Track max Cpu usage 
+IF Inputs.CPU_Usage > MaxCpuUsage THEN
+	MaxCpuUsage := Inputs.CPU_Usage;
+END_IF
+
+
+
+IF(SubSystemData.ErrorData.ErrorDataSet[5].ErrorType <> E_ErrorType.ERROR)THEN
+
+	// Usage > 60% and < 80%
+	IF Inputs.CPU_Usage > Settings.CPU_UsageWarning AND Inputs.CPU_Usage < Settings.CPU_UsageError  THEN
+		// Set warning
+		F_SetError(	
+			ErrorType	:= E_ErrorType.WARNING,
+			ErrorParam	:= INT_TO_STRING(Inputs.CPU_Usage),
+			ErrorMsg	:= E_ErrorConv.CPU_OVERLOAD,
+			ErrorData	:= SubSystemData.ErrorData.ErrorDataSet[5]);
+	
+	// Usage > 80%
+	ELSIF Inputs.CPU_Usage > Settings.CPU_UsageError THEN
+		// Set error
+		F_SetError(	
+			ErrorType	:= E_ErrorType.ERROR,
+			ErrorParam	:= INT_TO_STRING(Inputs.CPU_Usage),
+			ErrorMsg	:= E_ErrorConv.CPU_OVERLOAD,
+			ErrorData	:= SubSystemData.ErrorData.ErrorDataSet[5]);
+	END_IF
+END_IF
+
+(**************************************************************************************
+   System latency
+***************************************************************************************)
+// Get current task index
+fbGetCurTaskIdx();
+
+// Read cycle time [ms]
+CycleTime :=  _TaskInfo[fbGetCurTaskIdx.index].CycleTime / 10;
+
+
+// Read task time [ms]
+ActExecutionTime :=  _TaskInfo[fbGetCurTaskIdx.index].LastExecTime / 10;
+
+// Max actual execution [ms]
+IF ActExecutionTime > MaxActExecutionTime THEN
+	MaxActExecutionTime := ActExecutionTime;
+END_IF]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="A_MonitorMFCS_Connections" Id="{25f21cf1-593c-4b2c-92af-34e53fe48556}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_MonitorTCPIP_Interface
+ * 	FUNCTION	Monitor TCP-IP communication  
+ **************************************************************************************)
+
+
+(**************************************************************************************
+   AM Connection
+***************************************************************************************)
+// If AM is configured
+IF Settings.AM_Exists THEN
+	
+	// If AM is not connected
+	IF NOT fbMFCS_Channel[E_MFCS_Channel.AM].M_IsConnected() THEN
+		// Set error
+		F_SetError(	
+			ErrorType	:= E_ErrorType.ERROR,
+			ErrorParam	:= '',
+			ErrorMsg	:= E_ErrorConv.CONNECTION_ERROR_TO_AM,
+			ErrorData	:= SubsystemData.ErrorData.ErrorDataSet[6]);
+	ELSE
+		// Reset error
+		F_ResetError(Reset := TRUE, ErrorData := SubsystemData.ErrorData.ErrorDataSet[6]);
+	END_IF
+	
+	// Check buffer alarm
+	IF fbMFCS_Channel[E_MFCS_Channel.AM].M_BufferLevelAlarm() THEN	
+		// Set error
+		F_SetError(	
+			ErrorType	:= E_ErrorType.ERROR,
+			ErrorParam	:= '',
+			ErrorMsg	:= E_ErrorConv.AM_BUFFER_OVERFLOW,
+			ErrorData	:= SubsystemData.ErrorData.ErrorDataSet[7]);
+			
+	// Check buffer warning
+	ELSIF fbMFCS_Channel[E_MFCS_Channel.AM].M_BufferLevelWarning() AND
+	      SubsystemData.ErrorData.ErrorDataSet[7].ErrorType <> E_ErrorType.ERROR THEN
+		// Set error
+		F_SetError(	
+			ErrorType	:= E_ErrorType.WARNING,
+			ErrorParam	:= '',
+			ErrorMsg	:= E_ErrorConv.AM_BUFFER_OVERFLOW,
+			ErrorData	:= SubsystemData.ErrorData.ErrorDataSet[7]);
+	ELSE
+		// Reset error
+		F_ResetError(Reset := TRUE, ErrorData := SubsystemData.ErrorData.ErrorDataSet[7]);
+		
+	END_IF
+ELSE
+	// Reset error
+	F_ResetError(Reset := TRUE, ErrorData := SubsystemData.ErrorData.ErrorDataSet[6]);
+	F_ResetError(Reset := TRUE, ErrorData := SubsystemData.ErrorData.ErrorDataSet[7]);
+	
+	// Reset command to stop
+	StopAllGroups := FALSE;
+END_IF
+
+(**************************************************************************************
+   SPOC Connection
+***************************************************************************************)
+// If SPOC is configured
+IF Settings.SPOC_Exists THEN
+	
+	// If SPOC is not connected
+	IF NOT fbMFCS_Channel[E_MFCS_Channel.SPOC].M_IsConnected() THEN
+		// Set error
+		F_SetError(	
+			ErrorType	:= E_ErrorType.ERROR,
+			ErrorParam	:= '',
+			ErrorMsg	:= E_ErrorConv.CONNECTION_ERROR_TO_SPOC,
+			ErrorData	:= SubsystemData.ErrorData.ErrorDataSet[8]);
+	ELSE
+		// Reset error
+		F_ResetError(Reset := TRUE,ErrorData := SubsystemData.ErrorData.ErrorDataSet[8]);
+	END_IF
+ELSE
+	// Reset error
+	F_ResetError(Reset := TRUE,ErrorData := SubsystemData.ErrorData.ErrorDataSet[8]);
+END_IF
+]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="A_OutputMapping" Id="{14241dda-d095-42e0-a837-399f13798352}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_OutputMapping
+ * 	FUNCTION	Output mapping
+ **************************************************************************************)
+
+ 
+ 
+(**************************************************************************************************************
+   Outputs
+***************************************************************************************************************)
+SubsystemInterface.Out.MasterSpeed := SubsystemInterface.In.MasterSpeed;]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="A_SlaveDeviceSupervision" Id="{230f83fa-dd19-4782-9e1c-27d8d1f074dd}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_SlaveDeviceSupervision
+ * 	FUNCTION	Check connected EtherCAT Slaves for diagnostic reasons
+ *
+ *				0x___1 = Slave in 'INIT' state
+ *	 			0x___2 = Slave in 'PREOP' state
+ *				0x___3 = Slave in 'BOOT' state
+ *				0x___4 = Slave in 'SAFEOP' state
+ *				0x___8 = Slave in 'OP' state
+ *				0x001_ = Slave signals error
+ *				0x002_ = Invalid vendorId, productCode... read
+ *				0x004_ = Initialization error occurred
+ *				0x008_ = Slave disabled
+ *				0x010_ = Slave not present
+ *				0x020_ = Slave signals link error
+ *				0x040_ = Slave signals missing link
+ *				0x080_ = Slave signals unexpected link
+ *				0x100_ = Communication port A
+ *				0x200_ = Communication port B
+ *				0x400_ = Communication port C
+ *				0x800_ = Communication port D
+ *
+ **************************************************************************************)
+ 
+// Check all device slaves 
+FOR Idx := 1 TO NUMBERS_OF_ETHERCAT_SLAVE_DIAG DO
+	// If state is >16 and state has changed
+	IF Inputs.DeviceState[Idx] >= 16 AND Inputs.DeviceState[Idx] <> EtherCatSupervision[Idx].DeviceState THEN
+		// Update event list
+		EtherCatSupervision[Idx].EventDateTime 			:= TimeStampDT;
+		EtherCatSupervision[Idx].Error 					:= TRUE;
+		EtherCatSupervision[Idx].LastDeviceState		:= EtherCatSupervision[Idx].DeviceState;
+		EtherCatSupervision[Idx].DeviceState			:= Inputs.DeviceState[Idx];
+		
+		// Print debug
+		DebugMsg := CONCAT('EtherCAT-Device Error, Device: ', INT_TO_STRING(Idx));
+		DebugMsg := CONCAT(DebugMsg, ' Last Device state: ');
+		DebugMsg := CONCAT(DebugMsg, UINT_TO_STRING(EtherCatSupervision[Idx].LastDeviceState));
+		DebugMsg := CONCAT(DebugMsg, ' Device state: ');
+		DebugMsg := CONCAT(DebugMsg, UINT_TO_STRING(EtherCatSupervision[Idx].DeviceState));
+		DebugMsg := CONCAT(DebugMsg, ' Active: ');
+		DebugMsg := CONCAT(DebugMsg, BOOL_TO_STRING(EtherCatSupervision[Idx].Error));
+		fbDebugMsg.M_SendInfoMsg(DebugMsg);
+		
+	// If no error is active - update table
+	ELSIF Inputs.DeviceState[Idx] <> EtherCatSupervision[Idx].DeviceState THEN
+		// Reset table
+		EtherCatSupervision[Idx].LastDeviceState		:= EtherCatSupervision[Idx].DeviceState;
+		EtherCatSupervision[Idx].DeviceState			:= Inputs.DeviceState[Idx];
+		EtherCatSupervision[Idx].Error	 				:= FALSE;
+		
+		// Print debug
+		DebugMsg := CONCAT('EtherCAT-Device Error, Device: ', INT_TO_STRING(Idx));
+		DebugMsg := CONCAT(DebugMsg, ' Last Device state: ');
+		DebugMsg := CONCAT(DebugMsg, UINT_TO_STRING(EtherCatSupervision[Idx].LastDeviceState));
+		DebugMsg := CONCAT(DebugMsg, ' Device state: ');
+		DebugMsg := CONCAT(DebugMsg, UINT_TO_STRING(EtherCatSupervision[Idx].DeviceState));
+		DebugMsg := CONCAT(DebugMsg, ' Active: ');
+		DebugMsg := CONCAT(DebugMsg, BOOL_TO_STRING(EtherCatSupervision[Idx].Error));
+		fbDebugMsg.M_SendInfoMsg(DebugMsg);
+	END_IF
+END_FOR
+]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="A_StateControl" Id="{d0ceb90b-cc27-4a2d-9e55-f6fb1e76acd9}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_StateControl
+ * 	FUNCTION	State control 
+ **************************************************************************************)
+
+// Update system state
+SubSystemData.OperationState.Info.SystemReady := SubSystemData.OperationState.eState = E_PositionState.STARTED;
+ 
+// Group states
+CASE SubSystemData.OperationState.eState OF
+	(*******************************************************************************
+	  Unknown State 
+	********************************************************************************)
+	E_PositionState.UNKNOWN:
+		// Subsystem default state
+		SubSystemData.OperationState.eLastState := SubSystemData.OperationState.eState;
+		SubSystemData.OperationState.eState 	:= E_PositionState.STOPPED;
+
+	(*******************************************************************************
+	  Stopped
+	********************************************************************************)
+	E_PositionState.STOPPED:
+		IF SubSystemData.ErrorData.ErrorDataSet[7].ErrorType <> E_ErrorType.ERROR AND
+		   SubSystemData.ErrorData.ErrorDataSet[7].ErrorType <> E_ErrorType.WARNING THEN
+		   
+		   // Change state "Starting"
+			SubSystemData.OperationState.eLastState := SubSystemData.OperationState.eState;
+			SubSystemData.OperationState.eState := E_PositionState.STARTING;
+		
+			// Send status report
+			ITC.Commands.StatusReport := TRUE;
+		END_IF
+		
+	(*******************************************************************************
+	  Stopping
+	********************************************************************************)
+	E_PositionState.STOPPING:
+		fbStoppingDelayTimer(IN := TRUE, PT := Settings.tDelayStopping);
+	
+		// If no "AM_Buffer" error is pending
+		IF SubSystemData.ErrorData.ErrorDataSet[7].ErrorType = E_ErrorType.ERROR OR 
+		   fbStoppingDelayTimer.Q THEN
+		   
+			// Change state "Stopped"
+			SubSystemData.OperationState.eLastState := SubSystemData.OperationState.eState;
+			SubSystemData.OperationState.eState := E_PositionState.STOPPED;
+		
+			// Send status report
+			ITC.Commands.StatusReport := TRUE;
+			
+			fbStoppingDelayTimer(IN := FALSE);
+			
+		// If no "AM_BUffer" warning is pending
+		ELSIF SubSystemData.ErrorData.ErrorDataSet[7].ErrorType = E_ErrorType.WARNING THEN
+			// Wait
+			;
+		ELSE
+			// Start again
+			SubSystemData.OperationState.eLastState := SubSystemData.OperationState.eState;
+			SubSystemData.OperationState.eState := E_PositionState.STARTING;
+		
+			// Send status report
+			ITC.Commands.StatusReport := TRUE;
+		END_IF
+
+	(*******************************************************************************
+	  Starting
+	********************************************************************************)
+	E_PositionState.STARTING:
+		// If no "AM_Buffer" error/warning is pending
+		IF SubSystemData.ErrorData.ErrorDataSet[7].ErrorType = E_ErrorType.ERROR OR
+   		   SubSystemData.ErrorData.ErrorDataSet[7].ErrorType = E_ErrorType.WARNING THEN
+			// Change state "Stopped"
+			SubSystemData.OperationState.eLastState := SubSystemData.OperationState.eState;
+			SubSystemData.OperationState.eState := E_PositionState.STOPPED;
+		
+			// Send status report
+			ITC.Commands.StatusReport := TRUE;
+			
+		ELSIF fbStartUpDelayTimer.Q THEN
+			// Change state "Started"
+			SubSystemData.OperationState.eLastState := SubSystemData.OperationState.eState;
+			SubSystemData.OperationState.eState := E_PositionState.STARTED;
+		
+			// Send status report
+			ITC.Commands.StatusReport := TRUE;
+		END_IF
+		
+	(*******************************************************************************
+	  Started (Online/active/running)
+	********************************************************************************)
+	E_PositionState.STARTED:
+	
+		// If no "AM_Buffer" error is pending
+		IF SubSystemData.ErrorData.ErrorDataSet[7].ErrorType = E_ErrorType.ERROR OR
+		   NOT fbStartUpDelayTimer.Q THEN
+			// Change state "Stopped"
+			SubSystemData.OperationState.eLastState := SubSystemData.OperationState.eState;
+			SubSystemData.OperationState.eState := E_PositionState.STOPPED;
+			// Send status report
+			ITC.Commands.StatusReport := TRUE;
+			
+		// If no "AM_BUffer" warning is pending
+		ELSIF SubSystemData.ErrorData.ErrorDataSet[7].ErrorType = E_ErrorType.WARNING THEN
+			// Change state "Stopping"
+			SubSystemData.OperationState.eLastState := SubSystemData.OperationState.eState;
+			SubSystemData.OperationState.eState := E_PositionState.STOPPING;
+		
+			// Send status report
+			ITC.Commands.StatusReport := TRUE;
+			fbStoppingDelayTimer(IN := FALSE);
+		END_IF
+		
+(********************************************************************************
+	Error case
+*********************************************************************************)
+ELSE
+	// Programming error
+	DebugMsg := CONCAT(	'Programming error - Invalid state: ', INT_TO_STRING(SubSystemData.OperationState.eState));
+	fbDebugMsg.M_SendErrorMsg(DebugMsg);
+END_CASE]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="A_UpdateSystemTime" Id="{26c2a78f-92e0-48b1-8d94-0238d845c6dd}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_UpdateSystemTime
+ * 	FUNCTION	Updates the SystemTime of the IPC
+ *
+ **************************************************************************************)
+ 
+// Check if it is more than 24h ago since the last synchronization 
+IF TimeStampDT - LastSystemTimeUpdate > Settings.MinTimeSync AND 
+   Settings.EnableTimeSync AND
+   NOT UpdateSystemTime THEN
+
+		// Update in progress
+		UpdateSystemTime := TRUE;
+
+		// Request time synchronization
+		ITC.Commands.RequestTimeUpdate := TRUE;
+		
+		// Reset timer
+		fbTimeReqReset(IN := FALSE);
+END_IF
+
+
+// If an update was requested
+IF UpdateSystemTime THEN
+	// Start timer to reset request
+	fbTimeReqReset(IN := TRUE, PT:= Settings.tRequestReset);
+	
+	// If no telegram was received in a certain time
+	IF fbTimeReqReset.Q THEN
+		// Reset request to resend a new one
+		UpdateSystemTime := FALSE;
+		
+		// Reset timer
+		fbTimeReqReset(IN := FALSE);
+
+		// debug
+		DebugMsg := 'No time synchronization telegram received. ';
+		DebugMsg := CONCAT(	DebugMsg, 'Current system time: ');
+		DebugMsg := CONCAT(	DebugMsg, DT_TO_STRING(TimeStampDT));
+		fbDebugMsg.M_SendWarningMsg(DebugMsg);		
+	END_IF
+END_IF
+
+
+// A synchronization telegram was received 
+IF ITC.Commands.UpdateSystemTime THEN
+	// Call time sync
+	fbUpdateSystemTime(START := FALSE);
+
+	// If no sync command is active
+	IF NOT TimeSyncActive THEN
+		// Call time sync
+		fbUpdateSystemTime(
+			START 	:= TRUE,
+			TIMESTR := STRING_TO_SYSTEMTIME(SubsystemBase.TimeValue));
+
+		// Sync active
+		TimeSyncActive := TRUE;
+	
+	ELSIF NOT fbUpdateSystemTime.BUSY THEN
+		// Update finished
+		UpdateSystemTime := FALSE;
+		ITC.Commands.UpdateSystemTime := FALSE;
+		TimeSyncActive 	:= FALSE;
+		
+		// Update new time stamp
+		LastSystemTimeUpdate := TimeStampDT;
+		
+		// debug
+		DebugMsg := CONCAT(	'Time sync done - New: ',SubsystemBase.TimeValue);
+		DebugMsg := CONCAT(	DebugMsg, ' Old: ');
+		DebugMsg := CONCAT(	DebugMsg, DT_TO_STRING(TimeStampDT));
+		fbDebugMsg.M_SendInfoMsg(DebugMsg);
+	END_IF
+END_IF]]></ST>
+      </Implementation>
+    </Action>
+    <LineIds Name="FB_ProBoxSubsystem">
+      <LineId Id="50" Count="94" />
+      <LineId Id="9" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ProBoxSubsystem.A_Init">
+      <LineId Id="2" Count="44" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ProBoxSubsystem.A_InputMapping">
+      <LineId Id="2" Count="22" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ProBoxSubsystem.A_ModeControl">
+      <LineId Id="2" Count="30" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ProBoxSubsystem.A_MonitorCpuHardware">
+      <LineId Id="2" Count="50" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ProBoxSubsystem.A_MonitorCpuUsage">
+      <LineId Id="2" Count="9" />
+      <LineId Id="63" Count="1" />
+      <LineId Id="78" Count="0" />
+      <LineId Id="74" Count="0" />
+      <LineId Id="76" Count="1" />
+      <LineId Id="68" Count="0" />
+      <LineId Id="79" Count="0" />
+      <LineId Id="75" Count="0" />
+      <LineId Id="67" Count="0" />
+      <LineId Id="12" Count="2" />
+      <LineId Id="69" Count="0" />
+      <LineId Id="15" Count="5" />
+      <LineId Id="27" Count="0" />
+      <LineId Id="72" Count="0" />
+      <LineId Id="71" Count="0" />
+      <LineId Id="70" Count="0" />
+      <LineId Id="28" Count="18" />
+      <LineId Id="73" Count="0" />
+      <LineId Id="47" Count="15" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ProBoxSubsystem.A_MonitorMFCS_Connections">
+      <LineId Id="2" Count="78" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ProBoxSubsystem.A_OutputMapping">
+      <LineId Id="2" Count="9" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ProBoxSubsystem.A_SlaveDeviceSupervision">
+      <LineId Id="2" Count="61" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ProBoxSubsystem.A_StateControl">
+      <LineId Id="2" Count="119" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ProBoxSubsystem.A_UpdateSystemTime">
+      <LineId Id="2" Count="73" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

@@ -1,0 +1,981 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.12">
+  <POU Name="FB_PAC_CapacityCounter" Id="{cbed9e74-d62a-4ffc-9afc-7e435db4b36f}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK FB_PAC_CapacityCounter
+VAR_INPUT
+	sNetId                : T_AmsNetId ;    (* TwinCAT system network address *)
+    sFileName            : T_MaxString ;(* CSV destination file path and name *)
+	EnableTime				: TIME;
+	StartPACCounter			: BOOL:=FALSE;
+	
+	LogData01:E_FunctionNumber;
+	LogData02:E_FunctionNumber;
+	LogData03:E_FunctionNumber;
+	LogData04:E_FunctionNumber;
+	LogData05:E_FunctionNumber;
+	LogData06:E_FunctionNumber;
+	LogData07:E_FunctionNumber;
+	LogData08:E_FunctionNumber;
+	LogData09:E_FunctionNumber;
+	LogData10:E_FunctionNumber;
+	LogData11:E_FunctionNumber;
+	LogData12:E_FunctionNumber;
+	LogData13:E_FunctionNumber;
+	LogData14:E_FunctionNumber;
+	LogData15:E_FunctionNumber;
+	LogData16:E_FunctionNumber;
+	LogData17:E_FunctionNumber;
+	LogData18:E_FunctionNumber;
+	LogData19:E_FunctionNumber;
+	LogData20:E_FunctionNumber;
+END_VAR
+VAR_OUTPUT
+	Output: ARRAY [1..100] OF STRING;
+	ActualTimerValue: Time;
+END_VAR
+VAR
+	ResetPACCounter	: BOOL :=FALSE;
+	LogData: ARRAY [1..100] OF INT;
+	TransportCtrlData		: ARRAY[1..F_END_FUNCTION-1] OF ST_TransportControlData;
+    sCSVLine            : ARRAY [1..1000000] OF BYTE;(* Single CSV text line (row, record), we are using string as record buffer (your are able to see created fields) *)
+    sCSVField            : T_MaxString := '';(* Single CSV field value (column, record field) *)
+    sTest                : T_MaxString :='Test';
+    bBusy                : BOOL;
+    bError                : BOOL;
+    nErrId                : UDINT;
+    nRow                 : UDINT     := 0;(* Row number (record) *)
+    nColumn                : UDINT     := 0;(* Column number (record field) *)
+   // hFile                : UINT        := 0;(* File handle of the source file *)
+    step                : DWORD     := 0;
+    fbFileOpen            : FB_FileOpen;(* Opens file *)
+	fbFileSeek				: FB_FileSeek;
+	fbFileRead			  : FB_FileRead;	
+    fbFileClose            : FB_FileClose;(* Closes file *)
+    fbFileWrite            : FB_FileWrite;(* Writes one record (line) *)
+    fbWriter            : FB_CSVMemBufferWriter;(* Helper function block used to create CSV data bytes (single record line) *)
+    str_Output: STRING;
+    fbFormat        : FB_FormatString;
+ 
+	tTimeOut                        : TIME := DEFAULT_ADS_TIMEOUT;
+	TotalTime: STRING;
+	
+	CounterPosition01: CTU;
+	CounterPosition02: CTU;
+	CounterPosition03: CTU;
+	CounterPosition04: CTU;
+	CounterPosition05: CTU;
+	CounterPosition06: CTU;
+	CounterPosition07: CTU;
+	CounterPosition08: CTU;
+	CounterPosition09: CTU;
+	CounterPosition10: CTU;
+	CounterPosition11: CTU;
+	CounterPosition12: CTU;
+	CounterPosition13: CTU;
+	CounterPosition14: CTU;
+	CounterPosition15: CTU;
+	CounterPosition16: CTU;
+	CounterPosition17: CTU;
+	CounterPosition18: CTU;
+	CounterPosition19: CTU;
+	CounterPosition20: CTU;
+	
+	Ton1:TON;
+	Ton2:TON;
+
+	FileReady : BOOL;
+
+	EnableT: BOOL;
+	bReadReady: BOOL;
+	SourcehFile: UINT := 0;
+	DestinationhFile: UINT := 0;
+	Wait : TOF;
+	fbLocalTime: FB_LocalSystemTime;
+	GetLocalTime : BOOL;
+	sSystemTime : TIMESTRUCT;
+
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[TransportCtrlData[LogData01]:= F_GetTransportControlData(LogData01,1);
+TransportCtrlData[LogData02]:= F_GetTransportControlData(LogData02,1);
+TransportCtrlData[LogData03]:= F_GetTransportControlData(LogData03,1);
+TransportCtrlData[LogData04]:= F_GetTransportControlData(LogData04,1);
+TransportCtrlData[LogData05]:= F_GetTransportControlData(LogData05,1);
+TransportCtrlData[LogData06]:= F_GetTransportControlData(LogData06,1);
+TransportCtrlData[LogData07]:= F_GetTransportControlData(LogData07,1);
+TransportCtrlData[LogData08]:= F_GetTransportControlData(LogData08,1);
+TransportCtrlData[LogData09]:= F_GetTransportControlData(LogData09,1);
+TransportCtrlData[LogData10]:= F_GetTransportControlData(LogData10,1);
+TransportCtrlData[LogData11]:= F_GetTransportControlData(LogData11,1);
+TransportCtrlData[LogData12]:= F_GetTransportControlData(LogData12,1);
+TransportCtrlData[LogData13]:= F_GetTransportControlData(LogData13,1);
+TransportCtrlData[LogData14]:= F_GetTransportControlData(LogData14,1);
+TransportCtrlData[LogData15]:= F_GetTransportControlData(LogData15,1);
+TransportCtrlData[LogData16]:= F_GetTransportControlData(LogData16,1);
+TransportCtrlData[LogData17]:= F_GetTransportControlData(LogData17,1);
+TransportCtrlData[LogData18]:= F_GetTransportControlData(LogData18,1);
+TransportCtrlData[LogData19]:= F_GetTransportControlData(LogData19,1);
+TransportCtrlData[LogData20]:= F_GetTransportControlData(LogData20,1);
+
+fbLocalTime(
+	sNetID:= sNetId, 
+	bEnable:= TRUE, 
+	dwCycle:= 1 , 
+	dwOpt:= , 
+	tTimeout:= , 
+	bValid=> GetLocalTime, 
+	systemTime=>sSystemTime , 
+	tzID=> );
+
+
+// Timer For Counter
+Ton1(IN:=StartPACCounter AND NOT (Ton1.ET=Ton1.PT),PT:=EnableTime); // *************************change the timer according to requirement ******************************
+(*IF StartPACCounter THEN
+	EnableT:=TRUE;
+END_IF*)
+ActualTimerValue:=Ton1.ET;
+TotalTime:=SYSTEMTIME_TO_STRING(fbLocalTime.systemTime);
+
+// Log Data From Position one
+CounterPosition01(CU:=TransportCtrlData[LogData01].Occupied,PV:=10000);
+Output[1]:= 'TotalTime';
+Output[2]:= TotalTime;//RIGHT(TOD_TO_STRING(TotalTime), 8);
+Output[3]:= F_GetFunctionName(LogData01,1);
+Output[4]:= WORD_TO_STRING(CounterPosition01.CV );
+
+// Log Data From Position two
+CounterPosition02(CU:=TransportCtrlData[LogData02].Occupied,PV:=10000);		
+Output[5]:=F_GetFunctionName(LogData02,1);
+Output[6]:=WORD_TO_STRING(CounterPosition02.CV);	
+// Log Data From Position three
+CounterPosition03(CU:=TransportCtrlData[LogData03].Occupied,PV:=10000);		
+Output[7]:=F_GetFunctionName(LogData03,1);
+Output[8]:=WORD_TO_STRING(CounterPosition03.CV);
+
+// Log Data From Position Four
+CounterPosition04(CU:=TransportCtrlData[LogData04].Occupied,PV:=10000);
+Output[9]:=F_GetFunctionName(LogData04,1);
+Output[10]:=WORD_TO_STRING(CounterPosition04.CV );
+
+// Log Data From Position Five
+CounterPosition05(CU:=TransportCtrlData[LogData05].Occupied,PV:=10000);		
+Output[11]:=F_GetFunctionName(LogData05,1);
+Output[12]:=WORD_TO_STRING(CounterPosition05.CV);
+	
+// Log Data From Position Six
+CounterPosition06(CU:=TransportCtrlData[LogData06].Occupied,PV:=10000);		
+Output[13]:=F_GetFunctionName(LogData06,1);
+Output[14]:=WORD_TO_STRING(CounterPosition06.CV);
+
+// Log Data From Position Seven
+CounterPosition07(CU:=TransportCtrlData[LogData07].Occupied,PV:=10000);		
+Output[15]:=F_GetFunctionName(LogData07,1);
+Output[16]:=WORD_TO_STRING(CounterPosition07.CV);
+
+// Log Data From Position Eight
+CounterPosition08(CU:=TransportCtrlData[LogData08].Occupied,PV:=10000);
+Output[17]:=F_GetFunctionName(LogData08,1);
+Output[18]:=WORD_TO_STRING(CounterPosition08.CV );
+
+// Log Data From Position Nine
+CounterPosition09(CU:=TransportCtrlData[LogData09].Occupied,PV:=10000);		
+Output[19]:=F_GetFunctionName(LogData09,1);
+Output[20]:=WORD_TO_STRING(CounterPosition09.CV);
+	
+// Log Data From Position Ten
+CounterPosition10(CU:=TransportCtrlData[LogData10].Occupied,PV:=10000);		
+Output[21]:=F_GetFunctionName(LogData10,1);
+Output[22]:=WORD_TO_STRING(CounterPosition10.CV);
+
+// Log Data From Position one
+CounterPosition11(CU:=TransportCtrlData[LogData11].Occupied,PV:=10000);
+Output[23]:=  F_GetFunctionName(LogData11,1);
+Output[24]:= WORD_TO_STRING(CounterPosition11.CV );
+
+// Log Data From Position two
+CounterPosition12(CU:=TransportCtrlData[LogData12].Occupied,PV:=10000);		
+Output[25]:=F_GetFunctionName(LogData12,1);
+Output[26]:=WORD_TO_STRING(CounterPosition12.CV);	
+
+// Log Data From Position three
+CounterPosition13(CU:=TransportCtrlData[LogData13].Occupied,PV:=10000);		
+Output[27]:=F_GetFunctionName(LogData13,1);
+Output[28]:=WORD_TO_STRING(CounterPosition13.CV);
+
+// Log Data From Position Four
+CounterPosition14(CU:=TransportCtrlData[LogData14].Occupied,PV:=10000);
+Output[29]:=F_GetFunctionName(LogData14,1);
+Output[30]:=WORD_TO_STRING(CounterPosition14.CV );
+
+// Log Data From Position Five
+CounterPosition15(CU:=TransportCtrlData[LogData15].Occupied,PV:=10000);		
+Output[31]:=F_GetFunctionName(LogData15,1);
+Output[32]:=WORD_TO_STRING(CounterPosition15.CV);
+	
+// Log Data From Position Six
+CounterPosition16(CU:=TransportCtrlData[LogData16].Occupied,PV:=10000);		
+Output[33]:=F_GetFunctionName(LogData16,1);
+Output[34]:=WORD_TO_STRING(CounterPosition16.CV);
+
+// Log Data From Position Seven
+CounterPosition17(CU:=TransportCtrlData[LogData17].Occupied,PV:=10000);		
+Output[35]:=F_GetFunctionName(LogData17,1);
+Output[36]:=WORD_TO_STRING(CounterPosition17.CV);
+
+// Log Data From Position Eight
+CounterPosition18(CU:=TransportCtrlData[LogData18].Occupied,PV:=10000);
+Output[37]:=F_GetFunctionName(LogData18,1);
+Output[38]:=WORD_TO_STRING(CounterPosition18.CV );
+
+// Log Data From Position Nine
+CounterPosition19(CU:=TransportCtrlData[LogData19].Occupied,PV:=10000);		
+Output[39]:=F_GetFunctionName(LogData19,1);
+Output[40]:=WORD_TO_STRING(CounterPosition19.CV);
+	
+// Log Data From Position Ten
+CounterPosition20(CU:=TransportCtrlData[LogData20].Occupied,PV:=10000);		
+Output[41]:=F_GetFunctionName(LogData20,1);
+Output[42]:=WORD_TO_STRING(CounterPosition20.CV);
+
+CASE step OF
+    0:    (* Wait for rising edge at bWrite variable *)
+        IF Ton1.Q THEN
+          //  bWrite         := FALSE;
+            bBusy         := TRUE;
+            bError        := FALSE;
+            nErrId        := 0;
+            SourcehFile        := 0;
+			DestinationhFile        := 0;
+            nRow         := 0;
+            nColumn    := 0;
+            step         := 1;
+        END_IF
+		
+	1:    (*Open Source file*)
+        fbFileOpen(  bExecute := FALSE  );
+        fbFileOpen( sNetId := sNetId, sPathName := sFileName, nMode := FOPEN_MODEAPPEND OR FOPEN_MODEBINARY ,(* Open file in BINARY mode, because FB_CSVMemBufferWriter already adds CRLF! *)
+                    ePath := PATH_GENERIC, tTimeout:= tTimeOut, bExecute := TRUE);
+        step := 2;
+
+
+    2:(* Wait until open not busy *)
+        fbFileOpen( bExecute := FALSE, bError => bError, nErrID => nErrID, hFile => DestinationhFile );
+        IF NOT fbFileOpen.bBusy THEN
+            IF NOT fbFileOpen.bError THEN
+                step := 3;
+            ELSE(* Error: file not found? *)
+                step := 100;
+            END_IF
+        END_IF
+
+ (*   3:    (* Open Destination file *)
+        fbFileOpen(  bExecute := FALSE  );
+        fbFileOpen( sNetId := sNetId, sPathName := sFileName, nMode := FOPEN_MODEWRITE OR FOPEN_MODEBINARY ,(* Open file in BINARY mode, because FB_CSVMemBufferWriter already adds CRLF! *)
+                        ePath := PATH_GENERIC, tTimeout:= tTimeOut, bExecute := TRUE);
+        step := 4;
+
+
+    4:(* Wait until open not busy *)
+        fbFileOpen( bExecute := FALSE, bError => bError, nErrID => nErrID, hFile => DestinationhFile );
+        IF NOT fbFileOpen.bBusy THEN
+            IF NOT fbFileOpen.bError THEN
+                step := 5;
+            ELSE(* Error: file not found? *)
+                step := 100;
+            END_IF
+        END_IF
+*)
+	(*5: 	cbReadLength:= 0;
+		fbFileRead(  bExecute := FALSE  );
+		fbFileRead(sNetId:= sNetId, hFile:= SourcehFile, pReadBuff:=ADR(sCSVLine), cbReadLen:= SIZEOF(sCSVLine),bExecute:= TRUE , tTimeout:= tTimeOut );
+		step:= 6;
+		
+	6:
+		fbFileRead( bExecute := FALSE, bError => bError, nErrID => nErrID, cbRead=> ReadData,bEOF=>bReadReady);
+        IF NOT fbFileRead.bBusy THEN
+            IF NOT fbFileRead.bError THEN
+                step := 7;
+            ELSE(* Error: file not found? *)
+                step := 100;
+            END_IF
+        END_IF*)
+
+	
+    3:(* Convert one PLC record to CSV format *)
+        fbWriter.eCmd := eEnumCmd_First;(* Write first field value *)
+       
+    FOR nRow := 1 TO 1 BY 1 DO
+        str_Output:=Output[1];
+                sCSVField := STRING_TO_CSVFIELD( str_Output, FALSE );(* TODO: Get field value from your application *)
+
+					
+                (* Add new field to the record buffer *)
+                fbWriter(pBuffer := ADR( sCSVLine ), cbBuffer := SIZEOF( sCSVLine ), putValue := sCSVField, pValue := 0, cbValue := 0,
+                            bCRLF := FALSE);(* bCRLF == TRUE => Write CRLF after the last field value *)
+                IF fbWriter.bOk THEN
+                    fbWriter.eCmd := eEnumCmd_Next;(* Write next field value *)
+                ELSE(* Error *)
+                    step := 100;
+                    RETURN;
+                END_IF
+
+		  str_Output:=Output[2];
+                sCSVField := STRING_TO_CSVFIELD( str_Output, FALSE );(* TODO: Get field value from your application *)
+
+
+                (* Add new field to the record buffer *)
+                fbWriter( pBuffer := ADR( sCSVLine ), cbBuffer := SIZEOF( sCSVLine ), putValue := sCSVField, pValue := 0, cbValue := 0,
+                            bCRLF := TRUE);(* bCRLF == TRUE => Write CRLF after the last field value *)
+                IF fbWriter.bOk THEN
+                    fbWriter.eCmd := eEnumCmd_Next;(* Write next field value *)
+                ELSE(* Error *)
+                    step := 100;
+                    RETURN;
+                END_IF
+          str_Output:=Output[5];
+                sCSVField := STRING_TO_CSVFIELD( str_Output, FALSE );(* TODO: Get field value from your application *)
+
+
+                (* Add new field to the record buffer *)
+                fbWriter( pBuffer := ADR( sCSVLine ), cbBuffer := SIZEOF( sCSVLine ), putValue := sCSVField, pValue := 0, cbValue := 0,
+                            bCRLF := FALSE);(* bCRLF == TRUE => Write CRLF after the last field value *)
+                IF fbWriter.bOk THEN
+                    fbWriter.eCmd := eEnumCmd_Next;(* Write next field value *)
+                ELSE(* Error *)
+                    step := 100;
+                    RETURN;
+                END_IF
+
+		  str_Output:=Output[6];
+                sCSVField := STRING_TO_CSVFIELD( str_Output, FALSE );(* TODO: Get field value from your application *)
+
+
+                (* Add new field to the record buffer *)
+                fbWriter(     pBuffer := ADR( sCSVLine ), cbBuffer := SIZEOF( sCSVLine ), putValue := sCSVField, pValue := 0, cbValue := 0,
+                            bCRLF := TRUE);(* bCRLF == TRUE => Write CRLF after the last field value *)
+                IF fbWriter.bOk THEN
+                    fbWriter.eCmd := eEnumCmd_Next;(* Write next field value *)
+                ELSE(* Error *)
+                    step := 100;
+                    RETURN;
+                END_IF
+
+  			str_Output:=Output[9];
+                sCSVField := STRING_TO_CSVFIELD( str_Output, FALSE );(* TODO: Get field value from your application *)
+
+
+                (* Add new field to the record buffer *)
+                fbWriter(     pBuffer := ADR( sCSVLine ), cbBuffer := SIZEOF( sCSVLine ), putValue := sCSVField, pValue := 0, cbValue := 0,
+                            bCRLF := FALSE);(* bCRLF == TRUE => Write CRLF after the last field value *)
+                IF fbWriter.bOk THEN
+                    fbWriter.eCmd := eEnumCmd_Next;(* Write next field value *)
+                ELSE(* Error *)
+                    step := 100;
+                    RETURN;
+                END_IF
+
+		 	str_Output:=Output[10];
+                sCSVField := STRING_TO_CSVFIELD( str_Output, FALSE );(* TODO: Get field value from your application *)
+
+
+                (* Add new field to the record buffer *)
+                fbWriter(     pBuffer := ADR( sCSVLine ), cbBuffer := SIZEOF( sCSVLine ), putValue := sCSVField, pValue := 0, cbValue := 0,
+                            bCRLF := TRUE);(* bCRLF == TRUE => Write CRLF after the last field value *)
+                IF fbWriter.bOk THEN
+                    fbWriter.eCmd := eEnumCmd_Next;(* Write next field value *)
+                ELSE(* Error *)
+                    step := 100;
+                    RETURN;
+                END_IF
+				
+            str_Output:=Output[13];
+                sCSVField := STRING_TO_CSVFIELD( str_Output, FALSE );(* TODO: Get field value from your application *)
+
+
+                (* Add new field to the record buffer *)
+                fbWriter(     pBuffer := ADR( sCSVLine ), cbBuffer := SIZEOF( sCSVLine ), putValue := sCSVField, pValue := 0, cbValue := 0,
+                            bCRLF := FALSE);(* bCRLF == TRUE => Write CRLF after the last field value *)
+                IF fbWriter.bOk THEN
+                    fbWriter.eCmd := eEnumCmd_Next;(* Write next field value *)
+                ELSE(* Error *)
+                    step := 100;
+                    RETURN;
+                END_IF
+
+		 	str_Output:=Output[14];
+                sCSVField := STRING_TO_CSVFIELD( str_Output, FALSE );(* TODO: Get field value from your application *)
+
+
+                (* Add new field to the record buffer *)
+                fbWriter(     pBuffer := ADR( sCSVLine ), cbBuffer := SIZEOF( sCSVLine ), putValue := sCSVField, pValue := 0, cbValue := 0,
+                            bCRLF := TRUE);(* bCRLF == TRUE => Write CRLF after the last field value *)
+                IF fbWriter.bOk THEN
+                    fbWriter.eCmd := eEnumCmd_Next;(* Write next field value *)
+                ELSE(* Error *)
+                    step := 100;
+                    RETURN;
+                END_IF
+			
+			 str_Output:=Output[17];
+                sCSVField := STRING_TO_CSVFIELD( str_Output, FALSE );(* TODO: Get field value from your application *)
+
+
+                (* Add new field to the record buffer *)
+                fbWriter(     pBuffer := ADR( sCSVLine ), cbBuffer := SIZEOF( sCSVLine ), putValue := sCSVField, pValue := 0, cbValue := 0,
+                            bCRLF := FALSE);(* bCRLF == TRUE => Write CRLF after the last field value *)
+                IF fbWriter.bOk THEN
+                    fbWriter.eCmd := eEnumCmd_Next;(* Write next field value *)
+                ELSE(* Error *)
+                    step := 100;
+                    RETURN;
+                END_IF
+
+		 	str_Output:=Output[18];
+                sCSVField := STRING_TO_CSVFIELD( str_Output, FALSE );(* TODO: Get field value from your application *)
+
+
+                (* Add new field to the record buffer *)
+                fbWriter(     pBuffer := ADR( sCSVLine ), cbBuffer := SIZEOF( sCSVLine ), putValue := sCSVField, pValue := 0, cbValue := 0,
+                            bCRLF := TRUE);(* bCRLF == TRUE => Write CRLF after the last field value *)
+                IF fbWriter.bOk THEN
+                    fbWriter.eCmd := eEnumCmd_Next;(* Write next field value *)
+                ELSE(* Error *)
+                    step := 100;
+                    RETURN;
+                END_IF
+				
+			 str_Output:=Output[21];
+                sCSVField := STRING_TO_CSVFIELD( str_Output, FALSE );(* TODO: Get field value from your application *)
+
+
+                (* Add new field to the record buffer *)
+                fbWriter(     pBuffer := ADR( sCSVLine ), cbBuffer := SIZEOF( sCSVLine ), putValue := sCSVField, pValue := 0, cbValue := 0,
+                            bCRLF := FALSE);(* bCRLF == TRUE => Write CRLF after the last field value *)
+                IF fbWriter.bOk THEN
+                    fbWriter.eCmd := eEnumCmd_Next;(* Write next field value *)
+                ELSE(* Error *)
+                    step := 100;
+                    RETURN;
+                END_IF
+
+		 	str_Output:=Output[22];
+                sCSVField := STRING_TO_CSVFIELD( str_Output, FALSE );(* TODO: Get field value from your application *)
+
+
+                (* Add new field to the record buffer *)
+                fbWriter( pBuffer := ADR(sCSVLine ), cbBuffer := SIZEOF( sCSVLine ), putValue := (sCSVField), pValue := 0, cbValue := 0,
+                            bCRLF := TRUE);(* bCRLF == TRUE => Write CRLF after the last field value *)
+                IF fbWriter.bOk THEN
+                    fbWriter.eCmd := eEnumCmd_Next;(* Write next field value *)
+                ELSE(* Error *)
+                    step := 100;
+                    RETURN;
+                END_IF
+			 str_Output:=Output[25];
+                sCSVField := STRING_TO_CSVFIELD( str_Output, FALSE );(* TODO: Get field value from your application *)
+
+
+                (* Add new field to the record buffer *)
+                fbWriter(     pBuffer := ADR( sCSVLine ), cbBuffer := SIZEOF( sCSVLine ), putValue := sCSVField, pValue := 0, cbValue := 0,
+                            bCRLF := FALSE);(* bCRLF == TRUE => Write CRLF after the last field value *)
+                IF fbWriter.bOk THEN
+                    fbWriter.eCmd := eEnumCmd_Next;(* Write next field value *)
+                ELSE(* Error *)
+                    step := 100;
+                    RETURN;
+                END_IF
+
+		 	str_Output:=Output[26];
+                sCSVField := STRING_TO_CSVFIELD( str_Output, FALSE );(* TODO: Get field value from your application *)
+
+
+                (* Add new field to the record buffer *)
+                fbWriter( pBuffer := ADR(sCSVLine ), cbBuffer := SIZEOF( sCSVLine ), putValue := (sCSVField), pValue := 0, cbValue := 0,
+                            bCRLF := TRUE);(* bCRLF == TRUE => Write CRLF after the last field value *)
+                IF fbWriter.bOk THEN
+                    fbWriter.eCmd := eEnumCmd_Next;(* Write next field value *)
+                ELSE(* Error *)
+                    step := 100;
+                    RETURN;
+                END_IF	
+			str_Output:=Output[29];
+                sCSVField := STRING_TO_CSVFIELD( str_Output, FALSE );(* TODO: Get field value from your application *)
+
+
+                (* Add new field to the record buffer *)
+                fbWriter(     pBuffer := ADR( sCSVLine ), cbBuffer := SIZEOF( sCSVLine ), putValue := sCSVField, pValue := 0, cbValue := 0,
+                            bCRLF := FALSE);(* bCRLF == TRUE => Write CRLF after the last field value *)
+                IF fbWriter.bOk THEN
+                    fbWriter.eCmd := eEnumCmd_Next;(* Write next field value *)
+                ELSE(* Error *)
+                    step := 100;
+                    RETURN;
+                END_IF
+
+		 	str_Output:=Output[30];
+                sCSVField := STRING_TO_CSVFIELD( str_Output, FALSE );(* TODO: Get field value from your application *)
+
+
+                (* Add new field to the record buffer *)
+                fbWriter( pBuffer := ADR(sCSVLine ), cbBuffer := SIZEOF( sCSVLine ), putValue := (sCSVField), pValue := 0, cbValue := 0,
+                            bCRLF := TRUE);(* bCRLF == TRUE => Write CRLF after the last field value *)
+                IF fbWriter.bOk THEN
+                    fbWriter.eCmd := eEnumCmd_Next;(* Write next field value *)
+                ELSE(* Error *)
+                    step := 100;
+                    RETURN;
+                END_IF	
+			str_Output:=Output[33];
+                sCSVField := STRING_TO_CSVFIELD( str_Output, FALSE );(* TODO: Get field value from your application *)
+
+
+                (* Add new field to the record buffer *)
+                fbWriter(     pBuffer := ADR( sCSVLine ), cbBuffer := SIZEOF( sCSVLine ), putValue := sCSVField, pValue := 0, cbValue := 0,
+                            bCRLF := FALSE);(* bCRLF == TRUE => Write CRLF after the last field value *)
+                IF fbWriter.bOk THEN
+                    fbWriter.eCmd := eEnumCmd_Next;(* Write next field value *)
+                ELSE(* Error *)
+                    step := 100;
+                    RETURN;
+                END_IF
+
+		 	str_Output:=Output[34];
+                sCSVField := STRING_TO_CSVFIELD( str_Output, FALSE );(* TODO: Get field value from your application *)
+
+
+                (* Add new field to the record buffer *)
+                fbWriter( pBuffer := ADR(sCSVLine ), cbBuffer := SIZEOF( sCSVLine ), putValue := (sCSVField), pValue := 0, cbValue := 0,
+                            bCRLF := TRUE);(* bCRLF == TRUE => Write CRLF after the last field value *)
+                IF fbWriter.bOk THEN
+                    fbWriter.eCmd := eEnumCmd_Next;(* Write next field value *)
+                ELSE(* Error *)
+                    step := 100;
+                    RETURN;
+                END_IF	
+			str_Output:=Output[37];
+                sCSVField := STRING_TO_CSVFIELD( str_Output, FALSE );(* TODO: Get field value from your application *)
+
+
+                (* Add new field to the record buffer *)
+                fbWriter(     pBuffer := ADR( sCSVLine ), cbBuffer := SIZEOF( sCSVLine ), putValue := sCSVField, pValue := 0, cbValue := 0,
+                            bCRLF := FALSE);(* bCRLF == TRUE => Write CRLF after the last field value *)
+                IF fbWriter.bOk THEN
+                    fbWriter.eCmd := eEnumCmd_Next;(* Write next field value *)
+                ELSE(* Error *)
+                    step := 100;
+                    RETURN;
+                END_IF
+
+		 	str_Output:=Output[38];
+                sCSVField := STRING_TO_CSVFIELD( str_Output, FALSE );(* TODO: Get field value from your application *)
+
+
+                (* Add new field to the record buffer *)
+                fbWriter( pBuffer := ADR(sCSVLine ), cbBuffer := SIZEOF( sCSVLine ), putValue := (sCSVField), pValue := 0, cbValue := 0,
+                            bCRLF := TRUE);(* bCRLF == TRUE => Write CRLF after the last field value *)
+                IF fbWriter.bOk THEN
+                    fbWriter.eCmd := eEnumCmd_Next;(* Write next field value *)
+                ELSE(* Error *)
+                    step := 100;
+                    RETURN;
+                END_IF	
+			str_Output:=Output[41];
+                sCSVField := STRING_TO_CSVFIELD( str_Output, FALSE );(* TODO: Get field value from your application *)
+
+
+                (* Add new field to the record buffer *)
+                fbWriter(     pBuffer := ADR( sCSVLine ), cbBuffer := SIZEOF( sCSVLine ), putValue := sCSVField, pValue := 0, cbValue := 0,
+                            bCRLF := FALSE);(* bCRLF == TRUE => Write CRLF after the last field value *)
+                IF fbWriter.bOk THEN
+                    fbWriter.eCmd := eEnumCmd_Next;(* Write next field value *)
+                ELSE(* Error *)
+                    step := 100;
+                    RETURN;
+                END_IF
+
+		 	str_Output:=Output[42];
+                sCSVField := STRING_TO_CSVFIELD( str_Output, FALSE );(* TODO: Get field value from your application *)
+
+
+                (* Add new field to the record buffer *)
+                fbWriter( pBuffer := ADR(sCSVLine ), cbBuffer := SIZEOF( sCSVLine ), putValue := (sCSVField), pValue := 0, cbValue := 0,
+                            bCRLF := TRUE);(* bCRLF == TRUE => Write CRLF after the last field value *)
+                IF fbWriter.bOk THEN
+                    fbWriter.eCmd := eEnumCmd_Next;(* Write next field value *)
+                ELSE(* Error *)
+                    step := 100;
+                    RETURN;
+                END_IF	
+            END_FOR(* FOR nColumn := 0... *)
+
+ 	FOR nColumn := 1 TO 1 BY 1 DO
+        str_Output:=Output[3];
+                sCSVField := STRING_TO_CSVFIELD( str_Output, FALSE );(* TODO: Get field value from your application *)
+
+
+                (* Add new field to the record buffer *)
+                fbWriter(     pBuffer := ADR( sCSVLine ), cbBuffer := SIZEOF( sCSVLine ), putValue := sCSVField, pValue := 0, cbValue := 0,
+                            bCRLF := FALSE);(* bCRLF == TRUE => Write CRLF after the last field value *)
+                IF fbWriter.bOk THEN
+                    fbWriter.eCmd := eEnumCmd_Next;(* Write next field value *)
+                ELSE(* Error *)
+                    step := 100;
+                    RETURN;
+                END_IF
+
+		  str_Output:=Output[4];
+                sCSVField := STRING_TO_CSVFIELD( str_Output, FALSE );(* TODO: Get field value from your application *)
+
+
+                (* Add new field to the record buffer *)
+                fbWriter(     pBuffer := ADR( sCSVLine ), cbBuffer := SIZEOF( sCSVLine ), putValue := sCSVField, pValue := 0, cbValue := 0,
+                            bCRLF := TRUE);(* bCRLF == TRUE => Write CRLF after the last field value *)
+                IF fbWriter.bOk THEN
+                    fbWriter.eCmd := eEnumCmd_Next;(* Write next field value *)
+                ELSE(* Error *)
+                    step := 100;
+                    RETURN;
+                END_IF
+     
+		 str_Output:=Output[7];
+                sCSVField := STRING_TO_CSVFIELD( str_Output, FALSE );(* TODO: Get field value from your application *)
+
+
+                (* Add new field to the record buffer *)
+                fbWriter(     pBuffer := ADR( sCSVLine ), cbBuffer := SIZEOF( sCSVLine ), putValue := sCSVField, pValue := 0, cbValue := 0,
+                            bCRLF := FALSE);(* bCRLF == TRUE => Write CRLF after the last field value *)
+                IF fbWriter.bOk THEN
+                    fbWriter.eCmd := eEnumCmd_Next;(* Write next field value *)
+                ELSE(* Error *)
+                    step := 100;
+                    RETURN;
+                END_IF
+
+		  str_Output:=Output[8];
+                sCSVField := STRING_TO_CSVFIELD( str_Output, FALSE );(* TODO: Get field value from your application *)
+
+
+                (* Add new field to the record buffer *)
+                fbWriter(     pBuffer := ADR( sCSVLine ), cbBuffer := SIZEOF( sCSVLine ), putValue := sCSVField, pValue := 0, cbValue := 0,
+                            bCRLF := TRUE);(* bCRLF == TRUE => Write CRLF after the last field value *)
+                IF fbWriter.bOk THEN
+                    fbWriter.eCmd := eEnumCmd_Next;(* Write next field value *)
+                ELSE(* Error *)
+                    step := 100;
+                    RETURN;
+                END_IF
+			
+		 str_Output:=Output[11];
+                sCSVField := STRING_TO_CSVFIELD( str_Output, FALSE );(* TODO: Get field value from your application *)
+
+
+                (* Add new field to the record buffer *)
+                fbWriter(     pBuffer := ADR( sCSVLine ), cbBuffer := SIZEOF( sCSVLine ), putValue := sCSVField, pValue := 0, cbValue := 0,
+                            bCRLF := FALSE);(* bCRLF == TRUE => Write CRLF after the last field value *)
+                IF fbWriter.bOk THEN
+                    fbWriter.eCmd := eEnumCmd_Next;(* Write next field value *)
+                ELSE(* Error *)
+                    step := 100;
+                    RETURN;
+                END_IF
+
+		  str_Output:=Output[12];
+                sCSVField := STRING_TO_CSVFIELD( str_Output, FALSE );(* TODO: Get field value from your application *)
+
+
+                (* Add new field to the record buffer *)
+                fbWriter(     pBuffer := ADR( sCSVLine ), cbBuffer := SIZEOF( sCSVLine ), putValue := sCSVField, pValue := 0, cbValue := 0,
+                            bCRLF := TRUE);(* bCRLF == TRUE => Write CRLF after the last field value *)
+                IF fbWriter.bOk THEN
+                    fbWriter.eCmd := eEnumCmd_Next;(* Write next field value *)
+                ELSE(* Error *)
+                    step := 100;
+                    RETURN;
+                END_IF
+			
+			 str_Output:=Output[15];
+                sCSVField := STRING_TO_CSVFIELD( str_Output, FALSE );(* TODO: Get field value from your application *)
+
+
+                (* Add new field to the record buffer *)
+                fbWriter(     pBuffer := ADR( sCSVLine ), cbBuffer := SIZEOF( sCSVLine ), putValue := sCSVField, pValue := 0, cbValue := 0,
+                            bCRLF := FALSE);(* bCRLF == TRUE => Write CRLF after the last field value *)
+                IF fbWriter.bOk THEN
+                    fbWriter.eCmd := eEnumCmd_Next;(* Write next field value *)
+                ELSE(* Error *)
+                    step := 100;
+                    RETURN;
+                END_IF
+
+		  str_Output:=Output[16];
+                sCSVField := STRING_TO_CSVFIELD( str_Output, FALSE );(* TODO: Get field value from your application *)
+
+
+                (* Add new field to the record buffer *)
+                fbWriter(     pBuffer := ADR( sCSVLine ), cbBuffer := SIZEOF( sCSVLine ), putValue := sCSVField, pValue := 0, cbValue := 0,
+                            bCRLF := TRUE);(* bCRLF == TRUE => Write CRLF after the last field value *)
+                IF fbWriter.bOk THEN
+                    fbWriter.eCmd := eEnumCmd_Next;(* Write next field value *)
+                ELSE(* Error *)
+                    step := 100;
+                    RETURN;
+                END_IF
+			
+			 str_Output:=Output[19];
+                sCSVField := STRING_TO_CSVFIELD( str_Output, FALSE );(* TODO: Get field value from your application *)
+
+
+                (* Add new field to the record buffer *)
+                fbWriter(     pBuffer := ADR( sCSVLine ), cbBuffer := SIZEOF( sCSVLine ), putValue := sCSVField, pValue := 0, cbValue := 0,
+                            bCRLF := FALSE);(* bCRLF == TRUE => Write CRLF after the last field value *)
+                IF fbWriter.bOk THEN
+                    fbWriter.eCmd := eEnumCmd_Next;(* Write next field value *)
+                ELSE(* Error *)
+                    step := 100;
+                    RETURN;
+                END_IF
+
+		  str_Output:=Output[20];
+                sCSVField := STRING_TO_CSVFIELD( str_Output, FALSE );(* TODO: Get field value from your application *)
+
+
+                (* Add new field to the record buffer *)
+                fbWriter(     pBuffer := ADR( sCSVLine ), cbBuffer := SIZEOF( sCSVLine ), putValue := sCSVField, pValue := 0, cbValue := 0,
+                            bCRLF := TRUE);(* bCRLF == TRUE => Write CRLF after the last field value *)
+                IF fbWriter.bOk THEN
+                    fbWriter.eCmd := eEnumCmd_Next;(* Write next field value *)
+                ELSE(* Error *)
+                    step := 100;
+                    RETURN;
+                END_IF
+			str_Output:=Output[23];
+                sCSVField := STRING_TO_CSVFIELD( str_Output, FALSE );(* TODO: Get field value from your application *)
+
+
+                (* Add new field to the record buffer *)
+                fbWriter(     pBuffer := ADR( sCSVLine ), cbBuffer := SIZEOF( sCSVLine ), putValue := sCSVField, pValue := 0, cbValue := 0,
+                            bCRLF := FALSE);(* bCRLF == TRUE => Write CRLF after the last field value *)
+                IF fbWriter.bOk THEN
+                    fbWriter.eCmd := eEnumCmd_Next;(* Write next field value *)
+                ELSE(* Error *)
+                    step := 100;
+                    RETURN;
+                END_IF
+
+		  str_Output:=Output[24];
+                sCSVField := STRING_TO_CSVFIELD( str_Output, FALSE );(* TODO: Get field value from your application *)
+
+
+                (* Add new field to the record buffer *)
+                fbWriter(     pBuffer := ADR( sCSVLine ), cbBuffer := SIZEOF( sCSVLine ), putValue := sCSVField, pValue := 0, cbValue := 0,
+                            bCRLF := TRUE);(* bCRLF == TRUE => Write CRLF after the last field value *)
+                IF fbWriter.bOk THEN
+                    fbWriter.eCmd := eEnumCmd_Next;(* Write next field value *)
+                ELSE(* Error *)
+                    step := 100;
+                    RETURN;
+                END_IF
+			str_Output:=Output[27];
+                sCSVField := STRING_TO_CSVFIELD( str_Output, FALSE );(* TODO: Get field value from your application *)
+
+
+                (* Add new field to the record buffer *)
+                fbWriter(     pBuffer := ADR( sCSVLine ), cbBuffer := SIZEOF( sCSVLine ), putValue := sCSVField, pValue := 0, cbValue := 0,
+                            bCRLF := FALSE);(* bCRLF == TRUE => Write CRLF after the last field value *)
+                IF fbWriter.bOk THEN
+                    fbWriter.eCmd := eEnumCmd_Next;(* Write next field value *)
+                ELSE(* Error *)
+                    step := 100;
+                    RETURN;
+                END_IF
+
+		  str_Output:=Output[28];
+                sCSVField := STRING_TO_CSVFIELD( str_Output, FALSE );(* TODO: Get field value from your application *)
+
+
+                (* Add new field to the record buffer *)
+                fbWriter(     pBuffer := ADR( sCSVLine ), cbBuffer := SIZEOF( sCSVLine ), putValue := sCSVField, pValue := 0, cbValue := 0,
+                            bCRLF := TRUE);(* bCRLF == TRUE => Write CRLF after the last field value *)
+                IF fbWriter.bOk THEN
+                    fbWriter.eCmd := eEnumCmd_Next;(* Write next field value *)
+                ELSE(* Error *)
+                    step := 100;
+                    RETURN;
+                END_IF
+			str_Output:=Output[31];
+                sCSVField := STRING_TO_CSVFIELD( str_Output, FALSE );(* TODO: Get field value from your application *)
+
+
+                (* Add new field to the record buffer *)
+                fbWriter(     pBuffer := ADR( sCSVLine ), cbBuffer := SIZEOF( sCSVLine ), putValue := sCSVField, pValue := 0, cbValue := 0,
+                            bCRLF := FALSE);(* bCRLF == TRUE => Write CRLF after the last field value *)
+                IF fbWriter.bOk THEN
+                    fbWriter.eCmd := eEnumCmd_Next;(* Write next field value *)
+                ELSE(* Error *)
+                    step := 100;
+                    RETURN;
+                END_IF
+
+		  str_Output:=Output[32];
+                sCSVField := STRING_TO_CSVFIELD( str_Output, FALSE );(* TODO: Get field value from your application *)
+
+
+                (* Add new field to the record buffer *)
+                fbWriter(     pBuffer := ADR( sCSVLine ), cbBuffer := SIZEOF( sCSVLine ), putValue := sCSVField, pValue := 0, cbValue := 0,
+                            bCRLF := TRUE);(* bCRLF == TRUE => Write CRLF after the last field value *)
+                IF fbWriter.bOk THEN
+                    fbWriter.eCmd := eEnumCmd_Next;(* Write next field value *)
+                ELSE(* Error *)
+                    step := 100;
+                    RETURN;
+                END_IF
+			str_Output:=Output[35];
+                sCSVField := STRING_TO_CSVFIELD( str_Output, FALSE );(* TODO: Get field value from your application *)
+
+
+                (* Add new field to the record buffer *)
+                fbWriter(     pBuffer := ADR( sCSVLine ), cbBuffer := SIZEOF( sCSVLine ), putValue := sCSVField, pValue := 0, cbValue := 0,
+                            bCRLF := FALSE);(* bCRLF == TRUE => Write CRLF after the last field value *)
+                IF fbWriter.bOk THEN
+                    fbWriter.eCmd := eEnumCmd_Next;(* Write next field value *)
+                ELSE(* Error *)
+                    step := 100;
+                    RETURN;
+                END_IF
+
+		  str_Output:=Output[36];
+                sCSVField := STRING_TO_CSVFIELD( str_Output, FALSE );(* TODO: Get field value from your application *)
+
+
+                (* Add new field to the record buffer *)
+                fbWriter(     pBuffer := ADR( sCSVLine ), cbBuffer := SIZEOF( sCSVLine ), putValue := sCSVField, pValue := 0, cbValue := 0,
+                            bCRLF := TRUE);(* bCRLF == TRUE => Write CRLF after the last field value *)
+                IF fbWriter.bOk THEN
+                    fbWriter.eCmd := eEnumCmd_Next;(* Write next field value *)
+                ELSE(* Error *)
+                    step := 100;
+                    RETURN;
+                END_IF
+			str_Output:=Output[39];
+                sCSVField := STRING_TO_CSVFIELD( str_Output, FALSE );(* TODO: Get field value from your application *)
+
+
+                (* Add new field to the record buffer *)
+                fbWriter(     pBuffer := ADR( sCSVLine ), cbBuffer := SIZEOF( sCSVLine ), putValue := sCSVField, pValue := 0, cbValue := 0,
+                            bCRLF := FALSE);(* bCRLF == TRUE => Write CRLF after the last field value *)
+                IF fbWriter.bOk THEN
+                    fbWriter.eCmd := eEnumCmd_Next;(* Write next field value *)
+                ELSE(* Error *)
+                    step := 100;
+                    RETURN;
+                END_IF
+
+		  str_Output:=Output[40];
+                sCSVField := STRING_TO_CSVFIELD( str_Output, FALSE );(* TODO: Get field value from your application *)
+
+
+                (* Add new field to the record buffer *)
+                fbWriter(     pBuffer := ADR( sCSVLine ), cbBuffer := SIZEOF( sCSVLine ), putValue := sCSVField, pValue := 0, cbValue := 0,
+                            bCRLF := TRUE);(* bCRLF == TRUE => Write CRLF after the last field value *)
+                IF fbWriter.bOk THEN
+                    fbWriter.eCmd := eEnumCmd_Next;(* Write next field value *)
+                ELSE(* Error *)
+                    step := 100;
+                    RETURN;
+                END_IF
+            END_FOR(* FOR nColumn := 0... *)
+			fbWriter.eCmd := eEnumCmd_Next ;
+            step := 10;(* Write record to the file *)
+			
+
+
+
+    10:    (* Write single text line *)
+     
+        fbFileWrite( bExecute := FALSE );
+        fbFileWrite( sNetId := sNetId, hFile := DestinationhFile, bExecute := TRUE, pWriteBuff := ADR(sCSVLine), cbWriteLen := fbWriter.cbSize);
+        step := 11;
+
+	
+
+    11:(* Wait until write not busy *)
+        fbFileWrite( bExecute := FALSE, bError => bError, nErrID => nErrID );
+        IF NOT fbFileWrite.bBusy THEN
+            IF NOT fbFileWrite.bError THEN
+                step := 20;(* Writing CSV-File done*)
+            ELSE(* Error *)
+                step := 100;
+            END_IF
+        END_IF
+
+
+   20:    (* Close source file *)
+   		
+    	//IF DestinationhFile > 0  THEN
+			//step:= 10;
+		//ELSE
+        fbFileClose( bExecute := FALSE );
+        fbFileClose( sNetId := sNetId, hFile := DestinationhFile, bExecute := TRUE );
+        step := 21;
+		//END_IF
+		
+
+
+
+    21:(* Wait until close not busy *)
+        fbFileClose( bExecute := FALSE, bError => bError, nErrID => nErrID );
+			CounterPosition01.RESET:= TRUE;
+			CounterPosition02.RESET:= TRUE;
+			CounterPosition03.RESET:= TRUE;
+			CounterPosition04.RESET:= TRUE;
+			CounterPosition05.RESET:= TRUE;
+			CounterPosition06.RESET:= TRUE;
+			CounterPosition07.RESET:= TRUE;
+			CounterPosition08.RESET:= TRUE;
+			CounterPosition09.RESET:= TRUE;
+			CounterPosition10.RESET:= TRUE;
+        IF ( NOT fbFileClose.bBusy ) THEN
+            DestinationhFile := 0;
+            step := 100;
+        END_IF
+
+
+
+    100: (* Error OR ready step => cleanup *)
+		
+      IF ( DestinationhFile <> 0 ) THEN
+           step := 20; (* Close the source file *)
+        ELSE
+            bBusy := FALSE;
+			CounterPosition01.RESET:= FALSE;
+			CounterPosition02.RESET:= FALSE;
+			CounterPosition03.RESET:= FALSE;
+			CounterPosition04.RESET:= FALSE;
+			CounterPosition05.RESET:= FALSE;
+			CounterPosition06.RESET:= FALSE;
+			CounterPosition07.RESET:= FALSE;
+			CounterPosition08.RESET:= FALSE;
+			CounterPosition09.RESET:= FALSE;
+			CounterPosition10.RESET:= FALSE;
+			FileReady:= TRUE;
+            step := 0;//    (* Ready *)
+     END_IF
+
+
+
+
+END_CASE
+
+IF Ton1.ET = Ton1.PT AND FileReady THEN
+	StartPACCounter := FALSE ;
+END_IF
+
+]]></ST>
+    </Implementation>
+    <LineIds Name="FB_PAC_CapacityCounter">
+      <LineId Id="3" Count="873" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

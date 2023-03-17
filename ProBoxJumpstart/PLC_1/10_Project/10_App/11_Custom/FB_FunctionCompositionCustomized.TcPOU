@@ -1,0 +1,17 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <POU Name="FB_FunctionCompositionCustomized" Id="{dab6032a-07a7-4e89-86c7-4672b3b39b9a}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK FB_FunctionCompositionCustomized
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[fbF_10_001_0200_02_0.CtrlIn.DestinationFunction := F_10_001_0230_01_0;
+fbF_10_001_0200_02_0.CtrlIn.DestinationZone := 1;
+fbF_10_001_0200_02_0.CtrlIn.TU_Type := 1;]]></ST>
+    </Implementation>
+    <LineIds Name="FB_FunctionCompositionCustomized">
+      <LineId Id="3" Count="0" />
+      <LineId Id="2" Count="0" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

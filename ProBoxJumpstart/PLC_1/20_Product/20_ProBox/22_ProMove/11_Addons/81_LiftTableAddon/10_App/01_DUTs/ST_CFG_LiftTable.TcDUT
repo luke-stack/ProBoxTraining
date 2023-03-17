@@ -1,0 +1,16 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <DUT Name="ST_CFG_LiftTable" Id="{7961f156-c716-4726-abba-13c305036f48}">
+    <Declaration><![CDATA[TYPE ST_CFG_LiftTable :
+STRUCT
+	TimeoutValueLift 		: TIME := T#10S;	// Timeout value for lifting
+	OperatorPanelEnable		: BOOL;				//Config, if operator panel exists
+	OverhangSensorsEnable	: BOOL; 			//If overhang sensors exists
+	HomePosLiftTable		: E_Positions_LowLiftControl; //Homeposition lift table with operator panel 
+	PosFree					: E_Positions_LowLiftControl; //Position of lift when zone is free, automatic mode
+	PosOccupied				: E_Positions_LowLiftControl; //Position of lift when zone is occupied, automatic mode
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

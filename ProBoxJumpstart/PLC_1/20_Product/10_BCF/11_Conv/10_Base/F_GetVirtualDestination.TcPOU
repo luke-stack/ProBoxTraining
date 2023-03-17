@@ -1,0 +1,87 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.4">
+  <POU Name="F_GetVirtualDestination" Id="{c0d5db76-bd3d-4863-90ef-f6e89fa27d45}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION F_GetVirtualDestination : ST_PositionIdent
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 404529 $
+ *	Revision date	:	$Date: 2018-04-23 08:21:38 +0200 (Mo., 23 Apr 2018) $
+ *	Last changed by	:	$Author: b7bolm $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/trunk/01_Software/BCF/BCF/JumpStart/20_Product/10_App/10_Base/10_Lib/10_Conv/F_GetVirtualDestination.TcPOU $
+ *
+ *	Purpose			:	Returns virtual function number of an external destination.
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				26.07.2017		swl					Example
+ *
+ **************************************************************************************)
+VAR_INPUT
+	PositionName		: STRING(NAME_LENGTH); // Name of position
+END_VAR
+
+VAR
+	eFunctionNumber		: E_FunctionNumber;
+	HashCode			: UDINT;
+	Idx					: INT;
+	DestinationFound	: BOOL;
+END_VAR]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[// Initialize
+F_GetVirtualDestination.eFunctionNumber := E_FunctionNumber.F_BEGIN_FUNCTION;
+F_GetVirtualDestination.PositionName := '';
+F_GetVirtualDestination.ZoneNumber := 0;
+DestinationFound := FALSE;
+
+// Get hash code
+HashCode := F_CreateHashCode(PositionName);
+
+// Search virtual destination which belongs to this external destination
+FOR eFunctionNumber := F_BEGIN_VIRTUAL_FUNCTION + 1 TO F_END_VIRTUAL_FUNCTION - 1 DO
+	FOR Idx := 1 TO Conveyor.NUMBER_OF_EXT_DESTINATIONS DO
+		// Compare hash code
+		IF ExternalDestinationTable[eFunctionNumber, Idx].HashCode = HashCode THEN
+			// Compare string name	
+			IF F_EqualSisNames(Name1 := ExternalDestinationTable[eFunctionNumber, Idx].PositionName,
+										     Name2 := PositionName) THEN
+										
+				F_GetVirtualDestination.eFunctionNumber := eFunctionNumber;
+				F_GetVirtualDestination.PositionName := PositionName;
+				F_GetVirtualDestination.ZoneNumber := 0;
+				DestinationFound := TRUE;
+				EXIT;
+			END_IF
+		END_IF
+	END_FOR
+	
+	IF DestinationFound THEN
+		EXIT;
+	END_IF
+END_FOR
+]]></ST>
+    </Implementation>
+    <ObjectProperties>
+      <XmlArchive>
+        <Data>
+          <o xml:space="preserve" t="UMLStereoTypeContainerObject">
+            <v n="IsType" t="UMLType">BaseArea</v>
+            <v n="Stereotype">""</v>
+            <d n="Stereotypes" t="Hashtable" />
+          </o>
+        </Data>
+        <TypeList>
+          <Type n="Hashtable">System.Collections.Hashtable</Type>
+          <Type n="String">System.String</Type>
+          <Type n="UMLStereoTypeContainerObject">{30250973-b110-4e31-b562-c102e042dca4}</Type>
+          <Type n="UMLType">{0197b136-405a-42ee-bb27-fd08b621d0cf}</Type>
+        </TypeList>
+      </XmlArchive>
+    </ObjectProperties>
+  </POU>
+</TcPlcObject>

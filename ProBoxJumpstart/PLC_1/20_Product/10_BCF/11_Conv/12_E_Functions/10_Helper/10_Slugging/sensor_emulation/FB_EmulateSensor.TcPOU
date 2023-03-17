@@ -1,0 +1,254 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.4">
+  <POU Name="FB_EmulateSensor" Id="{c64a4edb-964b-491b-adbc-019c8aadd8ae}" SpecialFunc="None">
+    <Declaration><![CDATA[/// Sensor emulation
+{attribute 'no_explicit_call' := 'do not call this POU directly'} 
+FUNCTION_BLOCK FINAL FB_EmulateSensor
+(**************************************************************************************
+ *  Application     :   BoxControl Framework
+ *  Revision date   :   $Date: 2021-04-09 16:13:33 +0200 (fre, 09 apr 2021) $
+ *  Author          :   CDC
+ * ------------------------------------------------------------------------------------
+ *  © Swisslog AG
+ *  Swisslog is not liable for any usage of this source code that is not agreed 
+ *  on between Swisslog and the other party. The mandatory legal liability remains 
+ *  unaffected.
+ * ------------------------------------------------------------------------------------
+ *  Revision History: 
+ *
+ *  VERSION DATE         INITIALS     DESCRIPTION
+ *  0.0     DD.MM.YYYY   (name)       (explain customized modifications)
+ *
+ **************************************************************************************)]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[]]></ST>
+    </Implementation>
+    <Method Name="M_GetNextZoneData" Id="{7a5a8482-3475-4116-87f2-a5294357d804}">
+      <Declaration><![CDATA[/// Get zonedate from the next zone compared to this zone
+METHOD PRIVATE M_GetNextZoneData : ST_ZoneData
+(**************************************************************************************
+ *  Application     :   BoxControl Framework
+ *  Revision date   :   $Date: 2021-04-09 16:13:33 +0200 (fre, 09 apr 2021) $
+ *  Author          :   CDC
+ * ------------------------------------------------------------------------------------
+ *  © Swisslog AG
+ *  Swisslog is not liable for any usage of this source code that is not agreed 
+ *  on between Swisslog and the other party. The mandatory legal liability remains 
+ *  unaffected.
+ * ------------------------------------------------------------------------------------
+ *  Revision History: 
+ *
+ *  VERSION DATE         INITIALS     DESCRIPTION
+ *  0.0     DD.MM.YYYY   (name)       (explain customized modifications)
+ *
+ **************************************************************************************)
+VAR_INPUT
+    eThisFunctionNumber : E_FunctionNumber;
+    ZoneNumber          : DINT;
+END_VAR
+VAR
+    ThisZoneSettings        : ST_CFG_Zone;
+    ThisFunctionSettings    : ST_CFG_Function;
+    ThisFunctionInterface   : ST_FunctionInterface;
+    
+    eNextFunctionNumber     : E_FunctionNumber;
+    NextFunctionSettings    : ST_CFG_Function;
+    
+    ZoneToGet : DINT;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[(*
+* Check where the next zone is located at depending also on the flow direction (1 to x or x to 1) and number of the zones the function has.
+* Then return zonedata.
+*)
+ThisFunctionSettings := F_GetFunctionSettings(eThisFunctionNumber);
+
+//If the zone is at the end or start of the calling function, look for next function
+IF (ZoneNumber = 1 AND ThisFunctionSettings.FlowDirectionREV)
+	OR (ZoneNumber = ThisFunctionSettings.NumberOfZones AND NOT ThisFunctionSettings.FlowDirectionREV) THEN	
+    
+    ThisFunctionInterface := F_GetFunctionInterface(eThisFunctionNumber);
+    eNextFunctionNumber := ThisFunctionInterface.In.eNextFunctionNumber;
+    
+	IF F_IsValidFunctionNumber(eNextFunctionNumber) THEN
+        IF ThisFunctionSettings.FlowDirectionREV THEN
+            NextFunctionSettings := F_GetFunctionSettings(eNextFunctionNumber);
+            ZoneToget := NextFunctionSettings.NumberOfZones;
+        ELSE
+            ZoneToGet := 1;
+		END_IF
+        
+		M_GetNextZoneData := F_GetZoneData(eNextFunctionNumber, DINT_TO_INT(ZoneToGet));
+	//Return empty zonedata if the function number points to an external interface
+	ELSE
+        M_GetNextZoneData := F_EmptyZoneData();
+	END_IF
+ELSE
+	//Calculate the number of the next zone depending on the flow direction when next zone is in the same function
+	IF ThisFunctionSettings.FlowDirectionREV THEN 
+		ZoneToGet := MAX(1, ZoneNumber - 1);
+	ELSE
+		ZoneToGet := MIN(ZoneNumber + 1, ThisFunctionSettings.NumberOfZones);
+	END_IF
+
+	M_GetNextZoneData := F_GetZoneData(eThisFunctionNumber, DINT_TO_INT(ZoneToGet));
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_GetPreviousZoneData" Id="{3ea1840d-a078-4415-bef0-e77b68b2912d}">
+      <Declaration><![CDATA[/// Get zonedate from the previous zone compared to this zone
+METHOD PRIVATE M_GetPreviousZoneData : ST_ZoneData
+(**************************************************************************************
+ *  Application     :   BoxControl Framework
+ *  Revision date   :   $Date: 2021-04-09 16:13:33 +0200 (fre, 09 apr 2021) $
+ *  Author          :   CDC
+ * ------------------------------------------------------------------------------------
+ *  © Swisslog AG
+ *  Swisslog is not liable for any usage of this source code that is not agreed 
+ *  on between Swisslog and the other party. The mandatory legal liability remains 
+ *  unaffected.
+ * ------------------------------------------------------------------------------------
+ *  Revision History: 
+ *
+ *  VERSION DATE         INITIALS     DESCRIPTION
+ *  0.0     DD.MM.YYYY   (name)       (explain customized modifications)
+ *
+ **************************************************************************************)
+VAR_INPUT
+    eThisFunctionNumber : E_FunctionNumber;
+    ZoneNumber          : DINT;
+END_VAR
+VAR
+    ThisZoneSettings        : ST_CFG_Zone;
+    ThisFunctionSettings    : ST_CFG_Function;
+    ThisFunctionInterface   : ST_FunctionInterface;
+    
+    ePreviousFunctionNumber : E_FunctionNumber;
+    PreviousFunctionSettings : ST_CFG_Function;
+    
+    ZoneToGet : DINT;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[(*
+* Check where the previous zone is located at depending also on the flow direction (1 to x or x to 1) and number of the zones the function has.
+* Then return zonedata.
+*)
+ThisFunctionSettings := F_GetFunctionSettings(eThisFunctionNumber);
+
+//If the zone is at the end or start of the calling function, look for next function
+IF (ZoneNumber = 1 AND ThisFunctionSettings.FlowDirectionREV)
+	OR (ZoneNumber = ThisFunctionSettings.NumberOfZones AND NOT ThisFunctionSettings.FlowDirectionREV) THEN	
+  
+    ThisFunctionInterface := F_GetFunctionInterface(eThisFunctionNumber);
+    ePreviousFunctionNumber := ThisFunctionInterface.In.ePrevFunctionNumber;
+    
+	IF F_IsValidFunctionNumber(ePreviousFunctionNumber) THEN
+        IF NOT ThisFunctionSettings.FlowDirectionREV THEN
+            PreviousFunctionSettings := F_GetFunctionSettings(ePreviousFunctionNumber);
+            ZoneToget := PreviousFunctionSettings.NumberOfZones;
+        ELSE
+            ZoneToGet := 1;
+		END_IF
+        
+		M_GetPreviousZoneData := F_GetZoneData(ePreviousFunctionNumber, DINT_TO_INT(ZoneToGet));
+	//Return empty zonedata if the function number points to an external interface
+	ELSE
+        M_GetPreviousZoneData := F_EmptyZoneData();
+	END_IF
+ELSE
+	//Calculate the number of the next zone depending on the flow direction when next zone is in the same function
+	IF NOT ThisFunctionSettings.FlowDirectionREV THEN 
+		ZoneToGet := MAX(1, ZoneNumber - 1);
+	ELSE
+		ZoneToGet := MIN(ZoneNumber + 1, ThisFunctionSettings.NumberOfZones);
+	END_IF
+
+	M_GetPreviousZoneData := F_GetZoneData(eThisFunctionNumber, DINT_TO_INT(ZoneToGet));
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_GetSensorStatus" Id="{00a80218-ec37-42ca-980a-97b3342ccf77}">
+      <Declaration><![CDATA[/// Create emulated sensor signal depeding on the requested mode for the emulation
+METHOD PUBLIC M_GetSensorStatus : BOOL
+(**************************************************************************************
+ *  Application     :   BoxControl Framework
+ *  Revision date   :   $Date: 2021-04-09 16:13:33 +0200 (fre, 09 apr 2021) $
+ *  Author          :   CDC
+ * ------------------------------------------------------------------------------------
+ *  © Swisslog AG
+ *  Swisslog is not liable for any usage of this source code that is not agreed 
+ *  on between Swisslog and the other party. The mandatory legal liability remains 
+ *  unaffected.
+ * ------------------------------------------------------------------------------------
+ *  Revision History: 
+ *
+ *  VERSION DATE         INITIALS     DESCRIPTION
+ *  0.0     DD.MM.YYYY   (name)       (explain customized modifications)
+ *
+ **************************************************************************************)
+VAR_INPUT
+    eEmulateMode     : E_SensorEmulateModes;
+    eFunctionNumber  : E_FunctionNumber;
+    ZoneNumber       : DINT;
+END_VAR
+VAR
+    ThisFunctionSettings : ST_CFG_Function;
+    ZoneData             : ST_ZoneData;    
+    
+	FePosition  : DINT;
+	ZoneLength	: DINT;
+	SensorPos   : DINT;
+END_VAR
+
+VAR CONSTANT
+    DEFAULT_TU_LENGTH : INT := 500;
+    CYCLE_COMPENSATION : INT := 30;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[IF eFunctionNumber <> E_FunctionNumber.F_BEGIN_FUNCTION THEN
+	CASE eEmulateMode OF
+	
+		E_SensorEmulateModes.VIRTUAL:
+			ThisFunctionSettings := F_GetFunctionSettings(eFunctionNumber);
+			ZoneData := F_GetZoneData(eFunctionNumber, DINT_TO_INT(ZoneNumber));
+			FePosition := ZoneData.TransportControlData.TU_LeadingEdgePos;
+			ZoneLength := UINT_TO_DINT(ThisFunctionSettings.Zone[ZoneNumber].Length[1]);
+			SensorPos := ZoneLength - UINT_TO_DINT(ThisFunctionSettings.Zone[ZoneNumber].ZoneEndLengthToSide[2]);
+			
+			//TODO: fetch the leght if known, we might need to move cycle compensation to some kind of config
+			M_GetSensorStatus := F_InRangeDint(SensorPos - CYCLE_COMPENSATION, FePosition, SensorPos + DEFAULT_TU_LENGTH); 
+	
+		E_SensorEmulateModes.PREVIOUS:
+			ZoneData := M_GetPreviousZoneData(eFunctionNumber, DINT_TO_INT(ZoneNumber));
+			M_GetSensorStatus := ZoneData.TransportControlData.SensorOccupied;        
+			
+		E_SensorEmulateModes.OWN:   
+			//TODO: return own sensor;        
+			
+		E_SensorEmulateModes.NEXT:
+			ZoneData := M_GetNextZoneData(eFunctionNumber, DINT_TO_INT(ZoneNumber));
+			M_GetSensorStatus := ZoneData.TransportControlData.SensorOccupied;
+	
+	END_CASE
+END_IF
+
+]]></ST>
+      </Implementation>
+    </Method>
+    <LineIds Name="FB_EmulateSensor">
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_EmulateSensor.M_GetNextZoneData">
+      <LineId Id="3" Count="34" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_EmulateSensor.M_GetPreviousZoneData">
+      <LineId Id="3" Count="34" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_EmulateSensor.M_GetSensorStatus">
+      <LineId Id="125" Count="26" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

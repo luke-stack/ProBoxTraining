@@ -1,0 +1,14 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <DUT Name="ST_CFG_FunctionForks" Id="{8e9422bf-e4c7-4de0-b4b7-47a3fa8ef280}">
+    <Declaration><![CDATA[TYPE ST_CFG_FunctionForks :
+
+STRUCT
+	DriveCFG				: ST_CFG_MPD_Drive;
+	EncoderHoming			: ST_EncoderHoming;	//parameters for Homing...	
+	EncoderHomePosValue		: DINT; //Fork encoder value at center position
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

@@ -1,0 +1,26 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <DUT Name="ST_CFG_ExtendedRun" Id="{a9547f32-58cf-4545-ab2e-b29fa7b82723}">
+    <Declaration><![CDATA[TYPE ST_CFG_ExtendedRun :
+
+(**************************************************************************************
+ * 	Application		:	ProBox Framework
+ *	Revision		:	$Revision:  $
+ *	Revision date	:	$Date: $
+ *	Last changed by	:	$Author: q8hedls $
+ *	URL				:	$URL: 
+ *
+ *	Purpose			:	config parameters Extended run feature
+ **************************************************************************************)	
+STRUCT
+	Activated			: BOOL :=FALSE; //True = Extended run feature activ(enabled).	
+	TimeoutDriveRun		: TIME:= T#10S; // Timeout value for driving towards extended run stop sensor	
+	FunctionZone		: INT :=1;	 
+	ElementRunAxis 		: E_Axis_Orientation := E_Axis_Orientation.Element_12; //choose the axis and direction where the extended run shall take place. (On an DTU this can be any side)
+	DriveSpeed			: E_ProBoxMotorSpeed := E_ProBoxMotorSpeed.NORMAL;	
+END_STRUCT
+END_TYPE
+
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

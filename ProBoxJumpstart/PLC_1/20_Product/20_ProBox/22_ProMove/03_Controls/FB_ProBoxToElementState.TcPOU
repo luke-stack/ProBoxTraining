@@ -1,0 +1,63 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.4">
+  <POU Name="FB_ProBoxToElementState" Id="{102f853d-40dc-49c1-9cfc-dfb123176e1c}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK FB_ProBoxToElementState
+VAR_INPUT
+	CreepSpeed_12 	: BOOL;	
+	LowSpeed_12 	: BOOL;
+	Forward_12 		: BOOL;	
+	Reverse_12 		: BOOL;	
+	CreepSpeed_34 	: BOOL;	
+	LowSpeed_34 	: BOOL;
+	Forward_34 		: BOOL;	
+	Reverse_34 		: BOOL;
+END_VAR
+
+VAR_OUTPUT
+	ElementState : ST_ElementState;
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[
+// Convert ProBox motor speeds to "BCF" speeds just to avoid chainging the interfaces between functions and elements.
+IF CreepSpeed_12 THEN
+	ElementState.Speed := 20;
+ELSIF LowSpeed_12 THEN
+	ElementState.Speed := 50;
+ELSE
+	ElementState.Speed := 100;
+END_IF;
+
+IF CreepSpeed_34 THEN
+	ElementState.Speed_34 := 20;
+ELSIF LowSpeed_34 THEN
+	ElementState.Speed_34 := 50;
+ELSE
+	ElementState.Speed_34 := 100;
+END_IF;
+	
+
+IF Forward_12 THEN
+	ElementState.DriveDirection := TRUE;
+ELSIF Reverse_12 THEN
+	ElementState.DriveDirection := FALSE;
+END_IF;
+
+IF Forward_34 THEN
+	ElementState.DriveDirection_34 := TRUE;
+ELSIF Reverse_34 THEN
+	ElementState.DriveDirection_34 := FALSE;
+END_IF;
+
+
+ElementState.DriveRunning := Forward_12 OR Reverse_12;
+ElementState.DriveRunning_34 := Forward_34 OR Reverse_34;
+
+]]></ST>
+    </Implementation>
+    <LineIds Name="FB_ProBoxToElementState">
+      <LineId Id="3" Count="34" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

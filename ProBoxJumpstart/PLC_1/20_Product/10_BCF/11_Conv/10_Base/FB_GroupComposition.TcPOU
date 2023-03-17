@@ -1,0 +1,67 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.12">
+  <POU Name="FB_GroupComposition" Id="{9e7b56e9-8d57-476d-8e5f-b5c5dda48c08}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK FB_GroupComposition
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 404529 $
+ *	Revision date	:	$Date: 2018-04-23 08:21:38 +0200 (Mo., 23 Apr 2018) $
+ *	Last changed by	:	$Author: b7bolm $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/trunk/01_Software/BCF/BCF/JumpStart/20_Product/10_App/10_Base/10_Lib/10_Conv/FB_GroupComposition.TcPOU $
+ *
+ *	Purpose			:	Call groups
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+VAR
+	eGroupNumber		: E_GroupNumber; // Number of the Group  
+	fbDebugMsg			: FB_DebugMsg; // Debug Msg Manager (STACK) 
+	DebugMsg			: T_MAXSTRING; // Debug msg
+	StartTimeMeasurement: T_DCTIME64;	// Get actual time stamp
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[(**************************************************************************************************************
+  Call all groups
+***************************************************************************************************************)
+// Loop trough all groups 
+FOR eGroupNumber := G_BEGIN_GROUP + 1 TO G_END_GROUP - 1 DO
+	// If this group is enabled 
+	IF GroupRegistry[eGroupNumber].Enable THEN
+		// If a valid reference is available 
+		IF __ISVALIDREF(GroupRegistry[eGroupNumber].rGroup) THEN
+			// Start execution time measure
+			StartTimeMeasurement := F_GetActualDcTime64();
+			// Call
+			GroupRegistry[eGroupNumber].rGroup();
+			
+			F_ExecutionTime(
+				StartTime			:= StartTimeMeasurement,
+				ExecutionTimeSlot 	:= ExecutionTimeTable.Groups[eGroupNumber]);
+		ELSE		
+			// Invalid reference
+			DebugMsg := CONCAT('F_GroupComposition - Reference not valid, Group index: ', INT_TO_STRING(eGroupNumber));
+			fbDebugMsg.M_SendErrorMsg(mMessage := DebugMsg);
+		END_IF
+	END_IF
+END_FOR
+
+
+
+]]></ST>
+    </Implementation>
+    <LineIds Name="FB_GroupComposition">
+      <LineId Id="3" Count="26" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

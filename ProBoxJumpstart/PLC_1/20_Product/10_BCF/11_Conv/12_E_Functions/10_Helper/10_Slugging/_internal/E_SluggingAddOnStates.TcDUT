@@ -1,0 +1,51 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.4">
+  <DUT Name="E_SluggingAddOnStates" Id="{6c97be07-ab21-4fb9-a1f1-2c780a287dd8}">
+    <Declaration><![CDATA[/// working states for FB_SluggingAddOn
+{attribute 'qualified_only'}
+{attribute 'to_string'}
+(**************************************************************************************
+ *  Application     :   BoxControl Framework
+ *  Revision date   :   $Date: 2021-04-09 08:29:02 +0200 (fre, 09 apr 2021) $
+ *  Author          :   CDC
+ * ------------------------------------------------------------------------------------
+ *  © Swisslog AG
+ *  Swisslog is not liable for any usage of this source code that is not agreed 
+ *  on between Swisslog and the other party. The mandatory legal liability remains 
+ *  unaffected.
+ * ------------------------------------------------------------------------------------
+ *  Revision History: 
+ *
+ *  VERSION DATE         INITIALS     DESCRIPTION
+ *  0.0     DD.MM.YYYY   (name)       (explain customized modifications)
+ *
+ **************************************************************************************)
+TYPE INTERNAL E_SluggingAddOnStates:
+(
+	Initialization		:=   0,		// initialization
+	//-----------------------------------------------------------------------------------
+	Disabled			:=   5,		// disabled
+	CheckSituation		:=   7,		// checks current situation (related to direction)
+	//-- create -------------------------------------------------------------------------
+	Create_WaitPrev		:=  11,		// wait prev ready for handover
+	Create_StartMove	:=  12,		// wait start moving
+	Create_AddTU		:=  13,		// taking over TU from prev
+	//-- full ---------------------------------------------------------------------------
+	Full_StartCycle		:=  21,		// start new cycle (needed for take timeout)
+	Full_WaitNext		:=  22,		// wait next ready for takeover
+	Full_WaitPrev		:=  23,		// wait prev ready for handover
+	Full_StartMove		:=  24,		// wait train starts to move
+	Full_MoveTrain		:=  25,		// move train & taking over from prev & handing over to next
+	//-- shift train --------------------------------------------------------------------
+	Shift_StartMove		:=  31,		// waiting till last is occupied
+	Shift_MoveTrain		:=  32,		// moving train one zone forward
+	//-- destroy ------------------------------------------------------------------------
+	Destroy_WaitTU		:=  41,		// wait TU at last zone
+	Destroy_WaitNext	:=  42,		// wait next ready for takeover
+	Destroy_StartMove	:=  43,		// wait start moving
+	Destroy_RemoveTU	:=  44		// remove train (handing over to next)
+)UINT;
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

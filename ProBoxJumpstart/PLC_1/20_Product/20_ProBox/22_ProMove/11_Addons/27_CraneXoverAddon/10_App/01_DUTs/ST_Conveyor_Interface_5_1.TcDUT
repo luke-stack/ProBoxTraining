@@ -1,0 +1,15 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <DUT Name="ST_Conveyor_Interface_5_1" Id="{3848b04e-5eee-490a-8b47-1b982f57896b}">
+    <Declaration><![CDATA[TYPE ST_Conveyor_Interface_5_1 :
+STRUCT
+	Watchdog		: BOOL;
+	TakeOverState	: E_Conveyor_InterfaceState;
+	HandOverState	: E_Conveyor_InterfaceState;
+	NbrOfTUs		: INT;
+	TUs				: ARRAY[1.. 9] OF ST_Conveyor_Interface_5_1_TU;
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

@@ -1,0 +1,39 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.12">
+  <DUT Name="ST_DAQ_6_1" Id="{a80f5550-ea67-4a6f-9d47-7dcad6c1d819}">
+    <Declaration><![CDATA[TYPE ST_DAQ_6_1 :
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 404529 $
+ *	Revision date	:	$Date: 2018-04-23 08:21:38 +0200 (Mo., 23 Apr 2018) $
+ *	Last changed by	:	$Author: b7bolm $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/trunk/01_Software/BCF/BCF/JumpStart/20_Product/10_App/11_Com/10_Lib/10_Conv/12_MFCS/11_SIS/01_DUTs/11_SIS_6_1/ST_DAQ_6_1.TcDUT $
+ *
+ *	Purpose			:	DAQ Structure
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *	0.2			    01.01.2016		Sna				    First version
+ **************************************************************************************)
+STRUCT
+	Position 			: STRING(SIS_6_1.POSITION_STRINGLENGTH); // 12 Digit SIS Location MM-GGG-EEEE-FF-Z
+	Code				: STRING(SIS_6_1.DATA_ACQUISITION_CODE); // 1 Digit dimension
+	NumberOfSets		: STRING(SIS_6_1.DIMENSIONS); // 2 Digit dimension
+	Variable			:ARRAY[E_CM_Index.E_BEGIN_VARIABLE+1..E_CM_Index.E_END_VARIABLE-1] OF STRING(SIS_6_1.GATHERED_DATA_VARIABLE); //  Variable name 
+	MaxReportTime		:ARRAY[E_CM_Index.E_BEGIN_VARIABLE+1..E_CM_Index.E_END_VARIABLE-1] OF STRING(SIS_6_1.DATA_ACQUISITION_MAXREPORTTIME); //  Max Report Time 
+	SampleTime			:ARRAY[E_CM_Index.E_BEGIN_VARIABLE+1..E_CM_Index.E_END_VARIABLE-1] OF STRING(SIS_6_1.DATA_ACQUISITION_SAMPLETIME); //  Sample Time Setting 
+	Threshold			:ARRAY[E_CM_Index.E_BEGIN_VARIABLE+1..E_CM_Index.E_END_VARIABLE-1] OF STRING(SIS_6_1.DATA_ACQUISITION_THRESHOLD); //  Threshold 
+	Option				:ARRAY[E_CM_Index.E_BEGIN_VARIABLE+1..E_CM_Index.E_END_VARIABLE-1] OF STRING(SIS_6_1.DATA_ACQUISITION_BIT); //  Option 
+	Enable				:ARRAY[E_CM_Index.E_BEGIN_VARIABLE+1..E_CM_Index.E_END_VARIABLE-1] OF STRING(SIS_6_1.DATA_ACQUISITION_BIT); //  enable
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

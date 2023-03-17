@@ -1,0 +1,161 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <POU Name="FB_OH_SensorControl" Id="{c82365a7-24e7-4fc1-bca5-fcf7117b44c3}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK FB_OH_SensorControl
+VAR_INPUT
+	FunctionNumber	: E_FunctionNumber;
+	ZoneNumber		: INT;
+	OH_PositionSide	: INT; //1,2,3 or 4
+	OH_SensorInput	: BOOL;
+	Mute			: BOOL; //mutes test when it is not needed, e.g. when group is not active
+END_VAR
+VAR_OUTPUT
+END_VAR
+VAR_IN_OUT
+	Error		: ST_ErrorDataSet;  
+END_VAR
+VAR
+	TransportData	: ST_TransportControlData;
+	OH_SensorOK		: BOOL;
+	TakeoverActive	: BOOL;
+	HandoverActive	: BOOL;   
+	CheckOverhang	: BOOL;
+	CheckToggle		: BOOL; 
+	Fwd				: BOOL; 
+END_VAR
+
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[TransportData := F_PB_GetTransportControlDataRef(FunctionNumber,ZoneNumber);
+CheckOverhang := TRUE;
+CheckToggle	  := FALSE;
+
+//Function data valid
+IF NOT( FunctionNumber > E_FunctionNumber.F_BEGIN_FUNCTION AND FunctionNumber < E_FunctionNumber.F_END_FUNCTION) THEN
+	F_SetError(
+		ErrorType	:= E_ErrorType.ERROR,
+		ErrorParam	:= 'Function number not defined',
+		ErrorMsg 	:= E_ErrorConv.CONFIGURATION_ERROR,
+		ErrorData	:= Error);
+END_IF
+
+//Zone number valid 
+IF( ZoneNumber < 1 OR ZoneNumber > NUMBER_OF_ZONES_PER_FUNCTION) THEN
+		F_SetError(
+			ErrorType	:= E_ErrorType.ERROR,
+			ErrorParam	:= 'Zone number not defined',
+			ErrorMsg 	:= E_ErrorConv.CONFIGURATION_ERROR,
+			ErrorData	:= Error);
+END_IF
+
+//Uses OR in order to stay active even if the transport is interrupted
+TakeoverActive := TakeoverActive OR TransportData.eTakeOverState = E_TakeOverState.ACTIVE;
+HandoverActive := HandoverActive OR TransportData.eHandOverState = E_HandOverState.ACTIVE;
+
+//Decide direction, True Forward, False reverse
+Fwd := F_IsFwdDriveDirection(FunctionNumber, TakeoverActive, HandoverActive); 
+
+IF TakeoverActive THEN 
+	IF( Fwd AND (OH_PositionSide = 1 OR OH_PositionSide = 3)) OR 
+		(NOT Fwd AND (OH_PositionSide = 2 OR OH_PositionSide = 4)) THEN
+		
+		CheckOverhang := FALSE;
+		CheckToggle	  := TRUE;
+		IF NOT OH_SensorInput THEN
+			//If OH sensor was toggled
+			OH_SensorOK := TRUE;
+		END_IF
+	END_IF
+END_IF
+
+IF HandoverActive THEN
+	IF( Fwd AND (OH_PositionSide = 2 OR OH_PositionSide = 4)) OR 
+		(NOT Fwd AND (OH_PositionSide = 1 OR OH_PositionSide = 3)) THEN
+		
+		CheckOverhang := FALSE;
+		CheckToggle	  := TRUE;
+		IF NOT OH_SensorInput THEN
+			//If OH sensor was toggled
+			OH_SensorOK := TRUE;
+		END_IF
+	END_IF
+END_IF
+
+//When takeover or handover is complete
+IF( TransportData.Occupied AND TakeoverActive) OR
+	(NOT TransportData.Occupied AND HandoverActive) THEN 
+
+	IF NOT OH_SensorOK AND CheckToggle THEN 
+		F_SetError(
+				ErrorType	:= E_ErrorType.ERROR,
+				ErrorParam	:= CONCAT('OH sensor not broken side: ', TO_STRING(OH_PositionSide)),
+				ErrorMsg 	:= E_ErrorConv.INCORRECT_SENSOR_SIGNAL,
+				ErrorData	:= Error);
+	END_IF
+	
+	//Test completed, reset values
+	TakeoverActive := FALSE;
+	HandoverActive := FALSE;
+	OH_SensorOK := FALSE;
+
+END_IF
+
+//Check IF sensor is blocked
+IF CheckOverhang AND NOT Mute THEN 
+	IF( NOT OH_SensorInput) THEN 
+	//Overhang sensors blocked
+	F_SetError(
+			ErrorType	:= E_ErrorType.ERROR,
+			ErrorParam	:= CONCAT(CONCAT('OH sensor side: ', TO_STRING(OH_PositionSide)),' blocked'),
+			ErrorMsg 	:= E_ErrorConv.INCORRECT_SENSOR_SIGNAL,
+			ErrorData	:= Error);
+	END_IF
+END_IF
+]]></ST>
+    </Implementation>
+    <LineIds Name="FB_OH_SensorControl">
+      <LineId Id="391" Count="0" />
+      <LineId Id="409" Count="0" />
+      <LineId Id="579" Count="0" />
+      <LineId Id="392" Count="16" />
+      <LineId Id="175" Count="0" />
+      <LineId Id="255" Count="0" />
+      <LineId Id="258" Count="1" />
+      <LineId Id="256" Count="0" />
+      <LineId Id="364" Count="2" />
+      <LineId Id="282" Count="0" />
+      <LineId Id="80" Count="0" />
+      <LineId Id="287" Count="2" />
+      <LineId Id="552" Count="0" />
+      <LineId Id="581" Count="0" />
+      <LineId Id="290" Count="3" />
+      <LineId Id="286" Count="0" />
+      <LineId Id="284" Count="0" />
+      <LineId Id="305" Count="1" />
+      <LineId Id="308" Count="2" />
+      <LineId Id="412" Count="0" />
+      <LineId Id="582" Count="0" />
+      <LineId Id="311" Count="3" />
+      <LineId Id="317" Count="0" />
+      <LineId Id="304" Count="0" />
+      <LineId Id="485" Count="1" />
+      <LineId Id="440" Count="0" />
+      <LineId Id="555" Count="0" />
+      <LineId Id="491" Count="0" />
+      <LineId Id="493" Count="0" />
+      <LineId Id="500" Count="4" />
+      <LineId Id="492" Count="0" />
+      <LineId Id="516" Count="0" />
+      <LineId Id="514" Count="0" />
+      <LineId Id="517" Count="0" />
+      <LineId Id="556" Count="0" />
+      <LineId Id="513" Count="0" />
+      <LineId Id="515" Count="0" />
+      <LineId Id="442" Count="0" />
+      <LineId Id="176" Count="0" />
+      <LineId Id="178" Count="9" />
+      <LineId Id="177" Count="0" />
+      <LineId Id="471" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

@@ -1,0 +1,402 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.16">
+  <POU Name="FB_SeqReleaseRequest" Id="{c9c178a8-5449-4429-89e0-cb76a81b01b5}" SpecialFunc="None">
+    <Declaration><![CDATA[/// Validates a request of a TU to get permission to release movement. If its not 
+/// possible, the TU index of the blocking TU is returned.
+///
+/// Blocking TU = A TU with a lower Sequence/Subsequence pair
+///	              which is not located in system or is found on branch.
+/// Requires multiple cycles, check busy signal
+FUNCTION_BLOCK FB_SeqReleaseRequest
+(************************************************************************************** 
+* 	Application 		: BoxControl Framework 
+* 	Revision 			: $Revision: 404877 $ 
+* 	Revision date 		: $Date: 2018-04-26 14:10:34 +0200 (Thu, 26 Apr 2018) $ 
+* 	Last changed by 	: $Author: b7ernsb $ 
+* 	URL 				: $URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/21_Projects/BCF_2.0/trunk/BCF/BCF/JumpStart/20_Product/10_App/12_E_Functions/10_Lib/10_Conv/FB_FunctionConv.TcPOU $ 
+* ------------------------------------------------------------------------------------ 
+* 	© Swisslog AG 
+* 	Swisslog is not liable for any usage of this source code that is not agreed 
+* 	on between Swisslog and the other party. The mandatory legal liability remains 
+* 	unaffected. 
+* ------------------------------------------------------------------------------------ 
+* 	Revision History: 
+* 
+* 	VERSION 		DATE 			INITIALS 			DESCRIPTION 
+* 	0.1 			01.05.2018 		mbo 				Created.
+*	0.2				08.02.2019		mbo					Checkpoint of blocking added
+*														+ Branch exclusion mode
+* 
+**************************************************************************************)
+VAR_INPUT
+	Execute						: BOOL; // Rising edge, starts new search process
+	TU_Index					: DINT; // Requesting TU Index
+	Destination					: ST_PositionIdent; // Destination of requesting Sequence
+	DestinationSlot				: INT; // Destination slot of requesting Sequence
+	Sequence					: ULINT; // Requesting sequence
+	SubSequence					: DINT; // Requesting sub sequence
+	Branch						: I_BranchCheckpoint; // Branch to check
+	BranchExclusionMode			: BOOL := FALSE; // False = TU on a branch is possible next, TRUE = TU on a branch is excluded as possible next
+END_VAR
+VAR_OUTPUT
+	Busy						: BOOL; // Process ongoing
+	Release 					: BOOL; // Allowed to release
+	BlockingTU_Index			: DINT; // Blocking TU-Index for the requesting sequence
+	BlockingTU_Checkpoint		: STRING(5); // Data of blocking TU
+	Error 						: BOOL; // Error (Configuration or invalid result), Reset with new trigger
+END_VAR
+VAR_IN_OUT
+	TU_Table					: ARRAY[0..Conveyor.NUMBER_OF_TU_DATA] OF ST_TU_Data; // TU Table
+END_VAR
+VAR
+	EntriesPerCycle				: DINT := SequencingParameter.SCAN_ENTRIES_PER_CYCLE; // Entries scanned per cylce
+	EntryIdx					: DINT; // Entry iterator
+	MinArrayIndex				: DINT; // Minimum index of TU Array
+	MaxArrayIndex				: DINT; // Maximum index of TU Array
+	StartIndex					: DINT; // Start index of current iteration
+	EndIndex					: DINT; // End index of current iteration
+	IterationCounter			: DINT; // Iteration counter
+	
+	CurrentBlockingTU_Index		: DINT; // Current blocking TU index
+	State						: INT; // State machine, 0=Idle, 1 = Search
+	fbTrigExecute				: R_TRIG; // Trigger new request
+	BranchRecursive				: BOOL := TRUE; // Recursive branch search active (Default = True)
+	FoundOnBranch				: BOOL; // Checkpoint ID found on one of the configured branches
+	LowestBlockingSequence		: ULINT; // Lowest blocking sequence number
+	LowestBlockingSubSequence	: DINT; // Lowest blocking sub sequence number
+	rTU_DataEntry				: REFERENCE TO ST_TU_Data; // Currently checked entry
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[// Monitor new request trigger
+fbTrigExecute(CLK := Execute);
+
+CASE State OF
+	// Idle - State
+	0:
+		// Wait for new start trigger
+		IF fbTrigExecute.Q THEN
+			// Check inputs
+			IF Sequence = 0 OR
+			  TU_Index = 0 OR
+			   Destination.eFunctionNumber = E_FunctionNumber.F_BEGIN_FUNCTION OR
+			   Branch = 0 THEN
+			   // Invalid inputs
+			   Error := TRUE;
+			   RETURN;
+			END_IF
+			
+			// Initialize 
+			Error := FALSE;
+			Busy := TRUE;
+			Release := FALSE;
+			IterationCounter := 0;
+			BlockingTU_Index := 0;
+			BlockingTU_Checkpoint := '';
+			CurrentBlockingTU_Index := 0;
+			
+			// Only search when sequencing is not on hold for this TU 	
+			IF NOT TU_Table[TU_Index].DataSet.HaltSequencing THEN
+				// Set lowest values to actual
+				LowestBlockingSequence := Sequence;
+				LowestBlockingSubSequence := SubSequence;
+				
+				MinArrayIndex := 1; //LOWER_BOUND(TU_Table,1);
+				MaxArrayIndex := Conveyor.NUMBER_OF_TU_DATA; //UPPER_BOUND(TU_Table,1);
+				
+				State := 1;
+			ELSE 
+				Busy := FALSE;			
+				State := 0;
+			END_IF
+		END_IF
+		
+	// Iterate over multiple cycles through TU Table	
+	1:
+		StartIndex := MinArrayIndex + IterationCounter * EntriesPerCycle;
+		EndIndex   := StartIndex + EntriesPerCycle;
+	
+		FOR EntryIdx := StartIndex TO EndIndex DO
+			
+			// Scan of TU Table completed
+			IF EntryIdx > MaxArrayIndex THEN
+				// If no blocking index was found, release immediatley
+				IF CurrentBlockingTU_Index = 0 THEN	
+					BlockingTU_Index := 0;
+					BlockingTU_Checkpoint := '';
+					
+					Release := TRUE;
+					
+				// Otherwise, ensure found index is still valid
+				ELSE
+					IF M_IsFoundBlockingIndexValid(TU_Table) THEN
+						BlockingTU_Index := CurrentBlockingTU_Index;
+						BlockingTU_Checkpoint := TU_Table[BlockingTU_Index].DataSet.CheckpointID;
+						
+						Release := FALSE;
+					ELSE
+						BlockingTU_Index := 0;
+						BlockingTU_Checkpoint := '';
+						
+						// Result not valid, new search required
+						Error := TRUE;
+						Release := FALSE;
+					END_IF
+				END_IF
+				
+				Busy := FALSE;
+				
+				State := 0;
+				RETURN;
+			END_IF
+			
+			rTU_DataEntry REF= TU_Table[EntryIdx];
+			
+			// Skip this loop if...
+            // - own index is found
+            // - Empty data set is found
+			// - Data set without job present is found ( no destination)
+			IF EntryIdx = TU_Index OR 
+               NOT rTU_DataEntry.DataSet.DataPresent OR 
+               NOT rTU_DataEntry.DataSet.JobPresent THEN
+				CONTINUE;
+			END_IF
+
+			// Check if TU has same Destination and Destination slot, 
+			// otherwise it is not relevant for sequence of requesting TU
+			IF rTU_DataEntry.Destination[1].eFunctionNumber = Destination.eFunctionNumber AND
+			   rTU_DataEntry.Destination[1].ZoneNumber = Destination.ZoneNumber THEN
+				IF rTU_DataEntry.DataSet.DestinationSlot = DestinationSlot THEN
+					
+					// TU's with a higher sequence number than the requesting or 0 are not
+					// taked into account of sequencing -> Skip
+					
+					// TU's can be ignored if...
+					// - Sequence is 0 and is therefore not part of a sequence
+					// - Sequence is equal to requesting, but subsequence is higher
+					// - Sequence is higher than an already found lower sequence
+					
+					IF  rTU_DataEntry.DataSet.Sequence = 0 OR
+					   (rTU_DataEntry.DataSet.Sequence = LowestBlockingSequence AND
+					    rTU_DataEntry.DataSet.SubSequence > LowestBlockingSubSequence) OR
+					   (rTU_DataEntry.DataSet.Sequence > LowestBlockingSequence) THEN
+
+						// Skip
+						;
+				
+					// TU is in range for a possible blocking TU
+					ELSE
+						// When the currently checked TU has the same sequence number
+						// as the last found blocking sequence number, only sub sequence 
+						// needs to be checked further
+						IF rTU_DataEntry.DataSet.Sequence = LowestBlockingSequence THEN
+							// Only lower sub sequences are checked for blocking
+							IF rTU_DataEntry.DataSet.SubSequence < LowestBlockingSubSequence THEN
+								// Check if current comapared TU is blocking
+								IF 	M_IsTU_Blocking(rTU_DataEntry) THEN
+									LowestBlockingSubSequence := rTU_DataEntry.DataSet.SubSequence;
+								   	// Store blocking index
+							   		CurrentBlockingTU_Index := EntryIdx;
+									
+								// Otherwise the found TU is not influence sequencing of requesting
+								ELSE
+								   // Skip
+								   ;
+								END_IF
+							END_IF
+					
+						// Sequence number is lower than last found blocking sequence
+						ELSE
+							// Check if current comapared TU is blocking
+							IF 	M_IsTU_Blocking(rTU_DataEntry) THEN
+							   // TU is blocking, update Lowest blocking sequence pair
+							   LowestBlockingSequence := rTU_DataEntry.DataSet.Sequence;
+							   LowestBlockingSubSequence := rTU_DataEntry.DataSet.SubSequence;
+							   
+							   // Store blocking index
+							   CurrentBlockingTU_Index := EntryIdx;
+							END_IF
+						END_IF
+					END_IF
+				END_IF
+			END_IF
+		END_FOR
+
+		IterationCounter := IterationCounter + 1;
+ELSE
+	// Default
+	State := 0;
+END_CASE
+]]></ST>
+    </Implementation>
+    <Method Name="M_IsTU_Blocking" Id="{3e582076-ce40-49d8-9cc2-c94da64e483c}">
+      <Declaration><![CDATA[/// Check if current comapared TU is:
+/// - Not located,
+/// - Found on branch (Default mode) or Not found on a branch (Exclusion mode) 
+/// Sequencing is temporarily haltet for this TU				
+/// so its a possible next TU
+METHOD PROTECTED M_IsTU_Blocking : BOOL // Returns true if blocking
+VAR_INPUT
+	mrTU_DataEntry		: REFERENCE TO ST_TU_Data; // Currently checked entry
+END_VAR
+VAR
+	mFoundOnBranch		: BOOL;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[M_IsTU_Blocking := FALSE;
+
+// Ensure it is still a problem for the branch	
+mFoundOnBranch := Branch.M_IsOnBranches(BranchRecursive, mrTU_DataEntry.DataSet.CheckpointID);
+
+IF (mFoundOnBranch AND NOT BranchExclusionMode) OR
+   (NOT mFoundOnBranch AND BranchExclusionMode) OR
+   (mrTU_DataEntry.DataSet.CheckpointID = '') OR
+    mrTU_DataEntry.DataSet.HaltSequencing THEN
+   
+   M_IsTU_Blocking := TRUE;
+END_IF
+
+
+
+
+
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_IsFoundBlockingIndexValid" Id="{6b523501-3ce8-45d9-8cc6-de3e805b14b6}">
+      <Declaration><![CDATA[/// This method checks if found index is still valid after a search over multiple cycles, 
+/// because during search the state of index could have changed (Race condition).
+METHOD PROTECTED M_IsFoundBlockingIndexValid : BOOL // Returns true if still valid, otherwise false
+VAR_IN_OUT
+	mTU_Table				: ARRAY[0..Conveyor.NUMBER_OF_TU_DATA] OF ST_TU_Data;
+END_VAR
+VAR
+	mrTU_DataEntry			: REFERENCE TO ST_TU_Data; // Currently checked entry
+END_VAR
+VAR_INST
+	SequenceDataPresent		: BOOL; // Sequence data present
+	TU_IsPartOfDestSequence	: BOOL; // Sequence data are for requested destination
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[M_IsFoundBlockingIndexValid := FALSE;
+
+// Validate inputs
+IF CurrentBlockingTU_Index <= 0 THEN
+	RETURN;
+END_IF
+
+mrTU_DataEntry REF= mTU_Table[CurrentBlockingTU_Index];
+
+// Check reference is valid
+IF NOT __ISVALIDREF(mrTU_DataEntry) THEN
+	RETURN;
+END_IF
+
+// Validate its TU data
+// - Sequencing, 
+// - Part of that sequence (destination)
+// - Still at the detected checkpoint
+SequenceDataPresent := mrTU_DataEntry.DataSet.Sequence > 0 AND
+					   mrTU_DataEntry.Destination[1].eFunctionNumber > 0;
+					   
+TU_IsPartOfDestSequence := mrTU_DataEntry.Destination[1].eFunctionNumber = Destination.eFunctionNumber AND
+						   mrTU_DataEntry.Destination[1].ZoneNumber = Destination.ZoneNumber AND
+						   mrTU_DataEntry.DataSet.DestinationSlot = DestinationSlot;
+
+IF SequenceDataPresent AND
+   TU_IsPartOfDestSequence THEN	
+
+	M_IsFoundBlockingIndexValid := M_IsTU_Blocking(rTU_DataEntry);
+END_IF
+]]></ST>
+      </Implementation>
+    </Method>
+    <Property Name="P_BranchRecursive" Id="{9b565616-09ca-488c-aec8-3d062a6c9382}">
+      <Declaration><![CDATA[{attribute 'monitoring' := 'call'}
+/// Recursive branch search active. Remark: No automated loop detection.
+PROPERTY P_BranchRecursive : BOOL]]></Declaration>
+      <Get Name="Get" Id="{2af8e000-21b8-4d56-b7d5-e9223a923ef1}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[P_BranchRecursive := BranchRecursive;]]></ST>
+        </Implementation>
+      </Get>
+      <Set Name="Set" Id="{e4c2a1e4-dcd5-4cde-9d6f-0976430c1d19}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[BranchRecursive := P_BranchRecursive;]]></ST>
+        </Implementation>
+      </Set>
+    </Property>
+    <Property Name="P_EntriesPerCycle" Id="{aa2006b5-626f-4061-81b8-3bc187f244fa}">
+      <Declaration><![CDATA[/// TU Entries scanned per cycle
+PROPERTY P_EntriesPerCycle : DINT // Default 600]]></Declaration>
+      <Set Name="Set" Id="{c239cdac-8834-4749-857d-9fab8389a7e4}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[EntriesPerCycle := P_EntriesPerCycle;]]></ST>
+        </Implementation>
+      </Set>
+      <Get Name="Get" Id="{f93fccbf-77a0-41fb-8b1a-f0a445d577c1}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[P_EntriesPerCycle := EntriesPerCycle;]]></ST>
+        </Implementation>
+      </Get>
+    </Property>
+    <LineIds Name="FB_SeqReleaseRequest">
+      <LineId Id="767" Count="158" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_SeqReleaseRequest.M_IsTU_Blocking">
+      <LineId Id="15" Count="1" />
+      <LineId Id="7" Count="5" />
+      <LineId Id="19" Count="0" />
+      <LineId Id="13" Count="1" />
+      <LineId Id="5" Count="0" />
+      <LineId Id="21" Count="4" />
+      <LineId Id="20" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_SeqReleaseRequest.M_IsFoundBlockingIndexValid">
+      <LineId Id="117" Count="1" />
+      <LineId Id="26" Count="0" />
+      <LineId Id="6" Count="0" />
+      <LineId Id="29" Count="0" />
+      <LineId Id="28" Count="0" />
+      <LineId Id="142" Count="1" />
+      <LineId Id="147" Count="0" />
+      <LineId Id="144" Count="0" />
+      <LineId Id="140" Count="0" />
+      <LineId Id="145" Count="1" />
+      <LineId Id="102" Count="0" />
+      <LineId Id="43" Count="0" />
+      <LineId Id="52" Count="8" />
+      <LineId Id="44" Count="0" />
+      <LineId Id="80" Count="0" />
+      <LineId Id="82" Count="0" />
+      <LineId Id="135" Count="1" />
+      <LineId Id="81" Count="0" />
+      <LineId Id="39" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_SeqReleaseRequest.P_BranchRecursive.Get">
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_SeqReleaseRequest.P_BranchRecursive.Set">
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_SeqReleaseRequest.P_EntriesPerCycle.Set">
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_SeqReleaseRequest.P_EntriesPerCycle.Get">
+      <LineId Id="2" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

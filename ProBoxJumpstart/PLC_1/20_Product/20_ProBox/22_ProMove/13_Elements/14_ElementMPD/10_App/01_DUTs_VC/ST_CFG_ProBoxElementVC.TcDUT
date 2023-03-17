@@ -1,0 +1,14 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <DUT Name="ST_CFG_ProBoxElementVC" Id="{120969fd-2a8f-4588-8e41-3069837e32b9}">
+    <Declaration><![CDATA[//Vertical conveyor element configurations
+TYPE ST_CFG_ProBoxElementVC EXTENDS ST_CFG_ProBoxElementVcBase :
+
+STRUCT		
+	ConvCFG					: ARRAY[1..GVL_MPD.MAXPDs] OF ST_VC_CFG_PDs; //Configuration settings for Pickup and or Deposit functions to the Vertical Conveyor
+	
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

@@ -1,0 +1,21 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <DUT Name="ST_PB_SG_CabinetInputExt" Id="{2c9012e2-aff4-4cb5-92dd-ab070620dca6}">
+    <Declaration><![CDATA[//Extended input commands for shuttle or VC etc
+TYPE ST_PB_SG_CabinetInputExt :
+STRUCT
+	
+	OpMovePos				: BOOL; // OP Manual move motion positiv direction, VC up, shuttle forward
+	OpMoveNeg				: BOOL; // OP Manual move motion  negative direction, VC down, Shuttle reverse
+	OpDriveCvFwd			: BOOL; // OP Manual drive Conveyor forward
+	OpDriveCvRev			: BOOL; // OP Manual drive Conveyor reverse	
+
+	//AC = Aisle carrier
+	//TC = Transfer conveyor
+	
+	
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

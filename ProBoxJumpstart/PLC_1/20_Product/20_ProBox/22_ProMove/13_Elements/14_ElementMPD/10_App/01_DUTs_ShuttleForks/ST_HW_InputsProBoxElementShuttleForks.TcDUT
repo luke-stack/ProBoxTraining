@@ -1,0 +1,37 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <DUT Name="ST_HW_InputsProBoxElementShuttleForks" Id="{74e741a5-bbe2-4624-82b4-9d1c4ec37954}">
+    <Declaration><![CDATA[TYPE ST_HW_InputsProBoxElementShuttleForks :
+	(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision:  $
+ *	Revision date	:	$Date: $
+ *	Last changed by	:	$Author:  $
+ *	URL				:	$URL: $
+ *
+ *	Purpose			:	ProBox element - Hardware inputs
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *
+ **************************************************************************************)
+STRUCT
+	Conv					: ST_HW_Inputs_Conv_ShuttleForks; //HW sensor inputs 
+	                        
+	HighTempResDrive		: BOOL; //High temp brake resistor drive
+	EndLimit				: BOOL;                         
+	DriveInputs				: ST_PDO_DriveIn; //Shuttle car motion driver inputs
+	LiftDriveInputs			: ST_PDO_DriveIn; //Fork lift motion driver inputs	
+	HomeSwitch				: BOOL; // Switch to perform Hoiming Operation.
+	MotorUnitOK				: BOOL; // Motor unit is OK (Frequence inverter/motor protection, mainswitch)
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

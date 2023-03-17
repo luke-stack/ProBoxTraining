@@ -1,0 +1,425 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.4">
+  <POU Name="FB_HandoverTracking" Id="{0d1adebe-bd45-4ec8-980b-2f9bd64b57d7}" SpecialFunc="None">
+    <Declaration><![CDATA[
+///Handover tracking while handing over the TU from the base tracking to next function
+FUNCTION_BLOCK FB_HandoverTracking IMPLEMENTS I_HandoverListener
+(**************************************************************************************
+* Application : BoxControl Framework 
+* Revision date : $Date: 2021-03-03 11:30:54 +0100 (ons, 03 mar 2021) $
+* Author : CDC
+* ------------------------------------------------------------------------------------ 
+* © Swisslog AG 
+* Swisslog is not liable for any usage of this source code that is not agreed 
+* on between Swisslog and the other party. The mandatory legal liability remains 
+* unaffected. 
+* ------------------------------------------------------------------------------------ 
+* Project revision history: 
+* 
+* 	VERSION 		DATE 			INITIALS 			DESCRIPTION 
+* 	0.1 			22.08.2018 		herzig 				First implementation
+*	0.2				05.10.2018		b7bolm				Review
+* 
+**************************************************************************************)
+VAR_INPUT
+	Param 						: ST_TransportControlParam; // Parameter of the transport control
+	NextTransportData			: ST_TransportData; // Next transport data
+	Enable						: BOOL; // Transport enable
+	EnableHandOver 				: BOOL; // Transport enable handover
+	OccupiedSensor				: BOOL; // Occupied PE, only to detect UFOs and data missmatch
+	ZoneEndLength				: UINT; // Occupied position, distance from occupied to zone end
+	TrackingLength				: UDINT; // Length of tracked distance
+	MaxFrontEdgeDeviation		: UDINT := 100; // Max allowed deviation between occupied sensor and allocated zone
+	DisableTU_Synchronisation	: BOOL; // Disable synchronisation of TU at occupied sensor
+	DriveReady					: BOOL; // Drive is ready to be used
+	DriveRunning				: BOOL; // Feedback drive is running
+	EncoderValueInc				: UDINT; // Encoder value [inc]
+	MaxEncoderValueInc			: UDINT; // Max encoder value [inc]
+	RateIncPerMM				: LREAL; // Resolution number of increments for one mm
+	iWindowTracking				: I_WindowTracking;  // Window tracking implementation
+END_VAR
+VAR_OUTPUT
+	DriveRun					: BOOL; // Drive run
+	DriveStop					: BOOL; // Stop drive
+	FastSpeed					: BOOL; // Fast speed possible
+	RequestNextTransportData 	: BOOL; // Request next transport data
+	DeleteNextTransportData  	: BOOL; // Delete next transport data
+	eHandOverState				: E_HandOverState; // Handover state
+	eNextTakeOverState			: E_TakeOverState; // Takeover state of next position
+	Initialized					: BOOL; // Module is initialized
+	HandoverOngoing				: BOOL; // Handover ongoing, interface in interaction
+	HandingOverTU				: BOOL; // Handing over the TU
+END_VAR
+VAR_IN_OUT
+	ZoneData					: ST_ZoneData; // Zone data
+	ErrorData 					: ST_ErrorDataSet; // Error data
+END_VAR
+VAR
+	fbDebugMsg					: FB_DebugMsg; // Debug instance
+	DebugMsg					: T_MAXSTRING; // Debug message
+	TransportComplete			: BOOL; // Transport completed
+	eTrackingState 				: E_HandoverTrackingState; // Handover state machine
+	fbHandover					: FB_Handover; // Basic handover impementation
+	TU_StartPosition			: UDINT; // TU start position
+	TU_EndPosition				: UDINT; // TU end position
+	TU_DetectedOnTracking 		: BOOL; // TU detected on tracking
+	EndLengthEmpty 				: BOOL; // No TU in end length found
+	TrackingZoneIndex 			: UINT; // Window tracking zone index
+	TrackingUfoZoneIndex 		: UINT; // Window tracking zone index of ufo
+	TrackingUfoReZoneIndex 		: UINT; // Window tracking zone index of ufo rear edge
+	OccupiedZoneIndex 			: UINT; // Occupied zone index
+	OccupiedTracking 			: BOOL; // Occupied tracking
+	TransportEnable				: BOOL; // Transport hardstop
+	TransportEnableHandOver		: BOOL; // Transport softstop, finish ongoing operations
+	MonitorStoppingTU_Active	: BOOL; // Monitoring state is processed currently
+	fbTrigOccupied				: R_TRIG; // Only check physical and tracking distance once
+	fbZoneEndLengthClear		: FB_DisplacementMeter; // ZoneEndLenght clear
+	DelayLength					: UDINT; // Delay length to clear conveyor end
+	ZoneEndPosition				: UDINT; // End position of zone
+END_VAR]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[//Input mapping
+TransportEnable := Enable AND Param.rZoneEnable.Transport;
+TransportEnableHandOver := EnableHandOver AND Param.rZoneEnable.HandOver AND Param.rExternalZoneEnable;
+
+F_ResetError(Reset := FALSE, ErrorData := ErrorData);	
+
+IF iWindowTracking = 0 OR
+   TrackingLength = 0 THEN
+	RETURN;
+END_IF
+
+// Initialization of the module
+// Module initialization
+IF NOT Initialized THEN
+	RETURN;
+END_IF
+
+(**************************************************************************************************************
+   Synchronization / Managing of physical TUs
+***************************************************************************************************************)
+// Always when a TU gets detected at sensor its checked if its synchronized to tracking.
+// 1. If a TU gets detected and a corresponding tracked zone is found -> Everything fine
+// 2. A TU gets detected without a tracked zone, try to find corresponding zone and align
+// 3. TU can not be linked to a zone, add TU as new unknown zone to the tracking
+
+// Remark: It is possible, that there is a small difference between zone and TU when the TU leaves
+// the occupied sensor. 
+IF NOT DisableTU_Synchronisation THEN
+	fbTrigOccupied(CLK := OccupiedSensor);
+	
+	IF fbTrigOccupied.Q THEN
+		OccupiedTracking := iWindowTracking.M_IsTU_Present(TrackingLength - ZoneEndLength);
+	
+		IF OccupiedTracking THEN
+			// Sensor signal is corresponding to tracking zones
+			;
+		ELSE
+			// Try to synchronize zone to occupied signal
+			OccupiedZoneIndex := iWindowTracking.M_ResyncTU_FE(
+									mAbsolutePosition 		:= TrackingLength - ZoneEndLength,
+									mMaxFrontEdgeDeviation 	:= MaxFrontEdgeDeviation);
+		
+			// If physical TU could not be linked to a zone, handle as unidentified TU
+			// Add it to tracking to follow normal handover procedure
+			IF OccupiedZoneIndex = 0 THEN
+				TrackingUfoZoneIndex := iWindowTracking.M_AddTU_FE(
+											mTU_Index 			:= 0,
+											mAbsolutePosition 	:= TrackingLength - ZoneEndLength,
+											miActionListener 	:= 0);
+											
+				fbDebugMsg.M_SendInfoMsg(CONCAT('UFO front edge detected. Created ZoneIndex: ', UINT_TO_STRING(TrackingUfoZoneIndex)));	
+			END_IF
+		END_IF
+		
+	// Ufo found, wait for rear edge	
+	ELSIF TrackingUfoZoneIndex > 0 AND NOT OccupiedSensor THEN
+		TrackingUfoReZoneIndex := iWindowTracking.M_AddTU_RE(
+									mAbsolutePosition 	:= TrackingLength - ZoneEndLength,
+									mZoneIndex 			:= TrackingUfoZoneIndex);
+									
+		fbDebugMsg.M_SendInfoMsg(CONCAT('UFO rear edge detected. Completed ZoneIndex: ', UINT_TO_STRING(TrackingUfoReZoneIndex)));								
+		TrackingUfoZoneIndex := 0;
+	END_IF
+END_IF
+
+(**************************************************************************************************************
+   Tracking state
+***************************************************************************************************************)
+MonitorStoppingTU_Active := FALSE;
+
+CASE eTrackingState OF
+	// Idle - Wait for a TU to handover
+	E_HandoverTrackingState.WAITING_FOR_TU:	
+		TrackingZoneIndex := 0;
+		TransportComplete := FALSE;
+		ZoneData.TransportControlData.TU_DataIndex := 0;
+		ZoneData.TransportControlData.DataPresent := ZoneData.TransportControlData.TU_DataIndex > 0;
+		
+		// Check for a TU at occupation position (REMARK: Tracking zone begin != TU begin)
+		TU_DetectedOnTracking := iWindowTracking.M_IsTU_Present(TrackingLength - ZoneEndLength);
+ 		
+		// Scan for zones between occupation point and tracking end
+		IF NOT EndLengthEmpty THEN	
+			TrackingZoneIndex := iWindowTracking.M_GetLastZoneIndex(TrackingLength - ZoneEndLength , TrackingLength, TRUE);
+			
+			// A zone with TU present was found
+			IF TrackingZoneIndex > 0 THEN
+				// Get rear edge position of TU
+				TU_EndPosition := iWindowTracking.M_GetTU_EndPosition(TrackingZoneIndex);
+				// Check if TU already left conveyor
+				IF TU_EndPosition > TrackingLength THEN
+					// Get end position of zone
+					ZoneEndPosition := iWindowTracking.M_GetZoneEndPosition(TrackingZoneIndex);
+					
+					// Search 2nd last zone, since TU of last zone already left conveyor
+					IF ZoneEndPosition > (TrackingLength - ZoneEndLength) THEN
+						TrackingZoneIndex := iWindowTracking.M_GetLastZoneIndex(TrackingLength - ZoneEndLength , ZoneEndPosition - 1, TRUE);
+					ELSE
+						// No zone found
+						TrackingZoneIndex := 0;
+					END_IF
+				END_IF
+				
+				// A zone with a TU which is still on conveyor was found
+				IF TrackingZoneIndex > 0 THEN 
+					ZoneData.TransportControlData.TU_DataIndex := iWindowTracking.P_ZoneTable[TrackingZoneIndex].TU_Index;
+					ZoneData.TransportControlData.DataPresent := ZoneData.TransportControlData.TU_DataIndex > 0;
+					eTrackingState := E_HandoverTrackingState.MONITOR_STOPPING_TU;
+				ELSE
+					EndLengthEmpty := TRUE;
+				END_IF
+			ELSE
+				EndLengthEmpty := TRUE;
+			END_IF
+			
+		ELSIF TU_DetectedOnTracking  THEN
+			// Get corresponding zone index
+			TrackingZoneIndex := iWindowTracking.M_GetZoneIndex(TrackingLength - ZoneEndLength);
+			EndLengthEmpty := FALSE;
+			
+			IF TrackingZoneIndex > 0 THEN
+				ZoneData.TransportControlData.TU_DataIndex := iWindowTracking.P_ZoneTable[TrackingZoneIndex].TU_Index;
+				ZoneData.TransportControlData.DataPresent := ZoneData.TransportControlData.TU_DataIndex > 0;
+			END_IF
+			
+			eTrackingState := E_HandoverTrackingState.MONITOR_STOPPING_TU;
+		END_IF
+	
+	// Handover is not initiated, ensure TU can stop properly
+	E_HandoverTrackingState.MONITOR_STOPPING_TU:
+		MonitorStoppingTU_Active := TRUE;
+	
+		IF TrackingZoneIndex > 0 THEN
+			TU_StartPosition := iWindowTracking.M_GetTU_StartPosition(TrackingZoneIndex);
+			
+			// When zone is not in a valid range, forget index (> Occupation point)
+			IF TU_StartPosition < (TrackingLength - ZoneEndLength) OR 
+               NOT iWindowTracking.P_ZoneTable[TrackingZoneIndex].Used THEN
+				TrackingZoneIndex := 0;
+				DriveStop := FALSE;
+				
+				MonitorStoppingTU_Active := FALSE;
+				eTrackingState := E_HandoverTrackingState.WAITING_FOR_TU;
+				RETURN;
+				
+			// Check for overrun
+			ELSIF TU_StartPosition > TrackingLength AND 
+               iWindowTracking.P_ZoneTable[TrackingZoneIndex].TU_Index > 0 THEN
+				// Overrun detected - Handover was not initated and TU could not stop on Tracking
+				// Maybe condition to stop is wrong or available breaking distance is to short
+				// Possible TU Index get deleted, because a crash could happen what maybe leads to 
+				// Tu data inconsistency.
+				iWindowTracking.P_ZoneTable[TrackingZoneIndex].TU_Index := 0;
+				ZoneData.TransportControlData.TU_DataIndex := 0;
+				ZoneData.TransportControlData.DataPresent := ZoneData.TransportControlData.TU_DataIndex > 0;
+				fbDebugMsg.M_SendInfoMsg(CONCAT('Handover not initiated, TU_DataIndex deleted. ZoneIndex: ', UINT_TO_STRING(TrackingZoneIndex)));	
+			END_IF
+			
+			// Wait until handover is initiated resp. ongoing
+			IF fbHandover.eHandOverState = E_HandOverState.ACTIVE OR
+			   fbHandover.eHandOverState = E_HandOverState.STOP OR
+			   fbHandover.eHandOverState = E_HandOverState.INTERRUPTED OR 
+               eNextTakeoverState = E_TakeOverState.ACTIVE THEN
+			   
+			   MonitorStoppingTU_Active := FALSE;
+			   eTrackingState := E_HandoverTrackingState.MONITOR_HANDOVER_TU;
+			END_IF
+		ELSE
+			MonitorStoppingTU_Active := FALSE;
+			eTrackingState := E_HandoverTrackingState.WAITING_FOR_TU;
+		END_IF
+	
+	// Handover was initiated, wait until TU left position
+	E_HandoverTrackingState.MONITOR_HANDOVER_TU:
+		IF TrackingZoneIndex > 0 THEN
+			TU_StartPosition := iWindowTracking.M_GetTU_StartPosition(TrackingZoneIndex);
+			TU_EndPosition := iWindowTracking.M_GetTU_EndPosition(TrackingZoneIndex);
+			
+			// Monitor zone if it is not in a valid range, forget index (> Occupation point)
+			IF TU_StartPosition < (TrackingLength - ZoneEndLength) OR 
+			   NOT iWindowTracking.P_ZoneTable[TrackingZoneIndex].Used THEN
+				TrackingZoneIndex := 0;
+				eTrackingState := E_HandoverTrackingState.WAITING_FOR_TU;
+				RETURN;
+
+			// Wait until transport is completed by
+			// - Zone not available anymore
+			// - Not occupied anymore
+			// - Transport aborted or completed
+			ELSIF NOT iWindowTracking.P_ZoneTable[TrackingZoneIndex].Used OR
+			      NOT iWindowTracking.P_ZoneTable[TrackingZoneIndex].TU_Present OR
+ 			      fbHandover.eHandOverState = E_HandOverState.IDLE OR 
+			      fbHandover.eHandOverState = E_HandOverState.UNDEFINED OR 
+                  TransportComplete THEN		
+				eTrackingState := E_HandoverTrackingState.WAITING_FOR_TU;
+				
+			// Monitor TU-DataIndex, and update it when it was deleted during handover
+			ELSIF ZoneData.TransportControlData.TU_DataIndex <> iWindowTracking.P_ZoneTable[TrackingZoneIndex].TU_Index THEN
+				iWindowTracking.P_ZoneTable[TrackingZoneIndex].TU_Index := ZoneData.TransportControlData.TU_DataIndex;
+			END_IF
+		ELSE
+			eTrackingState := E_HandoverTrackingState.WAITING_FOR_TU;
+		END_IF
+// Default
+ELSE
+	eTrackingState := E_HandoverTrackingState.WAITING_FOR_TU;
+END_CASE
+
+(**************************************************************************************************************
+   Handover state
+***************************************************************************************************************)
+// If an index was found between occupation point and tracking length
+// Wait until TU left occupation point, to zone end length for handover
+IF TrackingZoneIndex > 0 THEN 
+	IF NOT fbZoneEndLengthClear.Run THEN
+		TU_EndPosition := iWindowTracking.M_GetTU_EndPosition(TrackingZoneIndex);
+		// TU rear edge is between occupied point and conveyor end
+		IF (TrackingLength - ZoneEndLength) < TU_EndPosition AND TrackingLength >= TU_EndPosition THEN
+			// Calculate distance from  TU rear edge to conveyor end 
+			DelayLength := TrackingLength - TU_EndPosition;
+		
+			// Run zone end length clearing 
+			fbZoneEndLengthClear(
+				Run 				:= fbHandover.HandoverOngoing, 
+				EncoderValueInc		:= EncoderValueInc,
+				MaxEncoderValueInc 	:= MaxEncoderValueInc,
+				RateIncPerMM		:= RateIncPerMM,
+				SetPoint 			:= UDINT_TO_UINT(DelayLength));
+		END_IF
+	END_IF
+END_IF
+
+fbZoneEndLengthClear(
+	EncoderValueInc		:= EncoderValueInc,
+	MaxEncoderValueInc 	:= MaxEncoderValueInc,
+	RateIncPerMM		:= RateIncPerMM);
+	
+fbHandover(
+	Enable					:= TransportEnable AND
+            				  (Param.rOperationState.eState = E_PositionState.STARTED OR
+	        				   Param.rOperationState.eState = E_PositionState.STOPPING),
+	RequestHandover			:= TrackingZoneIndex > 0 AND Param.rOperationState.eState = E_PositionState.STARTED AND TransportEnableHandOver,
+	NextZonePresent			:= Param.reNextFunctionNumber > 0,
+	HandoverComplete		:= fbZoneEndLengthClear.Q,
+	DriveReady				:= DriveReady,
+	iListener				:= THIS^,
+	FastSpeed				=> FastSpeed,
+	DriveRun				=> DriveRun,
+	eHandOverState			=> eHandOverState,
+	eNextTakeOverState		=> eNextTakeOverState,
+	RequestNextTransportData=> RequestNextTransportData,
+	DeleteNextTransportData	=> DeleteNextTransportData,
+	HandoverOngoing			=> HandoverOngoing,
+	NextTransportData		:= NextTransportData,
+	ErrorData				:= ErrorData);
+
+IF fbZoneEndLengthClear.Q THEN
+	fbZoneEndLengthClear(RUN := FALSE);
+END_IF
+
+ZoneData.TransportControlData.eHandOverState := eHandOverState;
+ZoneData.TransportControlData.DataPresent := ZoneData.TransportControlData.TU_DataIndex <> 0;
+ZoneData.TransportControlData.SensorOccupied := iWindowTracking.M_IsTU_Present(TrackingLength - ZoneEndLength);
+ZoneData.TransportControlData.TU_LeadingEdgePos := 0;
+
+DriveStop := (fbHandover.HandoverOngoing AND NOT fbHandover.DriveRun AND NOT fbHandover.DriveRequest) OR 
+             (NOT fbHandover.HandoverOngoing AND MonitorStoppingTU_Active AND
+			  (eHandOverState <> E_HandoverState.READY OR eNextTakeOverState <> E_TakeOverState.READY));
+
+HandingOverTU := fbHandOver.HandoverOngoing;]]></ST>
+    </Implementation>
+    <Method Name="M_HandoverCompleteEvent" Id="{e00fadd8-b3d0-465d-85f6-2fd39e7fe420}">
+      <Declaration><![CDATA[/// Handover completed event
+METHOD M_HandoverCompleteEvent
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+IF eTrackingState = E_HandoverTrackingState.MONITOR_HANDOVER_TU THEN
+	TransportComplete := TRUE;
+	
+	IF iWindowTracking <> 0 THEN
+		IF TrackingZoneIndex > 0 THEN
+			iWindowTracking.M_DeleteZone(mZoneIndex := TrackingZoneIndex);
+		END_IF
+	END_IF
+END_IF
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_HandoverStartEvent" Id="{ec4c1fd9-a9a7-4eb9-9f53-42366e16d460}">
+      <Declaration><![CDATA[METHOD M_HandoverStartEvent
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_Init" Id="{167bec24-86e7-49b2-a06a-55f4b9473d1a}">
+      <Declaration><![CDATA[/// Initialize module
+METHOD M_Init : BOOL
+VAR_INPUT
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[fbHandover.M_Init();
+
+eTrackingState := E_HandoverTrackingState.WAITING_FOR_TU;
+Initialized := TRUE;
+M_Init := TRUE;
+			]]></ST>
+      </Implementation>
+    </Method>
+    <ObjectProperties>
+      <XmlArchive>
+        <Data>
+          <o xml:space="preserve" t="UMLStereoTypeContainerObject">
+            <v n="IsType" t="UMLType">BaseArea</v>
+            <v n="Stereotype">""</v>
+            <d n="Stereotypes" t="Hashtable" />
+          </o>
+        </Data>
+        <TypeList>
+          <Type n="Hashtable">System.Collections.Hashtable</Type>
+          <Type n="String">System.String</Type>
+          <Type n="UMLStereoTypeContainerObject">{30250973-b110-4e31-b562-c102e042dca4}</Type>
+          <Type n="UMLType">{0197b136-405a-42ee-bb27-fd08b621d0cf}</Type>
+        </TypeList>
+      </XmlArchive>
+    </ObjectProperties>
+    <LineIds Name="FB_HandoverTracking">
+      <LineId Id="347" Count="268" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_HandoverTracking.M_HandoverCompleteEvent">
+      <LineId Id="3" Count="9" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_HandoverTracking.M_HandoverStartEvent">
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_HandoverTracking.M_Init">
+      <LineId Id="3" Count="4" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

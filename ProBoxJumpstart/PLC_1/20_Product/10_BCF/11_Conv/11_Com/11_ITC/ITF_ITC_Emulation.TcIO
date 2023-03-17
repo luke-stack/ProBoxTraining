@@ -1,0 +1,39 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.12">
+  <Itf Name="ITF_ITC_Emulation" Id="{c08ae787-d516-43b7-b6e7-01e8d23f907e}">
+    <Declaration><![CDATA[INTERFACE ITF_ITC_Emulation EXTENDS __System.IQueryInterface
+]]></Declaration>
+    <Method Name="M_AddData" Id="{e4491b33-db3d-4fa9-a0bb-3814ac9c7ec8}">
+      <Declaration><![CDATA[METHOD M_AddData : BOOL
+VAR_INPUT
+	meChannelSrc	: E_MFCS_Channel;
+	mMsgType		: INT;
+	mpData			: PVOID;
+	mLen			: UDINT;
+END_VAR]]></Declaration>
+    </Method>
+    <Method Name="M_CallITC_Service" Id="{35d5f416-1a65-4131-a715-2f691f09f57e}">
+      <Declaration><![CDATA[METHOD M_CallITC_Service : BOOL
+VAR_INPUT
+END_VAR
+]]></Declaration>
+    </Method>
+    <ObjectProperties>
+      <XmlArchive>
+        <Data>
+          <o xml:space="preserve" t="UMLStereoTypeContainerObject">
+            <v n="IsType" t="UMLType">BaseArea</v>
+            <v n="Stereotype">""</v>
+            <d n="Stereotypes" t="Hashtable" />
+          </o>
+        </Data>
+        <TypeList>
+          <Type n="Hashtable">System.Collections.Hashtable</Type>
+          <Type n="String">System.String</Type>
+          <Type n="UMLStereoTypeContainerObject">{30250973-b110-4e31-b562-c102e042dca4}</Type>
+          <Type n="UMLType">{0197b136-405a-42ee-bb27-fd08b621d0cf}</Type>
+        </TypeList>
+      </XmlArchive>
+    </ObjectProperties>
+  </Itf>
+</TcPlcObject>

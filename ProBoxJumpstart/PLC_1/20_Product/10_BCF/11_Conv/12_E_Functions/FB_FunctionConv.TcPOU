@@ -1,0 +1,3862 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <POU Name="FB_FunctionConv" Id="{59c4c264-1ea2-492c-8cba-53173e028310}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK FB_FunctionConv EXTENDS FB_BaseObject
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 475069 $
+ *	Revision date	:	$Date: 2021-04-09 16:13:33 +0200 (fre, 09 apr 2021) $
+ *	Last changed by	:	$Author: d7mangc $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/tags/R1.12.0/01_Software/BCF/BCF/JumpStart/20_Product/10_BCF/11_Conv/12_E_Functions/FB_FunctionConv.TcPOU $
+ *
+ *	Purpose			:	Base function.
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+  *
+ **************************************************************************************)
+VAR_INPUT
+	ConfigFunction			: ST_CFG_Function; // Base element function configuration 
+	InhibitStopping			: BOOL; // Inhibit state change from Stopping to stop in order to finish an ongoing action
+END_VAR
+
+VAR
+	FunctionBase			: ST_FunctionBase; // Summary of values used by framework internally
+END_VAR
+
+VAR PERSISTENT
+	ITC						: ST_ITC_Function; // ITC
+	FunctionData			: ST_FunctionData; // Function data - external read only 
+	ZoneData				: ARRAY [1..NUMBER_OF_ZONES_PER_FUNCTION] OF ST_ZoneData; // Zone data
+	FunctionInterface		: ST_FunctionInterface; // Element function interface - external read/write 
+	ZoneInterface    		: ARRAY [1..NUMBER_OF_ZONES_PER_FUNCTION] OF ST_ZoneInterface; // Zone interface
+	SettingsFunction		: ST_CFG_Function; // Base element function settings 
+END_VAR]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[(**************************************************************************************************************
+   Function - Body never called!
+***************************************************************************************************************)
+;]]></ST>
+    </Implementation>
+    <Action Name="A_ErrorHandler" Id="{f04b2c14-5d9b-48b2-8c20-a29b993700a3}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_ErrorHandling
+ * 	FUNCTION	Handles element 
+ **************************************************************************************)
+ 
+
+(**************************************************************************************************************
+  Monitor function errors
+***************************************************************************************************************)
+M_MonitorFunctionErrors();
+
+
+(**************************************************************************************************************
+  Monitor zone errors
+***************************************************************************************************************)
+M_MonitorZoneErrors();]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="A_StateControl" Id="{6bf0f59b-d533-4912-8197-1b83e5bbd1f8}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_StateControl
+ * 	FUNCTION	Handles internal states and mode
+ **************************************************************************************)
+ 
+(**************************************************************************************
+   System state
+***************************************************************************************)
+FunctionData.OperationState.Info := FunctionInterface.In.Element.OperationState.Info;
+
+FunctionData.OperationState.InitRelease := FunctionInterface.In.Element.OperationState.InitRelease;
+
+ (**************************************************************************************
+   Function mode
+***************************************************************************************)
+FunctionData.OperationState.eMode := FunctionInterface.In.Element.OperationState.eMode;
+
+(**************************************************************************************
+   Function states
+***************************************************************************************)
+CASE FunctionData.OperationState.eState OF
+	
+	(**************************************************************************************
+   		UNKNOWN state
+	***************************************************************************************)
+	E_PositionState.UNKNOWN:
+		// Update internal state
+		FunctionData.OperationState.eLastState := FunctionData.OperationState.eState;
+		FunctionData.OperationState.eState := E_PositionState.STOPPED;	
+
+		
+   	(**************************************************************************************
+   		STOPPED state
+	***************************************************************************************)
+	E_PositionState.STOPPED:
+		// When element is not stopping
+		IF FunctionInterface.In.Element.OperationState.eState = E_PositionState.STARTED AND
+		   FunctionInterface.In.Element.OperationState.eMode = E_PositionMode.AUTO_MODE AND
+           FunctionData.Init THEN
+			// Update internal state
+			FunctionData.OperationState.eLastState := FunctionData.OperationState.eState;
+			FunctionData.OperationState.eState := E_PositionState.STARTING;	
+		END_IF
+		
+	(**************************************************************************************
+   		STOPPING state
+	***************************************************************************************)
+	E_PositionState.STOPPING:
+		// Wait until transport is stopped
+		FunctionBase.AllZonesStopped  := TRUE;
+		FunctionBase.LinkedFunctionStopped := TRUE;
+        FOR FunctionBase.Idx := 1 TO SettingsFunction.NumberOfZones DO
+			IF NOT ZoneData[FunctionBase.Idx].TransportControlData.Stopped THEN
+				FunctionBase.AllZonesStopped  := FALSE;
+			END_IF
+		END_FOR
+		
+		// Check if linked function is already stopped
+		IF SettingsFunction.FunctionLink.eFunctionNumber > E_FunctionNumber.F_BEGIN_FUNCTION THEN
+			FunctionBase.OperatingState := F_GetFunctionOperationState(eFunctionNumber := SettingsFunction.FunctionLink.eFunctionNumber);
+
+			IF FunctionBase.OperatingState.eState <> E_PositionState.STOPPED THEN
+				FunctionBase.LinkedFunctionStopped := FALSE;
+			END_IF
+		END_IF
+		
+		// Check that function and own element is stopped
+		IF FunctionInterface.In.Element.OperationState.eState = E_PositionState.STOPPED OR 
+		   FunctionInterface.In.Element.OperationState.eMode <> E_PositionMode.AUTO_MODE OR 
+		   (FunctionBase.AllZonesStopped AND FunctionBase.LinkedFunctionStopped AND NOT InhibitStopping) THEN
+			// Goto Stopped
+			FunctionData.OperationState.eLastState := FunctionData.OperationState.eState;
+			FunctionData.OperationState.eState := E_PositionState.STOPPED;
+		END_IF
+
+	(**************************************************************************************
+   		STARTING state
+	***************************************************************************************)
+	E_PositionState.STARTING:
+		IF FunctionInterface.In.Element.OperationState.eState <> E_PositionState.STARTED OR 
+           FunctionInterface.In.Element.OperationState.eMode <> E_PositionMode.AUTO_MODE THEN
+		   	// Update internal state
+			FunctionData.OperationState.eLastState := FunctionData.OperationState.eState;
+			FunctionData.OperationState.eState := E_PositionState.STOPPED;	
+		ELSE
+			// Update internal state
+			FunctionData.OperationState.eLastState := FunctionData.OperationState.eState;
+			FunctionData.OperationState.eState := E_PositionState.STARTED;	
+		END_IF
+		
+	(**************************************************************************************
+   		STARTED state
+	***************************************************************************************)
+	E_PositionState.STARTED:
+		IF FunctionInterface.In.Element.OperationState.eState = E_PositionState.STOPPING AND
+           FunctionInterface.In.Element.OperationState.eMode = E_PositionMode.AUTO_MODE THEN
+			// Update internal state
+			FunctionData.OperationState.eLastState := FunctionData.OperationState.eState;
+			FunctionData.OperationState.eState := E_PositionState.STOPPING;	
+		ELSIF FunctionInterface.In.Element.OperationState.eState <> E_PositionState.STARTED OR 
+              FunctionInterface.In.Element.OperationState.eMode <> E_PositionMode.AUTO_MODE THEN
+			// Update internal state
+			FunctionData.OperationState.eLastState := FunctionData.OperationState.eState;
+			FunctionData.OperationState.eState := E_PositionState.STOPPED;	
+		END_IF	
+ELSE
+	// Programming error
+	DebugMsg := CONCAT(	'Programming error - Invalid state: ', INT_TO_STRING(FunctionData.OperationState.eState));
+	fbDebugMsg.M_SendErrorMsg(DebugMsg);
+END_CASE
+
+
+]]></ST>
+      </Implementation>
+    </Action>
+    <Method Name="FB_init" Id="{93e6baa7-6db1-4292-bf48-7fd5b0e30131}">
+      <Declaration><![CDATA[METHOD FB_init : BOOL
+
+(********************************************************************************************************************************)
+VAR_INPUT
+	bInitRetains          : BOOL; // if TRUE, the retain variables are initialized (warm start / cold start)
+	bInCopyCode           : BOOL;  // if TRUE, the instance afterwards gets moved into the copy code (online change)
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+// prepare empty values to be used for not-found or empty return values
+FunctionBase.TransportDataEmpty.eFunctionNumber:= E_FunctionNumber.F_BEGIN_FUNCTION;
+FunctionBase.TransportDataEmpty.ZoneNumber     := 0;
+FunctionBase.TransportDataEmpty.rTransportControlData REF= FunctionBase.TransportControlDataEmpty;
+FunctionBase.TransportDataEmpty.rSettings             REF= FunctionBase.ZoneSettingsEmpty;
+
+FunctionBase.PrevTransportData:= FunctionBase.TransportDataEmpty;
+FunctionBase.NextTransportData:= FunctionBase.TransportDataEmpty;
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_AddOnAck" Id="{a8dfbd28-af97-4152-9cbb-19bc5d1b1328}">
+      <Declaration><![CDATA[METHOD M_AddOnAck : BOOL
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 475069 $
+ *	Revision date	:	$Date: 2021-04-09 16:13:33 +0200 (fre, 09 apr 2021) $
+ *	Last changed by	:	$Author: d7mangc $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/tags/R1.12.0/01_Software/BCF/BCF/JumpStart/20_Product/10_BCF/11_Conv/12_E_Functions/FB_FunctionConv.TcPOU $
+ *
+ *	Purpose			:	Sends acknowledge command to addon
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+// Set bit to inform the addon functionality was processed
+FunctionBase.AddOnAck := TRUE;
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_CloseAddOnLink" Id="{0cd96de5-3e46-4ec4-9164-d7f42e41b5d9}">
+      <Declaration><![CDATA[METHOD M_CloseAddOnLink : BOOL
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 475069 $
+ *	Revision date	:	$Date: 2021-04-09 16:13:33 +0200 (fre, 09 apr 2021) $
+ *	Last changed by	:	$Author: d7mangc $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/tags/R1.12.0/01_Software/BCF/BCF/JumpStart/20_Product/10_BCF/11_Conv/12_E_Functions/FB_FunctionConv.TcPOU $
+ *
+ *	Purpose			:	Close link between Addon function and function
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+VAR_INPUT
+	eAddOnNumber		: E_FunctionNumber; // Function number
+END_VAR
+VAR
+	mIdx				: INT; // Iterator
+	mNextSlot			: INT; // Next slot
+	mOldAddOnList		: ARRAY [1 .. NUMBER_OF_ADDON_FUNCTIONS] OF ST_AddonEntry; // Old function list
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[// Initialize
+M_CloseAddOnLink := FALSE;
+mNextSlot := 1;
+
+// Check if element link is valid
+IF eAddOnNumber > E_FunctionNumber.F_BEGIN_FUNCTION AND 
+   eAddOnNumber < E_FunctionNumber.F_END_FUNCTION THEN
+   
+   // Clear incoming addon interface
+   MEMSET(destAddr := ADR(FunctionInterface.In.AddOnOrder), fillByte := 0, n := SIZEOF(FunctionInterface.In.AddOnOrder));
+
+   	// Go trough all slots
+   	FOR mIdx := 1 TO NUMBER_OF_FUNCTIONS_PER_ELEMENT DO
+		
+		// Search registred function number
+		IF FunctionData.MemberList.AddOnList[mIdx].eFunctionNumber = eAddOnNumber THEN
+   			// Remove function 
+			FunctionData.MemberList.AddOnList[mIdx].eFunctionNumber := E_FunctionNumber.F_BEGIN_FUNCTION;
+			FunctionData.MemberList.AddOnList[mIdx].ZoneNumber := 0;
+
+			// Element link closing was successfull
+			M_CloseAddOnLink := TRUE;
+		END_IF
+   	END_FOR
+	
+	// Store old addon list
+	mOldAddOnList := FunctionData.MemberList.AddOnList;
+	
+	// Remove gaps in addon list
+   	FOR mIdx := 1 TO NUMBER_OF_ADDON_FUNCTIONS DO
+		// If list index has a valid function number
+		IF mOldAddOnList[mIdx].eFunctionNumber <> E_FunctionNumber.F_BEGIN_FUNCTION THEN
+			// Store function in current list
+			FunctionData.MemberList.AddOnList[mNextSlot].eFunctionNumber := mOldAddOnList[mIdx].eFunctionNumber;
+			
+			// Update index of current list
+			mNextSlot := mNextSlot + 1;
+		END_IF
+   	END_FOR
+	
+	// Clear list
+   	FOR mNextSlot := mNextSlot TO NUMBER_OF_FUNCTIONS_PER_ELEMENT DO
+		// Clear entry
+		FunctionData.MemberList.AddOnList[mNextSlot].eFunctionNumber := E_FunctionNumber.F_BEGIN_FUNCTION;
+   	END_FOR
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_CreateAddOnLink" Id="{52b3cec9-4297-40d7-988a-984ec97ea48d}">
+      <Declaration><![CDATA[METHOD M_CreateAddOnLink : BOOL
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 475069 $
+ *	Revision date	:	$Date: 2021-04-09 16:13:33 +0200 (fre, 09 apr 2021) $
+ *	Last changed by	:	$Author: d7mangc $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/tags/R1.12.0/01_Software/BCF/BCF/JumpStart/20_Product/10_BCF/11_Conv/12_E_Functions/FB_FunctionConv.TcPOU $
+ *
+ *	Purpose			:	Register an addon in function.
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+VAR_INPUT
+	eAddOnNumber		: E_FunctionNumber; // Function number
+	ZoneNumber			: INT; // Zone number
+END_VAR
+VAR
+	mIdx				: INT; // Iterator
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[// Initialize
+M_CreateAddOnLink := FALSE;
+
+// Check if addOn link is valid
+IF eAddOnNumber > E_FunctionNumber.F_BEGIN_FUNCTION AND 
+   eAddOnNumber < E_FunctionNumber.F_END_FUNCTION THEN
+   
+   	// Go trough all addOn slots
+   	FOR mIdx := 1 TO NUMBER_OF_ADDON_FUNCTIONS DO
+		
+		// Search for free or an already registred slot for the desired addon function
+		IF FunctionData.MemberList.AddOnList[mIdx].eFunctionNumber = E_FunctionNumber.F_BEGIN_FUNCTION OR 
+		   FunctionData.MemberList.AddOnList[mIdx].eFunctionNumber = eAddOnNumber THEN
+   			// Register addon
+			FunctionData.MemberList.AddOnList[mIdx].eFunctionNumber := eAddOnNumber;
+			FunctionData.MemberList.AddOnList[mIdx].ZoneNumber := ZoneNumber;
+			
+			// Registration was successfull
+			M_CreateAddOnLink := TRUE;
+			EXIT;
+		END_IF
+   	END_FOR
+	
+	// If error occured during registration
+	IF NOT M_CreateAddOnLink THEN
+		// No free slot found
+		DebugMsg := 'No free addon registration slot found.';
+		fbDebugMsg.M_SendErrorMsg(DebugMsg);
+	END_IF
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_DeleteTU_DataIndex" Id="{8f0cbd51-7359-4826-ba2a-8aec90b7752b}">
+      <Declaration><![CDATA[METHOD M_DeleteTU_DataIndex : BOOL
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 475069 $
+ *	Revision date	:	$Date: 2021-04-09 16:13:33 +0200 (fre, 09 apr 2021) $
+ *	Last changed by	:	$Author: d7mangc $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/tags/R1.12.0/01_Software/BCF/BCF/JumpStart/20_Product/10_BCF/11_Conv/12_E_Functions/FB_FunctionConv.TcPOU $
+ *
+ *	Purpose			:	Delete TU Data index on position
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+VAR_INPUT
+	mZoneNumber		: INT; // Zone number
+	mTU_DataIndex	: DINT; // Tu index to delete
+	mInit			: BOOL; // Initialize position afterwards
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[// Initialize
+M_DeleteTU_DataIndex := FALSE;
+
+// Zone number valid
+IF mZoneNumber > 0 AND mZoneNumber <= SettingsFunction.NumberOfZones THEN
+	// TU Index is equal to the current
+	IF mTU_DataIndex = ZoneData[mZoneNumber].TransportControlData.TU_DataIndex THEN
+		// Clear
+		ZoneData[mZoneNumber].TransportControlData.TU_DataIndex := 0;
+		ZoneData[mZoneNumber].TransportControlData.DataPresent := FALSE;
+		
+		// Init requested
+		IF mInit THEN
+			ZoneData[mZoneNumber].Init := FALSE;
+		END_IF
+		
+		// Delete successful
+		M_DeleteTU_DataIndex := TRUE;
+		
+		// BCFD-11639 - POR0 - Position Cleared Report sent without TU-ID	
+		// included in BCF 1.16
+		// Save data from the last TU for the position clear report
+		M_SaveDataTU_ZoneLeft (mZoneNumber, mTU_DataIndex); 
+	END_IF
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_FindTU_DataIndex" Id="{bd46c852-9938-4845-9e47-705427d1c5d0}">
+      <Declaration><![CDATA[METHOD M_FindTU_DataIndex : BOOL
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 475069 $
+ *	Revision date	:	$Date: 2021-04-09 16:13:33 +0200 (fre, 09 apr 2021) $
+ *	Last changed by	:	$Author: d7mangc $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/tags/R1.12.0/01_Software/BCF/BCF/JumpStart/20_Product/10_BCF/11_Conv/12_E_Functions/FB_FunctionConv.TcPOU $
+ *
+ *	Purpose			:	Checks if a position consists of specific TU_DataIndex.
+ *						mZoneNumber 0 = search in whole position
+ *						This method can be overwritten for example in a Belt, to give 
+ *						access to internal TU index structures.
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+VAR_INPUT
+	mZoneNumber		: INT; // Check zone number, 0 = check all
+	mTU_DataIndex	: DINT; // Searched TU index
+END_VAR
+
+VAR
+	mIdx			: INT; // Iterator
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[// Initialize
+M_FindTU_DataIndex := FALSE;
+
+// If Zone index is in a specific range 
+IF mZoneNumber > 0 AND mZoneNumber <= SettingsFunction.NumberOfZones THEN
+	// Check for index
+	M_FindTU_DataIndex := ZoneData[mZoneNumber].TransportControlData.TU_DataIndex = mTU_DataIndex;
+ELSIF mZoneNumber = 0 THEN
+	// Check all configured zones
+	FOR mIdx := 1 TO SettingsFunction.NumberOfZones DO
+		M_FindTU_DataIndex := ZoneData[mIdx].TransportControlData.TU_DataIndex = mTU_DataIndex;
+		// If an index was found -> Exit
+		IF M_FindTU_DataIndex THEN
+			RETURN;
+		END_IF
+	END_FOR
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_GetAddOnOrder" Id="{c2b8a265-7e1e-43ff-9a46-f88bd0c658e5}">
+      <Declaration><![CDATA[// Copies AddOnOrders into the function interface
+METHOD PROTECTED M_GetAddOnOrder
+(**************************************************************************************
+ *  Application     :   BoxControl Framework
+ *  Revision date   :   $Date: 2021-04-09 16:13:33 +0200 (fre, 09 apr 2021) $
+ *  Author          :   CDC
+ * ------------------------------------------------------------------------------------
+ *  © Swisslog AG
+ *  Swisslog is not liable for any usage of this source code that is not agreed 
+ *  on between Swisslog and the other party. The mandatory legal liability remains 
+ *  unaffected.
+ * ------------------------------------------------------------------------------------
+ *  Revision History: 
+ *
+ *  VERSION DATE         INITIALS     DESCRIPTION
+ *  0.0     DD.MM.YYYY   (name)       (explain customized modifications)
+ *
+ **************************************************************************************)
+VAR
+	mIdx					: INT;	// Iterator
+	meAddOnFunctionNumber	: E_FunctionNumber;	// Function numebr
+	mControlledZoneNumber	: INT;	// zone number
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+// Go through all addon members
+FOR mIdx := 1 TO NUMBER_OF_ADDON_FUNCTIONS DO
+
+	// If a valid addon is registerd
+	IF FunctionData.MemberList.AddOnList[mIdx].eFunctionNumber > E_FunctionNumber.F_BEGIN_FUNCTION AND
+	   FunctionData.MemberList.AddOnList[mIdx].eFunctionNumber < E_FunctionNumber.F_END_FUNCTION THEN
+
+	   meAddOnFunctionNumber := FunctionData.MemberList.AddOnList[mIdx].eFunctionNumber;
+	   
+	   // Check if a valid reference is available for that function and the function is initialized
+		IF __ISVALIDREF(FunctionRegistry[meAddOnFunctionNumber].rFunctionInterface) AND
+		   F_IsFunctionInitialized(meAddOnFunctionNumber) THEN
+			mControlledZoneNumber:= FunctionData.MemberList.AddOnList[mIdx].ZoneNumber;
+			// Store them internally
+			FunctionInterface.In.AddOnOrder[mIdx].eFunctionNumber := meAddOnFunctionNumber;
+			FunctionInterface.In.AddOnOrder[mIdx].ZoneNumber      := mControlledZoneNumber;
+			// data from controlling add on
+			FunctionInterface.In.AddOnOrder[mIdx].eFunctionType   := FunctionRegistry[meAddOnFunctionNumber].eFunctionType;
+			FunctionInterface.In.AddOnOrder[mIdx].Orders          := FunctionRegistry[meAddOnFunctionNumber].rFunction.M_GetOutAddOnOrders(eFunctionNumber:= SettingsFunction.eFunctionNumber,
+																																			ZoneNumber    := mControlledZoneNumber);
+		ELSE
+			MEMSET(destAddr := ADR(FunctionInterface.In.AddOnOrder[mIdx]), fillByte := 0, n := SIZEOF(FunctionInterface.In.AddOnOrder[mIdx]));
+		END_IF
+	ELSE
+		// No valid addon functions
+		EXIT;
+	END_IF
+END_FOR
+
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_GetElementStates" Id="{d6acfe2a-4cd5-4de2-bbf6-d707853bce1f}">
+      <Declaration><![CDATA[METHOD PROTECTED M_GetElementStates 
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 475069 $
+ *	Revision date	:	$Date: 2021-04-09 16:13:33 +0200 (fre, 09 apr 2021) $
+ *	Last changed by	:	$Author: d7mangc $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/tags/R1.12.0/01_Software/BCF/BCF/JumpStart/20_Product/10_BCF/11_Conv/12_E_Functions/FB_FunctionConv.TcPOU $
+ *
+ *	Purpose			:	Get states of corresponding element
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+VAR
+	mIdx					: INT; // Iterator
+	meElementNumber			: E_ElementNumber; 
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+// If element link is valid
+IF SettingsFunction.eElementLink > E_ElementNumber.E_BEGIN_ELEMENT AND
+   SettingsFunction.eElementLink < E_ElementNumber.E_END_ELEMENT THEN
+  
+	meElementNumber := SettingsFunction.eElementLink;
+	
+   // Check element is initialized and has valid references
+   IF __ISVALIDREF(ElementRegistry[meElementNumber].rElementData) AND
+      __ISVALIDREF(ElementRegistry[meElementNumber].rElementInterface) AND
+      F_IsElementInitialized(meElementNumber) THEN
+   		// Return 
+		FunctionInterface.In.Element.OperationState := ElementRegistry[meElementNumber].rElementData.OperationState;
+		FunctionInterface.In.Element.State := ElementRegistry[meElementNumber].rElementInterface.Out.State;
+   ELSE
+	    MEMSET(destAddr := ADR(FunctionInterface.In.Element), fillByte := 0, n := SIZEOF(FunctionInterface.In.Element));
+   END_IF
+END_IF
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_GetNextTransportData" Id="{5ced4e8b-1275-48c3-a54b-2c99c75bd265}">
+      <Declaration><![CDATA[METHOD PROTECTED M_GetNextTransportData : REFERENCE TO ST_TransportData
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 475069 $
+ *	Revision date	:	$Date: 2021-04-09 16:13:33 +0200 (fre, 09 apr 2021) $
+ *	Last changed by	:	$Author: d7mangc $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/tags/R1.12.0/01_Software/BCF/BCF/JumpStart/20_Product/10_BCF/11_Conv/12_E_Functions/FB_FunctionConv.TcPOU $
+ *
+ *	Purpose			:	Get transport data for next zone
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+VAR_INPUT
+	mZoneNumber : INT; // Number of the zone
+END_VAR
+
+VAR
+	meFunctionNumber : E_FunctionNumber;
+	NextZoneNumber : INT;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[(*
+* Check where the next zone is located at depending also on the flow direction (1 to x or x to 1) and number of the zones the function has.
+* Then return reference to the TransportData in that zone. If next was not found, return reference to the empty TransportData.
+*)
+//If there was no decision, return empty reference
+M_GetNextTransportData REF= FunctionBase.TransportDataEmpty;
+		
+IF (mZoneNumber = 1 AND SettingsFunction.FlowDirectionREV)
+	OR (mZoneNumber = SettingsFunction.NumberOfZones AND NOT SettingsFunction.FlowDirectionREV) THEN	
+	// If the function number is valid
+	IF FunctionInterface.In.eNextFunctionNumber > E_FunctionNumber.F_BEGIN_FUNCTION AND
+	   FunctionInterface.In.eNextFunctionNumber < E_FunctionNumber.F_END_FUNCTION THEN
+	    
+		meFunctionNumber := FunctionInterface.In.eNextFunctionNumber;
+
+		// If the reference is valid and the function is initialized
+		IF __ISVALIDREF(FunctionRegistry[meFunctionNumber].rFunction)  AND
+		   F_IsFunctionInitialized(meFunctionNumber) THEN
+			// Return adjacent transport data of the adjacent function
+			M_GetNextTransportData REF= FunctionRegistry[meFunctionNumber].rFunction
+											.M_GetTransportData(meFunctionNumber := SettingsFunction.eFunctionNumber);
+		END_IF
+		
+	// If the function number points to an external interface
+	ELSIF FunctionInterface.In.eNextFunctionNumber > E_FunctionNumber.F_BEGIN_EXTERN_FUNCTION AND
+		  FunctionInterface.In.eNextFunctionNumber < E_FunctionNumber.F_END_EXTERN_FUNCTION THEN
+		// Check interface is valid
+		IF __QUERYINTERFACE(fbSTI_Channels[FunctionInterface.In.eNextFunctionNumber].Instance,FunctionBase.STI_Instance) THEN
+			// Return adjacent transport data of the adjacent external function
+			M_GetNextTransportData REF= fbSTI_Channels[FunctionInterface.In.eNextFunctionNumber].Instance.M_GetTransportData();
+		END_IF
+	END_IF
+ELSE
+	//Calculate the number of the next zone depending on the flow direction
+	IF SettingsFunction.FlowDirectionREV THEN 
+		NextZoneNumber := mZoneNumber - 1;
+	ELSE
+		NextZoneNumber := mZoneNumber + 1;
+	END_IF
+
+	FunctionBase.NextTransportData.eFunctionNumber := SettingsFunction.eFunctionNumber;
+	FunctionBase.NextTransportData.ZoneNumber := NextZoneNumber;	
+	FunctionBase.NextTransportData.rTransportControlData REF= ZoneData[NextZoneNumber].TransportControlData;
+	FunctionBase.NextTransportData.rSettings REF= SettingsFunction.Zone[NextZoneNumber];	
+	M_GetNextTransportData REF= FunctionBase.NextTransportData;
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_GetOutAddOnOrders" Id="{cde65947-0af5-4c31-97f6-4fa11a9073b5}">
+      <Declaration><![CDATA[// Returns the orders to control a linked function/zone
+METHOD PROTECTED M_GetOutAddOnOrders : ST_AddOnOrders
+(**************************************************************************************
+ *  Application     :   BoxControl Framework
+ *  Revision date   :   $Date: 2021-04-09 16:13:33 +0200 (fre, 09 apr 2021) $
+ *  Author          :   CDC
+ * ------------------------------------------------------------------------------------
+ *  © Swisslog AG
+ *  Swisslog is not liable for any usage of this source code that is not agreed 
+ *  on between Swisslog and the other party. The mandatory legal liability remains 
+ *  unaffected.
+ * ------------------------------------------------------------------------------------
+ *  Revision History: 
+ *
+ *  VERSION DATE         INITIALS     DESCRIPTION
+ *  0.0     DD.MM.YYYY   (name)       (explain customized modifications)
+ *
+ **************************************************************************************)
+VAR_INPUT
+	eFunctionNumber		: E_FunctionNumber	:= 0;	// Function number to be controlled
+	ZoneNumber			: INT				:= 0;	// zone number to be controlled
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+M_GetOutAddOnOrders:= FunctionInterface.Out.AddOnOrders;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_GetPreviousTransportData" Id="{586344ff-2bc2-4340-b5ce-7ce98897ed1d}">
+      <Declaration><![CDATA[METHOD PROTECTED M_GetPreviousTransportData: REFERENCE TO ST_TransportData
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 475069 $
+ *	Revision date	:	$Date: 2021-04-09 16:13:33 +0200 (fre, 09 apr 2021) $
+ *	Last changed by	:	$Author: d7mangc $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/tags/R1.12.0/01_Software/BCF/BCF/JumpStart/20_Product/10_BCF/11_Conv/12_E_Functions/FB_FunctionConv.TcPOU $
+ *
+ *	Purpose			:	Get transport data from previous zone
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *  0.2				27.02.2020		jmu					Refactored
+ *
+ **************************************************************************************)
+VAR_INPUT
+	mZoneNumber 	: INT; // Number of the zone
+END_VAR
+
+VAR
+	meFunctionNumber	: E_FunctionNumber;
+	PreviousZoneNumber : INT;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[(*
+* Check where the previous zone is located at depending also on the flow direction (1 to x or x to 1) and number of the zones the function has.
+* Then return reference to the TransportData in that zone. If previous was not found, return reference to the empty TransportData.
+*)
+//If there was no decision, return empty reference
+M_GetPreviousTransportData REF= FunctionBase.TransportDataEmpty;
+		
+IF (mZoneNumber = 1 AND NOT SettingsFunction.FlowDirectionREV)
+	OR (mZoneNumber = SettingsFunction.NumberOfZones AND SettingsFunction.FlowDirectionREV) THEN	
+	// If the function number is valid
+	IF FunctionInterface.In.ePrevFunctionNumber > E_FunctionNumber.F_BEGIN_FUNCTION AND
+	   FunctionInterface.In.ePrevFunctionNumber < E_FunctionNumber.F_END_FUNCTION THEN
+	    
+		meFunctionNumber := FunctionInterface.In.ePrevFunctionNumber;
+
+		// If the reference is valid and the function is initialized
+		IF __ISVALIDREF(FunctionRegistry[meFunctionNumber].rFunction)  AND
+		   F_IsFunctionInitialized(meFunctionNumber) THEN
+			// Return adjacent transport data of the adjacent function
+			M_GetPreviousTransportData REF= FunctionRegistry[meFunctionNumber].rFunction
+											.M_GetTransportData(meFunctionNumber := SettingsFunction.eFunctionNumber);
+		END_IF
+		
+	// If the function number points to an external interface
+	ELSIF FunctionInterface.In.ePrevFunctionNumber > E_FunctionNumber.F_BEGIN_EXTERN_FUNCTION AND
+		  FunctionInterface.In.ePrevFunctionNumber < E_FunctionNumber.F_END_EXTERN_FUNCTION THEN
+		// Check interface is valid
+		IF __QUERYINTERFACE(fbSTI_Channels[FunctionInterface.In.ePrevFunctionNumber].Instance,FunctionBase.STI_Instance) THEN
+			// Return adjacent transport data of the adjacent external function
+			M_GetPreviousTransportData REF= fbSTI_Channels[FunctionInterface.In.ePrevFunctionNumber].Instance.M_GetTransportData();
+		END_IF
+	END_IF
+ELSE
+	//Calculate the number of the previous zone depending on the flow direction
+	IF SettingsFunction.FlowDirectionREV THEN 
+		PreviousZoneNumber := mZoneNumber + 1;
+	ELSE
+		PreviousZoneNumber := mZoneNumber - 1;
+	END_IF
+
+	FunctionBase.PrevTransportData.eFunctionNumber := SettingsFunction.eFunctionNumber;
+	FunctionBase.PrevTransportData.ZoneNumber := PreviousZoneNumber;	
+	FunctionBase.PrevTransportData.rTransportControlData REF= ZoneData[PreviousZoneNumber].TransportControlData;
+	FunctionBase.PrevTransportData.rSettings REF= SettingsFunction.Zone[PreviousZoneNumber];	
+	M_GetPreviousTransportData REF= FunctionBase.PrevTransportData;
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_GetTransportControlParam" Id="{495d7719-427a-4540-b7d6-d36a41acf0c2}">
+      <Declaration><![CDATA[METHOD PROTECTED M_GetTransportControlParam : REFERENCE TO ST_TransportControlParam
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 475069 $
+ *	Revision date	:	$Date: 2021-04-09 16:13:33 +0200 (fre, 09 apr 2021) $
+ *	Last changed by	:	$Author: d7mangc $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/tags/R1.12.0/01_Software/BCF/BCF/JumpStart/20_Product/10_BCF/11_Conv/12_E_Functions/FB_FunctionConv.TcPOU $
+ *
+ *	Purpose			:	Get transport control parameter
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+VAR_INPUT
+	mZoneNumber : INT; // Number of the zone
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+// Return function number
+FunctionBase.TransportControlParam.reFunctionNumber REF= SettingsFunction.eFunctionNumber;
+// Return function state
+FunctionBase.TransportControlParam.rOperationState REF= FunctionData.OperationState;
+
+// Return previous function number
+FunctionBase.TransportControlParam.rePrevFunctionNumber REF= FunctionInterface.In.ePrevFunctionNumber;
+// Return next function number
+FunctionBase.TransportControlParam.reNextFunctionNumber REF= FunctionInterface.In.eNextFunctionNumber;
+
+// Return zone enable
+FunctionBase.TransportControlParam.rZoneEnable REF= ZoneInterface[mZoneNumber].In.Enable;
+// Return external zone enable
+FunctionBase.TransportControlParam.rExternalZoneEnable REF= ZoneInterface[mZoneNumber].In.ZoneEnable;
+
+// Return settings prev/next function number
+FunctionBase.TransportControlParam.reSetFuncPrevFuncNumber REF= SettingsFunction.ePrevFunctionNumber;
+FunctionBase.TransportControlParam.reSetFuncNextFuncNumber REF= SettingsFunction.eNextFunctionNumber;
+
+// Return zone number
+FunctionBase.TransportControlParam.ZoneNumber := mZoneNumber;
+// Return zone settings
+FunctionBase.TransportControlParam.rSettings REF= SettingsFunction.Zone[mZoneNumber];
+
+M_GetTransportControlParam REF= FunctionBase.TransportControlParam;
+
+
+
+
+
+
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_GetTransportData" Id="{ad17fd6b-3b62-4afb-a203-7ee2d6bdaca3}">
+      <Declaration><![CDATA[METHOD M_GetTransportData : REFERENCE TO ST_TransportData
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 475069 $
+ *	Revision date	:	$Date: 2021-04-09 16:13:33 +0200 (fre, 09 apr 2021) $
+ *	Last changed by	:	$Author: d7mangc $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/tags/R1.12.0/01_Software/BCF/BCF/JumpStart/20_Product/10_BCF/11_Conv/12_E_Functions/FB_FunctionConv.TcPOU $
+ *
+ *	Purpose			:	Get adjacent zone
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+VAR_INPUT
+	meFunctionNumber : E_FunctionNumber; // Own element function number
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[(*
+Initialize
+Reference points initialy to an empty struct, to ensure
+always a valid reference, even no decision could be made.
+*)
+M_GetTransportData REF= FunctionBase.TransportDataEmpty;
+
+// If the function number is valid
+IF meFunctionNumber > F_BEGIN_FUNCTION THEN
+	// If the requesting function is the previous function
+	IF meFunctionNumber = FunctionInterface.In.ePrevFunctionNumber THEN
+		// If the flow direction is forward
+		IF NOT SettingsFunction.FlowDirectionREV THEN
+			// Return the transport data of the first zone
+			FunctionBase.TransportData.eFunctionNumber := SettingsFunction.eFunctionNumber;
+			FunctionBase.TransportData.ZoneNumber := 1;
+			FunctionBase.TransportData.rSettings REF= SettingsFunction.Zone[1];
+			FunctionBase.TransportData.rTransportControlData REF= ZoneData[1].TransportControlData;
+			M_GetTransportData REF= FunctionBase.TransportData;
+		ELSE
+			// If the zone number is valid
+			IF SettingsFunction.NumberOfZones > 0 THEN
+				// Return the transport data of the last zone
+				FunctionBase.TransportData.eFunctionNumber := SettingsFunction.eFunctionNumber;
+				FunctionBase.TransportData.ZoneNumber := SettingsFunction.NumberOfZones;
+				FunctionBase.TransportData.rSettings REF= SettingsFunction.Zone[SettingsFunction.NumberOfZones];
+				FunctionBase.TransportData.rTransportControlData REF= ZoneData[SettingsFunction.NumberOfZones].TransportControlData;	
+				M_GetTransportData REF= FunctionBase.TransportData;
+			END_IF	
+		END_IF
+	
+	// If the requesting function is the next function
+	ELSIF meFunctionNumber = FunctionInterface.In.eNextFunctionNumber THEN
+		
+		// If the flow direction is forward
+		IF NOT SettingsFunction.FlowDirectionREV THEN
+			// If the zone number is valid
+			IF SettingsFunction.NumberOfZones > 0 THEN
+				// Return the transport data of the last zone
+				FunctionBase.TransportData.eFunctionNumber := SettingsFunction.eFunctionNumber;
+				FunctionBase.TransportData.ZoneNumber := SettingsFunction.NumberOfZones;
+				FunctionBase.TransportData.rSettings REF= SettingsFunction.Zone[SettingsFunction.NumberOfZones];
+				FunctionBase.TransportData.rTransportControlData REF= ZoneData[SettingsFunction.NumberOfZones].TransportControlData;
+				M_GetTransportData REF= FunctionBase.TransportData;
+			END_IF
+		ELSE
+			// Return the transport data of the first zone
+			FunctionBase.TransportData.eFunctionNumber := SettingsFunction.eFunctionNumber;
+			FunctionBase.TransportData.ZoneNumber := 1;
+			FunctionBase.TransportData.rSettings REF= SettingsFunction.Zone[1];
+			FunctionBase.TransportData.rTransportControlData REF= ZoneData[1].TransportControlData;
+			M_GetTransportData REF= FunctionBase.TransportData;
+		END_IF
+	END_IF
+END_IF
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_InitFunction" Id="{3e2d2066-15cd-4fb8-8f14-4baf31a3197a}">
+      <Declaration><![CDATA[METHOD M_InitFunction : BOOL
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 475069 $
+ *	Revision date	:	$Date: 2021-04-09 16:13:33 +0200 (fre, 09 apr 2021) $
+ *	Last changed by	:	$Author: d7mangc $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/tags/R1.12.0/01_Software/BCF/BCF/JumpStart/20_Product/10_BCF/11_Conv/12_E_Functions/FB_FunctionConv.TcPOU $
+ *
+ *	Purpose			:	Initialize base functionality of function.
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+VAR_INPUT
+	mReset			: BOOL; // Reset initialization flag
+END_VAR
+
+VAR
+	mName			: T_MaxString; // Alpha numeric string only
+	mIdx			: INT; // Iterator
+	eFunctionNumber	: E_FunctionNumber; 
+	eElementNumber	: E_ElementNumber;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+// If the init was requested
+IF mReset THEN
+	// Inform the bottom function to initialize
+	FunctionData.Init := FALSE;
+	// Reset values and load config
+	M_PreInit();
+ELSE
+	(**************************************************************************************
+   		Initialize & Register
+	***************************************************************************************)
+	// Load basic configuration to settings
+	SettingsFunction := ConfigFunction;
+	
+	// Remove non alpha numeric signs
+	mName := F_ReduceToAlphaNumeric(InputString := SettingsFunction.FunctionName);
+
+	// Update Registry reference with HashCode
+	FunctionRegistry[SettingsFunction.eFunctionNumber].HashCode := F_CreateHashCode(InputString := mName);
+	
+	// Update Registry reference with name
+	FunctionRegistry[SettingsFunction.eFunctionNumber].FunctionName := SettingsFunction.FunctionName;
+	
+	// Update Registry function type
+	FunctionRegistry[SettingsFunction.eFunctionNumber].eFunctionType := SettingsFunction.eFunctionType;
+	
+	// Register and initialize all zones
+	FOR mIdx := 1 TO NUMBER_OF_ZONES_PER_FUNCTION DO
+		// Build name without alpha numerics
+		mName := F_ReduceToAlphaNumeric(InputString := SettingsFunction.Zone[mIdx].ZoneName);
+		
+		// Initialize
+		ZoneData[mIdx].AddOn.NoAddons := TRUE;
+		ZoneData[mIdx].AddOn.Orders.Enable := TRUE;
+		ZoneData[mIdx].AddOn.Orders.DataReady := TRUE;
+		ZoneData[mIdx].AddOn.Orders.EnableHandover := TRUE;
+		ZoneData[mIdx].AddOn.Orders.EnableTakeover := TRUE;
+		ZoneData[mIdx].AddOn.Orders.TU_DataIndex := 0;
+		
+		// Register
+		FunctionRegistry[SettingsFunction.eFunctionNumber].Zone[mIdx].ZoneName := SettingsFunction.Zone[mIdx].ZoneName;
+		FunctionRegistry[SettingsFunction.eFunctionNumber].Zone[mIdx].HashCode := F_CreateHashCode(InputString := mName);
+	END_FOR
+	
+	(**************************************************************************************
+   		AddOn Register
+	***************************************************************************************)
+	
+	// If Addon function link is available
+	IF SettingsFunction.FunctionLink.eFunctionNumber < E_FunctionNumber.F_END_FUNCTION AND
+       SettingsFunction.FunctionLink.eFunctionNumber > E_FunctionNumber.F_BEGIN_FUNCTION THEN
+	   
+		// Create addon link
+		eFunctionNumber := SettingsFunction.FunctionLink.eFunctionNumber;
+		
+		// Is this reference valid
+		IF __ISVALIDREF(FunctionRegistry[eFunctionNumber].rFunction) THEN
+			// Create AddOn link
+			FunctionRegistry[eFunctionNumber].rFunction.M_CreateAddOnLink(
+										eAddOnNumber := SettingsFunction.eFunctionNumber,
+										ZoneNumber	 := SettingsFunction.FunctionLink.ZoneNumber);
+		END_IF
+	END_IF
+	
+	
+	(**************************************************************************************
+   		Element register (Mandatory)
+	***************************************************************************************)
+	
+	// Check if element link is valid
+	IF SettingsFunction.eElementLink > E_ElementNumber.E_BEGIN_ELEMENT AND 
+	   SettingsFunction.eElementLink < E_ElementNumber.E_END_ELEMENT THEN
+		
+	   	// Close old addon link
+		eElementNumber := SettingsFunction.eElementLink;
+		
+		// Is reference valid
+		IF __ISVALIDREF(ElementRegistry[eElementNumber].rElement) THEN
+			// Register function in element
+			M_InitFunction := ElementRegistry[eElementNumber].rElement.M_CreateElementLink(SettingsFunction.eFunctionNumber);
+		END_IF
+	END_IF
+	
+	
+	(**************************************************************************************
+   		Initialize external interfaces
+	***************************************************************************************)
+	FOR mIdx := 1 TO NUMBER_OF_STI DO
+		// Is an external Subsystem transport interface configured
+		IF SettingsFunction.eExternalSTI_FunctionNumber[mIdx] > E_FunctionNumber.F_BEGIN_EXTERN_FUNCTION AND
+		   SettingsFunction.eExternalSTI_FunctionNumber[mIdx] < E_FunctionNumber.F_END_EXTERN_FUNCTION THEN
+		   
+			// When interface is valid
+			IF __QUERYINTERFACE(fbSTI_Channels[SettingsFunction.eExternalSTI_FunctionNumber[mIdx]].Instance,FunctionBase.STI_Instance) THEN
+				// Call external interface init
+				fbSTI_Channels[SettingsFunction.eExternalSTI_FunctionNumber[mIdx]].Instance.M_Init(mInit := TRUE);
+			END_IF
+		END_IF
+	END_FOR
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_ITC_AddTU_Data" Id="{1cd622f1-30bb-4d21-9d90-c65c9db38cef}">
+      <Declaration><![CDATA[METHOD PRIVATE M_ITC_AddTU_Data : BOOL
+VAR_INPUT
+	meChannelSrc		: E_MFCS_CHANNEL; // Number of the source 
+	mpData				: PVOID; // Data  pointer 
+	mLen				: UDINT; // Data length
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[// Map data
+F_BlockCopy(
+	pSrc:= mpData, 
+	LenSrc:= mLen, 
+	pDest:= ADR(FunctionBase.DataITC), 
+	LenDest:= SIZEOF(FunctionBase.DataITC));
+
+// Zone number valid
+IF FunctionBase.DataITC.ZoneNumber > 0 AND FunctionBase.DataITC.ZoneNumber <= SettingsFunction.NumberOfZones THEN
+	// TU Index available
+	IF FunctionBase.DataITC.TU_DataIndex > 0 THEN
+		ZoneData[FunctionBase.DataITC.ZoneNumber].TransportControlData.TU_DataIndex := FunctionBase.DataITC.TU_DataIndex;
+		ZoneData[FunctionBase.DataITC.ZoneNumber].TransportControlData.DataPresent := TRUE;
+		ZoneData[FunctionBase.DataITC.ZoneNumber].Init := NOT FunctionBase.DataITC.Init; 
+		
+	// Otherwise do inimage
+	ELSE	
+		// Build data
+		FunctionBase.DataITC.TU_DataIndex := F_InsertTU_Data(
+								eFunctionNumber := SettingsFunction.eFunctionNumber, 
+								ZoneNumber 		:= FunctionBase.DataITC.ZoneNumber);
+	
+		// Creation successful
+		IF FunctionBase.DataITC.ZoneNumber > 0 THEN
+			ZoneData[FunctionBase.DataITC.ZoneNumber].TransportControlData.TU_DataIndex := FunctionBase.DataITC.ZoneNumber;
+			ZoneData[FunctionBase.DataITC.ZoneNumber].TransportControlData.DataPresent := TRUE;
+			ZoneData[FunctionBase.DataITC.ZoneNumber].Init := NOT FunctionBase.DataITC.Init; 
+		ELSE
+			// Unrecognised ControlRequest message received 
+			DebugMsg := 'ADD_TU_DATA_MESSAGE - Inimage failed - no free TU index.';
+			fbDebugMsg.M_SendErrorMsg(mMessage := DebugMsg);
+		END_IF
+	END_IF
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_ITC_DAQ" Id="{a9e43913-fe27-4d33-ba4e-8e2c644ede31}">
+      <Declaration><![CDATA[METHOD M_ITC_DAQ : BOOL
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 475069 $
+ *	Revision date	:	$Date: 2021-04-09 16:13:33 +0200 (fre, 09 apr 2021) $
+ *	Last changed by	:	$Author: d7mangc $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/tags/R1.12.0/01_Software/BCF/BCF/JumpStart/20_Product/10_BCF/11_Conv/12_E_Functions/FB_FunctionConv.TcPOU $
+ *
+ *	Purpose			:	Process incoming DAQ Data Aquisition Request 					
+ *
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)	
+VAR_INPUT
+	meChannelSrc		: E_MFCS_CHANNEL; // Number of the source 
+	mpData				: PVOID; // Data  pointer 
+	mLen				: UDINT; // Data length
+END_VAR
+
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[(*********************************************************************************
+Map Data 	
+**********************************************************************************)	
+
+F_BlockCopy(
+	pSrc:= mpData, 
+	LenSrc:= mLen, 
+	pDest:= ADR(FunctionBase.DAQ), 
+	LenDest:= SIZEOF(FunctionBase.DAQ));
+(*********************************************************************************
+Find Zone Idx  	
+**********************************************************************************)	
+FunctionBase.Position := F_SearchFunctionPosition(Position := FunctionBase.DAQ.Position);
+
+(*********************************************************************************
+Call Process method 
+**********************************************************************************)	
+// Check if function number is valid
+IF FunctionBase.Position.eFunctionNumber > E_FunctionNumber.F_BEGIN_FUNCTION AND
+   FunctionBase.Position.eFunctionNumber < E_FunctionNumber.F_END_FUNCTION AND
+   FunctionBase.Position.ZoneNumber > 0 AND 
+   FunctionBase.Position.ZoneNumber <= SettingsFunction.NumberOfZones  
+THEN	
+	//Copy DAQ telegram to Zone Data 
+	F_BlockCopy(
+		pSrc:= mpData, 
+		LenSrc:= mLen, 
+		pDest:= ADR(FunctionBase.CM_Zone[FunctionBase.Position.ZoneNumber].DAQ), 
+		LenDest:= SIZEOF(FunctionBase.CM_Zone[FunctionBase.Position.ZoneNumber].DAQ));	
+	// Call DAQ process with Zone Data 
+	M_ProcessDAQ(pCM_Data:=ADR(FunctionBase.CM_Zone[FunctionBase.Position.ZoneNumber]),meChannelSrc := meChannelSrc);
+	
+ELSIF FunctionBase.Position.eFunctionNumber > E_FunctionNumber.F_BEGIN_FUNCTION AND
+   	  FunctionBase.Position.eFunctionNumber < E_FunctionNumber.F_END_FUNCTION AND
+   	  FunctionBase.Position.ZoneNumber = 0 THEN 
+	// Use Function Data 
+	F_BlockCopy(
+		pSrc:= mpData, 
+		LenSrc:= mLen, 
+		pDest:= ADR(Base.CM.DAQ), 
+		LenDest:= SIZEOF(Base.CM.DAQ));	
+	// Call DAQ process with Function Data 
+	M_ProcessDAQ(pCM_Data:=ADR(Base.CM),meChannelSrc := meChannelSrc);
+	
+END_IF
+
+M_ITC_DAQ := TRUE;
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_ITC_DataAquisitionZone" Id="{7df87bd1-4872-4b78-8353-43b011e81eb8}">
+      <Declaration><![CDATA[METHOD M_ITC_DataAquisitionZone : BOOL
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 475069 $
+ *	Revision date	:	$Date: 2021-04-09 16:13:33 +0200 (fre, 09 apr 2021) $
+ *	Last changed by	:	$Author: d7mangc $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/tags/R1.12.0/01_Software/BCF/BCF/JumpStart/20_Product/10_BCF/11_Conv/12_E_Functions/FB_FunctionConv.TcPOU $
+ *
+ *	Purpose			:	Method Stores CM Data in Buffer and Sends Report to MFCS when required  					
+ *
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)	
+VAR_INPUT
+	mVariableName		: STRING(System.CM_VARIABLENAME_STRINGLENGTH);	///Varaible Name AlphaNumeric string less than 20 Char
+	meCM_Index			: E_CM_Index;									/// Index Varaible Storage Array
+	mPosition			: STRING(NAME_LENGTH);		///Position Where method is called from
+	mCurrentValue		: STRING(Conveyor.GATHERED_DATA_VALUE);			/// Raw data Value to be logged 
+	meMode				: E_CM_Mode;									// CM Mode 
+	mZoneNumber			: INT;											// Zone Number of position.
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+(*********************************************************************************
+Call Process method 
+**********************************************************************************)	
+// Check if function number has Zone Positions 
+IF mZoneNumber > 0 AND 
+   mZoneNumber <= SettingsFunction.NumberOfZones  
+THEN
+	M_ITC_DataAquisitionProcess(
+		mVariableName:= mVariableName, 
+		meCM_Index		:= meCM_Index, 
+		mPosition		:= mPosition, 
+		mCurrentValue	:= mCurrentValue, 
+		meMode			:= meMode, 
+		pCM_Data		:= ADR(FunctionBase.CM_Zone[mZoneNumber]));
+
+END_IF
+
+
+M_ITC_DataAquisitionZone := TRUE;
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_ITC_FCQ" Id="{27776317-a1e1-4d55-88b1-c913d79b8ece}">
+      <Declaration><![CDATA[METHOD PRIVATE M_ITC_FCQ : BOOL
+VAR_INPUT
+	meChannelSrc		: E_MFCS_CHANNEL; // Number of the source 
+	mpData				: PVOID; // Data  pointer 
+	mLen				: UDINT; // Data length
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[// Map data
+F_BlockCopy(
+	pSrc:= mpData, 
+	LenSrc:= mLen, 
+	pDest:= ADR(FunctionBase.FCQ), 
+	LenDest:= SIZEOF(FunctionBase.FCQ));
+
+FunctionBase.Position := F_SearchFunctionPosition(Position := FunctionBase.FCQ.Position);
+
+// When request goes to a zone
+IF FunctionBase.Position.ZoneNumber > 0 THEN
+	// Store name
+	FunctionBase.PositionName := SettingsFunction.Zone[FunctionBase.Position.ZoneNumber].ZoneName;
+ELSE
+	// Store name
+	FunctionBase.PositionName := SettingsFunction.FunctionName;
+END_IF
+
+// Validate control code
+CASE FunctionBase.FCQ.Code OF
+	(*******************************************************************************
+		No code
+	********************************************************************************)
+	E_ITC_FunctionControlCode.NO_CODE:
+		// No code received
+		;
+
+	(*******************************************************************************
+		Reset error
+	********************************************************************************)
+	E_ITC_FunctionControlCode.RESET_ERROR:
+		// If the request goes to a zone
+		IF FunctionBase.Position.ZoneNumber > 0 THEN
+			// Reset zone
+			ZoneData[FunctionBase.Position.ZoneNumber].ErrorData.Error.ResetError := TRUE;
+		ELSE
+			// Reset function
+			FunctionData.ErrorData.Error.ResetError := TRUE;
+		END_IF
+		
+		// Message procesed successfully
+		FunctionBase.eReturnCode := E_ErrorConv.NO_ERROR_CODE;
+			
+	(*******************************************************************************
+	  Initialize
+	********************************************************************************)
+	E_ITC_FunctionControlCode.INITIALIZE:
+		// If a request goes to a zone
+		IF FunctionBase.Position.ZoneNumber > 0 THEN
+			// Initialize zone
+			ZoneData[FunctionBase.Position.ZoneNumber].Init := FALSE;
+		ELSE
+			// Initialize function
+			M_InitFunction(TRUE);
+		END_IF
+		
+		// Message procesed successfully
+		FunctionBase.eReturnCode := E_ErrorConv.NO_ERROR_CODE;
+		
+	(*******************************************************************************
+	  Enable
+	********************************************************************************)
+	E_ITC_FunctionControlCode.ENABLE:
+		// If a request goes to a zone
+		IF FunctionBase.Position.ZoneNumber > 0 THEN
+			// Initialize zone
+			ZoneInterface[FunctionBase.Position.ZoneNumber].In.ZoneEnable := DINT_TO_BOOL(FunctionBase.FCQ.Variable);
+		ELSE
+			// Set external element enable
+			FunctionInterface.In.FunctionEnable := DINT_TO_BOOL(FunctionBase.FCQ.Variable);
+		END_IF
+		
+		// Message procesed successfully
+		FunctionBase.eReturnCode := E_ErrorConv.NO_ERROR_CODE;
+
+	(*******************************************************************************
+	  Set Variable
+	********************************************************************************)
+	E_ITC_FunctionControlCode.SET_VARIABLE:
+		// If a request goes to a zone
+		IF FunctionBase.Position.ZoneNumber > 0 THEN
+			// Set variable
+			ITC.ZoneITC[FunctionBase.Position.ZoneNumber].Variable := FunctionBase.FCQ.Variable;
+		ELSE
+			// Set variable
+			ITC.FunctionITC.Variable := FunctionBase.FCQ.Variable;
+		END_IF
+		
+		// Message procesed successfully
+		FunctionBase.eReturnCode := E_ErrorConv.NO_ERROR_CODE;
+			
+	(*******************************************************************************
+	  Set Error
+	********************************************************************************)
+	E_ITC_FunctionControlCode.SET_ERROR:
+	
+		IF FunctionBase.Position.ZoneNumber > 0 THEN
+			// Push status update
+			ITC.ZoneITC[FunctionBase.Position.ZoneNumber].Commands.StatusReport := TRUE;
+		
+			// Set error 
+			ZoneData[FunctionBase.Position.ZoneNumber].ErrorData.Error.ErrorType := E_ErrorType.ERROR;
+			ZoneData[FunctionBase.Position.ZoneNumber].ErrorData.Error.ErrorParam := '';
+			ZoneData[FunctionBase.Position.ZoneNumber].ErrorData.Error.ErrorCode.Conv := DINT_TO_INT(FunctionBase.FCQ.Variable);
+		ELSE
+			// Push status update
+			ITC.FunctionITC.Commands.StatusReport := TRUE;
+		
+			// Set error 
+			FunctionData.ErrorData.Error.ErrorType := E_ErrorType.ERROR;
+			FunctionData.ErrorData.Error.ErrorParam := '';
+			FunctionData.ErrorData.Error.ErrorCode.Conv := DINT_TO_INT(FunctionBase.FCQ.Variable);
+		END_IF
+		
+		
+		// Message procesed successfully
+		FunctionBase.eReturnCode := E_ErrorConv.NO_ERROR_CODE;
+		
+ELSE
+	// Unrecognised ControlRequest message received 
+	DebugMsg := CONCAT('M_ITC_HandleBufferMessages - Unknown control code received: ', INT_TO_STRING(FunctionBase.FCQ.Code));
+	fbDebugMsg.M_SendErrorMsg(mMessage := DebugMsg);
+	
+	// Report wrong value
+	FunctionBase.eReturnCode := E_ErrorConv.WRONG_VALUE;
+END_CASE
+
+// Send report
+F_ITC_SendFCR(
+	eChannelSrc	:= meChannelSrc, 
+	FunctionName:= F_ReduceToAlphaNumeric(FunctionBase.PositionName), 
+	Code		:= FunctionBase.FCQ.Code, 
+	Variable	:= FunctionBase.FCQ.Variable, 
+	eReturnCode	:= FunctionBase.eReturnCode);
+
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_ITC_FSQ" Id="{cf04fb33-e1ee-4bda-9d8b-da92b0dff3c1}">
+      <Declaration><![CDATA[METHOD PRIVATE M_ITC_FSQ : BOOL
+VAR_INPUT
+	meChannelSrc		: E_MFCS_CHANNEL; // Number of the source 
+	mpData				: PVOID; // Data  pointer 
+	mLen				: UDINT; // Data length
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[// Map data
+F_BlockCopy(
+	pSrc:= mpData, 
+	LenSrc:= mLen, 
+	pDest:= ADR(FunctionBase.FSQ), 
+	LenDest:= SIZEOF(FunctionBase.FSQ));
+	
+FunctionBase.Position := F_SearchFunctionPosition(Position := FunctionBase.FSQ.Position);
+
+// Get previous function name
+FunctionBase.PrevPositionName := F_GetFunctionName(
+									eFunctionNumber := FunctionInterface.In.ePrevFunctionNumber,
+									ZoneNumber 		:= 0);
+// Get next function name
+FunctionBase.NextPositionName := F_GetFunctionName(
+									eFunctionNumber := FunctionInterface.In.eNextFunctionNumber,
+									ZoneNumber 		:= 0);
+
+// When the request goes to a zone
+IF FunctionBase.Position.ZoneNumber > 0 THEN
+	// Get Transport unit data
+	FunctionBase.TU_DataIndex := ZoneData[FunctionBase.Position.ZoneNumber].TransportControlData.TU_DataIndex;
+	
+	// Check if it's a virtual destination
+	IF TU_DataTable[FunctionBase.TU_DataIndex].Destination[1].eFunctionNumber > F_BEGIN_VIRTUAL_FUNCTION AND
+	   TU_DataTable[FunctionBase.TU_DataIndex].Destination[1].eFunctionNumber < F_END_VIRTUAL_FUNCTION THEN
+	   	// Get destination name from TU table
+		FunctionBase.DestinationName := TU_DataTable[FunctionBase.TU_DataIndex].Destination[1].PositionName;
+	ELSE
+		// Get destination name from function
+		FunctionBase.DestinationName := F_GetFunctionName(
+											eFunctionNumber := TU_DataTable[FunctionBase.TU_DataIndex].Destination[1].eFunctionNumber,
+											ZoneNumber 		:= TU_DataTable[FunctionBase.TU_DataIndex].Destination[1].ZoneNumber);
+	END_IF
+	
+	F_ITC_SendFSR(
+		eChannelSrc			:= meChannelSrc, 
+		FunctionName		:= F_ReduceToAlphaNumeric(SettingsFunction.Zone[FunctionBase.Position.ZoneNumber].ZoneName), 
+		PrevFunctionNo		:= F_ReduceToAlphaNumeric(FunctionBase.PrevPositionName), 
+		NextFunctionNo		:= F_ReduceToAlphaNumeric(FunctionBase.NextPositionName), 
+		eState				:= FunctionData.OperationState.eState, 
+		Enabled				:= ZoneInterface[FunctionBase.Position.ZoneNumber].In.ZoneEnable, 
+		TransportState		:= ZoneData[FunctionBase.Position.ZoneNumber].TransportControlData.eTransportState, 
+		TakeOverState		:= ZoneData[FunctionBase.Position.ZoneNumber].TransportControlData.eTakeOverState, 
+		HandOverState		:= ZoneData[FunctionBase.Position.ZoneNumber].TransportControlData.eHandOverState, 
+		TU_ID				:= TU_DataTable[FunctionBase.TU_DataIndex].TU_ID.ASCII, 
+		TU_Type				:= TU_DataTable[FunctionBase.TU_DataIndex].DataSet.TU_Type, 
+		AssignmentID		:= TU_DataTable[FunctionBase.TU_DataIndex].AssignmentID, 
+		LoadInformation		:= BOOL_TO_INT(ZoneData[FunctionBase.Position.ZoneNumber].TransportControlData.Occupied), 
+		Destination			:= F_ReduceToAlphaNumeric(FunctionBase.DestinationName), 
+		eErrorState			:= ZoneData[FunctionBase.Position.ZoneNumber].ErrorData.ErrorState, 
+		eErrorCode			:= ZoneData[FunctionBase.Position.ZoneNumber].ErrorData.Error.ErrorCode.Conv, 
+		eErrorType			:= ZoneData[FunctionBase.Position.ZoneNumber].ErrorData.Error.ErrorType, 
+		ErrorInformation	:= ZoneData[FunctionBase.Position.ZoneNumber].ErrorData.Error.ErrorParam, 
+		Variable			:= ITC.ZoneITC[FunctionBase.Position.ZoneNumber].Variable, 
+		eReturnCode			:= E_ErrorConv.NO_ERROR_CODE);
+	
+// Otherwise its a function request
+ELSE
+	F_ITC_SendFSR(
+		eChannelSrc			:= meChannelSrc, 
+		FunctionName		:= F_ReduceToAlphaNumeric(SettingsFunction.FunctionName), 
+		PrevFunctionNo		:= F_ReduceToAlphaNumeric(FunctionBase.PrevPositionName), 
+		NextFunctionNo		:= F_ReduceToAlphaNumeric(FunctionBase.NextPositionName), 
+		eState				:= FunctionData.OperationState.eState, 
+		Enabled				:= FunctionInterface.In.FunctionEnable, 
+		TransportState		:= E_TransportState.UNDEFINED, 
+		TakeOverState		:= E_TakeoverState.UNDEFINED, 
+		HandOverState		:= E_HandoverState.UNDEFINED, 
+		TU_ID				:= '', 
+		TU_Type				:= 0, 
+		AssignmentID		:= 0, 
+		LoadInformation		:= 0, 
+		Destination			:= '', 
+		eErrorState			:= FunctionData.ErrorData.ErrorState, 
+		eErrorCode			:= FunctionData.ErrorData.Error.ErrorCode.Conv, 
+		eErrorType			:= FunctionData.ErrorData.Error.ErrorType, 
+		ErrorInformation	:= FunctionData.ErrorData.Error.ErrorParam, 
+		Variable			:= ITC.FunctionITC.Variable, 
+		eReturnCode			:= E_ErrorConv.NO_ERROR_CODE);
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_ITC_GDQ" Id="{9a21e5c4-62d7-49f2-8d14-eb246db5e801}">
+      <Declaration><![CDATA[METHOD M_ITC_GDQ : BOOL
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 475069 $
+ *	Revision date	:	$Date: 2021-04-09 16:13:33 +0200 (fre, 09 apr 2021) $
+ *	Last changed by	:	$Author: d7mangc $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/tags/R1.12.0/01_Software/BCF/BCF/JumpStart/20_Product/10_BCF/11_Conv/12_E_Functions/FB_FunctionConv.TcPOU $
+ *
+ *	Purpose			:	Process incoming GDQ Gathered Data Request 					
+ *
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)	
+VAR_INPUT
+	meChannelSrc		: E_MFCS_CHANNEL; // Number of the source 
+	mpData				: PVOID; // Data  pointer 
+	mLen				: UDINT; // Data length
+END_VAR
+
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[(*********************************************************************************
+Map Data 	
+**********************************************************************************)	
+
+F_BlockCopy(
+	pSrc:= mpData, 
+	LenSrc:= mLen, 
+	pDest:= ADR(FunctionBase.GDQ), 
+	LenDest:= SIZEOF(FunctionBase.GDQ));
+(*********************************************************************************
+Find Zone Idx  	
+**********************************************************************************)	
+FunctionBase.Position := F_SearchFunctionPosition(Position := FunctionBase.GDQ.Position);
+
+(*********************************************************************************
+Call Process method 
+**********************************************************************************)	
+// Check if function number is valid
+IF FunctionBase.Position.eFunctionNumber > E_FunctionNumber.F_BEGIN_FUNCTION AND
+   FunctionBase.Position.eFunctionNumber < E_FunctionNumber.F_END_FUNCTION AND
+   FunctionBase.Position.ZoneNumber > 0 AND 
+   FunctionBase.Position.ZoneNumber <= SettingsFunction.NumberOfZones  
+THEN	
+	//Copy DAQ telegram to Zone Data 
+	F_BlockCopy(
+		pSrc:= mpData, 
+		LenSrc:= mLen, 
+		pDest:= ADR(FunctionBase.CM_Zone[FunctionBase.Position.ZoneNumber].GDQ), 
+		LenDest:= SIZEOF(FunctionBase.CM_Zone[FunctionBase.Position.ZoneNumber].GDQ));	
+	// Call GDQ process with Zone Data 
+	M_ProcessGDQ(pCM_Data:=ADR(FunctionBase.CM_Zone[FunctionBase.Position.ZoneNumber]),meChannelSrc := meChannelSrc);
+	
+ELSIF FunctionBase.Position.eFunctionNumber > E_FunctionNumber.F_BEGIN_FUNCTION AND
+   	  FunctionBase.Position.eFunctionNumber < E_FunctionNumber.F_END_FUNCTION AND
+   	  FunctionBase.Position.ZoneNumber = 0 THEN 
+	//Use Function Data 
+	//Copy DAQ telegram to base Data 
+	F_BlockCopy(
+		pSrc:= mpData, 
+		LenSrc:= mLen, 
+		pDest:= ADR(Base.CM.GDQ), 
+		LenDest:= SIZEOF(Base.CM.GDQ));	
+	// Call GDQ process with function Data 
+	M_ProcessGDQ(pCM_Data:=ADR(Base.CM),meChannelSrc := meChannelSrc);
+	
+END_IF
+
+
+M_ITC_GDQ := TRUE;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_ITC_MCQ" Id="{ac22eb88-b611-4d1c-963d-f1f60e354500}">
+      <Declaration><![CDATA[METHOD PRIVATE M_ITC_MCQ : BOOL
+VAR_INPUT
+	meChannelSrc		: E_MFCS_CHANNEL; // Number of the source 
+	mpData				: PVOID; // Data  pointer 
+	mLen				: UDINT; // Data length
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[// Map data
+F_BlockCopy(
+	pSrc:= mpData, 
+	LenSrc:= mLen, 
+	pDest:= ADR(FunctionBase.MCQ), 
+	LenDest:= SIZEOF(FunctionBase.MCQ));
+	
+// It is a control request
+IF FunctionBase.MCQ.Code = 1 OR FunctionBase.MCQ.Code = 2 THEN
+	// If position is in manual mode
+	IF FunctionData.OperationState.eMode = E_PositionMode.MANUAL_MODE THEN
+		// Update command when speed enabled
+		IF ITC.ManualMotion.Speed.Enable THEN
+			// Update speed - 0 = slow, 1 = fast
+			ITC.ManualMotion.Speed.Fast := FunctionBase.MCQ.Speed;
+		ELSE
+			ITC.ManualMotion.Speed.Fast := FALSE;
+		END_IF
+		
+		ITC.ManualMotion.Axis[1].Forward.Selected := FunctionBase.MCQ.Axis1Fwd AND 
+													 ITC.ManualMotion.Axis[1].Forward.Enable;
+		ITC.ManualMotion.Axis[1].Reverse.Selected := FunctionBase.MCQ.Axis1Rev AND 
+													 ITC.ManualMotion.Axis[1].Reverse.Enable;
+		
+		ITC.ManualMotion.Axis[2].Forward.Selected := FunctionBase.MCQ.Axis2Fwd AND 
+													 ITC.ManualMotion.Axis[2].Forward.Enable;
+		ITC.ManualMotion.Axis[2].Reverse.Selected := FunctionBase.MCQ.Axis2Rev AND 
+													 ITC.ManualMotion.Axis[2].Reverse.Enable;
+		
+		ITC.ManualMotion.Axis[3].Forward.Selected := FunctionBase.MCQ.Axis3Fwd AND 
+													 ITC.ManualMotion.Axis[3].Forward.Enable;
+		ITC.ManualMotion.Axis[3].Reverse.Selected := FunctionBase.MCQ.Axis3Rev AND 
+													 ITC.ManualMotion.Axis[3].Reverse.Enable;
+		
+		ITC.ManualMotion.Axis[4].Forward.Selected := FunctionBase.MCQ.Axis4Fwd AND 
+													 ITC.ManualMotion.Axis[4].Forward.Enable;
+		ITC.ManualMotion.Axis[4].Reverse.Selected := FunctionBase.MCQ.Axis4Rev AND 
+													 ITC.ManualMotion.Axis[4].Reverse.Enable;
+		
+		ITC.ManualMotion.Axis[5].Forward.Selected := FunctionBase.MCQ.Axis5Fwd AND 
+													 ITC.ManualMotion.Axis[5].Forward.Enable;
+		ITC.ManualMotion.Axis[5].Reverse.Selected := FunctionBase.MCQ.Axis5Rev AND 
+													 ITC.ManualMotion.Axis[5].Reverse.Enable;
+		
+		ITC.ManualMotion.Axis[6].Forward.Selected := FunctionBase.MCQ.Axis6Fwd AND 
+													 ITC.ManualMotion.Axis[6].Forward.Enable;
+		ITC.ManualMotion.Axis[6].Reverse.Selected := FunctionBase.MCQ.Axis6Rev AND 
+													 ITC.ManualMotion.Axis[6].Reverse.Enable;
+
+		ITC.ManualMotion.Button[1].Selected := FunctionBase.MCQ.Button1 AND
+											   ITC.ManualMotion.Button[1].Enable;
+
+		ITC.ManualMotion.Button[2].Selected := FunctionBase.MCQ.Button2 AND
+											   ITC.ManualMotion.Button[2].Enable;
+	ELSE
+		// Element not in manual mode
+		FunctionBase.eReturnCode := E_ErrorConv.WRONG_MODE;
+	END_IF
+END_IF
+
+// Check code if a report needs to be sent
+IF FunctionBase.MCQ.Code = 2 OR
+   FunctionBase.MCQ.Code = 0 OR
+   FunctionBase.eReturnCode <> 0 THEN
+   
+   F_ITC_SendMCR(
+		eChannelSrc	:= meChannelSrc, 
+		Position	:= FunctionBase.MCQ.Position, 
+		Code		:= FunctionBase.MCQ.Code, 
+		Mode		:= FunctionData.OperationState.eMode, 
+		Speed		:= ITC.ManualMotion.Speed, 
+		Axis		:= ITC.ManualMotion.Axis, 
+		Button		:= ITC.ManualMotion.Button, 
+		eReturnCode	:= FunctionBase.eReturnCode);
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_ITC_ProcessMsg" Id="{3446d6e6-ff2b-47b2-9683-db16bac5e938}">
+      <Declaration><![CDATA[METHOD M_ITC_ProcessMsg : BOOL
+VAR_INPUT
+	meChannelSrc		: E_MFCS_CHANNEL; // Number of the source 
+	mMsgType			: INT; // Message type
+	mpData				: PVOID; // Data  pointer 
+	mLen				: UDINT; // Data length
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[// Initialize
+M_ITC_ProcessMsg := TRUE;
+
+// Validate inputs
+IF mpData > 0 AND
+   mLen > 0 THEN
+	// Map enum
+	FunctionBase.eMsgType := mMsgType;
+	
+	// Validate message type
+	CASE FunctionBase.eMsgType OF
+		(*******************************************************************************
+		  Add TU data
+		********************************************************************************)
+		E_ITC_MsgTypeConv.ADD_TU_DATA:
+			M_ITC_AddTU_Data(meChannelSrc := meChannelSrc, mpData := mpData, mLen := mLen);
+	
+		(*******************************************************************************
+		  Delete TU data
+		********************************************************************************)
+		E_ITC_MsgTypeConv.FUNCTION_STATUS_REQUEST:
+			M_ITC_FSQ(meChannelSrc := meChannelSrc, mpData := mpData, mLen := mLen);
+	
+		(*******************************************************************************
+		  Control Request 
+		********************************************************************************)
+		E_ITC_MsgTypeConv.FUNCTION_CONTROL_REQUEST:
+			M_ITC_FCQ(meChannelSrc := meChannelSrc, mpData := mpData, mLen := mLen);
+	
+		(*******************************************************************************
+		  Manual Request 
+		********************************************************************************)
+		E_ITC_MsgTypeConv.MANUAL_CONTROL_REQUEST:
+			M_ITC_MCQ(meChannelSrc := meChannelSrc, mpData := mpData, mLen := mLen);
+		
+		(*******************************************************************************
+		  Scanner information request
+		********************************************************************************)
+		E_ITC_MsgTypeConv.SCANNER_INFORMATION_REQUEST:
+			M_ITC_SIQ(meChannelSrc := meChannelSrc, mpData := mpData, mLen := mLen);
+			
+		(*******************************************************************************
+		  Visualization information request
+		********************************************************************************)			
+		E_ITC_MsgTypeConv.VISUALIZATION_INFORMATION_REQUEST:
+			M_ITC_VIQ(meChannelSrc := meChannelSrc, mpData := mpData, mLen := mLen);
+						
+		(*******************************************************************************
+		  Data Aquisition Request 
+		********************************************************************************)
+		E_ITC_MsgTypeConv.DATA_ACQUISITION_REQUEST:
+			M_ITC_DAQ(meChannelSrc := meChannelSrc, mpData := mpData, mLen := mLen);
+			
+		(*******************************************************************************
+		  Gathered Data Request 
+		********************************************************************************)
+		E_ITC_MsgTypeConv.GATHERED_DATA_REQUEST:
+			M_ITC_GDQ(meChannelSrc := meChannelSrc, mpData := mpData, mLen := mLen);
+
+		(*******************************************************************************
+		  Process robot action assignement 
+		********************************************************************************)
+		E_ITC_MsgTypeConv.ROBOT_ACTION_ASSIGNMENT:
+			M_ITC_RAA(meChannelSrc := meChannelSrc, mpData := mpData, mLen := mLen);
+
+		(*******************************************************************************
+		  Process robot action delete requst
+		********************************************************************************)
+		E_ITC_MsgTypeConv.ROBOT_DELETE_REQUEST:
+			M_ITC_RDQ(meChannelSrc := meChannelSrc, mpData := mpData, mLen := mLen);
+
+
+	ELSE
+		// Unknown ITC message type received
+		DebugMsg := CONCAT('Function unknown ITC Message type: ', INT_TO_STRING(mMsgType));
+		fbDebugMsg.M_SendErrorMsg(DebugMsg);
+	END_CASE
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_ITC_ProcessOut" Id="{a0f13611-81b8-4609-854b-98ed9fb4410d}">
+      <Declaration><![CDATA[METHOD PROTECTED M_ITC_ProcessOut
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 475069 $
+ *	Revision date	:	$Date: 2021-04-09 16:13:33 +0200 (fre, 09 apr 2021) $
+ *	Last changed by	:	$Author: d7mangc $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/tags/R1.12.0/01_Software/BCF/BCF/JumpStart/20_Product/10_BCF/11_Conv/12_E_Functions/FB_FunctionConv.TcPOU $
+ *
+ *	Purpose			:	Function ITC out interface
+ *						Handles internally set ITC commands.
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+VAR
+	mNoError			: BOOL; // No error during processing
+	mPrevFunction		: STRING(NAME_LENGTH); // Previous function name
+	mNextFunction		: STRING(NAME_LENGTH); // Next function name
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[(*******************************************************************************
+	Status Report 
+********************************************************************************)
+// If a time request request is active
+IF ITC.FunctionITC.Commands.StatusReport THEN
+	// Get previous function name
+	mPrevFunction := F_GetFunctionName(
+						eFunctionNumber := FunctionInterface.In.ePrevFunctionNumber,
+						ZoneNumber 		:= 0);
+						
+	// Get next function name
+	mNextFunction := F_GetFunctionName(
+						eFunctionNumber := FunctionInterface.In.eNextFunctionNumber,
+						ZoneNumber 		:= 0);
+		
+	mNoError := F_ITC_SendFSR(
+					eChannelSrc		:= 0, 
+					FunctionName	:= F_ReduceToAlphaNumeric(SettingsFunction.FunctionName),
+					PrevFunctionNo	:= F_ReduceToAlphaNumeric(mPrevFunction),
+					NextFunctionNo	:= F_ReduceToAlphaNumeric(mNextFunction),
+					eState			:= FunctionData.OperationState.eState,
+					Enabled			:= FunctionInterface.In.FunctionEnable,
+					TransportState	:= E_TransportState.UNDEFINED,
+					TakeOverState	:= E_TakeOverState.UNDEFINED,
+					HandOverState	:= E_HandOverState.UNDEFINED,
+					TU_ID			:= '',
+					TU_Type			:= 0,
+					AssignmentID	:= 0,
+					LoadInformation	:= 0,
+					Destination		:= '0',
+					eErrorState		:= FunctionData.ErrorData.ErrorState,
+					eErrorCode		:= FunctionData.ErrorData.Error.ErrorCode.Conv,
+					eErrorType		:= FunctionData.ErrorData.Error.ErrorType,
+					ErrorInformation:= FunctionData.ErrorData.Error.ErrorParam,
+					Variable		:= ITC.FunctionITC.Variable,
+					eReturnCode		:= E_ErrorConv.NO_ERROR_CODE);	
+		
+	// If sending was successfull
+	IF mNoError THEN
+		// Reset flag
+		ITC.FunctionITC.Commands.StatusReport := FALSE;
+	ELSE
+		// Sending failed
+		DebugMsg := 'M_ITC_ProcessOut - Forwarding status report to ITC manager failed.';
+		fbDebugMsg.M_SendErrorMsg(mMessage := DebugMsg);
+	END_IF
+END_IF
+
+
+(*******************************************************************************
+	Status report: No error  
+********************************************************************************)
+// If a time request request is active
+IF ITC.FunctionITC.Commands.NoErrorReport THEN
+
+	// Get previous function name
+	mPrevFunction := F_GetFunctionName(
+						eFunctionNumber := FunctionInterface.In.ePrevFunctionNumber,
+						ZoneNumber 		:= 0);
+						
+	// Get next function name
+	mNextFunction := F_GetFunctionName(
+						eFunctionNumber := FunctionInterface.In.eNextFunctionNumber,
+						ZoneNumber 		:= 0);
+
+	mNoError := F_ITC_SendFSR(
+					eChannelSrc		:= 0, 
+					FunctionName	:= F_ReduceToAlphaNumeric(SettingsFunction.FunctionName),
+					PrevFunctionNo	:= F_ReduceToAlphaNumeric(mPrevFunction),
+					NextFunctionNo	:= F_ReduceToAlphaNumeric(mNextFunction),
+					eState			:= FunctionData.OperationState.eState,
+					Enabled			:= FunctionInterface.In.FunctionEnable,
+					TransportState	:= E_TransportState.UNDEFINED,
+					TakeOverState	:= E_TakeOverState.UNDEFINED,
+					HandOverState	:= E_HandOverState.UNDEFINED,
+					TU_ID			:= '',
+					TU_Type			:= 0,
+					AssignmentID	:= 0,
+					LoadInformation	:= 0,
+					Destination		:= '0',
+					eErrorState		:= E_ErrorState.OPERATIONAL,
+					eErrorCode		:= E_ErrorConv.NO_ERROR_CODE,
+					eErrorType		:= E_ErrorType.NO_ERROR_PENDING,
+					ErrorInformation:= '',
+					Variable		:= ITC.FunctionITC.Variable,
+					eReturnCode		:= E_ErrorConv.NO_ERROR_CODE);	
+		
+	// If sending was successfull
+	IF mNoError THEN
+		// Reset flag
+		ITC.FunctionITC.Commands.NoErrorReport := FALSE;
+	ELSE
+		// Sending failed
+		DebugMsg := 'M_ITC_ProcessOut - Forwarding "No error report" to ITC manager failed.';
+		fbDebugMsg.M_SendErrorMsg(mMessage := DebugMsg);
+	END_IF
+END_IF
+
+
+(*******************************************************************************
+	Control Report 
+********************************************************************************)
+// If a control report msg request is active
+IF ITC.FunctionITC.Commands.ControlReport THEN
+	
+	mNoError := F_ITC_SendFCR(
+					eChannelSrc := 0, 
+					FunctionName:= F_ReduceToAlphaNumeric(SettingsFunction.FunctionName), 
+					Code		:= 0, 
+					Variable	:= ITC.FunctionITC.Variable, 
+					eReturnCode	:= E_ErrorConv.NO_ERROR_CODE);
+				
+	// If sending was successfull
+	IF mNoError THEN
+		// Reset flag
+		ITC.FunctionITC.Commands.ControlReport := FALSE;
+	ELSE
+		// Sending failed
+		DebugMsg := 'M_ITC_ProcessOut - Forwarding control report to ITC manager failed.';
+		fbDebugMsg.M_SendErrorMsg(mMessage := DebugMsg);
+	END_IF
+END_IF
+
+
+(*******************************************************************************
+	Manual Control Report 
+********************************************************************************)
+// If a control report msg request is active
+IF ITC.FunctionITC.Commands.ManualControlReport THEN
+	
+   mNoError := F_ITC_SendMCR(
+					eChannelSrc	:= 0, 
+					Position	:= F_ReduceToAlphaNumeric(SettingsFunction.FunctionName), 
+					Code		:= 0, 
+					Mode		:= FunctionData.OperationState.eMode, 
+					Speed		:= ITC.ManualMotion.Speed, 
+					Axis		:= ITC.ManualMotion.Axis, 
+					Button		:= ITC.ManualMotion.Button, 
+					eReturnCode	:= E_ErrorConv.NO_ERROR_CODE);
+					
+	// If sending was successfull
+	IF mNoError THEN
+		// Reset flag
+		ITC.FunctionITC.Commands.ManualControlReport := FALSE;
+	ELSE
+		// Sending failed
+		DebugMsg := 'M_ITC_ProcessOut - Forwarding manual control report to ITC manager failed.';
+		fbDebugMsg.M_SendErrorMsg(mMessage := DebugMsg);
+	END_IF
+END_IF
+
+
+(*******************************************************************************
+	Scanner Information Report 
+********************************************************************************)
+// If a scanner information report msg request is active
+IF ITC.FunctionITC.Commands.ScannerInformationReport THEN
+	
+	mNoError := F_ITC_SendSIR(
+					eChannelSrc	:= 0, 
+					PositionName:= F_ReduceToAlphaNumeric(SettingsFunction.FunctionName), 
+					Code		:= 0, 
+					TU_ID		:= FunctionData.AddOnData.LastTU_ID, 
+					Counter1	:= FunctionData.AddOnData.Counter[1], 
+					Counter2	:= FunctionData.AddOnData.Counter[2], 
+					Counter3	:= FunctionData.AddOnData.Counter[3], 
+					Counter4	:= FunctionData.AddOnData.Counter[4], 
+					Counter5	:= FunctionData.AddOnData.Counter[5], 
+					eReturnCode	:= E_ErrorConv.NO_ERROR_CODE);
+					
+	// If sending was successfull
+	IF mNoError THEN
+		// Reset flag
+		ITC.FunctionITC.Commands.ScannerInformationReport := FALSE;
+	ELSE
+		// Sending failed
+		DebugMsg := 'M_ITC_ProcessOut - Forwarding scanner information report to ITC manager failed.';
+		fbDebugMsg.M_SendErrorMsg(mMessage := DebugMsg);
+	END_IF
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_ITC_ProcessOutZone" Id="{037a2786-fddd-481e-8584-8492e5eaec32}">
+      <Declaration><![CDATA[METHOD PROTECTED M_ITC_ProcessOutZone : BOOL
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 475069 $
+ *	Revision date	:	$Date: 2021-04-09 16:13:33 +0200 (fre, 09 apr 2021) $
+ *	Last changed by	:	$Author: d7mangc $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/tags/R1.12.0/01_Software/BCF/BCF/JumpStart/20_Product/10_BCF/11_Conv/12_E_Functions/FB_FunctionConv.TcPOU $
+ *
+ *	Purpose			:	Function zone ITC out interface
+ *						Handles internally set ITC commands.
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+VAR_INPUT
+	mZoneNumber			: INT; // Zone number	
+END_VAR
+
+VAR
+	mTU_DataIndex		: DINT; // Index
+	mNoError			: BOOL; // No error during processing
+	mPrevFunction		: STRING(NAME_LENGTH); // Previous function name
+	mNextFunction		: STRING(NAME_LENGTH); // Next function name
+	mDestination		: STRING(NAME_LENGTH); // destination function name
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+// If a valid zone is configured
+IF mZoneNumber > 0 AND mZoneNumber <= SettingsFunction.NumberOfZones THEN
+	
+	mTU_DataIndex := ZoneData[mZoneNumber].TransportControlData.TU_DataIndex;
+	
+	(*******************************************************************************
+		Transport Task Complete - TTC
+	********************************************************************************)
+	IF ITC.ZoneITC[mZoneNumber].Commands.TransportTaskCompleted THEN
+		
+		mNoError := F_ITC_SendTTC(
+						eChannelSrc		:= 0, 
+						PositionName	:= F_ReduceToAlphaNumeric(SettingsFunction.Zone[mZoneNumber].ZoneName), 
+						TU_DataIndex	:= ZoneData[mZoneNumber].TransportControlData.TU_DataIndex, 
+						MsgSequence		:= 0, 
+						TU_ID			:= TU_DataTable[mTU_DataIndex].TU_ID.ASCII, 
+						AssignmentID	:= TU_DataTable[mTU_DataIndex].AssignmentID, 
+						eReturnCode		:= E_ErrorConv.NO_ERROR_CODE);
+						
+		// Check send request was with no TU index
+		IF ZoneData[mZoneNumber].TransportControlData.TU_DataIndex = 0 THEN
+			// Sending failed
+			DebugMsg := CONCAT('M_ITC_ProcessOutZone - TTC sent with TU-Index 0. Zone: ',INT_TO_STRING(mZoneNumber));
+			fbDebugMsg.M_SendErrorMsg(mMessage := DebugMsg);
+		END_IF
+				
+		// If sending was successfull
+		IF mNoError THEN
+			// Reset flag
+			ITC.ZoneITC[mZoneNumber].Commands.TransportTaskCompleted := FALSE;
+		ELSE
+			// Sending failed
+			DebugMsg := CONCAT('M_ITC_ProcessOutZone - Forwarding TTC to ITC manager failed. Zone: ',INT_TO_STRING(mZoneNumber));
+			fbDebugMsg.M_SendErrorMsg(mMessage := DebugMsg);
+		END_IF
+	END_IF
+	
+	(*******************************************************************************
+		Position Occupied Report - POR
+	********************************************************************************)
+	IF ITC.ZoneITC[mZoneNumber].Commands.PositionOccupied THEN
+		
+		mNoError := F_ITC_SendPOR(
+						eChannelSrc		:= 0, 
+						Position		:= F_ReduceToAlphaNumeric(SettingsFunction.Zone[mZoneNumber].ZoneName), 
+						TU_ID			:= TU_DataTable[mTU_DataIndex].TU_ID.ASCII, 
+						TU_Type			:= TU_DataTable[mTU_DataIndex].DataSet.TU_Type, 
+						AssignmentID	:= TU_DataTable[mTU_DataIndex].AssignmentID, 
+						LoadInformation	:= ZoneData[mZoneNumber].TransportControlData.Occupied);
+
+		// Check send request was with no TU index
+		IF ZoneData[mZoneNumber].TransportControlData.TU_DataIndex = 0 THEN
+			// Sending failed
+			DebugMsg := CONCAT('M_ITC_ProcessOutZone - POR sent with TU-Index 0. Zone: ',INT_TO_STRING(mZoneNumber));
+			fbDebugMsg.M_SendErrorMsg(mMessage := DebugMsg);
+		END_IF
+				
+		// If sending was successfull
+		IF mNoError THEN
+			// Reset flag
+			ITC.ZoneITC[mZoneNumber].Commands.PositionOccupied := FALSE;
+		ELSE
+			// Sending failed
+			DebugMsg := CONCAT('M_ITC_ProcessOutZone - Forwarding POR to ITC manager failed. Zone: ',INT_TO_STRING(mZoneNumber));
+			fbDebugMsg.M_SendErrorMsg(mMessage := DebugMsg);
+		END_IF
+	END_IF
+
+	(*******************************************************************************
+		Position Clear Report
+	********************************************************************************)
+	IF ITC.ZoneITC[mZoneNumber].Commands.PositionCleared THEN
+				
+		// BCFD-11639 - POR0 - Position Cleared Report sent without TU-ID	
+		// included in BCF 1.16	
+		mNoError := F_ITC_SendPOR(
+						eChannelSrc		:= 0, 
+						Position		:= F_ReduceToAlphaNumeric(SettingsFunction.Zone[mZoneNumber].ZoneName), 
+						TU_ID			:= ZoneData[mZoneNumber].LastTUdata.TU_ID,
+						TU_Type			:= ZoneData[mZoneNumber].LastTUdata.TU_Type,
+						AssignmentID	:= ZoneData[mZoneNumber].LastTUdata.AssignmentID,
+						LoadInformation	:= FALSE);
+				
+		// If sending was successfull
+		IF mNoError THEN
+			// Reset flag
+			ITC.ZoneITC[mZoneNumber].Commands.PositionCleared := FALSE;
+		ELSE
+			// Sending failed
+			DebugMsg := CONCAT('M_ITC_ProcessOutZone - Forwarding position cleared report to ITC manager failed. Zone: ',INT_TO_STRING(mZoneNumber));
+			fbDebugMsg.M_SendErrorMsg(mMessage := DebugMsg);
+		END_IF
+	END_IF
+	
+	(*******************************************************************************
+		Identification Report
+	********************************************************************************)
+	IF ITC.ZoneITC[mZoneNumber].Commands.IdentificationReport THEN
+		
+		mNoError := F_ITC_SendIPR(
+						eChannelSrc			:= 0, 
+						Position			:= F_ReduceToAlphaNumeric(SettingsFunction.Zone[mZoneNumber].ZoneName), 
+						TU_DataIndex		:= ZoneData[mZoneNumber].TransportControlData.TU_DataIndex, 
+						MSG_Sequence		:= 0, 
+						TU_ID				:= TU_DataTable[mTU_DataIndex].TU_ID.ASCII, 
+						TU_Type				:= TU_DataTable[mTU_DataIndex].DataSet.TU_Type, 
+						AssignmentID		:= TU_DataTable[mTU_DataIndex].AssignmentID, 
+						Height				:= TU_DataTable[mTU_DataIndex].Profile.Height, 
+						WidthRight			:= TU_DataTable[mTU_DataIndex].Profile.ProfileRight, 
+						WidthLeft			:= TU_DataTable[mTU_DataIndex].Profile.ProfileLeft, 
+						LengthFront			:= TU_DataTable[mTU_DataIndex].Profile.ProfileFront, 
+						LengthRear			:= TU_DataTable[mTU_DataIndex].Profile.ProfileRear, 
+						Weight				:= TU_DataTable[mTU_DataIndex].Profile.Weight, 
+						Tunnel				:= TU_DataTable[mTU_DataIndex].Profile.Tunnel, 
+						Runner				:= TU_DataTable[mTU_DataIndex].Profile.Runner, 
+						ErrorCode			:= E_ErrorConv.NO_ERROR_CODE, 
+						ValidLabelString	:= 999, 
+						Label				:= TU_DataTable[mTU_DataIndex].Label.ASCII);
+
+		// Check send request was with no TU index
+		IF ZoneData[mZoneNumber].TransportControlData.TU_DataIndex = 0 THEN
+			// Sending failed
+			DebugMsg := CONCAT('M_ITC_ProcessOutZone - IPR sent with TU-Index 0. Zone: ',INT_TO_STRING(mZoneNumber));
+			fbDebugMsg.M_SendErrorMsg(mMessage := DebugMsg);
+		END_IF
+				
+		// If sending was successfull
+		IF mNoError THEN
+			// Reset flag
+			ITC.ZoneITC[mZoneNumber].Commands.IdentificationReport := FALSE;
+		ELSE
+			// Sending failed
+			DebugMsg := CONCAT('M_ITC_ProcessOutZone - Forwarding IPR to ITC manager failed. Zone: ',INT_TO_STRING(mZoneNumber));
+			fbDebugMsg.M_SendErrorMsg(mMessage := DebugMsg);
+		END_IF
+	END_IF
+	
+	(*******************************************************************************
+		Status report
+	********************************************************************************)
+	IF ITC.ZoneITC[mZoneNumber].Commands.StatusReport THEN
+		// Get previous function name
+		mPrevFunction := F_GetFunctionName(
+							eFunctionNumber := FunctionInterface.In.ePrevFunctionNumber,
+							ZoneNumber 		:= 0);
+		// Get next function name 
+		mNextFunction := F_GetFunctionName(
+							eFunctionNumber := FunctionInterface.In.eNextFunctionNumber,
+							ZoneNumber 		:= 0);
+							
+		// Check if it's a virtual destination
+		IF TU_DataTable[mTU_DataIndex].Destination[1].eFunctionNumber > F_BEGIN_VIRTUAL_FUNCTION AND
+		   TU_DataTable[mTU_DataIndex].Destination[1].eFunctionNumber < F_END_VIRTUAL_FUNCTION THEN
+			// Get destination name from TU table
+			mDestination := TU_DataTable[mTU_DataIndex].Destination[1].PositionName;
+		ELSE
+			// Get destination name from function
+			mDestination := F_GetFunctionName(
+								eFunctionNumber := TU_DataTable[mTU_DataIndex].Destination[1].eFunctionNumber,
+								ZoneNumber 		:= TU_DataTable[mTU_DataIndex].Destination[1].ZoneNumber);
+		END_IF
+							
+		mNoError := F_ITC_SendFSR(
+						eChannelSrc			:= 0, 
+						FunctionName		:= F_ReduceToAlphaNumeric(SettingsFunction.Zone[mZoneNumber].ZoneName), 
+						PrevFunctionNo		:= F_ReduceToAlphaNumeric(mPrevFunction), 
+						NextFunctionNo		:= F_ReduceToAlphaNumeric(mNextFunction), 
+						eState				:= FunctionData.OperationState.eState, 
+						Enabled				:= FunctionInterface.In.FunctionEnable, 
+						TransportState		:= ZoneData[mZoneNumber].TransportControlData.eTransportState, 
+						TakeOverState		:= ZoneData[mZoneNumber].TransportControlData.eTakeOverState, 
+						HandOverState		:= ZoneData[mZoneNumber].TransportControlData.eHandOverState, 
+						TU_ID				:= TU_DataTable[mTU_DataIndex].TU_ID.ASCII, 
+						TU_Type				:= TU_DataTable[mTU_DataIndex].DataSet.TU_Type, 
+						AssignmentID		:= TU_DataTable[mTU_DataIndex].AssignmentID, 
+						LoadInformation		:= BOOL_TO_INT(ZoneData[mZoneNumber].TransportControlData.Occupied), 
+						Destination			:= F_ReduceToAlphaNumeric(mDestination), 
+						eErrorState			:= ZoneData[mZoneNumber].ErrorData.ErrorState, 
+						eErrorCode			:= ZoneData[mZoneNumber].ErrorData.Error.ErrorCode.Conv, 
+						eErrorType			:= ZoneData[mZoneNumber].ErrorData.Error.ErrorType, 
+						ErrorInformation	:= ZoneData[mZoneNumber].ErrorData.Error.ErrorParam, 
+						Variable			:= ITC.ZoneITC[mZoneNumber].Variable, 
+						eReturnCode			:= E_ErrorConv.NO_ERROR_CODE);
+				
+		// If sending was successfull
+		IF mNoError THEN
+			// Reset flag
+			ITC.ZoneITC[mZoneNumber].Commands.StatusReport := FALSE;
+		ELSE
+			// Sending failed
+			DebugMsg := CONCAT('M_ITC_ProcessOutZone - Forwarding status report to ITC manager failed. Zone: ',INT_TO_STRING(mZoneNumber));
+			fbDebugMsg.M_SendErrorMsg(mMessage := DebugMsg);
+		END_IF
+	END_IF
+	
+	
+	(*******************************************************************************
+		No error report
+	********************************************************************************)
+	IF ITC.ZoneITC[mZoneNumber].Commands.NoErrorReport THEN
+		// Get previous function name
+		mPrevFunction := F_GetFunctionName(
+							eFunctionNumber := FunctionInterface.In.ePrevFunctionNumber,
+							ZoneNumber 		:= 0);
+		// Get next function name 
+		mNextFunction := F_GetFunctionName(
+							eFunctionNumber := FunctionInterface.In.eNextFunctionNumber,
+							ZoneNumber 		:= 0);
+							
+		// Get destination name 
+		mDestination := F_GetFunctionName(
+							eFunctionNumber := TU_DataTable[mTU_DataIndex].Destination[1].eFunctionNumber,
+							ZoneNumber 		:= TU_DataTable[mTU_DataIndex].Destination[1].ZoneNumber);
+	
+		mNoError := F_ITC_SendFSR(
+						eChannelSrc			:= 0, 
+						FunctionName		:= F_ReduceToAlphaNumeric(SettingsFunction.Zone[mZoneNumber].ZoneName), 
+						PrevFunctionNo		:= F_ReduceToAlphaNumeric(mPrevFunction), 
+						NextFunctionNo		:= F_ReduceToAlphaNumeric(mNextFunction), 
+						eState				:= FunctionData.OperationState.eState, 
+						Enabled				:= FunctionInterface.In.FunctionEnable, 
+						TransportState		:= ZoneData[mZoneNumber].TransportControlData.eTransportState, 
+						TakeOverState		:= ZoneData[mZoneNumber].TransportControlData.eTakeOverState, 
+						HandOverState		:= ZoneData[mZoneNumber].TransportControlData.eHandOverState, 
+						TU_ID				:= TU_DataTable[mTU_DataIndex].TU_ID.ASCII, 
+						TU_Type				:= TU_DataTable[mTU_DataIndex].DataSet.TU_Type, 
+						AssignmentID		:= TU_DataTable[mTU_DataIndex].AssignmentID, 
+						LoadInformation		:= BOOL_TO_INT(ZoneData[mZoneNumber].TransportControlData.Occupied), 
+						Destination			:= F_ReduceToAlphaNumeric(mDestination), 
+						eErrorState			:= E_ErrorState.OPERATIONAL, 
+						eErrorCode			:= E_ErrorConv.NO_ERROR_CODE, 
+						eErrorType			:= E_ErrorType.NO_ERROR_PENDING, 
+						ErrorInformation	:= '', 
+						Variable			:= ITC.ZoneITC[mZoneNumber].Variable, 
+						eReturnCode			:= E_ErrorConv.NO_ERROR_CODE);
+				
+		// If sending was successfull
+		IF mNoError THEN
+			// Reset flag
+			ITC.ZoneITC[mZoneNumber].Commands.NoErrorReport := FALSE;
+		ELSE
+			// Sending failed
+			DebugMsg := CONCAT('M_ITC_ProcessOutZone - Forwarding no error report to ITC manager failed. Zone: ', INT_TO_STRING(mZoneNumber));
+			fbDebugMsg.M_SendErrorMsg(mMessage := DebugMsg);
+		END_IF
+	END_IF
+	
+	(*******************************************************************************
+		Control report
+	********************************************************************************)
+	IF ITC.ZoneITC[mZoneNumber].Commands.ControlReport THEN
+		
+		// Send report
+		mNoError := F_ITC_SendFCR(
+						eChannelSrc	:= 0, 
+						FunctionName:= F_ReduceToAlphaNumeric(SettingsFunction.Zone[mZoneNumber].ZoneName), 
+						Code		:= 0, 
+						Variable	:= ITC.ZoneITC[mZoneNumber].Variable, 
+						eReturnCode	:= E_ErrorConv.NO_ERROR_CODE);
+					
+		// If sending was successfull
+		IF mNoError THEN
+			// Reset flag
+			ITC.ZoneITC[mZoneNumber].Commands.ControlReport := FALSE;
+		ELSE
+			// Sending failed
+			DebugMsg := CONCAT('M_ITC_ProcessOutZone - Forwarding control report to ITC manager failed. Zone: ',INT_TO_STRING(mZoneNumber));
+			fbDebugMsg.M_SendErrorMsg(mMessage := DebugMsg);
+		END_IF
+	END_IF
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_ITC_RAA" Id="{b9c4e0e7-a8c7-4992-a22c-2c6713d06f4f}">
+      <Declaration><![CDATA[METHOD M_ITC_RAA : BOOL
+// Keep the method public!!!!
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 475069 $
+ *	Revision date	:	$Date: 2021-04-09 16:13:33 +0200 (fre, 09 apr 2021) $
+ *	Last changed by	:	$Author: d7mangc $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/tags/R1.12.0/01_Software/BCF/BCF/JumpStart/20_Product/10_BCF/11_Conv/12_E_Functions/FB_FunctionConv.TcPOU $
+ *
+ *	Purpose			:	Process incoming RAA message 					
+ *
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)	
+ 
+VAR_INPUT
+	meChannelSrc		: E_MFCS_CHANNEL; // Number of the source 
+	mpData				: PVOID; // Data  pointer 
+	mLen				: UDINT; // Data length	
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[// Map data
+F_BlockCopy(
+	pSrc:= mpData, 
+	LenSrc:= mLen, 
+	pDest:= ADR(FunctionBase.RAA), 
+	LenDest:= SIZEOF(FunctionBase.RAA));
+
+	
+// Return an errorcode for non robot function 
+FunctionBase.eReturnCode := E_ErrorConv.ROBOT_ITC_CONFIG_INVALID;	
+
+F_ITC_SendRAC(
+	eChannelSrc := meChannelSrc,
+	PositionName :=  F_ReduceToAlphaNumeric(SettingsFunction.FunctionName),
+	CommandDataIndex := FunctionBase.RAA.CommandDataIndex,
+	AssignmentID := FunctionBase.RAA.AssignmentID,
+	GroupID := FunctionBase.RAA.GroupID,
+	eReturnCode := FunctionBase.eReturnCode);]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_ITC_RDQ" Id="{d074124b-d2dd-4238-8911-401815057041}">
+      <Declaration><![CDATA[METHOD M_ITC_RDQ : BOOL
+// Keep the method public!!!!
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 475069 $
+ *	Revision date	:	$Date: 2021-04-09 16:13:33 +0200 (fre, 09 apr 2021) $
+ *	Last changed by	:	$Author: d7mangc $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/tags/R1.12.0/01_Software/BCF/BCF/JumpStart/20_Product/10_BCF/11_Conv/12_E_Functions/FB_FunctionConv.TcPOU $
+ *
+ *	Purpose			:	Process incoming RDQ message 					
+ *
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)	
+ 
+VAR_INPUT
+	meChannelSrc		: E_MFCS_CHANNEL; // Number of the source 
+	mpData				: PVOID; // Data  pointer 
+	mLen				: UDINT; // Data length	
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[// Map data
+F_BlockCopy(
+	pSrc:= mpData, 
+	LenSrc:= mLen, 
+	pDest:= ADR(FunctionBase.RDQ), 
+	LenDest:= SIZEOF(FunctionBase.RDQ));
+	
+// Return an errorcode for non robot function 
+FunctionBase.eReturnCode := E_ErrorConv.ROBOT_ITC_CONFIG_INVALID;	
+
+F_ITC_SendRDR(
+	eChannelSrc := meChannelSrc,
+	PositionName :=  F_ReduceToAlphaNumeric(SettingsFunction.FunctionName),
+	CommandDataIndex := FunctionBase.RDQ.CommandDataIndex,
+	AssignmentID := FunctionBase.RDQ.AssignmentID,
+	GroupID := FunctionBase.RDQ.GroupID,
+	eReturnCode := FunctionBase.eReturnCode);
+	]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_ITC_SIQ" Id="{c85d9a78-b4ae-402e-8cd4-a561e9aa74a7}">
+      <Declaration><![CDATA[METHOD PRIVATE M_ITC_SIQ : BOOL
+VAR_INPUT
+	meChannelSrc		: E_MFCS_CHANNEL; // Number of the source 
+	mpData				: PVOID; // Data  pointer 
+	mLen				: UDINT; // Data length
+END_VAR
+
+VAR
+	mIdx				: INT;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[// Map data
+F_BlockCopy(
+	pSrc:= mpData, 
+	LenSrc:= mLen, 
+	pDest:= ADR(FunctionBase.SIQ), 
+	LenDest:= SIZEOF(FunctionBase.SIQ));
+	
+FunctionBase.eReturnCode := E_ErrorConv.NO_ERROR_CODE;
+// Check if function is a scanner
+IF SettingsFunction.eFunctionType = E_FunctionType.Scanner THEN
+	// If counters needs to be resetted
+	IF FunctionBase.SIQ.Code = 1 OR
+	   FunctionBase.SIQ.Code = 2 THEN
+		// Reset counters
+		FOR mIdx := 1 TO 5 DO
+			FunctionData.AddOnData.Counter[mIdx] := 0;
+		END_FOR
+	END_IF
+ELSE
+	// Wrong position number
+	FunctionBase.eReturnCode := E_ErrorConv.FUNCTIONNUMBER_UNKNOWN;
+END_IF
+
+// Check if a report is needed
+IF FunctionBase.SIQ.Code = 0 OR
+   FunctionBase.SIQ.Code = 2 OR
+   FunctionBase.eReturnCode <> E_ErrorConv.NO_ERROR_CODE THEN
+   
+   F_ITC_SendSIR(
+		eChannelSrc	:=meChannelSrc, 
+		PositionName:= F_ReduceToAlphaNumeric(SettingsFunction.FunctionName), 
+		Code		:= FunctionBase.SIQ.Code, 
+		TU_ID		:= FunctionData.AddOnData.LastTU_ID, 
+		Counter1	:= FunctionData.AddOnData.Counter[1], 
+		Counter2	:= FunctionData.AddOnData.Counter[2], 
+		Counter3	:= FunctionData.AddOnData.Counter[3], 
+		Counter4	:= FunctionData.AddOnData.Counter[4], 
+		Counter5	:= FunctionData.AddOnData.Counter[5], 
+		eReturnCode	:= FunctionBase.eReturnCode);
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_MonitorFunctionErrors" Id="{0ec46405-bab9-4f19-9d28-837931958e3a}">
+      <Declaration><![CDATA[///Monitor function errors - Verify error handling and  report new errors.
+METHOD PROTECTED M_MonitorFunctionErrors : BOOL
+(**************************************************************************************
+ * Application   : BoxControl Framework
+ * Revision date : $Date: 2021-04-09 16:13:33 +0200 (fre, 09 apr 2021) $
+ * Author        : CDC
+ * ------------------------------------------------------------------------------------
+ * © Swisslog AG * Swisslog is not liable for any usage of this source code that is not agreed
+ * on between Swisslog and the other party. The mandatory legal liability remains * unaffected.
+ * ------------------------------------------------------------------------------------
+ * Project revision history:
+ *
+ * VERSION DATE         INITIALS     DESCRIPTION
+ * 0.0     DD.MM.YYYY   name       	 explain customized modifications
+ *
+ **************************************************************************************)
+VAR
+	mDataSetIdx				: INT; // Temporary data set index
+	mIdx					: INT; // Iterator
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+(**************************************************************************************************************
+   Function error handling
+***************************************************************************************************************)
+
+// Store current data set index
+mDataSetIdx := FunctionData.ErrorData.DataSetIdx;
+
+// Check if an error is stored
+IF mDataSetIdx > 0 THEN
+	// If error type has changed - its gone or type has changed
+	IF FunctionData.ErrorData.ErrorDataSet[mDataSetIdx].ErrorType <> 
+	   FunctionData.ErrorData.Error.ErrorType THEN
+		
+		// If the stored error type was "ERROR"
+		IF FunctionData.ErrorData.Error.ErrorType = E_ErrorType.ERROR
+		   OR FunctionData.ErrorData.Error.ErrorType = E_ErrorType.WARNING THEN
+			// Send error is gone
+			ITC.FunctionITC.Commands.NoErrorReport := TRUE;
+		END_IF
+		
+		// Reset stored data index
+		FunctionData.ErrorData.DataSetIdx := 0;		
+				
+		// Reset Message
+		FunctionData.ErrorData.Error.ResetError 	:= FALSE;
+		FunctionData.ErrorData.Error.ErrorType 	:= NO_ERROR_PENDING;
+		FunctionData.ErrorData.Error.ErrorCode.Conv:= E_ErrorConv.NO_ERROR_CODE;
+		FunctionData.ErrorData.Error.ErrorParam 	:= '';
+	END_IF
+	
+// Check if an external error is stored
+ELSIF FunctionData.ErrorData.ExternalError.ErrorType > E_ErrorType.NO_ERROR_PENDING THEN
+	// If error type has changed - its gone or type has changed
+	IF FunctionData.ErrorData.ExternalError.ErrorType <> 
+	   FunctionData.ErrorData.Error.ErrorType THEN
+	   
+		// If the stored error type was "ERROR"
+		IF FunctionData.ErrorData.Error.ErrorType = E_ErrorType.ERROR
+			OR FunctionData.ErrorData.Error.ErrorType = E_ErrorType.WARNING THEN
+			// Send error is gone
+			ITC.FunctionITC.Commands.NoErrorReport := TRUE;
+		END_IF
+		
+		// Reset Message
+		FunctionData.ErrorData.Error.ResetError 	:= FALSE;
+		FunctionData.ErrorData.Error.ErrorType 	:= NO_ERROR_PENDING;
+		FunctionData.ErrorData.Error.ErrorCode.Conv:= E_ErrorConv.NO_ERROR_CODE;
+		FunctionData.ErrorData.Error.ErrorParam 	:= '';
+	END_IF
+END_IF
+
+(**************************************************************************************************************
+   Check for new or higher prioritized message
+***************************************************************************************************************)
+// Loop trough all error sets errors 
+FOR mIdx := 1 TO NUMBER_OF_ERROR_SETS DO
+	// Detect new or higher prioritized error message
+	IF FunctionData.ErrorData.ErrorDataSet[mIdx].ErrorType > 
+       FunctionData.ErrorData.Error.ErrorType THEN
+		// Store index of current data set
+		FunctionData.ErrorData.DataSetIdx := mIdx;
+		
+		// Update error
+		FunctionData.ErrorData.Error.ErrorCode.Conv := FunctionData.ErrorData.ErrorDataSet[mIdx].ErrorCode.Conv;
+		FunctionData.ErrorData.Error.ErrorParam := FunctionData.ErrorData.ErrorDataSet[mIdx].ErrorParam;
+		FunctionData.ErrorData.Error.ErrorType := FunctionData.ErrorData.ErrorDataSet[mIdx].ErrorType;
+		
+		// Send Report
+		ITC.FunctionITC.Commands.StatusReport := TRUE;
+	END_IF
+	
+	// Check is an error is ongoing and a reset command is set
+	IF FunctionData.ErrorData.Error.ResetError AND 
+       FunctionData.ErrorData.ErrorDataSet[mIdx].ErrorType <> NO_ERROR_PENDING THEN
+	   
+		// Reset current error data set
+		FunctionData.ErrorData.ErrorDataSet[mIdx].ResetError := TRUE;
+	END_IF
+END_FOR
+
+
+// Check external error slot
+IF FunctionData.ErrorData.ExternalError.ErrorType > FunctionData.ErrorData.Error.ErrorType THEN
+
+	// Reset lower prioritized previous errors
+	mDataSetIdx := 0;
+	
+	// Update error
+	FunctionData.ErrorData.Error.ErrorCode.Conv := FunctionData.ErrorData.ExternalError.ErrorCode.Conv;
+	FunctionData.ErrorData.Error.ErrorParam := FunctionData.ErrorData.ExternalError.ErrorParam;
+	FunctionData.ErrorData.Error.ErrorType := FunctionData.ErrorData.ExternalError.ErrorType;
+
+	// Send Report
+	ITC.FunctionITC.Commands.StatusReport := TRUE;
+END_IF
+
+// Check is an external error is ongoing and a reset command is set
+IF FunctionData.ErrorData.Error.ResetError AND 
+   FunctionData.ErrorData.ExternalError.ErrorType <> NO_ERROR_PENDING THEN
+   
+	// Reset current error data set
+	FunctionData.ErrorData.ExternalError.ResetError := TRUE;
+END_IF
+
+
+// If reset command is set
+IF FunctionData.ErrorData.Error.ResetError THEN
+	// If the stored error type was "ERROR"
+	IF FunctionData.ErrorData.Error.ErrorType = E_ErrorType.ERROR THEN
+		// Send error is gone
+		ITC.FunctionITC.Commands.NoErrorReport := TRUE;
+	END_IF
+	
+	// Reset stored data index
+	FunctionData.ErrorData.DataSetIdx := 0;	
+
+	// Reset Message
+	FunctionData.ErrorData.Error.ResetError 	:= FALSE;
+	FunctionData.ErrorData.Error.ErrorType 	:= NO_ERROR_PENDING;
+	FunctionData.ErrorData.Error.ErrorCode.Conv:= E_ErrorConv.NO_ERROR_CODE;
+	FunctionData.ErrorData.Error.ErrorParam 	:= '';
+END_IF
+
+
+(**************************************************************************************************************
+   Function error state
+***************************************************************************************************************)
+// If function is in error state
+IF FunctionData.ErrorData.Error.ErrorType = E_ErrorType.ERROR THEN
+	// Set error state - ERROR
+	FunctionData.ErrorData.ErrorState := E_ErrorState.ERROR;
+	
+// If function is in warning state
+ELSIF FunctionData.ErrorData.Error.ErrorType = E_ErrorType.WARNING THEN
+	// Set error state - WARNING
+	FunctionData.ErrorData.ErrorState := E_ErrorState.WARNING;
+
+// If function has no error or an info is pending
+ELSIF FunctionData.ErrorData.Error.ErrorType = E_ErrorType.NO_ERROR_PENDING OR 
+	  FunctionData.ErrorData.Error.ErrorType = E_ErrorType.INFO  THEN
+	// Set error state - Operational
+	FunctionData.ErrorData.ErrorState := E_ErrorState.OPERATIONAL;
+
+ELSE
+	// Otherwise -> Unknown
+	FunctionData.ErrorData.ErrorState := E_ErrorState.UNKNOWN;
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_MonitorZoneErrors" Id="{3306cd3a-bf44-4db9-b1e2-edf22bbbc7bc}">
+      <Declaration><![CDATA[///Monitor zone errors - Verify error handling and report new errors.
+METHOD PROTECTED M_MonitorZoneErrors : BOOL
+(**************************************************************************************
+ * Application   : BoxControl Framework
+ * Revision date : $Date: 2021-04-09 16:13:33 +0200 (fre, 09 apr 2021) $
+ * Author        : CDC
+ * ------------------------------------------------------------------------------------
+ * © Swisslog AG * Swisslog is not liable for any usage of this source code that is not agreed
+ * on between Swisslog and the other party. The mandatory legal liability remains * unaffected.
+ * ------------------------------------------------------------------------------------
+ * Project revision history:
+ *
+ * VERSION DATE         INITIALS     DESCRIPTION
+ * 0.0     DD.MM.YYYY   name       	 explain customized modifications
+ *
+ **************************************************************************************)
+VAR
+	mDataSetIdx				: INT; // Temporary data set index
+	mIdx					: INT; // Iterator
+	mZoneIdx				: INT; // Iterator through all zones
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[// Initialize
+FunctionData.ErrorData.ZoneErrorPending := FALSE;
+
+(**************************************************************************************************************
+   Zone error handling
+***************************************************************************************************************)
+// Go through all zones
+FOR mZoneIdx := 1 TO SettingsFunction.NumberOfZones DO
+	
+	// Store current zone data set index
+	mDataSetIdx := ZoneData[mZoneIdx].ErrorData.DataSetIdx;
+	
+	// Check if an error is stored
+	IF mDataSetIdx > 0 THEN
+		
+		// If error type has changed - its gone or type has changed
+		IF ZoneData[mZoneIdx].ErrorData.ErrorDataSet[mDataSetIdx].ErrorType <> 
+           ZoneData[mZoneIdx].ErrorData.Error.ErrorType THEN
+			
+			// If the stored error type was "ERROR"
+			IF ZoneData[mZoneIdx].ErrorData.Error.ErrorType = E_ErrorType.ERROR
+			   OR ZoneData[mZoneIdx].ErrorData.Error.ErrorType = E_ErrorType.WARNING  THEN
+				// Send error is gone
+				ITC.ZoneITC[mZoneIdx].Commands.NoErrorReport := TRUE;
+			END_IF
+			
+			// Reset stored data index
+			ZoneData[mZoneIdx].ErrorData.DataSetIdx := 0;		
+					
+			// Reset Message
+			ZoneData[mZoneIdx].ErrorData.Error.ResetError := FALSE;
+			ZoneData[mZoneIdx].ErrorData.Error.ErrorType := NO_ERROR_PENDING;
+			ZoneData[mZoneIdx].ErrorData.Error.ErrorCode.Conv := E_ErrorConv.NO_ERROR_CODE;
+			ZoneData[mZoneIdx].ErrorData.Error.ErrorParam := '';
+		END_IF
+		// Check if an external error is stored
+	ELSIF ZoneData[mZoneIdx].ErrorData.ExternalError.ErrorType > E_ErrorType.NO_ERROR_PENDING THEN
+		// If error type has changed - its gone or type has changed
+		IF ZoneData[mZoneIdx].ErrorData.ExternalError.ErrorType <> 
+		   ZoneData[mZoneIdx].ErrorData.Error.ErrorType THEN
+		   
+			// If the stored error type was "ERROR"
+			IF ZoneData[mZoneIdx].ErrorData.Error.ErrorType = E_ErrorType.ERROR 
+			   OR ZoneData[mZoneIdx].ErrorData.Error.ErrorType = E_ErrorType.WARNING THEN
+				// Send error is gone
+				ITC.ZoneITC[mZoneIdx].Commands.NoErrorReport := TRUE;
+			END_IF
+			
+			// Reset Message
+			ZoneData[mZoneIdx].ErrorData.Error.ResetError 		:= FALSE;
+			ZoneData[mZoneIdx].ErrorData.Error.ErrorType 		:= NO_ERROR_PENDING;
+			ZoneData[mZoneIdx].ErrorData.Error.ErrorCode.Conv	:= E_ErrorConv.NO_ERROR_CODE;
+			ZoneData[mZoneIdx].ErrorData.Error.ErrorParam 		:= '';
+		END_IF
+	END_IF
+	
+	(**************************************************************************************************************
+	   Check for new or higher prioritized message
+	***************************************************************************************************************)
+	
+	// Loop trough all errors 
+	FOR mIdx := 1 TO NUMBER_OF_ERROR_SETS DO
+		// Detect new or higher prioritized error message
+		IF ZoneData[mZoneIdx].ErrorData.ErrorDataSet[mIdx].ErrorType > 
+		   ZoneData[mZoneIdx].ErrorData.Error.ErrorType THEN
+			
+			// Store index of current data set
+			ZoneData[mZoneIdx].ErrorData.DataSetIdx := mIdx;
+			
+			// Update error
+			ZoneData[mZoneIdx].ErrorData.Error.ErrorCode.Conv := ZoneData[mZoneIdx].ErrorData.ErrorDataSet[mIdx].ErrorCode.Conv;
+			ZoneData[mZoneIdx].ErrorData.Error.ErrorParam := ZoneData[mZoneIdx].ErrorData.ErrorDataSet[mIdx].ErrorParam;
+			ZoneData[mZoneIdx].ErrorData.Error.ErrorType := ZoneData[mZoneIdx].ErrorData.ErrorDataSet[mIdx].ErrorType;
+			
+			// Send Report
+			ITC.ZoneITC[mZoneIdx].Commands.StatusReport := TRUE;
+		END_IF
+		
+		// Check is an error is ongoing and a reset command is set
+		IF ZoneData[mZoneIdx].ErrorData.Error.ResetError AND 
+		   ZoneData[mZoneIdx].ErrorData.ErrorDataSet[mIdx].ErrorType <> NO_ERROR_PENDING THEN
+		   
+			// Reset current error data set
+			ZoneData[mZoneIdx].ErrorData.ErrorDataSet[mIdx].ResetError := TRUE;
+		END_IF
+	END_FOR
+	
+	// Check external error slot
+	IF ZoneData[mZoneIdx].ErrorData.ExternalError.ErrorType > ZoneData[mZoneIdx].ErrorData.Error.ErrorType THEN
+		// Reset lower prioritized previous errors
+		mDataSetIdx := 0;
+		
+		// Update error
+		ZoneData[mZoneIdx].ErrorData.Error.ErrorCode.Conv := ZoneData[mZoneIdx].ErrorData.ExternalError.ErrorCode.Conv;
+		ZoneData[mZoneIdx].ErrorData.Error.ErrorParam := ZoneData[mZoneIdx].ErrorData.ExternalError.ErrorParam;
+		ZoneData[mZoneIdx].ErrorData.Error.ErrorType := ZoneData[mZoneIdx].ErrorData.ExternalError.ErrorType;
+	
+		// Send Report
+		ITC.ZoneITC[mZoneIdx].Commands.StatusReport := TRUE;
+	END_IF
+	
+	// Check is an external error is ongoing and a reset command is set
+	IF ZoneData[mZoneIdx].ErrorData.Error.ResetError AND 
+	   ZoneData[mZoneIdx].ErrorData.ExternalError.ErrorType <> NO_ERROR_PENDING THEN
+	   
+		// Reset current error data set
+		ZoneData[mZoneIdx].ErrorData.ExternalError.ResetError := TRUE;
+	END_IF
+	
+	// If reset command is set
+	IF ZoneData[mZoneIdx].ErrorData.Error.ResetError THEN
+
+		// If the stored error type was "ERROR"
+		IF ZoneData[mZoneIdx].ErrorData.Error.ErrorType = E_ErrorType.ERROR THEN
+			// Send error is gone
+			ITC.ZoneITC[mZoneIdx].Commands.NoErrorReport := TRUE;
+		END_IF
+		
+		// Reset stored data index
+		ZoneData[mZoneIdx].ErrorData.DataSetIdx := 0;	
+	
+		// Reset Message
+		ZoneData[mZoneIdx].ErrorData.Error.ResetError 	:= FALSE;
+		ZoneData[mZoneIdx].ErrorData.Error.ErrorType := NO_ERROR_PENDING;
+		ZoneData[mZoneIdx].ErrorData.Error.ErrorCode.Conv := E_ErrorConv.NO_ERROR_CODE;
+		ZoneData[mZoneIdx].ErrorData.Error.ErrorParam 	:= '';
+	END_IF
+	
+	
+	(**************************************************************************************************************
+	   zone error state
+	***************************************************************************************************************)
+	
+	// If function is in error state
+	IF ZoneData[mZoneIdx].ErrorData.Error.ErrorType = E_ErrorType.ERROR THEN
+		// Set error state - ERROR
+		ZoneData[mZoneIdx].ErrorData.ErrorState := E_ErrorState.ERROR;
+		
+	// If function is in warning state
+	ELSIF ZoneData[mZoneIdx].ErrorData.Error.ErrorType = E_ErrorType.WARNING THEN
+		// Set error state - WARNING
+		ZoneData[mZoneIdx].ErrorData.ErrorState := E_ErrorState.WARNING;
+	
+	// If function has no error or an info is pending
+	ELSIF ZoneData[mZoneIdx].ErrorData.Error.ErrorType = E_ErrorType.NO_ERROR_PENDING OR 
+		  ZoneData[mZoneIdx].ErrorData.Error.ErrorType = E_ErrorType.INFO  THEN
+		// Set error state - Operational
+		ZoneData[mZoneIdx].ErrorData.ErrorState := E_ErrorState.OPERATIONAL;
+	
+	ELSE
+		// Otherwise -> Unknown
+		ZoneData[mZoneIdx].ErrorData.ErrorState := E_ErrorState.UNKNOWN;
+	END_IF
+	
+	(**************************************************************************************************************
+	   Inform function about zone error state
+	***************************************************************************************************************)
+	FunctionData.ErrorData.ZoneErrorPending := FunctionData.ErrorData.ZoneErrorPending OR
+															ZoneData[mZoneIdx].ErrorData.Error.ErrorType = E_ErrorType.ERROR;
+END_FOR
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_MoveTU_DataIndex" Id="{3bb46781-798e-4364-911b-1fb174d9dc11}">
+      <Declaration><![CDATA[METHOD M_MoveTU_DataIndex : DINT;
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 475069 $
+ *	Revision date	:	$Date: 2021-04-09 16:13:33 +0200 (fre, 09 apr 2021) $
+ *	Last changed by	:	$Author: d7mangc $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/tags/R1.12.0/01_Software/BCF/BCF/JumpStart/20_Product/10_BCF/11_Conv/12_E_Functions/FB_FunctionConv.TcPOU $
+ *
+ *	Purpose			:	Moves the TU-data index from zone to zone and updates the states.
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+VAR_INPUT
+	mZoneNumber : INT;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[// Return current TU data index
+M_MoveTU_dataIndex := ZoneData[mZoneNumber].TransportControlData.TU_DataIndex;
+// Update last TU data index
+ZoneData[mZoneNumber].TransportControlData.LastTU_DataIndex := M_MoveTU_dataIndex;
+// Delete current TU data index
+ZoneData[mZoneNumber].TransportControlData.TU_DataIndex := 0;
+// Reset data present flag
+ZoneData[mZoneNumber].TransportControlData.DataPresent := FALSE;
+// Update number of present TUs 
+IF ZoneData[mZoneNumber].TransportControlData.NumberOfPresentTUs > 0 THEN
+	ZoneData[mZoneNumber].TransportControlData.NumberOfPresentTUs := ZoneData[mZoneNumber].TransportControlData.NumberOfPresentTUs -1;
+END_IF
+
+
+// BCFD-11639 - POR0 - Position Cleared Report sent without TU-ID	
+// included in BCF 1.16
+// Save data from the last TU for the position clear report
+M_SaveDataTU_ZoneLeft (mZoneNumber, M_MoveTU_dataIndex); ]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_MsgHandlerZone" Id="{6a3e4055-94c9-4b38-b363-45c8c4cfb575}">
+      <Declaration><![CDATA[METHOD PROTECTED M_MsgHandlerZone : BOOL
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 475069 $
+ *	Revision date	:	$Date: 2021-04-09 16:13:33 +0200 (fre, 09 apr 2021) $
+ *	Last changed by	:	$Author: d7mangc $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/tags/R1.12.0/01_Software/BCF/BCF/JumpStart/20_Product/10_BCF/11_Conv/12_E_Functions/FB_FunctionConv.TcPOU $
+ *
+ *	Purpose			:	Function zone ITC out interface
+ *						Handles internally set ITC commands.
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+VAR_INPUT
+	mZoneNumber			: INT; // Zone number	
+END_VAR
+
+VAR
+	mTU_DataIndex		: DINT;
+	mIdx				: INT; // Iterator
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+// If a valid zone is configured
+IF mZoneNumber > 0 AND mZoneNumber <= SettingsFunction.NumberOfZones THEN
+	
+	// TU data index
+	mTU_DataIndex := ZoneData[mZoneNumber].TransportControlData.TU_DataIndex;
+
+	(*******************************************************************************
+		Transport Task Complete - TTC
+	********************************************************************************)
+	// If data are present on zone
+	IF ZoneData[mZoneNumber].TransportControlData.DataPresent THEN
+		
+		// Go through all destination of the TU
+		FOR mIdx := 1 TO TU_DataTable[mTU_DataIndex].DataSet.NumberOfDest DO
+			// Check destination
+			IF TU_DataTable[mTU_DataIndex].Destination[mIdx].eFunctionNumber = SettingsFunction.eFunctionNumber AND
+			   TU_DataTable[mTU_DataIndex].Destination[mIdx].ZoneNumber =	mZoneNumber THEN
+			   
+			   	// When a TTC is requested when data are present
+				IF SettingsFunction.Zone[mZoneNumber].SendTransportTaskCompleted AND 
+				   NOT ITC.ZoneITC[mZoneNumber].Flags.TransportTaksCompleteSent THEN
+					// Send telegram & flag
+					ITC.ZoneITC[mZoneNumber].Commands.TransportTaskCompleted := TRUE;
+					ITC.ZoneITC[mZoneNumber].Flags.TransportTaksCompleteSent := TRUE;
+				END_IF
+				
+				// When a TTC is requested when data are present and location occupied
+				IF SettingsFunction.Zone[mZoneNumber].SendTransportTaskCompletedOcc AND 
+				   ZoneData[mZoneNumber].TransportControlData.Occupied AND
+				   NOT ITC.ZoneITC[mZoneNumber].Flags.TransportTaksCompleteOccSent THEN
+					// Send telegram & flag
+					ITC.ZoneITC[mZoneNumber].Commands.TransportTaskCompleted := TRUE;
+					ITC.ZoneITC[mZoneNumber].Flags.TransportTaksCompleteOccSent := TRUE;
+				END_IF
+				
+				// When no TTC is configured or already sent - Reset destination
+				IF (NOT SettingsFunction.Zone[mZoneNumber].SendTransportTaskCompleted OR ITC.ZoneITC[mZoneNumber].Flags.TransportTaksCompleteSent) AND
+				   (NOT SettingsFunction.Zone[mZoneNumber].SendTransportTaskCompletedOcc OR ITC.ZoneITC[mZoneNumber].Flags.TransportTaksCompleteOccSent) THEN
+					// Delete destination
+					F_DeleteDestination(eFunctionNumber := SettingsFunction.eFunctionNumber, ZoneNumber := mZoneNumber);
+				   EXIT;
+				END_IF
+			END_IF
+		END_FOR
+	ELSE
+		// Reset flags
+		ITC.ZoneITC[mZoneNumber].Flags.TransportTaksCompleteSent := FALSE;
+		ITC.ZoneITC[mZoneNumber].Flags.TransportTaksCompleteOccSent := FALSE;
+	END_IF
+	
+	(*******************************************************************************
+		Position Clear Report 
+	********************************************************************************)
+	// When a position clear report is requested 
+	IF SettingsFunction.Zone[mZoneNumber].SendPositionClear THEN 
+		// Is corresponding function started
+	   	IF FunctionData.OperationState.eState = E_PositionState.STARTED THEN
+			// Is zone free
+			IF NOT ZoneData[mZoneNumber].TransportControlData.Occupied THEN
+				// And not sent so far
+				IF NOT ITC.ZoneITC[mZoneNumber].Flags.PositionClearSent THEN
+					// Send telegram & flag
+					ITC.ZoneITC[mZoneNumber].Commands.PositionCleared := TRUE;
+					ITC.ZoneITC[mZoneNumber].Flags.PositionClearSent := TRUE;
+				END_IF
+			ELSE
+				// Reset flag
+				ITC.ZoneITC[mZoneNumber].Flags.PositionClearSent := FALSE;
+			END_IF
+		END_IF
+	ELSE
+		// Reset flag
+		ITC.ZoneITC[mZoneNumber].Flags.PositionClearSent := FALSE;
+	END_IF
+	
+	(*******************************************************************************
+		Position Occupied Report 
+	********************************************************************************)
+	// When a position occupied report is requested 
+	IF SettingsFunction.Zone[mZoneNumber].SendPositionOccupied THEN 
+		// Is corresponding function started
+	   	IF FunctionData.OperationState.eState = E_PositionState.STARTED THEN
+			// Is zone occupied
+			IF ZoneData[mZoneNumber].TransportControlData.Occupied THEN
+				// And not sent so far
+				IF NOT ITC.ZoneITC[mZoneNumber].Flags.PositionOccupiedSent THEN
+					// Send telegram & flag
+					ITC.ZoneITC[mZoneNumber].Commands.PositionOccupied := TRUE;
+					ITC.ZoneITC[mZoneNumber].Flags.PositionOccupiedSent := TRUE;
+				END_IF
+			ELSE
+				// Reset flag
+				ITC.ZoneITC[mZoneNumber].Flags.PositionOccupiedSent := FALSE;
+			END_IF
+		END_IF
+	ELSE
+		// Reset flag
+		ITC.ZoneITC[mZoneNumber].Flags.PositionOccupiedSent := FALSE;
+	END_IF
+	
+	(*******************************************************************************
+		Identification Point Report 
+	********************************************************************************)
+	// When a identification report is requested 
+	IF SettingsFunction.Zone[mZoneNumber].SendIdentificationReport THEN 
+		// When data are present
+		IF ZoneData[mZoneNumber].TransportControlData.DataPresent THEN
+			// If the zone is occupied and no add-on is assigned or data ready from all addons is set
+			// the telegramm can be triggered.
+			IF ZoneData[mZoneNumber].TransportControlData.Occupied THEN 
+				IF ZoneData[mZoneNumber].AddOn.NoAddons OR ZoneData[mZoneNumber].AddOn.Orders.DataReady THEN
+					// And not sent so far
+					IF NOT ITC.ZoneITC[mZoneNumber].Flags.IdentificationReportSent THEN
+						// Send telegram & flag
+						ITC.ZoneITC[mZoneNumber].Commands.IdentificationReport := TRUE;
+						ITC.ZoneITC[mZoneNumber].Flags.IdentificationReportSent := TRUE;
+					END_IF
+				END_IF
+			ELSE
+				// Reset flag
+				ITC.ZoneITC[mZoneNumber].Flags.IdentificationReportSent := FALSE;
+			END_IF
+		ELSE
+			// Reset flag
+			ITC.ZoneITC[mZoneNumber].Flags.IdentificationReportSent := FALSE;
+		END_IF
+	ELSE
+		// Reset flag
+		ITC.ZoneITC[mZoneNumber].Flags.IdentificationReportSent := FALSE;
+	END_IF
+END_IF	
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_PreInit" Id="{4e42ab4a-6eab-4421-a7e5-5f2fbc031833}">
+      <Declaration><![CDATA[METHOD M_PreInit : BOOL
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 475069 $
+ *	Revision date	:	$Date: 2021-04-09 16:13:33 +0200 (fre, 09 apr 2021) $
+ *	Last changed by	:	$Author: d7mangc $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/tags/R1.12.0/01_Software/BCF/BCF/JumpStart/20_Product/10_BCF/11_Conv/12_E_Functions/FB_FunctionConv.TcPOU $
+ *
+ *	Purpose			:	Preinitialize 
+ *						Clears values and load settings
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+VAR
+	eFunctionNumber	: E_FunctionNumber; 
+	eElementNumber	: E_ElementNumber;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+   		Unregister
+***************************************************************************************)	
+// If Addon function link has changed
+IF SettingsFunction.FunctionLink.eFunctionNumber <> ConfigFunction.FunctionLink.eFunctionNumber AND
+   SettingsFunction.FunctionLink.eFunctionNumber > E_FunctionNumber.F_BEGIN_FUNCTION THEN
+   
+	// Close old addon link
+	eFunctionNumber := SettingsFunction.FunctionLink.eFunctionNumber;
+	
+	// Is this reference valid
+	IF __ISVALIDREF(FunctionRegistry[eFunctionNumber].rFunction) THEN
+		// Close AddOn link
+		FunctionRegistry[eFunctionNumber].rFunction.M_CloseAddOnLink(eAddOnNumber := SettingsFunction.eFunctionNumber);
+	END_IF
+END_IF
+
+// If element link has changed
+IF SettingsFunction.eElementLink <> ConfigFunction.eElementLink AND 
+   SettingsFunction.eElementLink > E_ElementNumber.E_BEGIN_ELEMENT THEN
+	// Close old element link
+	eElementNumber := SettingsFunction.eElementLink;
+	
+	// Is reference valid
+	IF __ISVALIDREF(ElementRegistry[eElementNumber].rElement) THEN
+		// Unregister function in element
+		ElementRegistry[eElementNumber].rElement.M_CloseElementLink(SettingsFunction.eFunctionNumber);
+	END_IF
+END_IF
+
+
+// Clear previous and next function
+FunctionInterface.In.ePrevFunctionNumber := E_FunctionNumber.F_BEGIN_FUNCTION;
+FunctionInterface.In.eNextFunctionNumber := E_FunctionNumber.F_BEGIN_FUNCTION;
+
+
+(**************************************************************************************
+	Load 
+***************************************************************************************)
+SettingsFunction := ConfigFunction;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_ProcessAddOns" Id="{38fde08f-241b-4873-9821-2435792365a9}">
+      <Declaration><![CDATA[METHOD PROTECTED M_ProcessAddOns
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 475069 $
+ *	Revision date	:	$Date: 2021-04-09 16:13:33 +0200 (fre, 09 apr 2021) $
+ *	Last changed by	:	$Author: d7mangc $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/tags/R1.12.0/01_Software/BCF/BCF/JumpStart/20_Product/10_BCF/11_Conv/12_E_Functions/FB_FunctionConv.TcPOU $
+ *
+ *	Purpose			:	Process AddOns
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+VAR
+  mIdx             : INT; // Iterator
+  mZoneNumber      : INT; // Zone number
+  mTU_DataIndexNew : DINT; // TU data index new
+  mTU_DataIndexOld : DINT; // TU data index old
+  mSummary         : ST_AddOnOrders;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[// Initialize var
+mSummary.Enable         	:= TRUE;
+mSummary.EnableHandover 	:= TRUE;
+mSummary.EnableTakeover 	:= TRUE;
+mSummary.DataReady      	:= TRUE;
+mSummary.TU_DataIndex   	:= 0;
+mSummary.EnableSimultaneousTransport := FALSE;
+mSummary.UseOwnSensor 		:= FALSE;
+mSummary.AddOnSensor 		:= FALSE;
+mSummary.AllowDriveTakeover := FALSE;
+mSummary.AllowDriveHandover := FALSE;
+
+// Initialize all zones
+FOR mIdx := 1 TO SettingsFunction.NumberOfZones DO
+	ZoneData[mIdx].AddOn.NoAddons := TRUE;
+	ZoneData[mIdx].AddOn.Orders := mSummary;
+END_FOR
+
+// Initialize function
+FunctionData.AddOn.NoAddons := TRUE;
+FunctionData.AddOn.Orders := mSummary;
+
+// Build summary of all addon functions
+FOR mIdx := 1 TO NUMBER_OF_ADDON_FUNCTIONS DO
+	// If no addon is configured
+	IF FunctionInterface.In.AddOnOrder[mIdx].eFunctionNumber = E_FunctionNumber.F_BEGIN_FUNCTION THEN
+		// Exit loop
+		EXIT;
+	END_IF
+
+	// Update summary from addon interface		   
+	IF NOT FunctionInterface.In.AddOnOrder[mIdx].Orders.Enable THEN
+		mSummary.Enable := FALSE;
+	END_IF
+	
+	IF NOT FunctionInterface.In.AddOnOrder[mIdx].Orders.EnableHandover THEN
+		mSummary.EnableHandover := FALSE;
+	END_IF
+
+	IF NOT FunctionInterface.In.AddOnOrder[mIdx].Orders.EnableTakeover  THEN
+		mSummary.EnableTakeover := FALSE;
+	END_IF
+
+	IF NOT FunctionInterface.In.AddOnOrder[mIdx].Orders.DataReady THEN
+		mSummary.DataReady := FALSE;
+	END_IF
+	
+	IF NOT FunctionInterface.In.AddOnOrder[mIdx].Orders.DataValid THEN
+		mSummary.DataValid := FALSE;
+	END_IF
+			
+    IF FunctionInterface.In.AddOnOrder[mIdx].Orders.EnableSimultaneousTransport THEN
+        mSummary.EnableSimultaneousTransport := TRUE;
+	END_IF
+    
+    IF FunctionInterface.In.AddOnOrder[mIdx].Orders.AddOnSensor THEN
+        mSummary.AddOnSensor := TRUE;
+	END_IF
+    
+    IF FunctionInterface.In.AddOnOrder[mIdx].Orders.UseOwnSensor THEN
+        mSummary.UseOwnSensor := TRUE;
+	END_IF
+    
+    IF FunctionInterface.In.AddOnOrder[mIdx].Orders.AllowDriveTakeover THEN
+        mSummary.AllowDriveTakeover := TRUE;
+	END_IF
+    
+    IF FunctionInterface.In.AddOnOrder[mIdx].Orders.AllowDriveHandover THEN
+        mSummary.AllowDriveHandover := TRUE;
+	END_IF
+    
+	// Update zone or function data
+	mZoneNumber := FunctionInterface.In.AddOnOrder[mIdx].ZoneNumber;
+	
+	IF mZoneNumber <= 0 THEN
+		FunctionData.AddOn.NoAddons := FALSE;
+		FunctionData.AddOn.Orders := mSummary;
+	ELSIF mZoneNumber > SettingsFunction.NumberOfZones  THEN
+		FunctionData.AddOn.NoAddons := FALSE;
+		FunctionData.AddOn.Orders := mSummary;
+	ELSE
+		ZoneData[mZoneNumber].AddOn.NoAddons := FALSE;
+		ZoneData[mZoneNumber].AddOn.Orders := mSummary;
+	END_IF
+
+	// If it is not a function type "Scanner"
+	IF FunctionInterface.In.AddOnOrder[mIdx].eFunctionType <> E_FunctionType.Scanner THEN
+		// Process next addon function
+		CONTINUE;
+	END_IF
+	
+	// Data ready is not set
+	IF NOT FunctionInterface.In.AddOnOrder[mIdx].Orders.DataReady THEN
+		// Process next addon function
+		CONTINUE;
+	END_IF
+	
+	// Data valid is not set
+	IF NOT FunctionInterface.In.AddOnOrder[mIdx].Orders.DataValid THEN
+		// Process next addon function
+		CONTINUE;
+	END_IF
+
+	// Take over TU index
+	mTU_DataIndexOld := ZoneData[mZoneNumber].TransportControlData.TU_DataIndex;
+	mTU_DataIndexNew := FunctionInterface.In.AddOnOrder[mIdx].Orders.TU_DataIndex;
+	ZoneData[mZoneNumber].AddOn.Orders.TU_DataIndex := mTU_DataIndexNew;
+
+	// Update index only if takeover is active, feedin or multi TU	
+	IF (ZoneData[mZoneNumber].TransportControlData.eTakeOverState = E_TakeOverState.ACTIVE AND
+		(ZoneData[mZoneNumber].TransportControlData.eTransportState = E_TransportState.TAKEOVER OR
+		 ZoneData[mZoneNumber].TransportControlData.eTransportState = E_TransportState.SIMULTANEOUS)) OR
+	   ZoneData[mZoneNumber].TransportControlData.eTransportState = E_TransportState.FEEDIN OR
+	   ZoneData[mZoneNumber].TransportControlData.eTransportState = E_TransportState.MULTI_TU THEN
+
+		// When the conveyor do not have an index yet, just apply the scanner index
+		IF mTU_DataIndexOld = 0 THEN
+			// Create debug message	
+			// '11-001-0095-01-1,  TU_DataIndex inserted by scanner,  TU_DataIndex = 5,  TuID = 000012345,  AssignmentID = 999999999 '
+			DebugMsg := '';
+			DebugMsg := CONCAT(DebugMsg, F_AddDividerToSisString(SettingsFunction.Zone[mZoneNumber].ZoneName));
+			DebugMsg := CONCAT(DebugMsg, ',  TU_DataIndex inserted by scanner');
+			DebugMsg := CONCAT(DebugMsg, F_CreateTU_DataString(TU_DataIndex:= mTU_DataIndexNew));
+			fbDebugMsg.M_SendInfoMsg(DebugMsg);
+
+			// Update TU data index
+			ZoneData[mZoneNumber].TransportControlData.LastTU_DataIndex := mTU_DataIndexOld;
+			ZoneData[mZoneNumber].TransportControlData.TU_DataIndex := mTU_DataIndexNew;
+			ZoneData[mZoneNumber].TransportControlData.DataPresent := mTU_DataIndexNew <> 0;
+	
+			// Update current TU position
+			TU_DataTable[mTU_DataIndexNew].CurrentFunctionNumber := SettingsFunction.eFunctionNumber;
+			TU_DataTable[mTU_DataIndexNew].CurrentZoneNumber := mZoneNumber;
+
+		// When a scanner provides an index unequal to the already existing conveyor index, takeover the scanner index.
+		ELSIF mTU_DataIndexOld <> mTU_DataIndexNew THEN
+			// Create debug message	
+			// '11-001-0095-01-1,  TU_DataIndex overwritten by scanner (old/new),  TU_DataIndex = 5,  TuID = 000012345,  AssignmentID = 999999999,  TU_DataIndex = 9,  TuID = 000098765,  AssignmentID = 999999999',  Origin = 11-002-0125-02-2
+			DebugMsg := '';
+			DebugMsg := CONCAT(DebugMsg, F_AddDividerToSisString(SettingsFunction.Zone[mZoneNumber].ZoneName));
+			DebugMsg := CONCAT(DebugMsg, ',  TU_DataIndex overwritten by scanner (old/new)');
+			DebugMsg := CONCAT(DebugMsg, F_CreateTU_DataString(TU_DataIndex:= mTU_DataIndexOld));
+			DebugMsg := CONCAT(DebugMsg, F_CreateTU_DataString(TU_DataIndex:= mTU_DataIndexNew));
+			DebugMsg := CONCAT(DebugMsg, DebugTextBlocks.ORIGIN);
+			DebugMsg := CONCAT(DebugMsg, F_GetFunctionName(
+												eFunctionNumber := TU_DataTable[mTU_DataIndexNew].CurrentFunctionNumber,
+												ZoneNumber := TU_DataTable[mTU_DataIndexNew].CurrentZoneNumber));
+			fbDebugMsg.M_SendErrorMsg(DebugMsg);
+												
+			// If old TU data index is unknown, delete it from the table 
+			IF TU_DataTable[mTU_DataIndexOld].TU_ID.ASCII = Conveyor.TU_ID_UNKNOWN THEN
+				// debug message: '11-001-0095-01-1,  unknown old TU_DataIndex deleted,  TU_DataIndex = 5,  TuID = 000012345,  AssignmentID = 999999999'
+				DebugMsg := '';
+				DebugMsg := CONCAT(DebugMsg, F_AddDividerToSisString(SettingsFunction.Zone[mZoneNumber].ZoneName));
+				DebugMsg := CONCAT(DebugMsg, ',  unknown old TU_DataIndex deleted');
+				DebugMsg := CONCAT(DebugMsg, F_CreateTU_DataString(TU_DataIndex:= mTU_DataIndexOld));
+				fbDebugMsg.M_SendErrorMsg(DebugMsg);
+				// Delete data set
+				F_DeleteTU_Data(TU_DataIndex := mTU_DataIndexOld,
+                       			NoTTC := FALSE);
+			END_IF
+
+			// Update TU data index
+			ZoneData[mZoneNumber].TransportControlData.LastTU_DataIndex := mTU_DataIndexOld;
+			ZoneData[mZoneNumber].TransportControlData.TU_DataIndex := mTU_DataIndexNew;
+			ZoneData[mZoneNumber].TransportControlData.DataPresent := mTU_DataIndexNew <> 0;
+	
+			// Update current TU position
+			TU_DataTable[mTU_DataIndexNew].CurrentFunctionNumber := SettingsFunction.eFunctionNumber;
+			TU_DataTable[mTU_DataIndexNew].CurrentZoneNumber := mZoneNumber;
+		END_IF
+					   
+    	// Send ACK
+		F_AckAddon(eFunctionNumber := FunctionInterface.In.AddOnOrder[mIdx].eFunctionNumber);
+						
+	ELSIF ZoneData[mZoneNumber].TransportControlData.eTransportState = E_TransportState.HANDOVER OR
+		  ZoneData[mZoneNumber].TransportControlData.eTransportState = E_TransportState.OCCUPIED THEN
+		 // Send ACK
+		F_AckAddon(eFunctionNumber := FunctionInterface.In.AddOnOrder[mIdx].eFunctionNumber);
+	END_IF
+END_FOR
+			
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_ResetError" Id="{bc8d095b-6de7-4a09-bde9-10d11dfa72cd}">
+      <Declaration><![CDATA[METHOD M_ResetError : BOOL
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 475069 $
+ *	Revision date	:	$Date: 2021-04-09 16:13:33 +0200 (fre, 09 apr 2021) $
+ *	Last changed by	:	$Author: d7mangc $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/tags/R1.12.0/01_Software/BCF/BCF/JumpStart/20_Product/10_BCF/11_Conv/12_E_Functions/FB_FunctionConv.TcPOU $
+ *
+ *	Purpose			:	Reset function or zone errors.
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+VAR_INPUT
+	mZoneNumber		: INT; // Zone number
+	mResetAll		: BOOL; // Reset all
+END_VAR
+
+VAR
+	mIdx			: INT; // Iterator
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[// Command is to reset all
+IF mResetAll THEN
+	// Go through all zones
+	FOR mIdx := 1 TO NUMBER_OF_ZONES_PER_FUNCTION DO
+		// If the zone is in error
+		IF ZoneData[mIdx].ErrorData.Error.ErrorType  <> E_ErrorType.NO_ERROR_PENDING  THEN
+			// Send reset
+			ZoneData[mIdx].ErrorData.Error.ResetError := TRUE;
+		END_IF
+	END_FOR
+
+	// If the function is in error
+	IF FunctionData.ErrorData.Error.ErrorType  <> E_ErrorType.NO_ERROR_PENDING  THEN
+		// Send reset
+		FunctionData.ErrorData.Error.ResetError := TRUE;
+	END_IF
+	
+// Command to reset a zone
+ELSIF mZoneNumber > 0 AND mZoneNumber <= NUMBER_OF_ZONES_PER_FUNCTION THEN
+	// If the zone is in error
+	IF ZoneData[mZoneNumber].ErrorData.Error.ErrorType  <> E_ErrorType.NO_ERROR_PENDING  THEN
+		// Send reset
+		ZoneData[mZoneNumber].ErrorData.Error.ResetError := TRUE;
+	END_IF
+ELSE
+	// If the function is in error
+	IF FunctionData.ErrorData.Error.ErrorType  <> E_ErrorType.NO_ERROR_PENDING  THEN
+		// Send reset
+		FunctionData.ErrorData.Error.ResetError := TRUE;
+	END_IF
+END_IF
+
+M_ResetError := TRUE;
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_ResetExternalError" Id="{9b9adaa3-012d-4c65-8033-fde76c862120}">
+      <Declaration><![CDATA[METHOD M_ResetExternalError : BOOL
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 475069 $
+ *	Revision date	:	$Date: 2021-04-09 16:13:33 +0200 (fre, 09 apr 2021) $
+ *	Last changed by	:	$Author: d7mangc $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/tags/R1.12.0/01_Software/BCF/BCF/JumpStart/20_Product/10_BCF/11_Conv/12_E_Functions/FB_FunctionConv.TcPOU $
+ *
+ *	Purpose			:	Reset external error
+ *						
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+ VAR_INPUT
+	mZoneNumber	: INT; // Related zone, 0 = Function itself
+	mReset		: BOOL; // Force reset
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[// Initialize
+M_ResetExternalError := FALSE;
+
+IF mZoneNumber > 0 THEN
+	// Reset error if ResetError command or reset command is set 
+	IF ZoneData[mZoneNumber].ErrorData.ExternalError.ResetError OR mReset THEN
+		// Clear error
+		ZoneData[mZoneNumber].ErrorData.ExternalError.ResetError 		:= FALSE; 
+		ZoneData[mZoneNumber].ErrorData.ExternalError.ErrorType 		:= NO_ERROR_PENDING;
+		ZoneData[mZoneNumber].ErrorData.ExternalError.ErrorCode.Conv	:= E_ErrorConv.NO_ERROR_CODE;
+		ZoneData[mZoneNumber].ErrorData.ExternalError.ErrorParam 		:= '';
+		M_ResetExternalError 								:= TRUE;
+	END_IF
+ELSE
+	// Reset error if ResetError command or reset command is set 
+	IF FunctionData.ErrorData.ExternalError.ResetError OR mReset THEN
+		// Clear error
+		FunctionData.ErrorData.ExternalError.ResetError 	:= FALSE; 
+		FunctionData.ErrorData.ExternalError.ErrorType 		:= NO_ERROR_PENDING;
+		FunctionData.ErrorData.ExternalError.ErrorCode.Conv	:= E_ErrorConv.NO_ERROR_CODE;
+		FunctionData.ErrorData.ExternalError.ErrorParam 	:= '';
+		M_ResetExternalError 								:= TRUE;
+	END_IF
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_SaveDataTU_ZoneLeft" Id="{1855497e-8420-4ffe-b372-d5b83aff6858}">
+      <Declaration><![CDATA[METHOD PUBLIC M_SaveDataTU_ZoneLeft : BOOL
+VAR_INPUT
+	mZoneNumber		: INT;
+    mTU_DataIndex	: DINT;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+// BCFD-11639 - POR0 - Position Cleared Report sent without TU-ID	
+// included in BCF 1.16
+
+// Save data from the last TU for the position clear report
+ZoneData[mZoneNumber].LastTUdata.AssignmentID	:= TU_DataTable[mTU_DataIndex].AssignmentID;
+ZoneData[mZoneNumber].LastTUdata.TU_ID			:= TU_DataTable[mTU_DataIndex].TU_ID.ASCII;
+ZoneData[mZoneNumber].LastTUdata.TU_Type		:= TU_DataTable[mTU_DataIndex].DataSet.TU_Type; ]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_SetEnableHandOver" Id="{4cc339a4-c5a2-497e-9e35-a2db1d902116}">
+      <Declaration><![CDATA[METHOD M_SetEnableHandOver : BOOL
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 475069 $
+ *	Revision date	:	$Date: 2021-04-09 16:13:33 +0200 (fre, 09 apr 2021) $
+ *	Last changed by	:	$Author: d7mangc $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/tags/R1.12.0/01_Software/BCF/BCF/JumpStart/20_Product/10_BCF/11_Conv/12_E_Functions/FB_FunctionConv.TcPOU $
+ *
+ *	Purpose			:	Initialize base functionality of function.
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+VAR_INPUT
+	mZoneNumber 	: INT; // Zone number
+	mValue			: BOOL; // Set/reset value
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[// If zone number is valid
+IF mZoneNumber > 0 AND mZoneNumber <= SettingsFunction.NumberOfZones THEN
+	// Modify variable
+	ZoneInterface[mZoneNumber].In.Enable.HandOver := mValue;
+	M_SetEnableHandOver := TRUE;
+
+// Otherwise requested index was not found
+ELSE	
+	DebugMsg := CONCAT('Requested zone not available: ', INT_TO_STRING(mZoneNumber));
+	fbDebugMsg.M_SendErrorMsg(DebugMsg);
+END_IF
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_SetEnableTakeOver" Id="{b817cf1d-ed45-4e0f-be7a-08f27bdb1f84}">
+      <Declaration><![CDATA[METHOD M_SetEnableTakeOver : BOOL
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 475069 $
+ *	Revision date	:	$Date: 2021-04-09 16:13:33 +0200 (fre, 09 apr 2021) $
+ *	Last changed by	:	$Author: d7mangc $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/tags/R1.12.0/01_Software/BCF/BCF/JumpStart/20_Product/10_BCF/11_Conv/12_E_Functions/FB_FunctionConv.TcPOU $
+ *
+ *	Purpose			:	Initialize base functionality of function.
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+VAR_INPUT
+	mZoneNumber 	: INT; // Zone number
+	mValue			: BOOL; // Set/reset value
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[// If zone number is valid
+IF mZoneNumber > 0 AND mZoneNumber <= SettingsFunction.NumberOfZones THEN
+	// Modify variable
+	ZoneInterface[mZoneNumber].In.Enable.TakeOver := mValue;
+	M_SetEnableTakeOver := TRUE;
+
+// Otherwise requested index was not found
+ELSE	
+	DebugMsg := CONCAT('Requested zone not available: ', INT_TO_STRING(mZoneNumber));
+	fbDebugMsg.M_SendErrorMsg(DebugMsg);
+END_IF
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_SetEnableTransport" Id="{984725c7-90f4-407e-b34e-2d0308138985}">
+      <Declaration><![CDATA[METHOD M_SetEnableTransport : BOOL
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 475069 $
+ *	Revision date	:	$Date: 2021-04-09 16:13:33 +0200 (fre, 09 apr 2021) $
+ *	Last changed by	:	$Author: d7mangc $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/tags/R1.12.0/01_Software/BCF/BCF/JumpStart/20_Product/10_BCF/11_Conv/12_E_Functions/FB_FunctionConv.TcPOU $
+ *
+ *	Purpose			:	Initialize base functionality of function.
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+VAR_INPUT
+	mZoneNumber 	: INT; // Zone number
+	mValue			: BOOL; // Set/reset value
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[// If zone number is valid
+IF mZoneNumber > 0 AND mZoneNumber <= SettingsFunction.NumberOfZones THEN
+	// Modify variable
+	ZoneInterface[mZoneNumber].In.Enable.Transport := mValue;
+	M_SetEnableTransport := TRUE;
+
+// Otherwise requested index was not found
+ELSE	
+	DebugMsg := CONCAT('Requested zone not available: ', INT_TO_STRING(mZoneNumber));
+	fbDebugMsg.M_SendErrorMsg(DebugMsg);
+END_IF
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_SetExternalError" Id="{ac71b258-fd95-43a7-bc7b-3b4793cc8a29}">
+      <Declaration><![CDATA[METHOD M_SetExternalError : BOOL
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 475069 $
+ *	Revision date	:	$Date: 2021-04-09 16:13:33 +0200 (fre, 09 apr 2021) $
+ *	Last changed by	:	$Author: d7mangc $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/tags/R1.12.0/01_Software/BCF/BCF/JumpStart/20_Product/10_BCF/11_Conv/12_E_Functions/FB_FunctionConv.TcPOU $
+ *
+ *	Purpose			:	Set error
+ *						Wrapped to a function to improve debugging and readability.
+ *						
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+ VAR_INPUT
+	mZoneNumber		: INT; // Related zone, 0 = Function itself
+	mErrorType		: E_ErrorType; // Error message type
+	mErrorParam		: STRING(System.ERROR_PARAM_STRINGLENGTH); // Error parameter
+	mErrorCode		: INT; // Error message
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[// Initialize
+M_SetExternalError := FALSE;
+
+// Check that the values are valid
+IF mErrorType > E_ErrorType.NO_ERROR_PENDING AND mErrorCode > E_ErrorConv.NO_ERROR_CODE THEN
+	IF mZoneNumber > 0 THEN
+		ZoneData[mZoneNumber].ErrorData.ExternalError.ErrorCode.Conv := mErrorCode;
+		ZoneData[mZoneNumber].ErrorData.ExternalError.ErrorType := mErrorType;
+		ZoneData[mZoneNumber].ErrorData.ExternalError.ErrorParam := mErrorParam;
+	ELSE
+		FunctionData.ErrorData.ExternalError.ErrorCode.Conv := mErrorCode;
+		FunctionData.ErrorData.ExternalError.ErrorType := mErrorType;
+		FunctionData.ErrorData.ExternalError.ErrorParam := mErrorParam;
+	END_IF
+	
+	M_SetExternalError := TRUE;
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_UpdateRegistry" Id="{cc96d081-f5de-4643-a164-040bd0f9ebe9}">
+      <Declaration><![CDATA[METHOD M_UpdateRegistry
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 475069 $
+ *	Revision date	:	$Date: 2021-04-09 16:13:33 +0200 (fre, 09 apr 2021) $
+ *	Last changed by	:	$Author: d7mangc $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/tags/R1.12.0/01_Software/BCF/BCF/JumpStart/20_Product/10_BCF/11_Conv/12_E_Functions/FB_FunctionConv.TcPOU $
+ *
+ *	Purpose			:	Update registry information
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+VAR_INPUT
+END_VAR
+VAR
+	mIdx	: INT;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+IF ConfigFunction.eFunctionNumber > E_FunctionNumber.F_BEGIN_FUNCTION THEN
+
+	FunctionRegistry[ConfigFunction.eFunctionNumber].rFunctionData REF= FunctionData;
+	FunctionRegistry[ConfigFunction.eFunctionNumber].rFunctionInterface REF= FunctionInterface;
+	FunctionRegistry[ConfigFunction.eFunctionNumber].rSettingsFunction REF= SettingsFunction;
+	FOR mIdx := 1 TO ConfigFunction.NumberOfZones DO
+		FunctionRegistry[ConfigFunction.eFunctionNumber].Zone[mIdx].refZoneData REF= ZoneData[mIdx];
+		FunctionRegistry[ConfigFunction.eFunctionNumber].Zone[mIdx].refZoneInterface REF= ZoneInterface[mIdx];
+	END_FOR
+END_IF
+
+]]></ST>
+      </Implementation>
+    </Method>
+    <ObjectProperties>
+      <XmlArchive>
+        <Data>
+          <o xml:space="preserve" t="UMLStereoTypeContainerObject">
+            <v n="IsType" t="UMLType">BaseArea</v>
+            <v n="Stereotype">""</v>
+            <d n="Stereotypes" t="Hashtable" />
+          </o>
+        </Data>
+        <TypeList>
+          <Type n="Hashtable">System.Collections.Hashtable</Type>
+          <Type n="String">System.String</Type>
+          <Type n="UMLStereoTypeContainerObject">{30250973-b110-4e31-b562-c102e042dca4}</Type>
+          <Type n="UMLType">{0197b136-405a-42ee-bb27-fd08b621d0cf}</Type>
+        </TypeList>
+      </XmlArchive>
+    </ObjectProperties>
+    <LineIds Name="FB_FunctionConv">
+      <LineId Id="3" Count="2" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_FunctionConv.A_ErrorHandler">
+      <LineId Id="2" Count="14" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_FunctionConv.A_StateControl">
+      <LineId Id="2" Count="111" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_FunctionConv.FB_init">
+      <LineId Id="3" Count="8" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_FunctionConv.M_AddOnAck">
+      <LineId Id="3" Count="2" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_FunctionConv.M_CloseAddOnLink">
+      <LineId Id="3" Count="44" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_FunctionConv.M_CreateAddOnLink">
+      <LineId Id="3" Count="28" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_FunctionConv.M_DeleteTU_DataIndex">
+      <LineId Id="3" Count="17" />
+      <LineId Id="48" Count="0" />
+      <LineId Id="51" Count="1" />
+      <LineId Id="49" Count="1" />
+      <LineId Id="21" Count="0" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_FunctionConv.M_FindTU_DataIndex">
+      <LineId Id="3" Count="15" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_FunctionConv.M_GetAddOnOrder">
+      <LineId Id="3" Count="29" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_FunctionConv.M_GetElementStates">
+      <LineId Id="3" Count="17" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_FunctionConv.M_GetNextTransportData">
+      <LineId Id="3" Count="44" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_FunctionConv.M_GetOutAddOnOrders">
+      <LineId Id="3" Count="0" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_FunctionConv.M_GetPreviousTransportData">
+      <LineId Id="3" Count="44" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_FunctionConv.M_GetTransportControlParam">
+      <LineId Id="3" Count="31" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_FunctionConv.M_GetTransportData">
+      <LineId Id="3" Count="54" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_FunctionConv.M_InitFunction">
+      <LineId Id="3" Count="98" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_FunctionConv.M_ITC_AddTU_Data">
+      <LineId Id="3" Count="32" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_FunctionConv.M_ITC_DAQ">
+      <LineId Id="3" Count="46" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_FunctionConv.M_ITC_DataAquisitionZone">
+      <LineId Id="3" Count="19" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_FunctionConv.M_ITC_FCQ">
+      <LineId Id="3" Count="134" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_FunctionConv.M_ITC_FSQ">
+      <LineId Id="3" Count="79" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_FunctionConv.M_ITC_GDQ">
+      <LineId Id="3" Count="47" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_FunctionConv.M_ITC_MCQ">
+      <LineId Id="3" Count="73" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_FunctionConv.M_ITC_ProcessMsg">
+      <LineId Id="3" Count="76" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_FunctionConv.M_ITC_ProcessOut">
+      <LineId Id="3" Count="178" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_FunctionConv.M_ITC_ProcessOutZone">
+      <LineId Id="3" Count="73" />
+      <LineId Id="316" Count="0" />
+      <LineId Id="318" Count="0" />
+      <LineId Id="77" Count="2" />
+      <LineId Id="314" Count="1" />
+      <LineId Id="82" Count="2" />
+      <LineId Id="92" Count="186" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_FunctionConv.M_ITC_RAA">
+      <LineId Id="3" Count="16" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_FunctionConv.M_ITC_RDQ">
+      <LineId Id="3" Count="16" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_FunctionConv.M_ITC_SIQ">
+      <LineId Id="3" Count="38" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_FunctionConv.M_MonitorFunctionErrors">
+      <LineId Id="3" Count="146" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_FunctionConv.M_MonitorZoneErrors">
+      <LineId Id="3" Count="159" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_FunctionConv.M_MoveTU_DataIndex">
+      <LineId Id="3" Count="10" />
+      <LineId Id="2" Count="0" />
+      <LineId Id="39" Count="0" />
+      <LineId Id="42" Count="1" />
+      <LineId Id="40" Count="1" />
+      <LineId Id="38" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_FunctionConv.M_MsgHandlerZone">
+      <LineId Id="3" Count="131" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_FunctionConv.M_PreInit">
+      <LineId Id="3" Count="38" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_FunctionConv.M_ProcessAddOns">
+      <LineId Id="3" Count="181" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_FunctionConv.M_ResetError">
+      <LineId Id="3" Count="32" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_FunctionConv.M_ResetExternalError">
+      <LineId Id="3" Count="22" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_FunctionConv.M_SaveDataTU_ZoneLeft">
+      <LineId Id="14" Count="1" />
+      <LineId Id="12" Count="1" />
+      <LineId Id="6" Count="2" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_FunctionConv.M_SetEnableHandOver">
+      <LineId Id="3" Count="10" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_FunctionConv.M_SetEnableTakeOver">
+      <LineId Id="3" Count="10" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_FunctionConv.M_SetEnableTransport">
+      <LineId Id="3" Count="10" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_FunctionConv.M_SetExternalError">
+      <LineId Id="3" Count="15" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_FunctionConv.M_UpdateRegistry">
+      <LineId Id="3" Count="11" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

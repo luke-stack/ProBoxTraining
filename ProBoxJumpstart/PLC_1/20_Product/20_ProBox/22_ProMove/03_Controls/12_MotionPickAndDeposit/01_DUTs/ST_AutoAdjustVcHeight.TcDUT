@@ -1,0 +1,15 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.4">
+  <DUT Name="ST_AutoAdjustVcHeight" Id="{d3949a75-0c2e-4e41-87fa-98dbd5b89ead}">
+    <Declaration><![CDATA[//Auto height correction of VC lift element
+TYPE ST_AutoAdjustVcHeight :
+STRUCT
+	PickupCondition	: BOOL;		//Condition for Pickup height compensation fulfilled
+	DepositCondition : BOOL;	//Condition for deposit height compensation fulfilled
+	PickupAdjustment : INT;		//Height to compensate when pickup  positive or negative value [mm]
+	DepositAdjustment : INT;	//Height to compensate when deposit. positive or negative value [mm]		
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

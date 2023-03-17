@@ -1,0 +1,17 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <DUT Name="ST_ForkRequest" Id="{afbacdc2-cff3-491e-945f-00b966630412}">
+    <Declaration><![CDATA[//Intput from element to function
+TYPE ST_ForkRequest :
+STRUCT
+	OrderFork		: E_FunctionForkOrder; // the fork position ordered/requested	
+	CheckPdFree		: BOOL; //Check that Deposit position is free before start moving forks out (during deposit)
+	//InhibitMotion	: BOOL; //Order motion to not move.
+	EmergencyStop	: BOOL; //Stop movment of fork with emergency ramp profile.
+	ForkStroke		: INT; //the fork stroke distance [mm] relative value. (positive values only) 	
+	ManualControl	: ST_FunctionForkManualCtrl; // manual control provided from element.
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

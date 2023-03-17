@@ -1,0 +1,27 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <POU Name="FB_HardwareInputs" Id="{ca81e440-e1ae-43a3-9681-9d4dcb92698a}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK FB_HardwareInputs
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[
+;
+// Example
+(*
+fbSG_001.HW_Inputs 								:= I_11_001_SG;
+fbSG_001.HW_Inputs.ResetErrorPB 				:= I_11_001_SG.AutoOnPB;
+fbSG_001.HW_Inputs.FeedbackMainContactorOFF[4] 	:= FALSE;
+fbSG_001.HW_Inputs.EmergencyCircuitOK 			:= TRUE;
+fbSG_001.HW_Inputs.MainContactorOFF 			:= I_11_001_SG.MainContactorOFF;
+
+Main_Contactor_ON_Q := Main_Contactor_ON_I;
+Main_Contactor_OFF_Q := Main_Contactor_OFF_I;
+*)
+]]></ST>
+    </Implementation>
+    <LineIds Name="FB_HardwareInputs">
+      <LineId Id="3" Count="12" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

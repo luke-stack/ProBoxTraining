@@ -1,0 +1,15 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <DUT Name="ST_CtrlInLoadstacker" Id="{107fcfa1-7f3d-45ec-b0cd-c31bf252e9fc}">
+    <Declaration><![CDATA[TYPE ST_CtrlInLoadstacker :
+STRUCT
+	DeleteAssignmentData			: BOOL := TRUE;		//overwrite Assignment ID with UNKNOWN when zone being occupied.
+	DestinationFunction			: E_FunctionNumber := E_FunctionNumber.F_BEGIN_FUNCTION;
+	DestinationZone				: INT :=1;
+	TU_Type						: INT :=0;			
+	Mode						: E_LSPM_Mode; 	// Which (E_LSPM_Mode) mode should the pallet magazine run in (Destack/Stack/SendPallet/SendStack)
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

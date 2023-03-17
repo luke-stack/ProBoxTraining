@@ -1,0 +1,141 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.4">
+  <POU Name="FB_GetEncoderResolution" Id="{59b48f42-4000-46ba-8307-a53b5f4f4058}" SpecialFunc="None">
+    <Declaration><![CDATA[/// Uses two defined signals to determine encoder resolution
+/// Remark: A constant speed is requirement for the movement between the signals, to get an accurat result
+/// Remark: Drive direction has to be according order of Signal 1 and Signal 2
+FUNCTION_BLOCK FB_GetEncoderResolution  
+(************************************************************************************** 
+* 	Application 		: BoxControl Framework 
+* 	Revision 			: $Revision: 408723 $ 
+* 	Revision date 		: $Date: 2018-06-27 13:49:08 +0200 (Wed, 27 Jun 2018) $ 
+* 	Last changed by 	: $Author: b7bolm $ 
+* 	URL 				: $URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/21_Projects/BCF_2.0/trunk/BCF/BCF/JumpStart/20_Product/10_App/12_E_Functions/10_Lib/10_Conv/FB_FunctionList.TcPOU $ 
+* ------------------------------------------------------------------------------------ 
+* 	© Swisslog AG 
+* 	Swisslog is not liable for any usage of this source code that is not agreed 
+* 	on between Swisslog and the other party. The mandatory legal liability remains 
+* 	unaffected. 
+* ------------------------------------------------------------------------------------ 
+* 	Revision History: 
+*
+*  VERSION DATE         INITIALS     DESCRIPTION
+*  0.0     DD.MM.YYYY   (name)       (explain customized modifications)
+* 
+**************************************************************************************)
+VAR_INPUT
+	Run						: BOOL; // Rising edge starts measurement and resets outputs
+	StartSignal				: BOOL; // Start measurement
+	EndSignal				: BOOL; // Stop measurement
+	DistanceSignals			: UINT; // Distance between start and end signal [mm]
+	EncoderValue			: ULINT; // Encoder values [increment]
+	EncoderFW_Desc			: BOOL := FALSE; // Encoder counts in descending sequence 9,8,7,6... to move forward
+	MaxEncoderValue			: UDINT; // Max value of input "EncoderValue" Remark: Used to detect overflow, needs to be less than DINT size [increment]
+END_VAR
+
+VAR_OUTPUT
+	Busy					: BOOL; // Measurement running
+	DistanceInc				: ULINT; // Distance in increments meausered between the two sensors.
+	Resolution				: REAL; // Encoder resolution in increment per milimeter [inc/mm]
+	Error					: BOOL; // Overflow during measurement or input value error
+END_VAR
+
+VAR
+	DeltaEncoderValue		: LINT; // Delta encoder value (LastValue - CurrentValue)
+	TrackingEncoderValue	: ULINT; // Internal encoder of traveled increments [increment]
+	RunTrig					: R_TRIG; // Run trigger to start measurement and reset
+	StartMeasurementTrig	: R_TRIG; // Start signal for measurement
+	EndMeasurementTrig		: R_TRIG; // End of measurement
+	LastEncoderValue		: ULINT; // Last encoder value [increment]
+	LastTrackingEncoderValue: ULINT; // Last tracking encoder value [increment]
+	StartPosition			: ULINT; // Startposition in increments [increment]
+	EndPosition				: ULINT; // Endposition in increments [increment]
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[// Start measurment and initialize values
+RunTrig(clk := Run);
+IF RunTrig.Q THEN
+	DistanceInc := 0;
+	Resolution := 0;
+	StartPosition := 0;
+	EndPosition := 0;
+	DeltaEncoderValue := 0;
+	TrackingEncoderValue := 0;
+	
+	// Check inputs
+	IF DistanceSignals = 0 THEN
+		Error := TRUE;
+	ELSE
+		Busy := TRUE;
+		Error := FALSE;
+	END_IF
+END_IF
+
+// When measurement is running, wait for start and end signal
+IF Busy AND Run THEN
+	// Create internal encoder to make movement independent from encoder overflow
+	DeltaEncoderValue := ULINT_TO_LINT(EncoderValue) - ULINT_TO_LINT(LastEncoderValue);
+	
+	IF ABS(DeltaEncoderValue) > MaxEncoderValue/2 THEN
+		// Correction with + 1 is to include the 0 in MaxEncoderValue
+		IF DeltaEncoderValue < 0 THEN
+			DeltaEncoderValue := DeltaEncoderValue + UDINT_TO_LINT(MaxEncoderValue) + 1;
+		ELSE
+			DeltaEncoderValue := - ULINT_TO_LINT(EncoderValue) - ULINT_TO_LINT(LastEncoderValue) + UDINT_TO_LINT(MaxEncoderValue) - 1;
+		END_IF
+	END_IF
+	
+	LastEncoderValue := EncoderValue;
+	
+	IF EncoderFW_Desc THEN
+		TrackingEncoderValue := TrackingEncoderValue - LINT_TO_ULINT(DeltaEncoderValue);
+	ELSE
+		TrackingEncoderValue := TrackingEncoderValue + LINT_TO_ULINT(DeltaEncoderValue);
+	END_IF
+	
+	LastEncoderValue := EncoderValue;
+	LastTrackingEncoderValue := TrackingEncoderValue;
+
+	// Internal overflow, error
+	IF TrackingEncoderValue < LastTrackingEncoderValue THEN
+		Error := TRUE;
+		Busy := FALSE;
+		RETURN;
+	END_IF
+
+	// Wait for front edge
+	StartMeasurementTrig(clk := StartSignal);
+	
+	IF StartMeasurementTrig.Q THEN
+		StartPosition := TrackingEncoderValue;
+	END_IF
+	
+	// Wait for rear edge
+	EndMeasurementTrig(clk := EndSignal);
+	
+	IF EndMeasurementTrig.Q THEN
+		EndPosition := TrackingEncoderValue;
+		
+		IF EndPosition >= StartPosition THEN
+			DistanceInc := EndPosition - StartPosition;
+			Resolution := ULINT_TO_REAL(DistanceInc) / UINT_TO_REAL(DistanceSignals);
+		// Otherwise overflow, distance greather than data type LINT 
+		ELSE
+			Error := TRUE;
+		END_IF
+		
+		Busy := FALSE;
+	END_IF
+ELSIF Busy THEN
+	Busy := FALSE;
+	Error := TRUE;
+END_IF
+]]></ST>
+    </Implementation>
+    <LineIds Name="FB_GetEncoderResolution">
+      <LineId Id="3" Count="77" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

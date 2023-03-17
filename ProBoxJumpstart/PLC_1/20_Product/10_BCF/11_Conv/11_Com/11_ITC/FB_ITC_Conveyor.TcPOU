@@ -1,0 +1,3666 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.4">
+  <POU Name="FB_ITC_Conveyor" Id="{aa14b97a-f6e8-4949-951d-771f47a40135}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK FB_ITC_Conveyor IMPLEMENTS ITF_ITC
+(**************************************************************************************
+ *  Application     :   BoxControl Framework
+ *  Revision date   :   $Date: 2021-04-08 12:45:11 +0200 (tor, 08 apr 2021) $
+ *  Author          :   CDC
+ *	Purpose			:	ITC - Message Manager.
+ *						Represents the interface between the application and the 
+ *						communication. Serves as abstract layer to ensure application
+ *						independency.
+ * ------------------------------------------------------------------------------------
+ *  © Swisslog AG
+ *  Swisslog is not liable for any usage of this source code that is not agreed 
+ *  on between Swisslog and the other party. The mandatory legal liability remains 
+ *  unaffected.
+ * ------------------------------------------------------------------------------------
+ *  Revision History: 
+ *
+ *  VERSION DATE         INITIALS     DESCRIPTION
+ *  0.0     DD.MM.YYYY   (name)       (explain customized modifications)
+ *
+ **************************************************************************************)
+VAR_INPUT
+	Config			: ST_CFG_ITC_ManagerConv; // Config
+END_VAR
+
+VAR
+	Init			: BOOL; // Initialized
+	fbDebugMsg		: FB_DebugMsg; // Debug instance
+	DebugMsg		: T_MAXSTRING; // Debug msg
+	Idx				: INT; // Index for general usage 
+	eMsgType		: E_ITC_MsgTypeConv; // Message type conveyor
+	Position		: ST_PositionIdent;
+	SDI				: ST_ITC_SDI; // SDI
+	GVR				: ST_ITC_GVR; // GVR
+	ISR				: ST_ITC_ISR; // ISR
+	TTC				: ST_ITC_TTC; // TTC
+	TDR				: ST_ITC_TDR; // TDR
+	FCQ				: ST_ITC_FCQ; // FCQ
+	FSR				: ST_ITC_FSR; // FSR
+	FSR_Empty		: ST_ITC_FSR; // FSR empty
+	SCR				: ST_ITC_SCR; // SCR
+	SSR				: ST_ITC_SSR; // SSR
+	SSR_Empty		: ST_ITC_SSR; // SSR empty
+	GCR				: ST_ITC_GCR; // GCR
+	GSR				: ST_ITC_GSR; // GSR
+	GSR_Empty		: ST_ITC_GSR; // GSR empty
+	ECR				: ST_ITC_ECR; // ECR
+	ESR				: ST_ITC_ESR; // ESR
+	ESR_Empty		: ST_ITC_ESR; // ESR empty
+	FCR				: ST_ITC_FCR; // FCR
+	MCR				: ST_ITC_MCR; // MCR
+	MCR_Empty		: ST_ITC_MCR; // MCR empty
+	SIR				: ST_ITC_SIR; // SIR
+	TUR				: ST_ITC_TUR; // TUR
+	GDR				: ST_ITC_GDR; // GDR
+	GDR_Empty		: ST_ITC_GDR; // GDR empty
+	DAR				: ST_ITC_DAR; // DAR
+	DAR_Empty		: ST_ITC_DAR; // DAR empty
+	Data			: ST_ITC_GeneralData; // General data
+	RAC				: ST_ITC_RAC; // RAC
+	RDR				: ST_ITC_RDR; // RDR
+END_VAR
+
+VAR PERSISTENT
+	Settings			: ST_CFG_ITC_ManagerConv; // Active configuration
+END_VAR]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[(**************************************************************************************************************
+   Body never called!
+***************************************************************************************************************)
+;]]></ST>
+    </Implementation>
+    <Method Name="M_AddData" Id="{97bd1698-f7f3-4381-8356-3f2b98f7ad14}">
+      <Declaration><![CDATA[{attribute 'object_name' := 'M_AddData'}
+METHOD M_AddData : BOOL
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 474929 $
+ *	Revision date	:	$Date: 2021-04-08 12:45:11 +0200 (tor, 08 apr 2021) $
+ *	Last changed by	:	$Author: b7gessa $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/tags/R1.12.0/01_Software/BCF/BCF/JumpStart/20_Product/10_BCF/11_Conv/11_Com/11_ITC/FB_ITC_Conveyor.TcPOU $
+ *
+ *	Purpose			:	Add data to the system
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+VAR_INPUT
+	meChannelSrc	: E_MFCS_Channel;
+	mMsgType		: INT;
+	mpData			: PVOID;
+	mLen			: UDINT;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+M_AddData := FALSE;
+// Translate type to enumeration
+eMsgType := mMsgType;
+
+// Go to corresponding type
+CASE eMsgType OF
+	(****************************************************
+	  No Message type
+	*****************************************************)	
+	E_ITC_MsgTypeConv.NO_MESSAGE_TYPE:
+		;
+	
+	(****************************************************
+	  Visualization information request
+	*****************************************************)	
+	E_ITC_MsgTypeConv.VISUALIZATION_INFORMATION_REQUEST:
+		// Process
+		M_AddData := M_ProcessVIQ(
+						meChannelSrc := meChannelSrc,
+						mpVIQ := mpData,
+						mLen := mLen);
+		
+	(****************************************************
+	  Digital input request
+	*****************************************************)	
+	E_ITC_MsgTypeConv.DIGITAL_INPUT_REQUEST:
+		// Process
+		M_AddData := M_ProcessDIQ(
+						meChannelSrc := meChannelSrc);
+		
+	(****************************************************
+	  Element control request
+	*****************************************************)
+	E_ITC_MsgTypeConv.ELEMENT_CONTROL_REQUEST:
+		// Process
+		M_AddData := M_ProcessECQ(
+						meChannelSrc := meChannelSrc,
+						mpECQ		 := mpData,
+						mLen 		 := mLen);
+	
+	(****************************************************
+	  Element status request
+	*****************************************************)		
+	E_ITC_MsgTypeConv.ELEMENT_STATUS_REQUEST:
+		// Process
+		M_AddData := M_ProcessESQ(
+						meChannelSrc := meChannelSrc,
+						mpESQ		 := mpData,
+						mLen 	     := mLen);
+		
+	(****************************************************
+	  Function control request
+	*****************************************************)	
+	E_ITC_MsgTypeConv.FUNCTION_CONTROL_REQUEST:
+		// Process
+		M_AddData := M_ProcessFCQ(
+						meChannelSrc := meChannelSrc,
+						mpFCQ		 := mpData,
+						mLen 		 := mLen);
+		
+	(****************************************************
+	  Function status request
+	*****************************************************)	
+	E_ITC_MsgTypeConv.FUNCTION_STATUS_REQUEST:
+		// Process
+		M_AddData := M_ProcessFSQ(
+						meChannelSrc := meChannelSrc,
+						mpFSQ		 := mpData,
+						mLen 		 := mLen);
+						
+	(****************************************************
+	  Group control request
+	*****************************************************)				
+	E_ITC_MsgTypeConv.GROUP_CONTROL_REQUEST:
+		// Process
+		M_AddData := M_ProcessGCQ(
+						meChannelSrc := meChannelSrc,
+						mpGCQ		 := mpData,
+						mLen 		 := mLen);
+
+	(****************************************************
+	  Group status request
+	*****************************************************)	
+	E_ITC_MsgTypeConv.GROUP_STATUS_REQUEST:
+		// Process
+		M_AddData := M_ProcessGSQ(
+						meChannelSrc := meChannelSrc,
+						mpGSQ		 := mpData,
+						mLen 		 := mLen);
+		
+	(****************************************************
+	  Global variable request
+	*****************************************************)	
+	E_ITC_MsgTypeConv.GLOBAL_VARIABLE_REQUEST:
+		// Process
+		M_AddData := M_ProcessGVQ(
+						meChannelSrc := meChannelSrc,
+						mpGVQ := mpData,
+						mLen := mLen);
+						
+	(****************************************************
+	  IRQ request
+	*****************************************************)	
+	E_ITC_MsgTypeConv.I_O_STATUS_REQUEST:
+		// Process
+		M_AddData := M_ProcessIRQ(
+						meChannelSrc := meChannelSrc,
+						mpIRQ		 := mpData,
+						mLen 	     := mLen);
+		
+	(****************************************************
+	  Manual control request
+	*****************************************************)					
+	E_ITC_MsgTypeConv.MANUAL_CONTROL_REQUEST:
+		// Process
+		M_AddData := M_ProcessMCQ(
+						meChannelSrc := meChannelSrc,
+						mpMCQ		 := mpData,
+						mLen 		 := mLen);
+		
+	(****************************************************
+	  Robot action assignement
+	*****************************************************)					
+	E_ITC_MsgTypeConv.ROBOT_ACTION_ASSIGNMENT:
+		// Process
+		M_AddData := M_ProcessRAA(
+						meChannelSrc := meChannelSrc,
+						mpRAA		 := mpData,
+						mLen 		 := mLen);		
+				
+	(****************************************************
+	  Robot delete request
+	*****************************************************)					
+	E_ITC_MsgTypeConv.ROBOT_DELETE_REQUEST:
+		// Process
+		M_AddData := M_ProcessRDQ(
+						meChannelSrc := meChannelSrc,
+						mpRDQ		 := mpData,
+						mLen 		 := mLen);	
+			
+	(****************************************************
+	  Subsystem control request
+	*****************************************************)				
+	E_ITC_MsgTypeConv.SUBSYSTEM_CONTROL_REQUEST:
+		// Process
+		M_AddData := M_ProcessSCQ(
+						meChannelSrc := meChannelSrc,
+						mpSCQ		 := mpData,
+						mLen 		 := mLen);
+		
+	(****************************************************
+	  Set digital output
+	*****************************************************)				
+	E_ITC_MsgTypeConv.SET_DIGITAL_OUTPUT:
+		// Process
+		M_AddData := M_ProcessSDO(
+						meChannelSrc := meChannelSrc,
+						mpSDO		 := mpData,
+						mLen 		 := mLen);
+		
+	(****************************************************
+	  Scanner information request
+	*****************************************************)				
+	E_ITC_MsgTypeConv.SCANNER_INFORMATION_REQUEST:
+		// Process
+		M_AddData := M_ProcessSIQ(
+						meChannelSrc := meChannelSrc,
+						mpSIQ		 := mpData,
+						mLen 		 := mLen);
+		
+	(****************************************************
+	  Subsystem status request
+	*****************************************************)			
+	E_ITC_MsgTypeConv.SUBSYSTEM_STATUS_REQUEST:
+		// Process
+		M_AddData := M_ProcessSSQ(
+						meChannelSrc := meChannelSrc,
+						mpSSQ		 := mpData,
+						mLen 		 := mLen);
+		
+	(****************************************************
+	  Task delete request
+	*****************************************************)			
+	E_ITC_MsgTypeConv.TASK_DELETE_REQUEST:
+		// Process
+		M_AddData := M_ProcessTDQ(
+						meChannelSrc := meChannelSrc,
+						mpTDQ		 := mpData,
+						mLen 		 := mLen);
+		
+	(****************************************************
+	  Transport task assignment
+	*****************************************************)	
+	E_ITC_MsgTypeConv.TRANSPORT_TASK_ASSIGNMENT:
+		// Process
+		M_AddData := M_ProcessTTA(
+						meChannelSrc := meChannelSrc,
+						mpTTA		 := mpData,
+						mLen 		 := mLen);
+		
+	(****************************************************
+	  Transport unit request
+	*****************************************************)	
+	E_ITC_MsgTypeConv.TRANSPORT_UNIT_REQUEST:
+		// Process
+		M_AddData := M_ProcessTUQ(
+						meChannelSrc := meChannelSrc,
+						mpTUQ		 := mpData,
+						mLen 	     := mLen);
+
+	(****************************************************
+	  Add TU data index into function
+	*****************************************************)	
+	E_ITC_MsgTypeConv.ADD_TU_DATA:
+		// Process
+		M_AddData := M_AddTUData(
+						meChannelSrc := meChannelSrc,
+						mpAddTU_Data		 := mpData);					
+
+
+						
+	(****************************************************
+		Data Aquisition Request 
+	*****************************************************)	
+	E_ITC_MsgTypeConv.DATA_ACQUISITION_REQUEST:
+		// Process
+		M_AddData := M_ProcessDAQ(
+						meChannelSrc := meChannelSrc,
+						mpDAQ		 := mpData,
+						mLen 	     := mLen);
+	(****************************************************
+		Gathered Data  Request 
+	*****************************************************)	
+	E_ITC_MsgTypeConv.GATHERED_DATA_REQUEST:
+		// Process
+		M_AddData := M_ProcessGDQ(
+						meChannelSrc := meChannelSrc,
+						mpGDQ		 := mpData,
+						mLen 	     := mLen);				
+ELSE
+	// Unknown type
+	DebugMsg := 'Unknown message type received';
+	fbDebugMsg.M_SendErrorMsg(mMessage := DebugMsg);		
+END_CASE
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_AddTUData" Id="{9d8c0b6e-b982-4909-adff-7c0b22c14777}">
+      <Declaration><![CDATA[METHOD PROTECTED M_AddTUData : BOOL
+
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 474929 $
+ *	Revision date	:	$Date: 2021-04-08 12:45:11 +0200 (tor, 08 apr 2021) $
+ *	Last changed by	:	$Author: b7gessa $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/tags/R1.12.0/01_Software/BCF/BCF/JumpStart/20_Product/10_BCF/11_Conv/11_Com/11_ITC/FB_ITC_Conveyor.TcPOU $
+ *
+ *	Purpose			:	Process a received Digital Input Request telegram.
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+VAR_INPUT
+	meChannelSrc		: E_MFCS_Channel; // Source communicaton channel
+	mpAddTU_Data		: POINTER TO ST_ITC_ADD_TU_DATA; // Pointer to SCQ
+END_VAR
+
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[Data.Init := TRUE;
+Data.TU_DataIndex := mpAddTU_Data^.TU_DataIndex;
+Data.ZoneNumber := mpAddTU_Data^.ZoneNumber;
+Data.Position := '';
+
+// Forward to position
+M_AddTUData := M_ProcessToFunction(
+	meFunctionNumber	:= mpAddTU_Data^.eFunctionNumber, 
+	meChannelSrc		:= meChannelSrc, 
+	mMsgType			:= E_ITC_MsgTypeConv.ADD_TU_DATA,
+	mpData				:= ADR(Data), 
+	mLen				:= SIZEOF(Data));
+	
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_CallITC_Service" Id="{e7fd0a60-471b-4fc5-8779-ba4f1d24b5a5}">
+      <Declaration><![CDATA[{attribute 'object_name' := 'M_CallITC_Service'}
+METHOD M_CallITC_Service : BOOL
+VAR
+	mIdx : INT;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************************************
+ 	Initialization
+***************************************************************************************************************)
+M_Init(FALSE);
+
+(**************************************************************************************************************
+  Monitor SDI Signals
+***************************************************************************************************************)
+FOR mIdx := 1 TO Settings.SDI_Limit DO
+	// SDI signal is enabled 
+	IF SDISignalNumber[mIdx].Enabled THEN
+		// SDI signal changed state 
+		IF SDISignalNumber[mIdx].State <> SDISignalNumber[mIdx].LastState THEN
+			// Send SDI
+			F_ITC_SendSDI(
+				eChannelSrc		:= 0, 
+				SignalNumber	:= mIdx, 
+				SignalState		:= SDISignalNumber[mIdx].State, 
+				eReturnCode		:= E_ErrorConv.NO_ERROR_CODE);
+				
+			// Update state
+			SDISignalNumber[mIdx].LastState := SDISignalNumber[mIdx].State;
+		END_IF
+	END_IF
+END_FOR
+
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_Init" Id="{94653a35-9a2f-4969-b664-a69711cf2bfd}">
+      <Declaration><![CDATA[METHOD M_Init : BOOL
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 474929 $
+ *	Revision date	:	$Date: 2021-04-08 12:45:11 +0200 (tor, 08 apr 2021) $
+ *	Last changed by	:	$Author: b7gessa $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/tags/R1.12.0/01_Software/BCF/BCF/JumpStart/20_Product/10_BCF/11_Conv/11_Com/11_ITC/FB_ITC_Conveyor.TcPOU $
+ *
+ *	Purpose			:	Initialize.
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+VAR_INPUT
+	mInit		: BOOL; // Force init
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[// If instance is not initialized or init is forced
+IF mInit OR NOT Init THEN
+	// Update configuration
+	Settings := Config;
+	
+	// Send log message
+    fbDebugMsg.M_SendInfoMsg('Initialization done');
+		
+	// Init done
+    Init := TRUE;
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_ProcessDAQ" Id="{41fc67ae-df8a-43bf-bfbb-23bc430ab5be}">
+      <Declaration><![CDATA[METHOD PRIVATE M_ProcessDAQ : BOOL
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 474929 $
+ *	Revision date	:	$Date: 2021-04-08 12:45:11 +0200 (tor, 08 apr 2021) $
+ *	Last changed by	:	$Author: b7gessa $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/tags/R1.12.0/01_Software/BCF/BCF/JumpStart/20_Product/10_BCF/11_Conv/11_Com/11_ITC/FB_ITC_Conveyor.TcPOU $
+ *
+ *	Purpose			:	Process a received Data Aquisition telegram.
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+VAR_INPUT
+	meChannelSrc		: E_MFCS_Channel; // Source communicaton channel
+	mpDAQ				: POINTER TO ST_ITC_DAQ; // Pointer to DAQ
+	mLen				: UDINT; // Data length
+END_VAR
+VAR
+	meFunctionPosition		: ST_PositionIdent; // Position
+	meGroupNumber			: E_GroupNumber; // Group
+	meElementNumber			: E_ElementNumber;//Element Number
+	meSubsystem				: BOOL;	//Subsystem
+	mReturnCode				: E_ErrorConv; // Error code
+
+END_VAR
+
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[// Initialize
+M_ProcessDAQ:= TRUE;
+
+//Check where position is
+meFunctionPosition := F_SearchFunctionPosition(Position := mpDAQ^.Position);
+meElementNumber    := F_SearchElementPosition(ElementName := mpDAQ^.Position);
+meGroupNumber      := F_SearchGroupNumber(GroupName := mpDAQ^.Position);
+meSubsystem 	   := F_EqualSisNames(Name1 := SubsystemRegistry.SubSystemName,
+									Name2 := mpDAQ^.Position);
+
+// Check if Function Number is valid
+IF meFunctionPosition.eFunctionNumber >F_BEGIN_FUNCTION AND
+	meFunctionPosition.eFunctionNumber <F_END_FUNCTION THEN 
+    // Forward to Function
+	M_ProcessDAQ := M_ProcessToFunction(
+						meFunctionNumber:= 	meFunctionPosition.eFunctionNumber, // Position
+						meChannelSrc	:= meChannelSrc, 
+						mpData			:= mpDAQ, 
+						mMsgType		:= E_ITC_MsgTypeConv.DATA_ACQUISITION_REQUEST,
+						mLen			:= mLen);
+// Check if DAQ was sent to an Element	
+ELSIF meElementNumber > E_ElementNumber.E_BEGIN_ELEMENT AND 
+      meElementNumber < E_ElementNumber.E_END_ELEMENT AND
+      meFunctionPosition.eFunctionNumber = F_BEGIN_FUNCTION AND
+      meFunctionPosition.ZoneNumber = 0 THEN 
+		// Forward to element
+		M_ProcessDAQ := M_ProcessToElement(
+						meElementNumber	:= meElementNumber, 
+						meChannelSrc	:= meChannelSrc, 
+						mpData			:= mpDAQ, 
+						mMsgType		:= E_ITC_MsgTypeConv.DATA_ACQUISITION_REQUEST,
+						mLen			:= mLen);
+// Check if DAQ was sent to a Group					
+ELSIF  meGroupNumber > E_GroupNumber.G_BEGIN_GROUP AND 
+   		meGroupNumber < E_GroupNumber.G_END_GROUP   AND
+		meElementNumber 					= E_BEGIN_ELEMENT AND 
+      	meFunctionPosition.eFunctionNumber 	= F_BEGIN_FUNCTION AND
+      	meFunctionPosition.ZoneNumber 		= 0 THEN 	   
+		// Forward to Group
+		M_ProcessDAQ := M_ProcessToGroup(
+							meGroupNumber	:= meGroupNumber, // Groupnumber
+							meChannelSrc	:= meChannelSrc, 
+							mpData			:= mpDAQ, 
+							mMsgType		:= E_ITC_MsgTypeConv.DATA_ACQUISITION_REQUEST,
+							mLen			:= mLen);
+// Check if DAQ was sent to a SubSystem
+ELSIF  meSubsystem AND
+	   meGroupNumber = G_BEGIN_GROUP AND
+	   meElementNumber = E_BEGIN_ELEMENT AND 
+	   meFunctionPosition.eFunctionNumber = F_BEGIN_FUNCTION AND
+	   meFunctionPosition.ZoneNumber = 0 THEN 	   		
+	// Forward to Subsytem						
+	M_ProcessDAQ := M_ProcessToSubsystem(
+						meChannelSrc	:= meChannelSrc, 
+						mpData			:= mpDAQ, 
+						mMsgType		:= E_ITC_MsgTypeConv.DATA_ACQUISITION_REQUEST,
+						mLen			:= mLen);					
+ELSE
+	//Unknown position send DAR with Error Report	
+	DAR := DAR_Empty;
+	// DAR
+	DAR.Position	:= mpDAQ^.Position;
+	DAR.eErrorCode	:= E_ErrorConv.ELEMENTNUMBER_UNKNOWN;
+
+	// Reject telegram	
+	M_SendData(
+		meChannel := meChannelSrc,
+		mMsgType  := E_ITC_MsgTypeConv.DATA_ACQUISITION_REPORT,
+		mpData    := ADR(DAR),
+		mLen	  := SIZEOF(DAR));
+		
+	// Unknown Position name received
+	DebugMsg := CONCAT('DAQ - unknown Position name received: ', mpDAQ^.Position);
+	fbDebugMsg.M_SendErrorMsg(mMessage := DebugMsg);
+END_IF
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_ProcessDIQ" Id="{6215de98-8248-4eb8-95e0-a944e002ab76}">
+      <Declaration><![CDATA[METHOD PROTECTED M_ProcessDIQ : BOOL
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 474929 $
+ *	Revision date	:	$Date: 2021-04-08 12:45:11 +0200 (tor, 08 apr 2021) $
+ *	Last changed by	:	$Author: b7gessa $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/tags/R1.12.0/01_Software/BCF/BCF/JumpStart/20_Product/10_BCF/11_Conv/11_Com/11_ITC/FB_ITC_Conveyor.TcPOU $
+ *
+ *	Purpose			:	Process a received Digital Input Request telegram.
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+VAR_INPUT
+	meChannelSrc			: E_MFCS_Channel; // Source communicaton channel
+END_VAR
+
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[// Compose an SDI telegram for every enabled SDI signal
+FOR Idx := 1 TO NUMBER_OF_SDI_SIGNALS DO
+	// For all enabled SDI SignalNumbers
+	IF SDISignalNumber[Idx].Enabled THEN
+		// Collect data
+		SDI.SignalNumber := Idx;
+		SDI.SignalState  := SDISignalNumber[Idx].State;
+		SDI.ReturnCode	 := E_ErrorConv.NO_ERROR_CODE;
+	
+		M_SendData(
+			meChannel := meChannelSrc, 
+			mMsgType  := E_ITC_MsgTypeConv.SEND_DIGITAL_INPUT, 
+			mpData    := ADR(SDI),
+			mLen	  := SIZEOF(SDI));
+	END_IF
+END_FOR
+
+// Telegram processed
+M_ProcessDIQ := TRUE;
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_ProcessECQ" Id="{ef6956ef-4355-4a98-81f6-c035ac6c922a}">
+      <Declaration><![CDATA[METHOD PROTECTED M_ProcessECQ : BOOL
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 474929 $
+ *	Revision date	:	$Date: 2021-04-08 12:45:11 +0200 (tor, 08 apr 2021) $
+ *	Last changed by	:	$Author: b7gessa $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/tags/R1.12.0/01_Software/BCF/BCF/JumpStart/20_Product/10_BCF/11_Conv/11_Com/11_ITC/FB_ITC_Conveyor.TcPOU $
+ *
+ *	Purpose			:	Process a received Element Control Request 
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+VAR_INPUT
+	meChannelSrc		: E_MFCS_Channel; // Source communicaton channel
+	mpECQ				: POINTER TO ST_ITC_ECQ; // Pointer to ECQ
+	mLen				: UDINT; // Data length
+END_VAR
+
+VAR
+	meElementNumber		: E_ElementNumber; // Element number
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[// Initialize
+M_ProcessECQ := TRUE;
+
+// Try getting enum
+meElementNumber := F_SearchElementPosition(ElementName := mpECQ^.Position);
+
+// Check if ElementNumber is valid
+IF meElementNumber > E_ElementNumber.E_BEGIN_ELEMENT AND 
+   meElementNumber < E_ElementNumber.E_END_ELEMENT THEN
+			
+	// Forward to element
+	M_ProcessECQ := M_ProcessToElement(
+						meElementNumber	:= meElementNumber, 
+						meChannelSrc	:= meChannelSrc, 
+						mMsgType		:= E_ITC_MsgTypeConv.ELEMENT_CONTROL_REQUEST,
+						mpData			:= mpECQ, 
+						mLen			:= mLen);
+						
+ELSE
+	// Unknown Position name received
+	// ECR
+	ECR.Position	:= mpECQ^.Position;
+	ECR.Code		:= mpECQ^.Code;
+	ECR.Variable	:= mpECQ^.Variable;
+	ECR.ReturnCode	:= E_ErrorConv.ELEMENTNUMBER_UNKNOWN;
+
+	// Reject telegram	
+	M_SendData(
+		meChannel := meChannelSrc,
+		mMsgType  := E_ITC_MsgTypeConv.ELEMENT_CONTROL_REPLY,
+		mpData    := ADR(ECR),
+		mLen	  := SIZEOF(ECR));
+		
+	// Unknown Position name received
+	DebugMsg := CONCAT('ECQ - unknown Position name received: ', mpECQ^.Position);
+	fbDebugMsg.M_SendErrorMsg(mMessage := DebugMsg);
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_ProcessESQ" Id="{785210f8-d148-4ab9-8635-051b06acf8ea}">
+      <Declaration><![CDATA[METHOD PROTECTED M_ProcessESQ : BOOL
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 474929 $
+ *	Revision date	:	$Date: 2021-04-08 12:45:11 +0200 (tor, 08 apr 2021) $
+ *	Last changed by	:	$Author: b7gessa $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/tags/R1.12.0/01_Software/BCF/BCF/JumpStart/20_Product/10_BCF/11_Conv/11_Com/11_ITC/FB_ITC_Conveyor.TcPOU $
+ *
+ *	Purpose			:	Process a received Element Status Request telegram.
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+VAR_INPUT
+	meChannelSrc		: E_MFCS_Channel; // Source communicaton channel
+	mpESQ				: POINTER TO ST_ITC_ESQ; // Pointer to ESQ
+	mLen				: UDINT; // Data length
+END_VAR
+
+VAR
+	meElementNumber		: E_ElementNumber; // Element number
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[// Initialize
+M_ProcessESQ := TRUE;
+
+// Try getting enum
+meElementNumber := F_SearchElementPosition(ElementName := mpESQ^.Position);
+
+// Check if ElementNumber is valid
+IF meElementNumber > E_ElementNumber.E_BEGIN_ELEMENT AND 
+   meElementNumber < E_ElementNumber.E_END_ELEMENT THEN			
+	
+	// Forward to element
+	M_ProcessESQ := M_ProcessToElement(
+						meElementNumber	:= meElementNumber, 
+						meChannelSrc	:= meChannelSrc, 
+						mMsgType		:= E_ITC_MsgTypeConv.ELEMENT_STATUS_REQUEST,
+						mpData			:= mpESQ, 
+						mLen			:= mLen);
+						
+// Check if ESQ was sent to a SubSystem
+ELSIF F_EqualSisNames(Name1 := SubsystemRegistry.SubSystemName,
+                      Name2 := mpESQ^.Position) THEN
+									
+	// Do for each ElementNumber
+	FOR meElementNumber := E_ElementNumber.E_BEGIN_ELEMENT + 1 TO E_ElementNumber.E_END_Element - 1 DO
+		// Forward
+		M_ProcessToElement(
+			meElementNumber	:= meElementNumber, 
+			meChannelSrc	:= meChannelSrc, 
+			mMsgType		:= E_ITC_MsgTypeConv.ELEMENT_STATUS_REQUEST,
+			mpData			:= mpESQ, 
+			mLen			:= mLen);
+	END_FOR
+ELSE
+	ESR := ESR_Empty;
+	// Unknown Position name received
+	// ESR
+	ESR.Position	:= mpESQ^.Position;
+	ESR.ReturnCode	:= E_ErrorConv.ELEMENTNUMBER_UNKNOWN;
+
+	// Reject telegram	
+	M_SendData(
+		meChannel := meChannelSrc,
+		mMsgType  := E_ITC_MsgTypeConv.ELEMENT_STATUS_REPORT,
+		mpData    := ADR(ESR),
+		mLen	  := SIZEOF(ESR));
+		
+	// Unknown Position name received
+	DebugMsg := CONCAT('ESQ - unknown Position name received: ', mpESQ^.Position);
+	fbDebugMsg.M_SendErrorMsg(mMessage := DebugMsg);
+END_IF
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_ProcessFCQ" Id="{0cc7e34d-4c93-4815-be00-f94ca171ebfc}">
+      <Declaration><![CDATA[METHOD PROTECTED M_ProcessFCQ : BOOL
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 474929 $
+ *	Revision date	:	$Date: 2021-04-08 12:45:11 +0200 (tor, 08 apr 2021) $
+ *	Last changed by	:	$Author: b7gessa $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/tags/R1.12.0/01_Software/BCF/BCF/JumpStart/20_Product/10_BCF/11_Conv/11_Com/11_ITC/FB_ITC_Conveyor.TcPOU $
+ *
+ *	Purpose			:	Process a received Function Control Request.
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+VAR_INPUT
+	meChannelSrc		: E_MFCS_Channel; // Source communicaton channel
+	mpFCQ				: POINTER TO ST_ITC_FCQ; // Pointer to FCQ
+	mLen				: UDINT; // Data length
+END_VAR
+
+VAR
+	mMsgPosition		: ST_PositionIdent; // Function position
+	mrefObject			: REFERENCE TO FB_BaseObject; // Reference
+END_VAR
+
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[// Initialize
+M_ProcessFCQ := TRUE;
+
+// Get position from message
+mMsgPosition := F_SearchFunctionPosition(Position := mpFCQ^.Position);
+
+// If a valid function was found with a valid zone
+IF 	mMsgPosition.eFunctionNumber > E_FunctionNumber.F_BEGIN_FUNCTION AND 
+	mMsgPosition.eFunctionNumber < E_FunctionNumber.F_END_FUNCTION AND 
+	mMsgPosition.ZoneNumber >= 0 AND mMsgPosition.ZoneNumber <= NUMBER_OF_ZONES_PER_FUNCTION THEN
+	
+	// Forward to element
+	M_ProcessFCQ := M_ProcessToFunction(
+						meFunctionNumber	:= mMsgPosition.eFunctionNumber, 
+						meChannelSrc		:= meChannelSrc, 
+						mMsgType			:= E_ITC_MsgTypeConv.FUNCTION_CONTROL_REQUEST,
+						mpData				:= mpFCQ, 
+						mLen				:= mLen);
+						
+ELSE
+	// FCR
+	FCR.Position	:= mpFCQ^.Position;
+	FCR.Code		:= mpFCQ^.Code;
+	FCR.Variable	:= mpFCQ^.Variable;
+	FCR.ReturnCode	:= E_ErrorConv.FUNCTIONNUMBER_UNKNOWN;
+
+	// Reject telegram	
+	M_SendData(
+		meChannel := meChannelSrc,
+		mMsgType  := E_ITC_MsgTypeConv.FUNCTION_CONTROL_REPLY,
+		mpData    := ADR(FCR),
+        mLen	  := SIZEOF(FCR));
+		
+	// Unknown Position name received 
+	DebugMsg := CONCAT('FCQ, Unknown Position received: ', mpFCQ^.Position);
+	fbDebugMsg.M_SendErrorMsg(mMessage := DebugMsg); 
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_ProcessFSQ" Id="{80a3a39d-7aea-4b89-979c-99601e42aa01}">
+      <Declaration><![CDATA[METHOD PROTECTED M_ProcessFSQ : BOOL
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 474929 $
+ *	Revision date	:	$Date: 2021-04-08 12:45:11 +0200 (tor, 08 apr 2021) $
+ *	Last changed by	:	$Author: b7gessa $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/tags/R1.12.0/01_Software/BCF/BCF/JumpStart/20_Product/10_BCF/11_Conv/11_Com/11_ITC/FB_ITC_Conveyor.TcPOU $
+ *
+ *	Purpose			:	Process a received position Status Request telegram.
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+VAR_INPUT
+	meChannelSrc		: E_MFCS_Channel; // Source communicaton channel
+	mpFSQ				: POINTER TO ST_ITC_FSQ; // Pointer to FSQ
+	mLen				: UDINT; // Data length
+END_VAR
+
+VAR
+	mMsgPosition		: ST_PositionIdent; // Function position
+	mrefObject			: REFERENCE TO FB_BaseObject; // Reference
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[// Initialize
+M_ProcessFSQ := TRUE;
+
+// Get position from message
+mMsgPosition := F_SearchFunctionPosition(Position := mpFSQ^.Position);
+
+// If a valid function was found with a valid zone
+IF 	mMsgPosition.eFunctionNumber > E_FunctionNumber.F_BEGIN_FUNCTION AND 
+	mMsgPosition.eFunctionNumber < E_FunctionNumber.F_END_FUNCTION AND 
+	mMsgPosition.ZoneNumber >= 0 AND mMsgPosition.ZoneNumber <= NUMBER_OF_ZONES_PER_FUNCTION THEN
+
+	// Forward to element
+	M_ProcessFSQ := M_ProcessToFunction(
+						meFunctionNumber	:= mMsgPosition.eFunctionNumber, 
+						meChannelSrc		:= meChannelSrc, 
+						mMsgType			:= E_ITC_MsgTypeConv.FUNCTION_STATUS_REQUEST,
+						mpData				:= mpFSQ,
+						mLen				:= mLen);
+
+ELSE
+	
+	FSR := FSR_Empty;
+	
+	// FSR
+	FSR.Position	:= mpFSQ^.Position;
+	FSR.eReturnCode	:= E_ErrorConv.FUNCTIONNUMBER_UNKNOWN;
+
+	// Reject telegram	
+	M_SendData(
+		meChannel := meChannelSrc,
+		mMsgType  := E_ITC_MsgTypeConv.FUNCTION_STATUS_REPORT,
+		mpData    := ADR(FSR),
+		mLen	  := SIZEOF(FSR));
+		
+	// Unknown Position name received 
+	DebugMsg := CONCAT('FSQ, Unknown Position received: ', mpFSQ^.Position);
+	fbDebugMsg.M_SendErrorMsg(mMessage := DebugMsg); 
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_ProcessGCQ" Id="{ba2bd1f7-2f0c-4b43-a739-582127921df7}">
+      <Declaration><![CDATA[METHOD PROTECTED M_ProcessGCQ : BOOL
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 474929 $
+ *	Revision date	:	$Date: 2021-04-08 12:45:11 +0200 (tor, 08 apr 2021) $
+ *	Last changed by	:	$Author: b7gessa $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/tags/R1.12.0/01_Software/BCF/BCF/JumpStart/20_Product/10_BCF/11_Conv/11_Com/11_ITC/FB_ITC_Conveyor.TcPOU $
+ *
+ *	Purpose			:	Process a received Group Control Request telegram.
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+VAR_INPUT
+	meChannelSrc		: E_MFCS_Channel; // Source communicaton channel
+	mpGCQ				: POINTER TO ST_ITC_GCQ; // Pointer to GCQ
+	mLen				: UDINT; // Data length
+END_VAR
+
+VAR
+	meGroupNumber		: E_GroupNumber; // group number
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[// Initialize 
+M_ProcessGCQ := TRUE;
+
+// Find GropuNumber of telegram
+meGroupNumber := F_SearchGroupNumber(GroupName := mpGCQ^.Position);
+			
+// Group number valid
+IF meGroupNumber > E_GroupNumber.G_BEGIN_GROUP AND 
+   meGroupNumber < E_GroupNumber.G_END_GROUP THEN	
+				
+	// Forward to group
+	M_ProcessGCQ := M_ProcessToGroup(
+						meGroupNumber	:= meGroupNumber, 
+						meChannelSrc	:= meChannelSrc, 
+						mMsgType		:= E_ITC_MsgTypeConv.GROUP_CONTROL_REQUEST,
+						mpData			:= mpGCQ, 
+						mLen			:= mLen);
+				
+// Check if GCQ was sent to a SubSystem
+ELSIF F_EqualSisNames(Name1 := SubsystemRegistry.SubSystemName,
+                      Name2 := mpGCQ^.Position) THEN
+			
+	// Do for each GroupNumber
+	FOR meGroupNumber := E_GroupNumber.G_BEGIN_GROUP + 1 TO E_GroupNumber.G_END_GROUP - 1 DO
+		// Check if group is a switching group
+		IF GroupRegistry[meGroupNumber].eGroupType = E_GroupType.SG THEN
+			M_ProcessToGroup(
+				meGroupNumber	:= meGroupNumber, 
+				meChannelSrc	:= meChannelSrc, 
+				mMsgType		:= E_ITC_MsgTypeConv.GROUP_CONTROL_REQUEST,
+				mpData			:= mpGCQ, 
+				mLen 			:= mLen);
+		END_IF
+	END_FOR
+ELSE
+	
+	// GCR
+	GCR.GroupName	:= mpGCQ^.Position;
+	GCR.Code		:= mpGCQ^.Code;
+	GCR.Variable	:= mpGCQ^.Variable;
+	GCR.ReturnCode	:= E_ErrorConv.GROUPNUMBER_UNKNOWN;
+
+	// Reject telegram	
+	M_SendData(
+		meChannel := meChannelSrc,
+		mMsgType  := E_ITC_MsgTypeConv.GROUP_CONTROL_REPLY,
+		mpData    := ADR(GCR),
+		mLen	  := SIZEOF(GCR));
+
+	// Unknown Group name received
+	DebugMsg := CONCAT('GCQ, unknown Group name received: ', mpGCQ^.Position);
+	fbDebugMsg.M_SendErrorMsg(mMessage := DebugMsg);
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_ProcessGDQ" Id="{289d95b4-fc94-4a5d-a83f-820e062f7639}">
+      <Declaration><![CDATA[METHOD PROTECTED M_ProcessGDQ : BOOL
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 474929 $
+ *	Revision date	:	$Date: 2021-04-08 12:45:11 +0200 (tor, 08 apr 2021) $
+ *	Last changed by	:	$Author: b7gessa $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/tags/R1.12.0/01_Software/BCF/BCF/JumpStart/20_Product/10_BCF/11_Conv/11_Com/11_ITC/FB_ITC_Conveyor.TcPOU $
+ *
+ *	Purpose			:	Process a received Gathered Data Request telegram.
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+VAR_INPUT
+	meChannelSrc		: E_MFCS_Channel; // Source communicaton channel
+	mpGDQ				: POINTER TO ST_ITC_GDQ; // Pointer to GDQ
+	mLen				: UDINT; // Data length
+END_VAR
+VAR
+	meFunctionPosition				: ST_PositionIdent; // Position
+	meGroupNumber					: E_GroupNumber; // Group
+	meElementNumber					: E_ElementNumber;//Element Number
+	meSubsystem						: BOOL;	
+	mReturnCode						: E_ErrorConv; // Error code
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[// Initialize
+M_ProcessGDQ:= TRUE;
+
+//Search Position
+meFunctionPosition := F_SearchFunctionPosition(Position := mpGDQ^.Position);
+meElementNumber    := F_SearchElementPosition(ElementName := mpGDQ^.Position);
+meGroupNumber      := F_SearchGroupNumber(GroupName := mpGDQ^.Position);
+meSubsystem 	   := F_EqualSisNames(Name1 := SubsystemRegistry.SubSystemName,
+														        Name2 := mpGDQ^.Position);
+
+// Check if Function is Target for Telgram 
+IF meFunctionPosition.eFunctionNumber >F_BEGIN_FUNCTION AND
+	meFunctionPosition.eFunctionNumber <F_END_FUNCTION THEN 
+    // Forward to Function
+	M_ProcessGDQ := M_ProcessToFunction(
+						meFunctionNumber:= 	meFunctionPosition.eFunctionNumber, // Position
+						meChannelSrc	:= meChannelSrc, 
+						mpData			:= mpGDQ, 
+						mMsgType		:= E_ITC_MsgTypeConv.GATHERED_DATA_REQUEST,
+						mLen			:= mLen);
+// Check if Element is Target for Telgram 
+ELSIF meElementNumber > E_ElementNumber.E_BEGIN_ELEMENT AND 
+      meElementNumber < E_ElementNumber.E_END_ELEMENT AND
+      meFunctionPosition.eFunctionNumber = F_BEGIN_FUNCTION AND
+      meFunctionPosition.ZoneNumber = 0 THEN 
+	// Forward to element
+	M_ProcessGDQ := M_ProcessToElement(
+						meElementNumber	:= meElementNumber, 
+						meChannelSrc	:= meChannelSrc, 
+						mpData			:= mpGDQ, 
+						mMsgType		:= E_ITC_MsgTypeConv.GATHERED_DATA_REQUEST,
+						mLen			:= mLen);
+
+// Check if Group is Target for Telgram 				
+ELSIF  	meGroupNumber > E_GroupNumber.G_BEGIN_GROUP AND 
+   		meGroupNumber < E_GroupNumber.G_END_GROUP   AND
+		meElementNumber 					= E_BEGIN_ELEMENT AND 
+      	meFunctionPosition.eFunctionNumber 	= F_BEGIN_FUNCTION AND
+      	meFunctionPosition.ZoneNumber 		= 0 THEN 	   
+			
+		// Forward to Group
+		M_ProcessGDQ := M_ProcessToGroup(
+											meGroupNumber	:= meGroupNumber, // Groupnumber
+											meChannelSrc	:= meChannelSrc, 
+											mpData			:= mpGDQ, 
+											mMsgType		:= E_ITC_MsgTypeConv.GATHERED_DATA_REQUEST,
+											mLen			:= mLen);
+	 
+		
+// Check if Subystem Target for Telgram 
+ELSIF  meSubsystem AND
+	   meGroupNumber = G_BEGIN_GROUP AND
+	   meElementNumber = E_BEGIN_ELEMENT AND 
+	   meFunctionPosition.eFunctionNumber = F_BEGIN_FUNCTION AND
+	   meFunctionPosition.ZoneNumber = 0 THEN 	   	
+		// Forward to Subsytem			
+		M_ProcessGDQ := M_ProcessToSubsystem(
+							meChannelSrc	:= meChannelSrc, 
+							mpData			:= mpGDQ, 
+							mMsgType		:= E_ITC_MsgTypeConv.GATHERED_DATA_REQUEST,
+							mLen			:= mLen);
+						
+		
+					
+ELSE
+	//Unknown position send DAR with Error Report	
+	GDR := GDR_Empty;
+	
+	// DAR
+	GDR.Position	:= mpGDQ^.Position;
+	GDR.eReturnCode	:= E_ErrorConv.CONFIGURATION_ERROR;
+
+	// Reject telegram	
+	M_SendData(
+		meChannel := meChannelSrc,
+		mMsgType  := E_ITC_MsgTypeConv.GATHERED_DATA_REQUEST,
+		mpData    := ADR(GDR),
+		mLen	  := mLen );
+		
+	// Unknown Position name received
+	DebugMsg := CONCAT('GDQ - unknown Position name received: ', mpGDQ^.Position);
+	fbDebugMsg.M_SendErrorMsg(mMessage := DebugMsg);
+END_IF
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_ProcessGSQ" Id="{e858bc3f-b9a0-44f9-aeed-0493b693c012}">
+      <Declaration><![CDATA[METHOD PROTECTED M_ProcessGSQ : BOOL
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 474929 $
+ *	Revision date	:	$Date: 2021-04-08 12:45:11 +0200 (tor, 08 apr 2021) $
+ *	Last changed by	:	$Author: b7gessa $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/tags/R1.12.0/01_Software/BCF/BCF/JumpStart/20_Product/10_BCF/11_Conv/11_Com/11_ITC/FB_ITC_Conveyor.TcPOU $
+ *
+ *	Purpose			:	Process a received Group Status Request telegram.
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+VAR_INPUT
+	meChannelSrc		: E_MFCS_Channel; // Source communicaton channel
+	mpGSQ				: POINTER TO ST_ITC_GSQ; // Pointer to GSQ
+	mLen				: UDINT; // Data length
+END_VAR
+
+VAR
+	meGroupNumber		: E_GroupNumber; // group number
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[// Initialize
+M_ProcessGSQ := TRUE;
+
+// Find GropuNumber of telegram
+meGroupNumber := F_SearchGroupNumber(GroupName := mpGSQ^.Position);
+			
+// Request was for a group
+// Group number valid
+IF meGroupNumber > E_GroupNumber.G_BEGIN_GROUP AND 
+   meGroupNumber < E_GroupNumber.G_END_GROUP THEN	
+						
+	// Forward to group
+	M_ProcessGSQ := M_ProcessToGroup(
+						meGroupNumber	:= meGroupNumber, 
+						meChannelSrc	:= meChannelSrc, 
+						mMsgType		:= E_ITC_MsgTypeConv.GROUP_STATUS_REQUEST,
+						mpData			:= mpGSQ,
+						mLen			:= mLen);
+					
+// Check if GCQ was sent to a SubSystem
+ELSIF F_EqualSisNames(Name1 := SubsystemRegistry.SubSystemName,
+                      Name2 := mpGSQ^.Position) THEN
+			
+	// Do for each GroupNumber
+	FOR meGroupNumber := E_GroupNumber.G_BEGIN_GROUP + 1 TO E_GroupNumber.G_END_GROUP - 1 DO
+		
+		M_ProcessToGroup(
+			meGroupNumber	:= meGroupNumber, 
+			meChannelSrc	:= meChannelSrc, 
+			mMsgType		:= E_ITC_MsgTypeConv.GROUP_STATUS_REQUEST,
+			mpData			:= mpGSQ, 
+			mLen			:= mLen);
+	END_FOR
+	
+ELSE
+	GSR := GSR_Empty;
+	
+	// GSR
+	GSR.GroupName	:= mpGSQ^.Position;
+	GSR.eReturnCode	:= E_ErrorConv.GROUPNUMBER_UNKNOWN;
+
+	// Reject telegram	
+	M_SendData(
+		meChannel := meChannelSrc,
+		mMsgType  := E_ITC_MsgTypeConv.GROUP_STATUS_REPORT,
+		mpData    := ADR(GSR),
+		mLen	  := SIZEOF(GSR));
+		
+	// Unknown Group name received
+	DebugMsg := CONCAT('GSQ, unknown Group name received: ', mpGSQ^.Position);
+	fbDebugMsg.M_SendErrorMsg(mMessage := DebugMsg);
+END_IF
+
+
+
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_ProcessGVQ" Id="{e7debde4-84d4-4532-a58d-a00f68ae87d4}">
+      <Declaration><![CDATA[METHOD PROTECTED M_ProcessGVQ : BOOL
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 474929 $
+ *	Revision date	:	$Date: 2021-04-08 12:45:11 +0200 (tor, 08 apr 2021) $
+ *	Last changed by	:	$Author: b7gessa $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/tags/R1.12.0/01_Software/BCF/BCF/JumpStart/20_Product/10_BCF/11_Conv/11_Com/11_ITC/FB_ITC_Conveyor.TcPOU $
+ *
+ *	Purpose			:	Process a received Global Variable Request telegram.
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+VAR_INPUT
+	meChannelSrc		: E_MFCS_Channel; // Source communicaton channel
+	mpGVQ				: POINTER TO ST_ITC_GVQ; // Pointer to GVQ
+	mLen				: UDINT; // Data length
+END_VAR
+
+VAR
+	mIdx				: INT; // Iterator
+	mError				: BOOL; // Error during processing
+	mVar				: ARRAY[0..9] OF DINT; // Temporary variables
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[// Initialize
+M_ProcessGVQ := TRUE;
+
+// Initialize
+mError := FALSE;
+
+// Check borders
+IF mpGVQ^.Number > GVR_Table.NUMBER_OF_GVR_SIGNALS OR
+   mpGVQ^.Number < 1  OR
+   mpGVQ^.Quantity < 1 OR
+   mpGVQ^.Quantity > 10 THEN
+	// Set error
+	mError := TRUE;
+END_IF
+
+// If no error is active
+IF NOT mError THEN
+	// If perform action is selected
+	IF mpGVQ^.Code = 1 OR mpGVQ^.Code = 2 THEN
+		// Map values
+		mVar[0] := mpGVQ^.Variable[0];
+		mVar[1] := mpGVQ^.Variable[1];
+		mVar[2] := mpGVQ^.Variable[2];
+		mVar[3] := mpGVQ^.Variable[3];
+		mVar[4] := mpGVQ^.Variable[4];
+		mVar[5] := mpGVQ^.Variable[5];
+		mVar[6] := mpGVQ^.Variable[6];
+		mVar[7] := mpGVQ^.Variable[7];
+		mVar[8] := mpGVQ^.Variable[8];
+		mVar[9] := mpGVQ^.Variable[9];
+	   
+		// Go trough quantity
+		FOR mIdx := 0 TO mpGVQ^.Quantity - 1 DO
+			// Set values
+			GlobalVariable[mpGVQ^.Number, mIdx] := mVar[mIdx];
+		END_FOR
+	END_IF
+	
+	// If report state is selected
+	IF mpGVQ^.Code = 0 OR mpGVQ^.Code = 2 THEN
+		GVR.Number := mpGVQ^.Number;
+		GVR.Quantity := mpGVQ^.Quantity;
+		
+		// Go trough quantity
+		FOR mIdx := 0 TO 9 DO
+			// Set values
+			GVR.Variable[mIdx] := 0;
+		END_FOR
+		
+		FOR mIdx := 0 TO mpGVQ^.Quantity - 1 DO
+			// Set values
+			GVR.Variable[mIdx] := GlobalVariable[mpGVQ^.Number, mIdx];
+		END_FOR
+
+		GVR.ReturnCode := E_ErrorConv.NO_ERROR_CODE;
+	
+		M_SendData(
+			meChannel := meChannelSrc, 
+			mMsgType  := E_ITC_MsgTypeConv.GLOBAL_VARIABLE_REPORT, 
+			mpData    := ADR(GVR),
+			mLen	  := SIZEOF(GVR));
+	END_IF
+ELSE
+	GVR.Number := mpGVQ^.Number;
+	GVR.Quantity := mpGVQ^.Quantity;
+	GVR.Variable[0] :=0;
+	GVR.Variable[1] := 0;
+	GVR.Variable[2] := 0;
+	GVR.Variable[3] := 0;
+	GVR.Variable[4] := 0;
+	GVR.Variable[5] := 0;
+	GVR.Variable[6] := 0;
+	GVR.Variable[7] := 0;
+	GVR.Variable[8] := 0;
+	GVR.Variable[9] := 0;
+	GVR.ReturnCode := E_ErrorConv.WRONG_VALUE;
+
+	M_SendData(
+		meChannel := meChannelSrc, 
+		mMsgType  := E_ITC_MsgTypeConv.GLOBAL_VARIABLE_REPORT, 
+		mpData    := ADR(GVR),
+		mLen	  := SIZEOF(GVR));
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_ProcessIRQ" Id="{6f8ce5a4-bac5-48cd-9967-0eb935cc9b1d}">
+      <Declaration><![CDATA[METHOD PROTECTED M_ProcessIRQ : BOOL
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 474929 $
+ *	Revision date	:	$Date: 2021-04-08 12:45:11 +0200 (tor, 08 apr 2021) $
+ *	Last changed by	:	$Author: b7gessa $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/tags/R1.12.0/01_Software/BCF/BCF/JumpStart/20_Product/10_BCF/11_Conv/11_Com/11_ITC/FB_ITC_Conveyor.TcPOU $
+ *
+ *	Purpose			:	Process a received I/O Status Request telegram.
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+VAR_INPUT
+	meChannelSrc		: E_MFCS_Channel; // Source communicaton channel
+	mpIRQ				: POINTER TO ST_ITC_IRQ; // Pointer to IRQ
+	mLen				: UDINT; // Data length
+END_VAR
+
+
+VAR
+	mInformation		: STRING(NUMBER_OF_ISR_DATA_LENGTH); // Internal information
+	mSignalNumber		: INT; // SignalNumber
+	mIdx				: INT; // Internal cunter
+	mByte				: BYTE; // Internal Byte
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[// Initialize
+M_ProcessIRQ := TRUE;
+
+// Init String
+mInformation := '';
+
+// Get the signal data for each block of 4 requested
+// an mDataLength of 01 actually means get 4 bits
+FOR mIdx := 1 TO mpIRQ^.DataLength BY 1 DO
+	
+	// Calculate base signal number
+	mSignalNumber  := (((mIdx - 1) * 4) + mpIRQ^.StartSignalNumber);
+	// Init Byte
+	mByte := 0;
+
+	// Check if we will remain in range of the ISR Signal numbers
+	IF (mSignalNumber + 4) <= NUMBER_OF_ISR_SIGNALS THEN
+		// Get the signal state for this group of 4 and put them in the correct bits
+		mByte.0 := ISR_SignalType[mpIRQ^.SignalType].SignalNumber[mSignalNumber];
+		mByte.1 := ISR_SignalType[mpIRQ^.SignalType].SignalNumber[mSignalNumber + 1];
+		mByte.2 := ISR_SignalType[mpIRQ^.SignalType].SignalNumber[mSignalNumber + 2];
+		mByte.3 := ISR_SignalType[mpIRQ^.SignalType].SignalNumber[mSignalNumber + 3];
+	END_IF
+
+	// Convert the resultant tByte to a value between '0' and 'F'
+	fbFormatString (sFormat := '%X', arg1 := F_BYTE(mByte));
+
+	// Add the ASCII result for this block of 4 bits to the ISR.Information string
+	mInformation := CONCAT(mInformation, fbFormatString.sOut);
+END_FOR
+
+(* Information string should always be 99 chars long
+   therefore pad mInformation with trailing zeros. *)
+FOR mIdx := LEN(mInformation) TO NUMBER_OF_ISR_DATA_LENGTH DO
+	mInformation := CONCAT(mInformation, '0');
+END_FOR
+
+// Collect data
+ISR.DataLength := mpIRQ^.DataLength;
+ISR.Information := mInformation;
+ISR.SignalType := mpIRQ^.SignalType;
+ISR.StartSignalNumber := mpIRQ^.StartSignalNumber;
+ISR.ReturnCode := E_ErrorConv.NO_ERROR_CODE;
+
+M_SendData(
+	meChannel := meChannelSrc, 
+	mMsgType  := E_ITC_MsgTypeConv.I_O_STATUS_REPORT, 
+	mpData    := ADR(ISR),
+	mLen	  := SIZEOF(ISR));
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_ProcessMCQ" Id="{a498f02a-a60d-471b-9f14-4ae2d58c599e}">
+      <Declaration><![CDATA[METHOD PROTECTED M_ProcessMCQ : BOOL
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 474929 $
+ *	Revision date	:	$Date: 2021-04-08 12:45:11 +0200 (tor, 08 apr 2021) $
+ *	Last changed by	:	$Author: b7gessa $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/tags/R1.12.0/01_Software/BCF/BCF/JumpStart/20_Product/10_BCF/11_Conv/11_Com/11_ITC/FB_ITC_Conveyor.TcPOU $
+ *
+ *	Purpose			:	Process a received Manual Control Request telegram.
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+VAR_INPUT
+	meChannelSrc		: E_MFCS_Channel; // Source communicaton channel
+	mpMCQ				: POINTER TO ST_ITC_MCQ; // Pointer to MCQ
+	mLen				: UDINT; // Data length
+END_VAR
+
+VAR
+	meElementNumber			: E_ElementNumber; // PositionNumber
+	mFunction				: ST_PositionIdent; // Function
+END_VAR
+
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+// Initialize
+M_ProcessMCQ := TRUE;
+
+// Get element number
+meElementNumber := F_SearchElementPosition(ElementName := mpMCQ^.Position);
+
+// Get function
+mFunction := F_SearchFunctionPosition(Position := mpMCQ^.Position);
+
+// Valid ElementNumber was found
+IF meElementNumber > E_ElementNumber.E_BEGIN_ELEMENT AND meElementNumber < E_ElementNumber.E_END_ELEMENT THEN
+
+	// Forward to element
+	M_ProcessMCQ := M_ProcessToElement(
+						meElementNumber	:= meElementNumber, 
+						meChannelSrc	:= meChannelSrc, 
+						mMsgType		:= E_ITC_MsgTypeConv.MANUAL_CONTROL_REQUEST,
+						mpData			:= mpMCQ,
+						mLen			:= mLen);		
+		
+// Valid FunctionNumber was found
+ELSIF mFunction.eFunctionNumber > E_FunctionNumber.F_BEGIN_FUNCTION AND 
+      mFunction.eFunctionNumber < E_FunctionNumber.F_END_FUNCTION THEN
+	
+	// Forward to function
+	M_ProcessMCQ := M_ProcessToFunction(
+						meFunctionNumber	:= mFunction.eFunctionNumber, 
+						meChannelSrc		:= meChannelSrc, 
+						mMsgType			:= E_ITC_MsgTypeConv.MANUAL_CONTROL_REQUEST,
+						mpData				:= mpMCQ,
+						mLen				:= mLen);
+	
+ELSE
+	// Unknown name received
+	MCR := MCR_Empty;	
+
+	MCR.Position := mpMCQ^.Position;
+	MCR.Mode := E_PositionMode.UNKNOWN_MODE;
+	MCR.Code := mpMCQ^.Code;
+	MCR.eReturnCode := E_ErrorConv.WRONG_VALUE;
+
+	// Reject telegram	
+	M_SendData(
+		meChannel := meChannelSrc,
+		mMsgType  := E_ITC_MsgTypeConv.MANUAL_CONTROL_REPORT,
+		mpData    := ADR(MCR),
+		mLen	  := SIZEOF(MCR));
+		
+	// Unknown name received
+	DebugMsg := CONCAT('MCQ, unknown Position name received: ', mpMCQ^.Position);
+	fbDebugMsg.M_SendErrorMsg(mMessage := DebugMsg);
+END_IF
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_ProcessRAA" Id="{03041e0e-267c-428d-8328-65e566cb344f}">
+      <Declaration><![CDATA[METHOD PROTECTED M_ProcessRAA : BOOL
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 474929 $
+ *	Revision date	:	$Date: 2021-04-08 12:45:11 +0200 (tor, 08 apr 2021) $
+ *	Last changed by	:	$Author: b7gessa $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/tags/R1.12.0/01_Software/BCF/BCF/JumpStart/20_Product/10_BCF/11_Conv/11_Com/11_ITC/FB_ITC_Conveyor.TcPOU $
+ *
+ *	Purpose			:	Process a received Transport Task Assignment telegram for a robot.
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * VERSION DATE         INITIALS     DESCRIPTION
+ * 0.0     DD.MM.YYYY   (name)       (explain customized modifications)
+ *
+ **************************************************************************************)
+
+//***********************************************************************************************************
+VAR_INPUT
+  meChannelSrc          : E_MFCS_Channel         := 0;     // Source communicaton channel
+  mpRAA                 : POINTER TO ST_ITC_RAA  := 0;     // Pointer to RAA
+  mLen                  : UDINT                  := 0;     // Data length
+END_VAR
+
+//***********************************************************************************************************
+VAR
+  eFunctionNumber       : E_FunctionNumber       := 0;
+  eElementNumber        : E_ElementNumber        := 0;
+  eGroupNumber          : E_GroupNumber          := 0;
+  //-------------------------------------------------------------------------------------
+  Subsystem             : BOOL                   := FALSE;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+// parse and find requested position
+eFunctionNumber:= F_FindFunction  (Name:= mpRAA^.Position);
+eElementNumber := F_FindElement   (Name:= mpRAA^.Position);
+eGroupNumber   := F_FindGroup     (Name:= mpRAA^.Position);
+Subsystem      := F_CheckSubsystem(Name:= mpRAA^.Position);
+
+// to function ?
+IF eFunctionNumber <> E_FunctionNumber.F_BEGIN_FUNCTION THEN
+	M_ProcessRAA:= M_ProcessToFunction(	meFunctionNumber:= eFunctionNumber, 
+										meChannelSrc    := meChannelSrc, 
+										mMsgType        := E_ITC_MsgTypeConv.ROBOT_ACTION_ASSIGNMENT,
+										mpData          := mpRAA, 
+										mLen            := mLen);
+	// forwarding successful -> no debug message necessary here
+
+
+// to element ?
+ELSIF eElementNumber <> E_ElementNumber.E_BEGIN_ELEMENT THEN
+	M_ProcessRAA:= M_ProcessToElement(	meElementNumber:= eElementNumber,
+										meChannelSrc   := meChannelSrc, 
+										mMsgType       := E_ITC_MsgTypeConv.ROBOT_ACTION_ASSIGNMENT,
+										mpData         := mpRAA, 
+										mLen           := mLen);
+	// forwarding successful -> no debug message necessary here
+
+
+// to group ?
+ELSIF eGroupNumber <> E_GroupNumber.G_BEGIN_GROUP THEN
+	M_ProcessRAA:= M_ProcessToGroup(meGroupNumber:= eGroupNumber,
+									meChannelSrc := meChannelSrc, 
+									mMsgType     := E_ITC_MsgTypeConv.ROBOT_ACTION_ASSIGNMENT,
+									mpData       := mpRAA, 
+									mLen         := mLen);
+	// forwarding successful -> no debug message necessary here
+
+
+// to subsystem ?
+ELSIF Subsystem THEN
+	M_ProcessRAA:= M_ProcessToSubsystem(meChannelSrc:= meChannelSrc, 
+										mMsgType    := E_ITC_MsgTypeConv.ROBOT_ACTION_ASSIGNMENT,
+										mpData      := mpRAA, 
+										mLen        := mLen);
+	// forwarding successful -> no debug message necessary here
+
+
+//* unknown position -> fire error telegram
+ELSE
+  // reject telegram
+	RAC.Position        := mpRAA^.Position;
+	RAC.CommandDataIndex:= mpRAA^.CommandDataIndex;
+	RAC.GroupID         := mpRAA^.GroupID;
+	RAC.AssignmentID    := mpRAA^.AssignmentID;
+	RAC.eReturnCode     := E_ErrorConv.FUNCTIONNUMBER_UNKNOWN;
+	M_SendData(	meChannel:= meChannelSrc, 
+				mMsgType := E_ITC_MsgTypeConv.ROBOT_ACTION_COMPLETE, 
+				mpData   := ADR(RAC),
+				mLen     := SIZEOF(RAC));	
+
+	// debug message
+	// example: '11-000-0000-00-0,  unknown position addressed,  telegram = RAA,  Position = 99-999-9999-99-9,  AssignmentID = 9999999'
+	DebugMsg:= '';
+	DebugMsg:= CONCAT(DebugMsg, F_AddDividerToSisString(SubsystemRegistry.SubsystemName));
+	DebugMsg:= CONCAT(DebugMsg, ', unknown position addressed');
+	DebugMsg:= CONCAT(DebugMsg, DebugTextBlocks.TELEGRAM);
+	DebugMsg:= CONCAT(DebugMsg, 'RAA');
+	DebugMsg:= CONCAT(DebugMsg, DebugTextBlocks.POSITION);
+	DebugMsg:= CONCAT(DebugMsg, F_AddDividerToSisString(Name:= mpRAA^.Position)  );
+	DebugMsg:= CONCAT(DebugMsg, DebugTextBlocks.ASSIGNMENTID);
+	DebugMsg:= CONCAT(DebugMsg, UDINT_TO_STRING(mpRAA^.AssignmentID) );
+	fbDebugMsg.M_SendErrorMsg(mMessage := DebugMsg);
+	
+	// forwarding to here ITC were possible so prevent error message from FB_SIS_MsgManager
+	M_ProcessRAA:= TRUE;
+END_IF
+
+		]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_ProcessRDQ" Id="{57b3e6ab-86e2-4924-9861-1e27f2775098}">
+      <Declaration><![CDATA[METHOD PROTECTED M_ProcessRDQ : BOOL
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 474929 $
+ *	Revision date	:	$Date: 2021-04-08 12:45:11 +0200 (tor, 08 apr 2021) $
+ *	Last changed by	:	$Author: b7gessa $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/tags/R1.12.0/01_Software/BCF/BCF/JumpStart/20_Product/10_BCF/11_Conv/11_Com/11_ITC/FB_ITC_Conveyor.TcPOU $
+ *
+ *	Purpose			:	Robot delete request
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				03.11.2015		Kay Röder			Example
+ *
+ **************************************************************************************)
+VAR_INPUT
+	meChannelSrc				: E_MFCS_Channel; // Source communicaton channel
+	mpRDQ						: POINTER TO ST_ITC_RDQ; // Pointer to EDQ
+	mLen						: UDINT; // Data length
+END_VAR
+
+VAR
+	mMsgPosition		: ST_PositionIdent; // Function position
+	mReturnCode 		: U_ErrorCode;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[// Initialize
+M_ProcessRDQ := TRUE;
+	   
+// Get position from message
+mMsgPosition := F_SearchFunctionPosition(Position := mpRDQ^.Position);
+	
+// If a valid function was found with a valid zone
+IF 	mMsgPosition.eFunctionNumber > E_FunctionNumber.F_BEGIN_FUNCTION AND 
+	mMsgPosition.eFunctionNumber < E_FunctionNumber.F_END_FUNCTION AND 
+	mMsgPosition.ZoneNumber >= 0 AND mMsgPosition.ZoneNumber <= NUMBER_OF_ZONES_PER_FUNCTION THEN
+	
+	// Forward to element
+	M_ProcessRDQ := M_ProcessToFunction(
+						meFunctionNumber	:= mMsgPosition.eFunctionNumber, 
+						meChannelSrc		:= meChannelSrc, 
+						mMsgType			:= E_ITC_MsgTypeConv.ROBOT_DELETE_REQUEST,
+						mpData				:= mpRDQ, 
+						mLen				:= mLen);
+				
+	DebugMsg := CONCAT('Robot Delete Assignment Request: ', UDINT_TO_STRING(mpRDQ^.AssignmentID));
+	fbDebugMsg.M_SendInfoMsg(mMessage := DebugMsg);
+ 
+ELSE
+	mReturnCode.Conv := E_ErrorConv.FUNCTIONNUMBER_UNKNOWN; 
+	
+	// Reject telegram	
+	RDR.Position := mpRDQ^.Position;
+	RDR.CommandDataIndex := mpRDQ^.CommandDataIndex;
+	RDR.GroupID := mpRDQ^.GroupID;
+	RDR.AssignmentID := 0;
+	RDR.ReturnCode := mReturnCode.Conv;
+
+	M_SendData(
+		meChannel := meChannelSrc, 
+		mMsgType  := E_ITC_MsgTypeConv.ROBOT_DELETE_REPORT, 
+		mpData    := ADR(RDR),
+		mLen	  := SIZEOF(RDR));
+
+	DebugMsg := CONCAT('Robot Delete Assignment Request: ', UDINT_TO_STRING(mpRDQ^.AssignmentID));
+	DebugMsg := CONCAT(DebugMsg, 'has an invalid ITC config on RowPaQ-PLC-project');
+	fbDebugMsg.M_SendErrorMsg(mMessage := DebugMsg);
+END_IF
+
+		
+	
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_ProcessSCQ" Id="{eda05472-2ea0-4c8f-9b1e-2a937573679a}">
+      <Declaration><![CDATA[METHOD PROTECTED M_ProcessSCQ : BOOL
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 474929 $
+ *	Revision date	:	$Date: 2021-04-08 12:45:11 +0200 (tor, 08 apr 2021) $
+ *	Last changed by	:	$Author: b7gessa $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/tags/R1.12.0/01_Software/BCF/BCF/JumpStart/20_Product/10_BCF/11_Conv/11_Com/11_ITC/FB_ITC_Conveyor.TcPOU $
+ *
+ *	Purpose			:	Process a received Subsystem Control Request telegram.
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+VAR_INPUT
+	meChannelSrc		: E_MFCS_Channel; // Source communicaton channel
+	mpSCQ				: POINTER TO ST_ITC_SCQ; // Pointer to SCQ
+	mLen				: UDINT; // Data length
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[// Initialize 
+M_ProcessSCQ := TRUE;
+
+// Check if SubSystem is valid
+IF F_EqualSisNames(Name1 := SubsystemRegistry.SubSystemName,
+                   Name2 := mpSCQ^.SubsystemName) THEN
+		
+	// Forward to subsystem
+	M_ProcessSCQ := M_ProcessToSubsystem(
+						meChannelSrc	:= meChannelSrc, 
+						mMsgType		:= E_ITC_MsgTypeConv.SUBSYSTEM_CONTROL_REQUEST,
+						mpData			:= mpSCQ,
+						mLen			:= mLen);		
+ELSE
+	// Unknown SubSystem number received
+	SCR.SubsystemName	:= mpSCQ^.SubsystemName;
+	SCR.Code			:= mpSCQ^.Code;
+	SCR.Variable		:= mpSCQ^.Variable;
+	SCR.ReturnCode		:= E_ErrorConv.SubsystemNUMBER_UNKNOWN;
+
+	// Reject telegram	
+	M_SendData(
+		meChannel := meChannelSrc,
+		mMsgType  := E_ITC_MsgTypeConv.SUBSYSTEM_CONTROL_REPLY,
+		mpData    := ADR(SCR),
+		mLen	  := SIZEOF(SCR));
+
+	// Unknown SubSystem number received
+	DebugMsg := CONCAT('SCQ, unknown SubSystem name received: ', mpSCQ^.SubsystemName);
+	fbDebugMsg.M_SendErrorMsg(mMessage := DebugMsg);
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_ProcessSDO" Id="{f8bdd0d3-7e7c-41a7-b606-6bddca251bd5}">
+      <Declaration><![CDATA[METHOD PROTECTED M_ProcessSDO : BOOL
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 474929 $
+ *	Revision date	:	$Date: 2021-04-08 12:45:11 +0200 (tor, 08 apr 2021) $
+ *	Last changed by	:	$Author: b7gessa $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/tags/R1.12.0/01_Software/BCF/BCF/JumpStart/20_Product/10_BCF/11_Conv/11_Com/11_ITC/FB_ITC_Conveyor.TcPOU $
+ *
+ *	Purpose			:	Process a received Set Digital Output telegram.
+ *						Set or Reset the appropriate SDO signal number according 
+ *						to the data in the telegram
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+VAR_INPUT
+	meChannelSrc		: E_MFCS_Channel; // Source communicaton channel
+	mpSDO				: POINTER TO ST_ITC_SDO; // Pointer to SCQ
+	mLen				: UDINT; // Data length
+END_VAR
+
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[// Initialize
+M_ProcessSDO := TRUE;
+
+// Range check the SignalNumber
+IF mpSDO^.SignalNumber > 0 THEN
+	// Set SignalState
+	SDOSignalNumber[mpSDO^.SignalNumber] := INT_TO_BOOL(mpSDO^.SignalState);
+END_IF
+
+
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_ProcessSIQ" Id="{e93637b9-5bb0-48a7-a032-c0de0cfcf7c6}">
+      <Declaration><![CDATA[METHOD PROTECTED M_ProcessSIQ : BOOL
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 474929 $
+ *	Revision date	:	$Date: 2021-04-08 12:45:11 +0200 (tor, 08 apr 2021) $
+ *	Last changed by	:	$Author: b7gessa $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/tags/R1.12.0/01_Software/BCF/BCF/JumpStart/20_Product/10_BCF/11_Conv/11_Com/11_ITC/FB_ITC_Conveyor.TcPOU $
+ *
+ *	Purpose			:	Process a received Scanner Information Request telegram.
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+VAR_INPUT
+	meChannelSrc		: E_MFCS_Channel; // Source communicaton channel
+	mpSIQ				: POINTER TO ST_ITC_SIQ; // Pointer to SIQ
+	mLen				: UDINT; // Data length
+END_VAR
+
+VAR
+	mFunction			: ST_PositionIdent; // Function position
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[// Initialize
+M_ProcessSIQ := TRUE;
+
+//Find element function of telegram
+mFunction := F_SearchFunctionPosition(Position := mpSIQ^.Position);
+
+// If function number is valid
+IF mFunction.eFunctionNumber > E_FunctionNumber.F_BEGIN_FUNCTION AND 
+   mFunction.eFunctionNumber < E_FunctionNumber.F_END_FUNCTION THEN
+   
+	// Forward to function
+	M_ProcessSIQ := M_ProcessToFunction(
+						meFunctionNumber	:= mFunction.eFunctionNumber,
+						meChannelSrc		:= meChannelSrc, 
+						mMsgType			:= E_ITC_MsgTypeConv.SCANNER_INFORMATION_REQUEST,
+						mpData				:= mpSIQ, 
+						mLen				:= mLen);
+
+ELSE
+	// Unknown Position name received
+	SIR.Position := mpSIQ^.Position;
+	SIR.Code := mpSIQ^.Code;
+	SIR.TU_ID := '';
+	SIR.Counter1 := 0;
+	SIR.Counter2 := 0;
+	SIR.Counter3 := 0;
+	SIR.Counter4 := 0;
+	SIR.Counter5 := 0;
+	SIR.eReturnCode := E_ErrorConv.FUNCTIONNUMBER_UNKNOWN;
+
+	// Reject telegram	
+	M_SendData(
+		meChannel := meChannelSrc,
+		mMsgType  := E_ITC_MsgTypeConv.SCANNER_INFORMATION_REPORT,
+		mpData    := ADR(SIR),
+		mLen	  := SIZEOF(SIR));
+
+	// Unknown Position name received
+	DebugMsg := CONCAT('SIQ, unknown Position name received: ', mpSIQ^.Position);
+	fbDebugMsg.M_SendErrorMsg(mMessage := DebugMsg);	
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_ProcessSSQ" Id="{445a4ec0-5cd3-4bca-8611-2c4a7cd05af2}">
+      <Declaration><![CDATA[METHOD PROTECTED M_ProcessSSQ : BOOL
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 474929 $
+ *	Revision date	:	$Date: 2021-04-08 12:45:11 +0200 (tor, 08 apr 2021) $
+ *	Last changed by	:	$Author: b7gessa $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/tags/R1.12.0/01_Software/BCF/BCF/JumpStart/20_Product/10_BCF/11_Conv/11_Com/11_ITC/FB_ITC_Conveyor.TcPOU $
+ *
+ *	Purpose			:	Process a received Subsystem Status Request telegram.
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+VAR_INPUT
+	meChannelSrc		: E_MFCS_Channel; // Source communicaton channel
+	mpSSQ				: POINTER TO ST_ITC_SSQ; // Pointer to SCQ
+	mLen				: UDINT; // Data length
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[// Initialize
+M_ProcessSSQ := TRUE;
+
+// Check if SubSystem is valid
+IF F_EqualSisNames(Name1 := SubsystemRegistry.SubsystemName,
+                   Name2 := mpSSQ^.Position) THEN
+		
+		// Forward to subsystem
+		M_ProcessSSQ := M_ProcessToSubsystem(
+							meChannelSrc	:= meChannelSrc, 
+							mMsgType		:= E_ITC_MsgTypeConv.SUBSYSTEM_STATUS_REQUEST,
+							mpData			:= mpSSQ, 
+							mLen			:= mLen);	
+ELSE
+	SSR := SSR_Empty;
+	
+	// SSR
+	SSR.SubsystemName	:= mpSSQ^.Position;
+	SSR.eReturnCode	:= E_ErrorConv.SubsystemNUMBER_UNKNOWN;
+
+	// Reject telegram	
+	M_SendData(
+		meChannel := meChannelSrc,
+		mMsgType  := E_ITC_MsgTypeConv.SUBSYSTEM_STATUS_REPORT,
+		mpData    := ADR(SSR),
+		mLen	  := SIZEOF(SSR));
+		
+	// Unknown SubSystem number received
+	DebugMsg := CONCAT('SSQ, unknown SubSystem name received: ', mpSSQ^.Position);
+	fbDebugMsg.M_SendErrorMsg(mMessage := DebugMsg);
+END_IF
+
+
+
+
+
+
+
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_ProcessTDQ" Id="{281dea17-5f65-40c7-9949-8b57aa9a490a}">
+      <Declaration><![CDATA[METHOD PROTECTED M_ProcessTDQ : BOOL
+(**************************************************************************************
+ *  Application     :   BoxControl Framework
+ *  Revision date   :   $Date: 2021-04-08 12:45:11 +0200 (tor, 08 apr 2021) $
+ *  Author          :   CDC
+ * ------------------------------------------------------------------------------------
+ *  © Swisslog AG
+ *  Swisslog is not liable for any usage of this source code that is not agreed 
+ *  on between Swisslog and the other party. The mandatory legal liability remains 
+ *  unaffected.
+ * ------------------------------------------------------------------------------------
+ *  Revision History: 
+ *
+ *  VERSION DATE         INITIALS     DESCRIPTION
+ *  0.0     DD.MM.YYYY   (name)       (explain customized modifications)
+ *
+ **************************************************************************************)
+VAR_INPUT
+	meChannelSrc			: E_MFCS_Channel; // Source communicaton channel
+	mpTDQ					: POINTER TO ST_ITC_TDQ; // Pointer to TDQ
+	mLen					: UDINT; // Data length
+END_VAR
+
+VAR
+	mPosition				: ST_PositionIdent ; // Position
+	mReturnCode				: E_ErrorConv; // Return code
+	mTU_ID_Present			: BOOL; // TU-ID present
+	mTU_DataIndex			: DINT; // TU-data index
+	mAssignmentID_Present	: BOOL; // Assignment-ID present
+	mAssignmentID_Index		: DINT; // Assignment-ID index
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[// Init
+mReturnCode := E_ErrorConv.NO_ERROR_CODE;
+M_ProcessTDQ := TRUE;
+mTU_ID_Present := FALSE;
+mTU_DataIndex := 0;
+mAssignmentID_Present := FALSE;
+mAssignmentID_Index := 0;
+
+// Get position from telegram
+mPosition := F_SearchFunctionPosition( Position := mpTDQ^.Position);
+
+// Order to delete all TU-data
+IF mpTDQ^.Code = 1 THEN
+	// Check no function number and unknown TU-ID
+	IF mpTDQ^.TU_ID = Conveyor.TU_ID_UNKNOWN AND mPosition.eFunctionNumber = 0 THEN
+		// Check all TU-Data for DataSets
+		FOR mTU_DataIndex := 1 TO Conveyor.NUMBER_OF_TU_DATA BY 1 DO
+			// Check if TU-DataSet is used
+			IF TU_DataTable[mTU_DataIndex].DataSet.DataPresent THEN	
+				// debug message: '11-001-0095-01-1,  TU_DataIndex deleted,  telegram = TDQ,  TU_DataIndex = 5,  TuID = 000012345,  AssignmentID = 999999999'
+				DebugMsg := '';
+				DebugMsg := CONCAT(DebugMsg, F_AddDividerToSisString(mpTDQ^.Position));
+				DebugMsg := CONCAT(DebugMsg, ',  TU_DataIndex deleted');
+				DebugMsg := CONCAT(DebugMsg, DebugTextBlocks.TELEGRAM);
+				DebugMsg := CONCAT(DebugMsg, 'TDQ');
+				DebugMsg := CONCAT(DebugMsg, F_CreateTU_DataString(TU_DataIndex:= mTU_DataIndex));
+				fbDebugMsg.M_SendInfoMsg(DebugMsg);
+				// Delete TU-Data
+				F_DeleteTU_Data(
+					TU_DataIndex 	:= mTU_DataIndex, // TU_DataIndex from zone
+					NoTTC 			:= FALSE); // No TTC will be sent
+			END_IF
+		END_FOR
+
+		TDR.Position := mpTDQ^.Position;
+		TDR.TU_ID := mpTDQ^.TU_ID;
+		TDR.AssignmentID := mpTDQ^.AssignmentID;
+		TDR.MsgSequence := mpTDQ^.MsgSequence;
+		TDR.ReturnCode := mReturnCode;
+		
+		M_SendData(
+			meChannel := meChannelSrc, 
+			mMsgType  := E_ITC_MsgTypeConv.TASK_DELETE_REPORT, 
+			mpData    := ADR(TDR),
+			mLen	  := SIZEOF(TDR));
+		RETURN;
+	ELSE
+		// Error: Wrong value
+		mReturnCode := E_ErrorConv.WRONG_VALUE;
+	END_IF
+	
+// Specific request for TU-ID or position
+ELSE
+	// Check if an Assignment-ID is present
+	mAssignmentID_Present := mpTDQ^.AssignmentID > 0 AND mpTDQ^.AssignmentID < Conveyor.ASSIGNMENT_ID_UNKNOWN;
+	
+	// Check if a TU-ID is present
+	mTU_ID_Present := mpTDQ^.TU_ID <> F_StuffString('', Conveyor.TU_ID_STRINGLENGTH,'0', FALSE) AND
+				      mpTDQ^.TU_ID <> F_StuffString('', Conveyor.TU_ID_STRINGLENGTH,' ', FALSE);
+	
+	// If a valid position is found
+	IF mPosition.eFunctionNumber > E_FunctionNumber.F_BEGIN_FUNCTION AND
+	   mPosition.ZoneNumber > 0 THEN
+		// Get TU-data from zone
+		mTU_DataIndex := F_GetTU_DataIndex(
+								eFunctionNumber := mPosition.eFunctionNumber, // PositionNumber
+								ZoneNumber := mPosition.ZoneNumber); // ZoneNumber
+		// A TU index was found
+		IF mTU_DataIndex > 0 THEN
+			IF mAssignmentID_Present THEN
+				// Compare received Assignment ID with the Assignment ID from the position
+				IF TU_DataTable[mTU_DataIndex].AssignmentID <> mpTDQ^.AssignmentID THEN
+					// Error: Wrong Assignement-ID
+					mReturnCode := E_ErrorConv.ASSIGNMENT_ID_WRONG;
+				END_IF
+			ELSIF mTU_ID_Present THEN
+				// Compare received TU ID with the TU ID from the position
+				IF TU_DataTable[mTU_DataIndex].TU_ID.ASCII <> mpTDQ^.TU_ID THEN
+					// Error: Wrong TU-ID
+					mReturnCode := E_ErrorConv.TU_ID_WRONG;
+				END_IF
+			ELSE
+				// Error: Wrong value
+				mReturnCode := E_ErrorConv.ID_WRONG;
+			END_IF
+		ELSE
+			// Error: No TU data set available on position
+			mReturnCode := E_ErrorConv.EMPTY_TU_DATA_SET;
+		END_IF
+		
+	// Request to subsystem
+	ELSIF mpTDQ^.Position <> F_ReduceToAlphaNumeric(SubsystemRegistry.SubsystemName) THEN
+		// Error: Position wrong 
+		mReturnCode := E_ErrorConv.FUNCTIONNUMBER_UNKNOWN;
+		
+	// Telegram without function number
+	ELSE
+		IF mAssignmentID_Present THEN
+			// Search TU-data index based on the Assignement-ID in the TU-data table
+			mAssignmentID_Index := F_SearchAssignmentId(mpTDQ^.AssignmentID);
+		END_IF
+		
+		IF mTU_ID_Present THEN
+			// Search TU-data index based on the TU-ID in the TU-data table
+			mTU_DataIndex := F_SearchTU_ByHashCode(mpTDQ^.TU_ID);
+		END_IF			
+		
+		// If an Assignement-ID index is found
+		IF mAssignmentID_Index <> 0 THEN
+			// Search position belonging to the Assignement-ID index
+			// to report last position
+			mPosition := F_SearchPositionOfTU_Index(
+								TU_DataIndex := mAssignmentID_Index, // TU_DataIndex from zone
+								eStartFunctionNumber := E_FunctionNumber.F_BEGIN_FUNCTION + 1); // Start Zone
+		// If a TU-data index is found
+		ELSIF mTU_DataIndex <> 0 THEN
+			// Search position belonging to the TU-data index
+			// to report last position
+			mPosition := F_SearchPositionOfTU_Index(
+								TU_DataIndex := mTU_DataIndex, // TU_DataIndex from zone
+								eStartFunctionNumber := E_FunctionNumber.F_BEGIN_FUNCTION + 1); // Start Zone
+		ELSE
+			IF mAssignmentID_Present THEN
+				// Error: Wrong Assignement-ID
+				mReturnCode := E_ErrorConv.ASSIGNMENT_ID_WRONG;
+			ELSIF mTU_ID_Present THEN
+				// Error: Wrong TU-ID
+				mReturnCode := E_ErrorConv.TU_ID_WRONG;
+			ELSE
+				// Error: No data
+				mReturnCode := E_ErrorConv.ID_WRONG;
+			END_IF
+		END_IF
+	END_IF
+END_IF
+
+// Send task delete report
+IF mPosition.eFunctionNumber <> E_FunctionNumber.F_BEGIN_FUNCTION THEN
+	TDR.Position := F_ReduceToAlphaNumeric(FunctionRegistry[mPosition.eFunctionNumber].Zone[mPosition.ZoneNumber].ZoneName);
+ELSE
+	TDR.Position := mpTDQ^.Position;
+END_IF
+TDR.TU_ID := mpTDQ^.TU_ID;
+TDR.AssignmentID := mpTDQ^.AssignmentID;
+TDR.MsgSequence := mpTDQ^.MsgSequence;
+TDR.ReturnCode := mReturnCode;
+
+M_SendData(
+	meChannel := meChannelSrc, 
+	mMsgType  := E_ITC_MsgTypeConv.TASK_DELETE_REPORT, 
+	mpData    := ADR(TDR),
+	mLen	  := SIZEOF(TDR));
+
+// Still no error so far
+IF mReturnCode = 0  THEN
+	// TU-data index available
+	IF mTU_DataIndex <> 0 THEN
+		// debug message: '11-001-0095-01-1,  TU_DataIndex deleted,  telegram = TDQ,  TU_DataIndex = 5,  TuID = 000012345,  AssignmentID = 999999999'
+		DebugMsg := '';
+		DebugMsg := CONCAT(DebugMsg, F_AddDividerToSisString(mpTDQ^.Position));
+		DebugMsg := CONCAT(DebugMsg, ',  TU_DataIndex deleted');
+		DebugMsg := CONCAT(DebugMsg, DebugTextBlocks.TELEGRAM);
+		DebugMsg := CONCAT(DebugMsg, 'TDQ');
+		DebugMsg := CONCAT(DebugMsg, F_CreateTU_DataString(TU_DataIndex:= mTU_DataIndex));
+		fbDebugMsg.M_SendInfoMsg(DebugMsg);
+		// Delete TU-data in the system
+		F_DeleteTU_Data(
+			TU_DataIndex 	:= mTU_DataIndex,
+			NoTTC 			:= FALSE);
+	// Assignement-ID index available
+	ELSIF mAssignmentID_Index <> 0 THEN
+		// debug message: '11-001-0095-01-1,  TU_DataIndex deleted,  telegram = TDQ,  TU_DataIndex = 5,  TuID = 000012345,  AssignmentID = 999999999'
+		DebugMsg := '';
+		DebugMsg := CONCAT(DebugMsg, F_AddDividerToSisString(mpTDQ^.Position));
+		DebugMsg := CONCAT(DebugMsg, ',  TU_DataIndex deleted');
+		DebugMsg := CONCAT(DebugMsg, DebugTextBlocks.TELEGRAM);
+		DebugMsg := CONCAT(DebugMsg, 'TDQ');
+		DebugMsg := CONCAT(DebugMsg, F_CreateTU_DataString(TU_DataIndex:= mAssignmentID_Index));
+		fbDebugMsg.M_SendInfoMsg(DebugMsg);
+		// Delete TU-data in the system
+		F_DeleteTU_Data(
+			TU_DataIndex 	:= mAssignmentID_Index,
+			NoTTC 			:= FALSE);
+	ELSE		
+		DebugMsg := 'TDQ, Process failed - no TU-index available.';
+		fbDebugMsg.M_SendErrorMsg(mMessage := DebugMsg);		
+	END_IF
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_ProcessToElement" Id="{9f447273-352d-42d2-a622-94689f4b3a90}">
+      <Declaration><![CDATA[METHOD PROTECTED M_ProcessToElement : BOOL
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 474929 $
+ *	Revision date	:	$Date: 2021-04-08 12:45:11 +0200 (tor, 08 apr 2021) $
+ *	Last changed by	:	$Author: b7gessa $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/tags/R1.12.0/01_Software/BCF/BCF/JumpStart/20_Product/10_BCF/11_Conv/11_Com/11_ITC/FB_ITC_Conveyor.TcPOU $
+ *
+ *	Purpose			:	ITC - Process message to element
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+VAR_INPUT
+	meElementNumber	: E_ElementNumber;
+	meChannelSrc	: E_MFCS_Channel; // Source communicaton channel
+	mMsgType			: INT; // msg type
+	mpData				: POINTER TO PVOID; // data pointer
+	mLen				: UDINT; // Data length
+END_VAR
+
+VAR
+	mrefObject		: REFERENCE TO FB_BaseObject; // Reference
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[// Initialize
+M_ProcessToElement := TRUE;
+
+// Check if ElementNumber is valid
+IF meElementNumber > E_ElementNumber.E_BEGIN_ELEMENT AND 
+   meElementNumber < E_ElementNumber.E_END_ELEMENT THEN
+	// Set reference
+	mrefObject REF= ElementRegistry[meElementNumber].rElement;
+	
+	// Check if reference is valid
+	IF __ISVALIDREF(mrefObject) THEN
+			// Forward message to corresponding object
+		M_ProcessToElement := mrefObject.M_ITC_ProcessMsg(
+								meChannelSrc := meChannelSrc,
+								mMsgType	 := mMsgType,
+								mpData		 := mpData,
+								mLen		 := mLen); 
+	END_IF	
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_ProcessToFunction" Id="{77340ee0-7e65-41fb-9f14-f411dc0915a6}">
+      <Declaration><![CDATA[METHOD PROTECTED M_ProcessToFunction : BOOL
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 474929 $
+ *	Revision date	:	$Date: 2021-04-08 12:45:11 +0200 (tor, 08 apr 2021) $
+ *	Last changed by	:	$Author: b7gessa $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/tags/R1.12.0/01_Software/BCF/BCF/JumpStart/20_Product/10_BCF/11_Conv/11_Com/11_ITC/FB_ITC_Conveyor.TcPOU $
+ *
+ *	Purpose			:	ITC - Process message to function
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+VAR_INPUT
+	meFunctionNumber	: E_FunctionNumber; // Function number
+	meChannelSrc		: E_MFCS_Channel; // Source communicaton channel
+	mMsgType			: INT; // msg type
+	mpData				: POINTER TO PVOID; // data pointer
+	mLen				: UDINT; // Data length
+END_VAR
+
+VAR
+	mrefObject			: REFERENCE TO FB_BaseObject; // Reference
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[// Initialize
+M_ProcessToFunction := TRUE;
+
+// If a valid function was found with a valid zone
+IF 	meFunctionNumber > E_FunctionNumber.F_BEGIN_FUNCTION AND 
+	meFunctionNumber < E_FunctionNumber.F_END_FUNCTION THEN
+
+	// Set reference 
+	mrefObject REF= FunctionRegistry[meFunctionNumber].rFunction;
+	
+	// Check if reference is valid
+	IF __ISVALIDREF(mrefObject) THEN
+
+		// Call M_ITC_AddToBuffer
+		M_ProcessToFunction := mrefObject.M_ITC_ProcessMsg(
+								meChannelSrc := meChannelSrc, // Number of the source 
+								mMsgType	 := mMsgType, // Type of the ITC message
+								mpData		 := mpData,
+								mLen		 := mLen); // Data pointer of the message	
+	END_IF
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_ProcessToGroup" Id="{5359cffe-baa7-40c7-8382-5ee2aa8963f6}">
+      <Declaration><![CDATA[METHOD PROTECTED M_ProcessToGroup : BOOL
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 474929 $
+ *	Revision date	:	$Date: 2021-04-08 12:45:11 +0200 (tor, 08 apr 2021) $
+ *	Last changed by	:	$Author: b7gessa $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/tags/R1.12.0/01_Software/BCF/BCF/JumpStart/20_Product/10_BCF/11_Conv/11_Com/11_ITC/FB_ITC_Conveyor.TcPOU $
+ *
+ *	Purpose			:	ITC - Process message to group
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+VAR_INPUT
+	meGroupNumber		: E_GroupNumber; // Groupnumber
+	meChannelSrc		: E_MFCS_Channel; // Source communicaton channel
+	mMsgType			: INT; // msg type
+	mpData				: POINTER TO PVOID; // data pointer
+	mLen				: UDINT; // Data length
+END_VAR
+
+VAR
+	mrefObject			: REFERENCE TO FB_BaseObject; // Reference
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[// Initialize
+M_ProcessToGroup := TRUE;
+
+// Check if GroupNumber is valid
+IF meGroupNumber > E_GroupNumber.G_BEGIN_GROUP AND 
+   meGroupNumber < E_GroupNumber.G_END_GROUP THEN
+	// Set reference
+	mrefObject REF= GroupRegistry[meGroupNumber].rGroup;
+	
+	// Check if reference is valid
+	IF __ISVALIDREF(mrefObject) THEN
+		
+		// Send ITC-message to a specified group
+		M_ProcessToGroup := mrefObject.M_ITC_ProcessMsg(
+								meChannelSrc := meChannelSrc,
+								mMsgType	 := mMsgType, 
+								mpData		 := mpData,
+								mLen		 := mLen); 
+	END_IF
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_ProcessToSubsystem" Id="{05a45ffd-c557-4480-b2d2-4c67b13ed8a2}">
+      <Declaration><![CDATA[METHOD PROTECTED M_ProcessToSubsystem : BOOL
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 474929 $
+ *	Revision date	:	$Date: 2021-04-08 12:45:11 +0200 (tor, 08 apr 2021) $
+ *	Last changed by	:	$Author: b7gessa $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/tags/R1.12.0/01_Software/BCF/BCF/JumpStart/20_Product/10_BCF/11_Conv/11_Com/11_ITC/FB_ITC_Conveyor.TcPOU $
+ *
+ *	Purpose			:	ITC - Process message to subsystem
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+VAR_INPUT
+	meChannelSrc		: E_MFCS_Channel; // Source communicaton channel
+	mMsgType			: INT; // msg type
+	mpData				: POINTER TO PVOID; // data pointer
+	mLen				: UDINT; // Data length
+END_VAR
+
+VAR
+	mrefObject			: REFERENCE TO FB_BaseObject; // Reference
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[// Initialize
+M_ProcessToSubsystem := TRUE;
+
+// Set reference 
+mrefObject REF= SubsystemRegistry.rSubsystem;
+
+// Check if reference is valid
+IF __ISVALIDREF(mrefObject) THEN
+	// Call M_ITC_AddToBuffer
+	M_ProcessToSubsystem := mrefObject.M_ITC_ProcessMsg(
+								meChannelSrc := meChannelSrc,
+								mMsgType	 := mMsgType, 
+								mpData		 := mpData,	
+								mLen		 := mLen);  
+END_IF
+
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_ProcessTTA" Id="{7b073972-ad1d-47f3-97e9-1abc61047186}">
+      <Declaration><![CDATA[METHOD PROTECTED M_ProcessTTA : BOOL
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 474929 $
+ *	Revision date	:	$Date: 2021-04-08 12:45:11 +0200 (tor, 08 apr 2021) $
+ *	Last changed by	:	$Author: b7gessa $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/tags/R1.12.0/01_Software/BCF/BCF/JumpStart/20_Product/10_BCF/11_Conv/11_Com/11_ITC/FB_ITC_Conveyor.TcPOU $
+ *
+ *	Purpose			:	Process a received Transport Task Assignment telegram.
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * VERSION DATE         INITIALS     DESCRIPTION
+ * 0.0     DD.MM.YYYY   (name)       (explain customized modifications)
+ *
+ **************************************************************************************)
+VAR_INPUT
+	meChannelSrc				: E_MFCS_Channel; // Source communicaton channel
+	mpTTA						: POINTER TO ST_ITC_TTA; // Pointer to TTA
+	mLen						: UDINT;
+END_VAR
+
+VAR
+	mOtherPosition				: ST_PositionIdent; // OtherPosition where same Index is used
+	mDestinationPosition		: ARRAY[1..NUMBER_OF_DESTINATIONS] OF ST_PositionIdent; // DestinationPosition
+	mVirtualDestinationPosition	: ARRAY[1..NUMBER_OF_DESTINATIONS] OF ST_PositionIdent;
+	mReturnCode					: E_ErrorConv; // Error code
+	mTU_DataIndexPosition		: DINT; // Data Index from PositionNumber
+	mTU_DataIndex				: DINT; // Data Index from Data_ID
+	mRequestForPosition			: BOOL; // Request for a Position
+	mTransportData				: ST_TransportControlData; // Transport data
+	mTU_ID_Present				: BOOL; // TU-ID present
+	mAssignmentID_Present		: BOOL; // Assignment ID present
+	mAssignmentID_Index			: DINT; // Assignment ID index
+	mDestIndex					: INT; // Temporary destination index
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[// Initialize
+M_ProcessTTA := TRUE;
+mTU_DataIndexPosition := 0;
+mRequestForPosition := FALSE;	
+mTU_DataIndex := 0;
+mAssignmentID_Index := 0;
+mAssignmentID_Present := FALSE;
+mTU_ID_Present := FALSE;
+
+(**************************************************************************************
+Check if request is valid
+***************************************************************************************)
+// Search position in registry
+Position := F_SearchFunctionPosition(Position := mpTTA^.Position);
+
+//Check if a TU-ID is present
+mTU_ID_Present := 	mpTTA^.TU_ID <> F_StuffString('', Conveyor.TU_ID_STRINGLENGTH,'0', FALSE)
+				AND mpTTA^.TU_ID <> F_StuffString('', Conveyor.TU_ID_STRINGLENGTH,' ', FALSE);
+
+IF mTU_ID_Present THEN
+	// Search if the TU-ID already exists
+	mTU_DataIndex := F_SearchTU_ByHashCode(mpTTA^.TU_ID);
+END_IF	
+
+// Check if an asssignment-ID is present					   
+mAssignmentID_Present := mpTTA^.AssignmentID > 0;
+
+IF mAssignmentID_Present THEN
+	// Search if the assignment-ID already exists
+	mAssignmentID_Index := F_SearchAssignmentId(mpTTA^.AssignmentID);
+END_IF
+
+
+// If the telegram contains no TU-ID and no assignment-ID
+IF NOT mTU_ID_Present AND NOT mAssignmentID_Present THEN
+	// Error: ID is wrong 
+	mReturnCode := E_ErrorConv.ID_WRONG;
+	// debug message: '11-000-0000-00-0,  TuID and AssignmentID missing,  telegram = TTA'
+	DebugMsg:= '';
+	DebugMsg:= CONCAT(DebugMsg, F_AddDividerToSisString(SubsystemRegistry.SubsystemName));
+	DebugMsg:= CONCAT(DebugMsg, ',  TuID and AssignmentID missing');
+	DebugMsg:= CONCAT(DebugMsg, DebugTextBlocks.TELEGRAM);
+	DebugMsg:= CONCAT(DebugMsg, 'TTA');
+	fbDebugMsg.M_SendErrorMsg(mMessage := DebugMsg);
+
+
+// If the request goes to a position
+ELSIF Position.eFunctionNumber > E_FunctionNumber.F_BEGIN_FUNCTION AND 
+	Position.eFunctionNumber < E_FunctionNumber.F_END_FUNCTION THEN
+	// If a valid zone was found
+	IF 	Position.ZoneNumber > 0
+	AND Position.ZoneNumber <= NUMBER_OF_ZONES_PER_FUNCTION THEN
+		// Get transport data
+		mTransportData := F_GetTransportControlData(
+		eFunctionNumber := Position.eFunctionNumber,
+		ZoneNumber		:= Position.ZoneNumber);
+		
+		(*	Data can only be added if the location is physically occupied.
+			State occupied is not working in this place, because on a system
+			with enabled MFC, the place gets occupied only with a physical 
+			and a logical unit. *)
+		IF mTransportData.SensorOccupied THEN
+			// Save - Valid request for a position
+			mRequestForPosition := TRUE;	
+
+			// Get TU Index of telegram position
+			mTU_DataIndexPosition := F_GetTU_DataIndex( 
+			eFunctionNumber := Position.eFunctionNumber,
+			ZoneNumber 		:= Position.ZoneNumber);
+			// If an index is found
+			IF mTU_DataIndexPosition > 0 THEN
+			(* 
+			Adding data is allowed, if
+			- TU-ID of desired position is 'unknown' OR
+			- Telegram TU-ID is equal to position TU-ID
+			
+			AND
+			- Position consists of an unknown assignment-ID OR
+			- Assignment-ID is equal to the requested one		
+			
+			AND
+			- When a requested Index was available, it needs to be equal to position index		
+			*)
+				IF (TU_DataTable[mTU_DataIndexPosition].TU_ID.ASCII = Conveyor.TU_ID_UNKNOWN OR 
+				mpTTA^.TU_ID = TU_DataTable[mTU_DataIndexPosition].TU_ID.ASCII) AND 
+				(mpTTA^.AssignmentID = TU_DataTable[mTU_DataIndexPosition].AssignmentID OR
+				Conveyor.ASSIGNMENT_ID_UNKNOWN = TU_DataTable[mTU_DataIndexPosition].AssignmentID) AND
+				((mpTTA^.TU_DataIndex > 0 AND mpTTA^.TU_DataIndex = mTU_DataIndexPosition) OR (mpTTA^.TU_DataIndex = 0)) THEN 
+					// Adding data is allowed by TU-ID
+					;
+				// Adding not allowed
+				ELSE
+					// When the assignment-ID was not equal to the already existing or 
+					// the assignment-ID on the position was not unknown
+					IF TU_DataTable[mTU_DataIndexPosition].AssignmentID <> mpTTA^.AssignmentID AND 
+					   TU_DataTable[mTU_DataIndexPosition].AssignmentID <> Conveyor.ASSIGNMENT_ID_UNKNOWN THEN
+						// Error: Assignment-ID is false 
+						mReturnCode := E_ErrorConv.ASSIGNMENT_ID_WRONG;
+						// debug message: '11-001-0120-01-0,  AssignmentID mismatch,  telegram = TTA,  expected = 112233,  current = 332211'
+						DebugMsg:= '';
+						DebugMsg:= CONCAT(DebugMsg, F_AddDividerToSisString(Position.PositionName));
+						DebugMsg:= CONCAT(DebugMsg, ',  AssignmentID mismatch');
+						DebugMsg:= CONCAT(DebugMsg, DebugTextBlocks.TELEGRAM);
+						DebugMsg:= CONCAT(DebugMsg, 'TTA');
+						DebugMsg:= CONCAT(DebugMsg, DebugTextBlocks.EXPECTED);
+						DebugMsg:= CONCAT(DebugMsg, UDINT_TO_STRING(TU_DataTable[mTU_DataIndexPosition].AssignmentID) );
+						DebugMsg:= CONCAT(DebugMsg, DebugTextBlocks.CURRENT);
+						DebugMsg:= CONCAT(DebugMsg, UDINT_TO_STRING(mpTTA^.AssignmentID) );
+						fbDebugMsg.M_SendErrorMsg(mMessage := DebugMsg);
+
+					// Otherwise its because of a wrong TU-ID
+					// - Not equal
+					// - Not unknown
+					ELSIF TU_DataTable[mTU_DataIndexPosition].TU_ID.ASCII <> Conveyor.TU_ID_UNKNOWN AND 
+						  TU_DataTable[mTU_DataIndexPosition].TU_ID.ASCII <> mpTTA^.TU_ID THEN
+						// Error: TU-ID is false 
+						mReturnCode := E_ErrorConv.TU_ID_WRONG;
+						// debug message: '11-001-0120-01-0,  TuID mismatch,  telegram = TTA,  expected = 112233,  current = 332211'
+						DebugMsg:= '';
+						DebugMsg:= CONCAT(DebugMsg, F_AddDividerToSisString(Position.PositionName));
+						DebugMsg:= CONCAT(DebugMsg, ',  TuID mismatch');
+						DebugMsg:= CONCAT(DebugMsg, DebugTextBlocks.TELEGRAM);
+						DebugMsg:= CONCAT(DebugMsg, 'TTA');
+						DebugMsg:= CONCAT(DebugMsg, DebugTextBlocks.EXPECTED);
+						DebugMsg:= CONCAT(DebugMsg, TU_DataTable[mTU_DataIndexPosition].TU_ID.ASCII);
+						DebugMsg:= CONCAT(DebugMsg, DebugTextBlocks.CURRENT);
+						DebugMsg:= CONCAT(DebugMsg, mpTTA^.TU_ID);
+						fbDebugMsg.M_SendErrorMsg(mMessage := DebugMsg);
+
+					// Otherwise, requested index was wrong
+					ELSE
+						mReturnCode := E_ErrorConv.WRONG_VALUE;
+						// debug message: '11-001-0120-01-0,  TU_DataIndex mismatch,  telegram = TTA,  expected = 1,  current = 3'
+						DebugMsg:= '';
+						DebugMsg:= CONCAT(DebugMsg, F_AddDividerToSisString(Position.PositionName));
+						DebugMsg:= CONCAT(DebugMsg, ',  TU_DataIndex mismatch');
+						DebugMsg:= CONCAT(DebugMsg, DebugTextBlocks.TELEGRAM);
+						DebugMsg:= CONCAT(DebugMsg, 'TTA');
+						DebugMsg:= CONCAT(DebugMsg, DebugTextBlocks.EXPECTED);
+						DebugMsg:= CONCAT(DebugMsg, DINT_TO_STRING(mTU_DataIndexPosition)  );
+						DebugMsg:= CONCAT(DebugMsg, DebugTextBlocks.CURRENT);
+						DebugMsg:= CONCAT(DebugMsg, DINT_TO_STRING(mpTTA^.TU_DataIndex)  );
+						fbDebugMsg.M_SendErrorMsg(mMessage := DebugMsg);
+					END_IF		
+				END_IF
+			END_IF 
+		ELSE
+			// Error: Zone free
+			mReturnCode := E_ErrorConv.POSITION_NOT_CORRECT_OCCUPIED;
+			// debug message: '11-001-0120-01-0,  position is not occupied,  telegram = TTA'
+			DebugMsg:= '';
+			DebugMsg:= CONCAT(DebugMsg, F_AddDividerToSisString(Position.PositionName));
+			DebugMsg:= CONCAT(DebugMsg, ',  position is not occupied');
+			DebugMsg:= CONCAT(DebugMsg, DebugTextBlocks.TELEGRAM);
+			DebugMsg:= CONCAT(DebugMsg, 'TTA');
+			fbDebugMsg.M_SendErrorMsg(mMessage := DebugMsg);
+		END_IF
+
+	ELSE
+		// Error: Position wrong 
+		mReturnCode := E_ErrorConv.FUNCTIONNUMBER_UNKNOWN;
+		// debug message: '11-000-0000-00-0,  unknown position addressed,  telegram = TTA,  Position = 99-999-9999-99-9'
+		DebugMsg:= '';
+		DebugMsg:= CONCAT(DebugMsg, F_AddDividerToSisString(SubsystemRegistry.SubsystemName));
+		DebugMsg:= CONCAT(DebugMsg, ',  unknown position addressed');
+		DebugMsg:= CONCAT(DebugMsg, DebugTextBlocks.TELEGRAM);
+		DebugMsg:= CONCAT(DebugMsg, 'TTA');
+		DebugMsg:= CONCAT(DebugMsg, DebugTextBlocks.POSITION);
+		DebugMsg:= CONCAT(DebugMsg, F_AddDividerToSisString(Name:= mpTTA^.Position)  );
+		fbDebugMsg.M_SendErrorMsg(mMessage := DebugMsg);
+	END_IF
+
+// If the request goes to the subsystem MM-000-0000-00-0
+ELSIF NOT F_EqualSisNames(Name1:= mpTTA^.Position,
+						  Name2:= SubsystemRegistry.SubsystemName) THEN
+	// Error: Position wrong 
+	mReturnCode := E_ErrorConv.FUNCTIONNUMBER_UNKNOWN; 
+	// debug message: '00-000-0000-00-0,  unknown position addressed,  telegram = TTA,  Position = 99-999-9999-99-9'
+	DebugMsg:= '';
+	DebugMsg:= CONCAT(DebugMsg, '00-000-0000-00-0');  // subsystem is not properly addressed
+	DebugMsg:= CONCAT(DebugMsg, ',  unknown position addressed');
+	DebugMsg:= CONCAT(DebugMsg, DebugTextBlocks.TELEGRAM);
+	DebugMsg:= CONCAT(DebugMsg, 'TTA');
+	DebugMsg:= CONCAT(DebugMsg, DebugTextBlocks.POSITION);
+	DebugMsg:= CONCAT(DebugMsg, F_AddDividerToSisString(Name:= mpTTA^.Position)  );
+	fbDebugMsg.M_SendErrorMsg(mMessage := DebugMsg);
+
+// TU-data index update request to subsystem
+ELSIF mpTTA^.TU_DataIndex > 0 THEN
+	// Validate corresponding index
+	IF TU_DataTable[mpTTA^.TU_DataIndex].DataSet.DataPresent THEN
+		(* If the received telegram contains two existing IDs (Assignment and TU) -> both have to match to the same index. *)
+		IF mTU_DataIndex > 0 AND mAssignmentID_Index > 0 THEN
+			IF mTU_DataIndex <> mAssignmentID_Index THEN
+				mReturnCode := E_ErrorConv.WRONG_VALUE;	
+				// debug message: '11-000-0000-00-0,  AssignmentID mismatch,  telegram = TTA,  expected = 87654321,  current = 12345678'
+				DebugMsg:= '';
+				DebugMsg:= CONCAT(DebugMsg, F_AddDividerToSisString(SubsystemRegistry.SubsystemName));
+				DebugMsg:= CONCAT(DebugMsg, ',  AssignmentID mismatch');
+				DebugMsg:= CONCAT(DebugMsg, DebugTextBlocks.TELEGRAM);
+				DebugMsg:= CONCAT(DebugMsg, 'TTA');
+				DebugMsg:= CONCAT(DebugMsg, DebugTextBlocks.EXPECTED);
+				DebugMsg:= CONCAT(DebugMsg, UDINT_TO_STRING(TU_DataTable[mTU_DataIndex].AssignmentID)  );
+				DebugMsg:= CONCAT(DebugMsg, DebugTextBlocks.CURRENT);
+				DebugMsg:= CONCAT(DebugMsg, UDINT_TO_STRING(mpTTA^.AssignmentID)  );
+				fbDebugMsg.M_SendErrorMsg(mMessage := DebugMsg);
+
+			// Compare found index to TTA index
+			ELSIF mpTTA^.TU_DataIndex <> mTU_DataIndex THEN
+				mReturnCode := E_ErrorConv.WRONG_VALUE;	
+				// debug message: '11-000-0000-00-0,  TU_DataIndex mismatch,  telegram = TTA,  expected = 1,  current = 3'
+				DebugMsg:= '';
+				DebugMsg:= CONCAT(DebugMsg, F_AddDividerToSisString(SubsystemRegistry.SubsystemName));
+				DebugMsg:= CONCAT(DebugMsg, ',  TU_DataIndex mismatch');
+				DebugMsg:= CONCAT(DebugMsg, DebugTextBlocks.TELEGRAM);
+				DebugMsg:= CONCAT(DebugMsg, 'TTA');
+				DebugMsg:= CONCAT(DebugMsg, DebugTextBlocks.EXPECTED);
+				DebugMsg:= CONCAT(DebugMsg, DINT_TO_STRING(mTU_DataIndex)  );
+				DebugMsg:= CONCAT(DebugMsg, DebugTextBlocks.CURRENT);
+				DebugMsg:= CONCAT(DebugMsg, DINT_TO_STRING(mpTTA^.TU_DataIndex)  );
+				fbDebugMsg.M_SendErrorMsg(mMessage := DebugMsg);
+			END_IF
+
+		// When an TU-ID index was found
+		ELSIF mTU_DataIndex > 0 THEN
+			// Compare found index to TTA index
+			IF mTU_DataIndex <> mpTTA^.TU_DataIndex THEN
+				mReturnCode := E_ErrorConv.WRONG_VALUE;	
+				// debug message: '11-000-0000-00-0,  TU_DataIndex mismatch,  telegram = TTA,  expected = 1,  current = 3'
+				DebugMsg:= '';
+				DebugMsg:= CONCAT(DebugMsg, F_AddDividerToSisString(SubsystemRegistry.SubsystemName));
+				DebugMsg:= CONCAT(DebugMsg, ',  TU_DataIndex mismatch');
+				DebugMsg:= CONCAT(DebugMsg, DebugTextBlocks.TELEGRAM);
+				DebugMsg:= CONCAT(DebugMsg, 'TTA');
+				DebugMsg:= CONCAT(DebugMsg, DebugTextBlocks.EXPECTED);
+				DebugMsg:= CONCAT(DebugMsg, DINT_TO_STRING(mTU_DataIndex)  );
+				DebugMsg:= CONCAT(DebugMsg, DebugTextBlocks.CURRENT);
+				DebugMsg:= CONCAT(DebugMsg, DINT_TO_STRING(mpTTA^.TU_DataIndex)  );
+				fbDebugMsg.M_SendErrorMsg(mMessage := DebugMsg);
+			END_IF
+
+		// When an assignment-ID index was found
+		ELSIF mAssignmentID_Index > 0 THEN
+			// Compare found index to TTA index
+			IF mAssignmentID_Index <> mpTTA^.TU_DataIndex THEN
+				mReturnCode := E_ErrorConv.WRONG_VALUE;	
+				// debug message: '11-000-0000-00-0,  AssignmentID mismatch,  telegram = TTA,  expected = 87654321,  current = 12345678'
+				DebugMsg:= '';
+				DebugMsg:= CONCAT(DebugMsg, F_AddDividerToSisString(SubsystemRegistry.SubsystemName));
+				DebugMsg:= CONCAT(DebugMsg, ',  AssignmentID mismatch');
+				DebugMsg:= CONCAT(DebugMsg, DebugTextBlocks.TELEGRAM);
+				DebugMsg:= CONCAT(DebugMsg, 'TTA');
+				DebugMsg:= CONCAT(DebugMsg, DebugTextBlocks.EXPECTED);
+				DebugMsg:= CONCAT(DebugMsg, UDINT_TO_STRING(TU_DataTable[mAssignmentID_Index].AssignmentID)  );
+				DebugMsg:= CONCAT(DebugMsg, DebugTextBlocks.CURRENT);
+				DebugMsg:= CONCAT(DebugMsg, UDINT_TO_STRING(mpTTA^.AssignmentID)  );
+				fbDebugMsg.M_SendErrorMsg(mMessage := DebugMsg);
+			END_IF
+		END_IF
+
+		IF mReturnCode = 0 THEN
+			// Validate TU-ID
+			IF (TU_DataTable[mpTTA^.TU_DataIndex].TU_ID.ASCII <> Conveyor.TU_ID_UNKNOWN AND mpTTA^.TU_ID <> TU_DataTable[mpTTA^.TU_DataIndex].TU_ID.ASCII)
+			 OR(TU_DataTable[mpTTA^.TU_DataIndex].AssignmentID <> Conveyor.ASSIGNMENT_ID_UNKNOWN AND mpTTA^.AssignmentID <> TU_DataTable[mpTTA^.TU_DataIndex].AssignmentID) THEN
+				IF (TU_DataTable[mpTTA^.TU_DataIndex].TU_ID.ASCII <> Conveyor.TU_ID_UNKNOWN AND
+				mpTTA^.TU_ID <> TU_DataTable[mpTTA^.TU_DataIndex].TU_ID.ASCII) THEN
+					// Error: TU-ID is false 
+					mReturnCode := E_ErrorConv.TU_ID_WRONG;
+					// debug message: '11-001-0120-01-0,  TuID mismatch,  telegram = TTA,  expected = 112233,  current = 332211'
+					DebugMsg:= '';
+					DebugMsg:= CONCAT(DebugMsg, F_AddDividerToSisString(SubsystemRegistry.SubsystemName));
+					DebugMsg:= CONCAT(DebugMsg, ',  TuID mismatch');
+					DebugMsg:= CONCAT(DebugMsg, DebugTextBlocks.TELEGRAM);
+					DebugMsg:= CONCAT(DebugMsg, 'TTA');
+					DebugMsg:= CONCAT(DebugMsg, DebugTextBlocks.EXPECTED);
+					DebugMsg:= CONCAT(DebugMsg, TU_DataTable[mpTTA^.TU_DataIndex].TU_ID.ASCII);
+					DebugMsg:= CONCAT(DebugMsg, DebugTextBlocks.CURRENT);
+					DebugMsg:= CONCAT(DebugMsg, mpTTA^.TU_ID);
+					fbDebugMsg.M_SendErrorMsg(mMessage := DebugMsg);
+
+				ELSE
+					// Error: Assignment-ID is false 
+					mReturnCode := E_ErrorConv.ASSIGNMENT_ID_WRONG;
+					// debug message: '11-000-0000-00-0,  AssignmentID mismatch,  telegram = TTA,  expected = 87654321,  current = 12345678'
+					DebugMsg:= '';
+					DebugMsg:= CONCAT(DebugMsg, F_AddDividerToSisString(SubsystemRegistry.SubsystemName));
+					DebugMsg:= CONCAT(DebugMsg, ',  AssignmentID mismatch');
+					DebugMsg:= CONCAT(DebugMsg, DebugTextBlocks.TELEGRAM);
+					DebugMsg:= CONCAT(DebugMsg, 'TTA');
+					DebugMsg:= CONCAT(DebugMsg, DebugTextBlocks.EXPECTED);
+					DebugMsg:= CONCAT(DebugMsg, UDINT_TO_STRING(TU_DataTable[mpTTA^.TU_DataIndex].AssignmentID)  );
+					DebugMsg:= CONCAT(DebugMsg, DebugTextBlocks.CURRENT);
+					DebugMsg:= CONCAT(DebugMsg, UDINT_TO_STRING(mpTTA^.AssignmentID)  );
+					fbDebugMsg.M_SendErrorMsg(mMessage := DebugMsg);
+				END_IF
+
+			// Checks okay, its allowed to takeover data
+			ELSE
+				mTU_DataIndex := mpTTA^.TU_DataIndex;
+			END_IF
+		END_IF
+	ELSE
+		// Error: No corresponding data set found
+		mReturnCode := E_ErrorConv.TU_DATA_INDEX_FREE;
+		// debug message: '11-000-0000-00-0,  no corresponding dataset ,  telegram = TTA,  TU_DataIndex = 8'
+		DebugMsg:= '';
+		DebugMsg:= CONCAT(DebugMsg, F_AddDividerToSisString(SubsystemRegistry.SubsystemName));
+		DebugMsg:= CONCAT(DebugMsg, ',  no corresponding dataset');
+		DebugMsg:= CONCAT(DebugMsg, DebugTextBlocks.TELEGRAM);
+		DebugMsg:= CONCAT(DebugMsg, 'TTA');
+		DebugMsg:= CONCAT(DebugMsg, DebugTextBlocks.TU_DATA_INDEX);
+		DebugMsg:= CONCAT(DebugMsg, DINT_TO_STRING(mpTTA^.TU_DataIndex)  );
+		fbDebugMsg.M_SendErrorMsg(mMessage := DebugMsg);
+	
+	END_IF
+END_IF
+
+
+(**************************************************************************************
+already an error -> cancel processing
+***************************************************************************************)
+IF mReturnCode <> 0 THEN
+	TTC.Position    := mpTTA^.Position;
+	TTC.TU_DataIndex:= mTU_DataIndex;
+	TTC.MsgSequence := mpTTA^.MsgSequence;
+	TTC.TU_ID       := mpTTA^.TU_ID;
+	TTC.AssignmentID:= mpTTA^.AssignmentID;
+	TTC.ReturnCode  := mReturnCode;
+	M_SendData(meChannel:= meChannelSrc, 
+	mMsgType := E_ITC_MsgTypeConv.TRANSPORT_TASK_COMPLETE, 
+	mpData   := ADR(TTC),
+	mLen     := SIZEOF(TTC));
+	// debug message already sent
+	RETURN;
+END_IF
+
+
+(**************************************************************************************
+Check destinations
+***************************************************************************************)
+// Go through all destinations
+FOR Idx := 1 TO mpTTA^.NumberOfDestinations DO			
+	mDestinationPosition[Idx] := F_SearchFunctionPosition(Position := mpTTA^.Destination[Idx]);		
+	// Check destination is invalid
+	IF mDestinationPosition[Idx].eFunctionNumber = E_FunctionNumber.F_BEGIN_FUNCTION THEN
+		// Destination invalid
+		TTC.Position    := mpTTA^.Position;
+		TTC.TU_DataIndex:= mTU_DataIndex;
+		TTC.MsgSequence := mpTTA^.MsgSequence;
+		TTC.TU_ID       := mpTTA^.TU_ID;
+		TTC.AssignmentID:= mpTTA^.AssignmentID;
+		TTC.ReturnCode  := E_ErrorConv.DESTINATION_INVALID;
+		M_SendData(meChannel:= meChannelSrc, 
+		mMsgType := E_ITC_MsgTypeConv.TRANSPORT_TASK_COMPLETE, 
+		mpData   := ADR(TTC),
+		mLen     := SIZEOF(TTC));
+		// debug message: '11-000-0000-00-0,  unknown destination addressed,  telegram = TTA,  destination = 99-999-9999-99-9'
+		DebugMsg:= '';
+		DebugMsg:= CONCAT(DebugMsg, F_AddDividerToSisString(mpTTA^.Position));
+		DebugMsg:= CONCAT(DebugMsg, ',  unknown destination addressed');
+		DebugMsg:= CONCAT(DebugMsg, DebugTextBlocks.TELEGRAM);
+		DebugMsg:= CONCAT(DebugMsg, 'TTA');
+		DebugMsg:= CONCAT(DebugMsg, DebugTextBlocks.DESTINATION);
+		DebugMsg:= CONCAT(DebugMsg, F_AddDividerToSisString(mpTTA^.Destination[Idx])  );
+		fbDebugMsg.M_SendErrorMsg(mMessage := DebugMsg);
+		// debug message just sent
+		RETURN;
+	END_IF
+END_FOR
+
+
+(**************************************************************************************
+Determine TU data index
+***************************************************************************************)
+(* Adding unknown TU data is only allowed if:
+- TU-ID is unknown and no assignment-ID is present
+- Assignment-ID is unknown and no TU-ID is present
+- Assignment-ID and TU-ID is unknown *)
+IF (mpTTA^.TU_ID = Conveyor.TU_ID_UNKNOWN AND NOT mAssignmentID_Present) OR
+(mpTTA^.AssignmentID = Conveyor.ASSIGNMENT_ID_UNKNOWN AND NOT mTU_ID_Present) OR
+(mpTTA^.TU_ID = TU_ID_UNKNOWN AND mpTTA^.AssignmentID = ASSIGNMENT_ID_UNKNOWN) THEN
+	// Unknown requests need to be mandatory sent to a position
+	IF NOT mRequestForPosition THEN
+		//Error: no position request!
+		mReturnCode := E_ErrorConv.TU_ID_WRONG;
+		// debug message: '11-000-0000-00-0,  no position request,  telegram = TTA'
+		DebugMsg:= '';
+		DebugMsg:= CONCAT(DebugMsg, F_AddDividerToSisString(SubsystemRegistry.SubsystemName));
+		DebugMsg:= CONCAT(DebugMsg, ',  no position request');
+		DebugMsg:= CONCAT(DebugMsg, DebugTextBlocks.TELEGRAM);
+		DebugMsg:= CONCAT(DebugMsg, 'TTA');
+		fbDebugMsg.M_SendErrorMsg(mMessage := DebugMsg);
+	
+	// If the corresponding position contains no data
+	ELSIF mTU_DataIndexPosition = 0 THEN
+		// Try insert TU-Data
+		mTU_DataIndex := F_InsertTU_Data(
+		eFunctionNumber := Position.eFunctionNumber,
+		ZoneNumber 		:= Position.ZoneNumber);
+
+		// No free TU Index was found
+		IF mTU_DataIndex = 0 THEN
+			// Error: No free TU-DataIndex
+			mReturnCode := E_ErrorConv.NO_FREE_TU_DATA_SET;
+			// debug message: '11-000-0000-00-0,  no free data index,  telegram = TTA,  TuID = 012345,  AssignmentID = 87654321'
+			DebugMsg:= '';
+			DebugMsg:= CONCAT(DebugMsg, F_AddDividerToSisString(mpTTA^.Position));
+			DebugMsg:= CONCAT(DebugMsg, ',  no free data index');
+			DebugMsg:= CONCAT(DebugMsg, DebugTextBlocks.TELEGRAM);
+			DebugMsg:= CONCAT(DebugMsg, 'TTA');
+			DebugMsg:= CONCAT(DebugMsg, DebugTextBlocks.TUID);
+			DebugMsg:= CONCAT(DebugMsg, mpTTA^.TU_ID);
+			DebugMsg:= CONCAT(DebugMsg, DebugTextBlocks.ASSIGNMENTID);
+			DebugMsg:= CONCAT(DebugMsg, UDINT_TO_STRING(mpTTA^.AssignmentID) );
+			fbDebugMsg.M_SendErrorMsg(mMessage := DebugMsg);
+		END_IF
+	// Otherwise
+	ELSE
+		// Use existing index
+		mTU_DataIndex := mTU_DataIndexPosition;
+	END_IF
+
+// Otherwise the telegram contains valid IDs
+ELSE
+	(* If the received telegram contains two valid
+	IDs (Assignment and TU) - both have to be equal to the found index. *)
+	IF mTU_DataIndex > 0 AND mAssignmentID_Index > 0 THEN
+		IF mTU_DataIndex <> mAssignmentID_Index THEN
+			mReturnCode := E_ErrorConv.WRONG_VALUE;	
+			// debug message: '11-000-0000-00-0,  AssignmentID mismatch,  telegram = TTA,  expected = 87654321,  current = 12345678'
+			DebugMsg:= '';
+			DebugMsg:= CONCAT(DebugMsg, F_AddDividerToSisString(mpTTA^.Position));
+			DebugMsg:= CONCAT(DebugMsg, ',  AssignmentID mismatch');
+			DebugMsg:= CONCAT(DebugMsg, DebugTextBlocks.TELEGRAM);
+			DebugMsg:= CONCAT(DebugMsg, 'TTA');
+			DebugMsg:= CONCAT(DebugMsg, DebugTextBlocks.EXPECTED);
+			DebugMsg:= CONCAT(DebugMsg, UDINT_TO_STRING(TU_DataTable[mTU_DataIndex].AssignmentID)  );
+			DebugMsg:= CONCAT(DebugMsg, DebugTextBlocks.CURRENT);
+			DebugMsg:= CONCAT(DebugMsg, UDINT_TO_STRING(mpTTA^.AssignmentID)  );
+			fbDebugMsg.M_SendErrorMsg(mMessage := DebugMsg);
+		END_IF
+
+	// If an index based on the assignment-ID was found
+	ELSIF mAssignmentID_Index > 0 THEN
+		(*  Check if the TU-ID of the found index is unknown.
+		Equal to telegram is not needed, because then an index should be found. *)
+		IF TU_DataTable[mAssignmentID_Index].TU_ID.ASCII = Conveyor.TU_ID_UNKNOWN THEN
+			// Use assignment index
+			mTU_DataIndex := mAssignmentID_Index;
+		ELSE
+			// TU-ID of the found slot does not match
+			mReturnCode := E_ErrorConv.TU_ID_WRONG;	
+			// debug message: '11-001-0120-01-0,  TuID mismatch,  telegram = TTA,  expected = 112233,  current = 332211'
+			DebugMsg:= '';
+			DebugMsg:= CONCAT(DebugMsg, F_AddDividerToSisString(mpTTA^.Position));
+			DebugMsg:= CONCAT(DebugMsg, ',  TuID mismatch');
+			DebugMsg:= CONCAT(DebugMsg, DebugTextBlocks.TELEGRAM);
+			DebugMsg:= CONCAT(DebugMsg, 'TTA');
+			DebugMsg:= CONCAT(DebugMsg, DebugTextBlocks.EXPECTED);
+			DebugMsg:= CONCAT(DebugMsg, TU_DataTable[mAssignmentID_Index].TU_ID.ASCII);
+			DebugMsg:= CONCAT(DebugMsg, DebugTextBlocks.CURRENT);
+			DebugMsg:= CONCAT(DebugMsg, mpTTA^.TU_ID);
+			fbDebugMsg.M_SendErrorMsg(mMessage := DebugMsg);
+		END_IF
+
+	// When an index based on the TU-ID was found
+	ELSIF mTU_DataIndex > 0 THEN
+		(* Check if the Assignment-ID of the found index is unknown.
+		Equal to telegram is not needed, because then an index should be found. *)
+		IF TU_DataTable[mTU_DataIndex].AssignmentID = Conveyor.ASSIGNMENT_ID_UNKNOWN THEN
+			// Keep index (mTU_DataIndex)
+			;
+		ELSE
+			// TU-ID of the found slot does not match
+			mReturnCode := E_ErrorConv.ASSIGNMENT_ID_WRONG;	
+			// debug message: '11-000-0000-00-0,  AssignmentID mismatch,  telegram = TTA,  expected = 87654321,  current = 12345678'
+			DebugMsg:= '';
+			DebugMsg:= CONCAT(DebugMsg, F_AddDividerToSisString(mpTTA^.Position));
+			DebugMsg:= CONCAT(DebugMsg, ',  AssignmentID mismatch');
+			DebugMsg:= CONCAT(DebugMsg, DebugTextBlocks.TELEGRAM);
+			DebugMsg:= CONCAT(DebugMsg, 'TTA');
+			DebugMsg:= CONCAT(DebugMsg, DebugTextBlocks.EXPECTED);
+			DebugMsg:= CONCAT(DebugMsg, UDINT_TO_STRING(TU_DataTable[mTU_DataIndex].AssignmentID)  );
+			DebugMsg:= CONCAT(DebugMsg, DebugTextBlocks.CURRENT);
+			DebugMsg:= CONCAT(DebugMsg, UDINT_TO_STRING(mpTTA^.AssignmentID)  );
+			fbDebugMsg.M_SendErrorMsg(mMessage := DebugMsg);
+		END_IF
+	END_IF
+
+	IF mReturnCode = 0 THEN
+		// If a data index is found
+		IF mTU_DataIndex > 0 THEN
+			// If the request is for a position
+			IF mRequestForPosition THEN
+				// Check if this index belongs already to a position	
+				mOtherPosition :=	F_SearchPositionOfTU_Index( 
+				TU_DataIndex 			:= mTU_DataIndex,
+				eStartFunctionNumber	:= E_FunctionNumber.F_BEGIN_FUNCTION);
+				
+				// If the index was found on another position
+				IF (mOtherPosition.eFunctionNumber > E_FunctionNumber.F_BEGIN_FUNCTION OR	
+				mOtherPosition.ZoneNumber > 0) AND 
+				mOtherPosition.eFunctionNumber <> Position.eFunctionNumber THEN
+					// Error: Index found on another location
+					mReturnCode := E_ErrorConv.INDEX_MATCH_WITH_POSITION;
+					// debug message: '11-000-0000-00-0,  data index found on another location,  telegram = TTA,  position = 99-999-9999-99-9,  TU_DataIndex = 3,  TuID = 012345,  AssignmentID = 87654321'
+					DebugMsg:= '';
+					DebugMsg:= CONCAT(DebugMsg, F_AddDividerToSisString(mpTTA^.Position));
+					DebugMsg:= CONCAT(DebugMsg, ',  data index found on another location');
+					DebugMsg:= CONCAT(DebugMsg, DebugTextBlocks.TELEGRAM);
+					DebugMsg:= CONCAT(DebugMsg, 'TTA');
+					DebugMsg:= CONCAT(DebugMsg, DebugTextBlocks.POSITION);
+					DebugMsg:= CONCAT(DebugMsg, F_AddDividerToSisString(mOtherPosition.PositionName));
+					DebugMsg:= CONCAT(DebugMsg, F_CreateTU_DataString(TU_DataIndex:= mTU_DataIndex));
+					fbDebugMsg.M_SendErrorMsg(mMessage := DebugMsg);
+	
+					FCQ.Code:= E_ITC_FunctionControlCode.SET_ERROR;
+					FCQ.Variable := INT_TO_DINT(mReturnCode);
+					
+					// Set corresponding position to error
+					M_ProcessToFunction(
+					meFunctionNumber	:= Position.eFunctionNumber,
+					meChannelSrc		:= meChannelSrc,
+					mMsgType			:= E_ITC_MsgTypeConv.FUNCTION_CONTROL_REQUEST,
+					mpData				:= ADR(FCQ),
+					mLen				:= SIZEOF(FCQ));
+					
+					M_ProcessToFunction(
+					meFunctionNumber	:= mOtherPosition.eFunctionNumber,
+					meChannelSrc		:= meChannelSrc,
+					mMsgType			:= E_ITC_MsgTypeConv.FUNCTION_CONTROL_REQUEST,
+					mpData				:= ADR(FCQ),
+					mLen				:= SIZEOF(FCQ));
+				END_IF
+			END_IF
+	
+		// If the corresponding position consists of an empty TU-Data set, use that one
+		ELSIF mTU_DataIndexPosition > 0 THEN
+			mTU_DataIndex := mTU_DataIndexPosition;
+		ELSE
+			// Try insert TU-Data
+			mTU_DataIndex := F_InsertTU_Data(
+								eFunctionNumber := Position.eFunctionNumber,
+								ZoneNumber 		:= Position.ZoneNumber);
+			
+			// No free TU Index was found
+			IF mTU_DataIndex = 0 THEN
+				// Error: No free TU-DataIndex
+				mReturnCode := E_ErrorConv.NO_FREE_TU_DATA_SET;
+				// debug message: '11-000-0000-00-0,  no free data index,  telegram = TTA,  TuID = 012345,  AssignmentID = 87654321'
+				DebugMsg:= '';
+				DebugMsg:= CONCAT(DebugMsg, F_AddDividerToSisString(mpTTA^.Position));
+				DebugMsg:= CONCAT(DebugMsg, ',  no free data index');
+				DebugMsg:= CONCAT(DebugMsg, DebugTextBlocks.TELEGRAM);
+				DebugMsg:= CONCAT(DebugMsg, 'TTA');
+				DebugMsg:= CONCAT(DebugMsg, DebugTextBlocks.TUID);
+				DebugMsg:= CONCAT(DebugMsg, mpTTA^.TU_ID);
+				DebugMsg:= CONCAT(DebugMsg, DebugTextBlocks.ASSIGNMENTID);
+				DebugMsg:= CONCAT(DebugMsg, UDINT_TO_STRING(mpTTA^.AssignmentID) );
+				fbDebugMsg.M_SendErrorMsg(mMessage := DebugMsg);
+			END_IF
+		END_IF
+	END_IF
+END_IF
+
+
+(**************************************************************************************
+already an error -> cancel processing
+***************************************************************************************)
+IF mReturnCode <> 0 THEN
+	TTC.Position    := mpTTA^.Position;
+	TTC.TU_DataIndex:= mTU_DataIndex;
+	TTC.MsgSequence := mpTTA^.MsgSequence;
+	TTC.TU_ID       := mpTTA^.TU_ID;
+	TTC.AssignmentID:= mpTTA^.AssignmentID;
+	TTC.ReturnCode  := mReturnCode;
+	M_SendData(meChannel:= meChannelSrc, 
+	mMsgType := E_ITC_MsgTypeConv.TRANSPORT_TASK_COMPLETE, 
+	mpData   := ADR(TTC),
+	mLen     := SIZEOF(TTC));
+	// debug message already sent
+	RETURN;
+END_IF
+
+
+(**************************************************************************************
+If no TU_DataIndex is available
+***************************************************************************************)
+IF mTU_DataIndex <= 0 THEN
+	RETURN;  // debug message already sent
+END_IF
+
+
+(**************************************************************************************
+Update TU data -> process TTA
+***************************************************************************************)
+// Fill in the received TU-Data 
+TU_DataTable[mTU_DataIndex].DataSet.DataPresent := TRUE;
+TU_DataTable[mTU_DataIndex].DataSet.JobPresent  := FALSE;
+
+IF mTU_ID_Present THEN
+	TU_DataTable[mTU_DataIndex].TU_ID.HashCode := F_CreateHashCode(mpTTA^.TU_ID);
+	TU_DataTable[mTU_DataIndex].TU_ID.ASCII    := mpTTA^.TU_ID;
+ELSE
+	TU_DataTable[mTU_DataIndex].TU_ID.HashCode := F_CreateHashCode(Conveyor.TU_ID_UNKNOWN);
+	TU_DataTable[mTU_DataIndex].TU_ID.ASCII    := Conveyor.TU_ID_UNKNOWN;
+END_IF
+
+IF mAssignmentID_Present THEN
+	TU_DataTable[mTU_DataIndex].AssignmentID := mpTTA^.AssignmentID;
+ELSE
+	TU_DataTable[mTU_DataIndex].AssignmentID := Conveyor.ASSIGNMENT_ID_UNKNOWN;
+END_IF
+
+TU_DataTable[mTU_DataIndex].DataSet.Dimension.Height:= mpTTA^.Height;
+TU_DataTable[mTU_DataIndex].DataSet.Dimension.Length:= mpTTA^.Length;
+TU_DataTable[mTU_DataIndex].DataSet.Dimension.Weight:= mpTTA^.Weight;
+TU_DataTable[mTU_DataIndex].DataSet.Dimension.Width := mpTTA^.Width;
+TU_DataTable[mTU_DataIndex].DataSet.Orientation		:= mpTTA^.Orientation;
+TU_DataTable[mTU_DataIndex].DataSet.TU_Parameter	:= mpTTA^.TU_Parameter;
+TU_DataTable[mTU_DataIndex].DataSet.TU_Type 		:= mpTTA^.TU_Type;
+TU_DataTable[mTU_DataIndex].DataSet.IO_Data 		:= mpTTA^.IO_Data;
+TU_DataTable[mTU_DataIndex].DataSet.LowerLimit 		:= mpTTA^.LowerLimit;
+TU_DataTable[mTU_DataIndex].DataSet.UpperLimit 		:= mpTTA^.UpperLimit;
+TU_DataTable[mTU_DataIndex].DataSet.Sequence 		:= mpTTA^.Sequence;			
+TU_DataTable[mTU_DataIndex].DataSet.SubSequence 	:= mpTTA^.SubSequence;			
+TU_DataTable[mTU_DataIndex].DataSet.SequenceSize 	:= mpTTA^.SequenceSize;		
+TU_DataTable[mTU_DataIndex].DataSet.GroupID 		:= mpTTA^.GroupID;			
+TU_DataTable[mTU_DataIndex].DataSet.GroupSize 		:= mpTTA^.GroupSize;	
+TU_DataTable[mTU_DataIndex].DataSet.DestinationSlot := mpTTA^.DestinationSlot;	
+TU_DataTable[mTU_DataIndex].DataSet.NumberOfDest	:= mpTTA^.NumberOfDestinations;
+
+// Clear destination table 
+MEMSET(destAddr := ADR(TU_DataTable[mTU_DataIndex].Destination), fillByte := 0, n := SIZEOF(TU_DataTable[mTU_DataIndex].Destination));
+
+
+// debug message: '11-000-0000-00-0,  new destination assigned,  telegram = TTA,  TU_DataIndex = 3,  TuID = 123456,  AssignmentID = 87654321,  destination = 99-999-9999-99-9,  destination = 99-999-9999-99-9'
+DebugMsg:= '';
+DebugMsg:= CONCAT(DebugMsg, F_AddDividerToSisString(mpTTA^.Position));
+DebugMsg:= CONCAT(DebugMsg, ',  new destination assigned');
+DebugMsg:= CONCAT(DebugMsg, DebugTextBlocks.TELEGRAM);
+DebugMsg:= CONCAT(DebugMsg, 'TTA');
+IF NOT mRequestForPosition THEN
+	mOtherPosition:= F_SearchPositionOfTU_Index(TU_DataIndex        := mTU_DataIndex,
+	eStartFunctionNumber:= F_BEGIN_FUNCTION);
+	DebugMsg:= CONCAT(DebugMsg, DebugTextBlocks.POSITION);
+	DebugMsg:= CONCAT(DebugMsg, F_AddDividerToSisString(mOtherPosition.PositionName));
+END_IF
+DebugMsg:= CONCAT(DebugMsg, F_CreateTU_DataString(TU_DataIndex:= mTU_DataIndex));
+
+// Fill in the destinations 
+mDestIndex := 1;
+FOR Idx := 1 TO mpTTA^.NumberOfDestinations DO
+	// Destination was found 
+	IF mDestinationPosition[Idx].eFunctionNumber <> E_FunctionNumber.F_BEGIN_FUNCTION THEN
+		TU_DataTable[mTU_DataIndex].DataSet.JobPresent := TRUE;
+		TU_DataTable[mTU_DataIndex].Destination[mDestIndex].eFunctionNumber := mDestinationPosition[Idx].eFunctionNumber;
+		TU_DataTable[mTU_DataIndex].Destination[mDestIndex].ZoneNumber 		:= mDestinationPosition[Idx].ZoneNumber;
+		TU_DataTable[mTU_DataIndex].Destination[mDestIndex].PositionName	:= mpTTA^.Destination[Idx];
+		// debug message
+		DebugMsg:= CONCAT(DebugMsg, DebugTextBlocks.DESTINATION);
+		DebugMsg:= CONCAT(DebugMsg, F_AddDividerToSisString(mpTTA^.Destination[Idx]));
+		// continue
+		mDestIndex := mDestIndex + 1;
+	ELSE
+		// Check if it's an external destination
+		IF mVirtualDestinationPosition[Idx].eFunctionNumber <> E_FunctionNumber.F_BEGIN_VIRTUAL_FUNCTION THEN
+			TU_DataTable[mTU_DataIndex].DataSet.JobPresent := TRUE;
+			TU_DataTable[mTU_DataIndex].Destination[mDestIndex].eFunctionNumber 	:= mVirtualDestinationPosition[Idx].eFunctionNumber;
+			TU_DataTable[mTU_DataIndex].Destination[mDestIndex].ZoneNumber 			:= 0;
+			TU_DataTable[mTU_DataIndex].Destination[mDestIndex].PositionName		:= mpTTA^.Destination[Idx];
+			// debug message
+			DebugMsg:= CONCAT(DebugMsg, DebugTextBlocks.DESTINATION);
+			DebugMsg:= CONCAT(DebugMsg, F_AddDividerToSisString(mpTTA^.Destination[Idx]));
+			// continue
+			mDestIndex := mDestIndex + 1;
+		END_IF
+	END_IF
+END_FOR
+
+// fire debug message only when if destination exists
+IF mDestIndex <> 0 THEN
+	fbDebugMsg.M_SendInfoMsg(mMessage := DebugMsg);
+END_IF
+
+
+// Update time stamp 
+TU_DataTable[mTU_DataIndex].TimeStamp.eInsertFunctionNumber := E_FunctionNumber.F_BEGIN_FUNCTION;
+TU_DataTable[mTU_DataIndex].TimeStamp.InsertZoneNumber := 0;
+TU_DataTable[mTU_DataIndex].TimeStamp.InsertDateTime       := System.fbSystemTime.TIMESTR;
+
+// If TTA was sent to a Position 
+IF mRequestForPosition THEN
+	Data.Init := TRUE;
+	Data.TU_DataIndex := mTU_DataIndex;
+	Data.ZoneNumber := Position.ZoneNumber;
+	
+	// Forward to position
+	M_ProcessToFunction(meFunctionNumber:= Position.eFunctionNumber, 
+						meChannelSrc	:= meChannelSrc, 
+						mMsgType		:= E_ITC_MsgTypeConv.ADD_TU_DATA,
+						mpData			:= ADR(Data), 
+						mLen			:= SIZEOF(Data));
+	
+	// Update TimeStamp position
+	TU_DataTable[mTU_DataIndex].TimeStamp.eInsertFunctionNumber := Position.eFunctionNumber;
+	TU_DataTable[mTU_DataIndex].TimeStamp.InsertZoneNumber		:= Position.ZoneNumber;
+END_IF
+
+
+
+(**************************************************************************************
+If position number and zone index is identical  (position = destination)
+***************************************************************************************)
+// if TTA was send to subsystem -> use TUs position
+IF NOT mRequestForPosition THEN
+	Position:= mOtherPosition;
+END_IF
+
+IF F_DeleteDestination( eFunctionNumber := Position.eFunctionNumber, ZoneNumber := Position.ZoneNumber) THEN
+
+	TTC.Position := mpTTA^.Position;
+	TTC.TU_DataIndex := mTU_DataIndex;
+	TTC.MsgSequence := mpTTA^.MsgSequence;
+	TTC.TU_ID := mpTTA^.TU_ID;
+	TTC.AssignmentID := mpTTA^.AssignmentID;
+	TTC.ReturnCode := E_ErrorConv.NO_ERROR_CODE;
+	
+	M_SendData(meChannel:= meChannelSrc, 
+	mMsgType := E_ITC_MsgTypeConv.TRANSPORT_TASK_COMPLETE, 
+	mpData   := ADR(TTC),
+	mLen	 := SIZEOF(TTC));
+	
+	// debug message: '11-000-0000-00-0,  destination and position are equal,  telegram = TTA'
+	DebugMsg:= '';
+	DebugMsg:= CONCAT(DebugMsg, F_AddDividerToSisString(mpTTA^.Position));
+	DebugMsg:= CONCAT(DebugMsg, ',  destination and position are equal');
+	DebugMsg:= CONCAT(DebugMsg, DebugTextBlocks.TELEGRAM);
+	DebugMsg:= CONCAT(DebugMsg, 'TTA');
+	IF NOT mRequestForPosition THEN
+		DebugMsg:= CONCAT(DebugMsg, DebugTextBlocks.POSITION);
+		DebugMsg:= CONCAT(DebugMsg, F_AddDividerToSisString(Position.PositionName));
+	END_IF
+	
+	fbDebugMsg.M_SendErrorMsg(mMessage := DebugMsg);
+END_IF
+
+
+
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_ProcessTUQ" Id="{ce476011-be5c-489f-84d6-15851cb09fe5}">
+      <Declaration><![CDATA[METHOD PROTECTED M_ProcessTUQ : BOOL
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 474929 $
+ *	Revision date	:	$Date: 2021-04-08 12:45:11 +0200 (tor, 08 apr 2021) $
+ *	Last changed by	:	$Author: b7gessa $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/tags/R1.12.0/01_Software/BCF/BCF/JumpStart/20_Product/10_BCF/11_Conv/11_Com/11_ITC/FB_ITC_Conveyor.TcPOU $
+ *
+ *	Purpose			:	Process a received Transport Unit Request telegram.
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+ VAR_INPUT
+	meChannelSrc		: E_MFCS_Channel; // Source communicaton channel
+	mpTUQ				: POINTER TO ST_ITC_TUQ; // Pointer to TTA
+	mLen				: UDINT; // Data length
+END_VAR
+
+VAR
+	mTU_DataIndex		: DINT; // TU_DataIndex from zone
+	mErrorCode			: E_ErrorConv; // ErrorCode
+	mPositionName		: STRING(Conveyor.POSITION_STRINGLENGTH); // SIS Position name MM-000-0000-000
+	mDestination		: ARRAY [1..Conveyor.NUMBER_OF_DESTINATIONS] OF STRING(Conveyor.POSITION_STRINGLENGTH); // Array of 12 Digit SIS Destinations
+	mDestinationIndex	: INT; // DestinationIndex
+	mName				: STRING; // temp name
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[// Initialize
+M_ProcessTUQ := TRUE;
+
+// Search TU_DataIndex in the TU-DataTable
+mTU_DataIndex := F_SearchTU_ByHashCode(TU_ID := mpTUQ^.TU_ID);
+
+// If TU-ID was found
+IF mTU_DataIndex <> 0 THEN
+	
+	// Get Destinations
+	FOR mDestinationIndex := 1 TO TU_DataTable[mTU_DataIndex].DataSet.NumberOfDest DO
+		mName := F_GetFunctionName( 
+					eFunctionNumber := TU_DataTable[mTU_DataIndex].Destination[mDestinationIndex].eFunctionNumber,
+					ZoneNumber		:= TU_DataTable[mTU_DataIndex].Destination[mDestinationIndex].ZoneNumber);
+												
+		mDestination[mDestinationIndex] := F_ReduceToAlphaNumeric(InputString := mName);
+	END_FOR
+	
+	// Get PositionName from TU_Data
+	mPositionName := F_GetFunctionName(
+						eFunctionNumber := TU_DataTable[mTU_DataIndex].TimeStamp.eInsertFunctionNumber,
+						ZoneNumber		:= 0);
+	
+	TUR.Position := F_ReduceToAlphaNumeric(InputString := mPositionName);
+	TUR.TU_DataIndex := mTU_DataIndex;
+	TUR.TU_ID := TU_DataTable[mTU_DataIndex].TU_ID.ASCII;
+	TUR.TU_Type := TU_DataTable[mTU_DataIndex].DataSet.TU_Type;
+	TUR.AssignmentID := TU_DataTable[mTU_DataIndex].AssignmentID;
+	TUR.Length := TU_DataTable[mTU_DataIndex].DataSet.Dimension.Length;
+	TUR.Width := TU_DataTable[mTU_DataIndex].DataSet.Dimension.Width;
+	TUR.Height := TU_DataTable[mTU_DataIndex].DataSet.Dimension.Height;
+	TUR.Weight := TU_DataTable[mTU_DataIndex].DataSet.Dimension.Weight;
+	TUR.Orientation := TU_DataTable[mTU_DataIndex].DataSet.Orientation;
+	TUR.TU_Parameter := TU_DataTable[mTU_DataIndex].DataSet.TU_Parameter;
+	TUR.IO_Data := TU_DataTable[mTU_DataIndex].DataSet.IO_Data;
+	TUR.LowerLimit := TU_DataTable[mTU_DataIndex].DataSet.LowerLimit;
+	TUR.UpperLimit := TU_DataTable[mTU_DataIndex].DataSet.UpperLimit;
+	TUR.Sequence :=	TU_DataTable[mTU_DataIndex].DataSet.Sequence;			
+	TUR.SubSequence := TU_DataTable[mTU_DataIndex].DataSet.SubSequence;			
+	TUR.SequenceSize :=	TU_DataTable[mTU_DataIndex].DataSet.SequenceSize;		
+	TUR.GroupID := TU_DataTable[mTU_DataIndex].DataSet.GroupID;			
+	TUR.GroupSize := TU_DataTable[mTU_DataIndex].DataSet.GroupSize;	
+	TUR.DestinationSlot :=TU_DataTable[mTU_DataIndex].DataSet.DestinationSlot;		
+	TUR.ReturnCode := E_ErrorConv.NO_ERROR_CODE;
+	TUR.NumberOfDestinations := TU_DataTable[mTU_DataIndex].DataSet.NumberOfDest;
+	TUR.Destination := mDestination;
+	
+	M_SendData(
+		meChannel := meChannelSrc, 
+		mMsgType  := E_ITC_MsgTypeConv.TRANSPORT_UNIT_REPORT, 
+		mpData    := ADR(TUR),
+		mLen	  := SIZEOF(TUR));		
+				
+ELSE
+	TUR.Position := '';
+	TUR.TU_DataIndex := 0;
+	TUR.TU_ID := mpTUQ^.TU_ID;
+	TUR.TU_Type := 0;
+	TUR.AssignmentID := 0;
+	TUR.Length := 0;
+	TUR.Width := 0;
+	TUR.Height := 0;
+	TUR.Weight := 0;
+	TUR.Orientation := '   ';
+	TUR.TU_Parameter := 0;
+	TUR.IO_Data := 0;
+	TUR.LowerLimit := 0;
+	TUR.UpperLimit := 0;
+	TUR.Sequence :=	0;			
+	TUR.SubSequence := 0;			
+	TUR.SequenceSize :=	0;		
+	TUR.GroupID := 0;			
+	TUR.GroupSize := 0;	
+	TUR.DestinationSlot :=	0;			
+	TUR.ReturnCode := E_ErrorConv.TU_ID_WRONG;
+	TUR.NumberOfDestinations := 0;
+	TUR.Destination := mDestination;
+	
+	M_SendData(
+		meChannel := meChannelSrc, 
+		mMsgType  := E_ITC_MsgTypeConv.TRANSPORT_UNIT_REPORT, 
+		mpData    := ADR(TUR),
+		mLen	  := SIZEOF(TUR));	
+END_IF
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_ProcessVIQ" Id="{1f97e3b5-ac7a-40ae-acec-636990da4efb}">
+      <Declaration><![CDATA[METHOD M_ProcessVIQ : BOOL
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 474929 $
+ *	Revision date	:	$Date: 2021-04-08 12:45:11 +0200 (tor, 08 apr 2021) $
+ *	Last changed by	:	$Author: b7gessa $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/tags/R1.12.0/01_Software/BCF/BCF/JumpStart/20_Product/10_BCF/11_Conv/11_Com/11_ITC/FB_ITC_Conveyor.TcPOU $
+ *
+ *	Purpose			:	Process a received Transport Task Assignment telegram.
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				10.03.2016		Kay Röder			Example
+ *
+ **************************************************************************************)
+VAR_INPUT
+	meChannelSrc					: E_MFCS_Channel; // Source communication channel
+	mpVIQ							: POINTER TO ST_ITC_VIQ; // Pointer to VIQ
+	mLen							: UDINT;
+END_VAR
+VAR
+	meFunctionPosition			: ST_PositionIdent; // Position
+	meGroupNumber				: E_GroupNumber; // Group
+	meElementNumber				: E_ElementNumber;//Element Number
+	meSubsystem					: BOOL;	//Subsystem
+	mKeyValuePairs				: ARRAY [1..System.NUMBER_OF_KEYVALUE_PAIRS_VIR] OF ST_ITC_VIR_SET;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[// Initialize
+M_ProcessVIQ := TRUE;
+
+// Get position from message
+meFunctionPosition := F_SearchFunctionPosition(Position := mpVIQ^.Position);
+meElementNumber    := F_SearchElementPosition(ElementName := mpVIQ^.Position);
+meGroupNumber      := F_SearchGroupNumber(GroupName := mpVIQ^.Position);
+meSubsystem 	   := F_EqualSisNames(Name1 := SubsystemRegistry.SubSystemName,
+                                    Name2 := mpVIQ^.Position);
+														
+// If a valid function was found with a valid zone
+IF 	meFunctionPosition.eFunctionNumber > E_FunctionNumber.F_BEGIN_FUNCTION AND 
+	meFunctionPosition.eFunctionNumber < E_FunctionNumber.F_END_FUNCTION AND 
+	meFunctionPosition.ZoneNumber >= 0 AND meFunctionPosition.ZoneNumber <= NUMBER_OF_ZONES_PER_FUNCTION THEN
+	
+	// Forward to function
+	M_ProcessVIQ := M_ProcessToFunction(
+						meFunctionNumber	:= meFunctionPosition.eFunctionNumber, 
+						meChannelSrc		:= meChannelSrc, 
+						mMsgType			:= E_ITC_MsgTypeConv.VISUALIZATION_INFORMATION_REQUEST,
+						mpData				:= mpVIQ,
+						mLen				:= mLen);
+
+// If a valid element was found
+ELSIF meElementNumber > E_ElementNumber.E_BEGIN_ELEMENT AND
+ 	  meElementNumber < E_ElementNumber.E_END_ELEMENT THEN
+
+	// Forward to element
+	M_ProcessVIQ := M_ProcessToElement(
+						meElementNumber		:= meElementNumber, 
+						meChannelSrc		:= meChannelSrc, 
+						mMsgType			:= E_ITC_MsgTypeConv.VISUALIZATION_INFORMATION_REQUEST,
+						mpData				:= mpVIQ,
+						mLen				:= mLen);	
+
+// If a valid group was found
+ELSIF meGroupNumber > E_GroupNumber.G_BEGIN_GROUP AND
+ 	  meGroupNumber < E_GroupNumber.G_END_GROUP THEN
+
+	// Forward to group
+	M_ProcessVIQ := M_ProcessToGroup(
+						meGroupNumber		:= meGroupNumber, 
+						meChannelSrc		:= meChannelSrc, 
+						mMsgType			:= E_ITC_MsgTypeConv.VISUALIZATION_INFORMATION_REQUEST,
+						mpData				:= mpVIQ,
+						mLen				:= mLen);		
+
+// If a valid subsystem was found
+ELSIF meSubsystem THEN
+
+	// Forward to subsystem
+	M_ProcessVIQ := M_ProcessToSubsystem(
+						meChannelSrc		:= meChannelSrc, 
+						mMsgType			:= E_ITC_MsgTypeConv.VISUALIZATION_INFORMATION_REQUEST,
+						mpData				:= mpVIQ,
+						mLen				:= mLen);	
+ELSE
+	// Unknown Position name received 
+	DebugMsg := CONCAT('VIQ: Unknown address', mpVIQ^.Position);
+	fbDebugMsg.M_SendErrorMsg(mMessage := DebugMsg); 
+	
+	// Send VIR - error - no valid Address
+	F_ITC_SendVIR(
+		eChannelSrc := meChannelSrc,
+		Position := mpVIQ^.Position,
+		NumOfKeyValuePairs := 1,
+		KeyValuePairs	:= mKeyValuePairs);
+END_IF
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_SendData" Id="{179d4b0e-fea9-459b-9670-450fe5d500b5}">
+      <Declaration><![CDATA[METHOD M_SendData : BOOL
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 474929 $
+ *	Revision date	:	$Date: 2021-04-08 12:45:11 +0200 (tor, 08 apr 2021) $
+ *	Last changed by	:	$Author: b7gessa $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/tags/R1.12.0/01_Software/BCF/BCF/JumpStart/20_Product/10_BCF/11_Conv/11_Com/11_ITC/FB_ITC_Conveyor.TcPOU $
+ *
+ *	Purpose			:	Send data to MFCS connection
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+VAR_INPUT
+	meChannel				: E_MFCS_Channel; // Channel to forward msg
+	mMsgType				: INT; // Msg type
+	mpData					: PVOID; // Data pointer
+	mLen					: UDINT; // Data length
+END_VAR
+
+VAR
+	mMFCS_Instance			: ITF_MFCS; // Instance to compare valid interfaces
+END_VAR
+
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[// INitialize
+M_SendData := TRUE;
+
+// If communication with single source
+IF meChannel <> 0 THEN
+	IF __QUERYINTERFACE(fbMFCS_Channel[meChannel], mMFCS_Instance) THEN
+		// Forward data to MFCS channel
+		M_SendData := fbMFCS_Channel[meChannel].M_SendData(
+						meChannelSrc := meChannel,
+						mMsgType  	 := mMsgType,
+						mpData	  	 := mpData,
+						mLen		 := mLen);
+	END_IF			
+// Sender unknown - forward to all
+ELSE
+	FOR Idx := E_MFCS_Channel.BEGIN_CHANNEL + 1 TO E_MFCS_Channel.END_CHANNEL - 1 DO
+		IF __QUERYINTERFACE(fbMFCS_Channel[Idx], mMFCS_Instance) THEN
+			// Forward data to MFCS channel
+			fbMFCS_Channel[Idx].M_SendData(
+				meChannelSrc := meChannel,
+				mMsgType  	 := mMsgType,
+				mpData	  	 := mpData,
+				mLen		 := mLen);
+		END_IF
+	END_FOR
+END_IF
+		
+		
+		]]></ST>
+      </Implementation>
+    </Method>
+    <LineIds Name="FB_ITC_Conveyor">
+      <LineId Id="3" Count="2" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ITC_Conveyor.M_AddData">
+      <LineId Id="3" Count="244" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ITC_Conveyor.M_AddTUData">
+      <LineId Id="3" Count="12" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ITC_Conveyor.M_CallITC_Service">
+      <LineId Id="3" Count="25" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ITC_Conveyor.M_Init">
+      <LineId Id="3" Count="9" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ITC_Conveyor.M_ProcessDAQ">
+      <LineId Id="3" Count="74" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ITC_Conveyor.M_ProcessDIQ">
+      <LineId Id="3" Count="18" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ITC_Conveyor.M_ProcessECQ">
+      <LineId Id="3" Count="35" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ITC_Conveyor.M_ProcessESQ">
+      <LineId Id="3" Count="49" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ITC_Conveyor.M_ProcessFCQ">
+      <LineId Id="3" Count="35" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ITC_Conveyor.M_ProcessFSQ">
+      <LineId Id="3" Count="36" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ITC_Conveyor.M_ProcessGCQ">
+      <LineId Id="3" Count="51" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ITC_Conveyor.M_ProcessGDQ">
+      <LineId Id="3" Count="82" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ITC_Conveyor.M_ProcessGSQ">
+      <LineId Id="3" Count="54" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ITC_Conveyor.M_ProcessGVQ">
+      <LineId Id="3" Count="81" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ITC_Conveyor.M_ProcessIRQ">
+      <LineId Id="3" Count="48" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ITC_Conveyor.M_ProcessMCQ">
+      <LineId Id="3" Count="52" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ITC_Conveyor.M_ProcessRAA">
+      <LineId Id="3" Count="75" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ITC_Conveyor.M_ProcessRDQ">
+      <LineId Id="3" Count="44" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ITC_Conveyor.M_ProcessSCQ">
+      <LineId Id="3" Count="29" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ITC_Conveyor.M_ProcessSDO">
+      <LineId Id="3" Count="9" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ITC_Conveyor.M_ProcessSIQ">
+      <LineId Id="3" Count="39" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ITC_Conveyor.M_ProcessSSQ">
+      <LineId Id="3" Count="37" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ITC_Conveyor.M_ProcessTDQ">
+      <LineId Id="227" Count="186" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ITC_Conveyor.M_ProcessToElement">
+      <LineId Id="3" Count="17" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ITC_Conveyor.M_ProcessToFunction">
+      <LineId Id="3" Count="19" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ITC_Conveyor.M_ProcessToGroup">
+      <LineId Id="3" Count="18" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ITC_Conveyor.M_ProcessToSubsystem">
+      <LineId Id="3" Count="15" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ITC_Conveyor.M_ProcessTTA">
+      <LineId Id="3" Count="748" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ITC_Conveyor.M_ProcessTUQ">
+      <LineId Id="3" Count="83" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ITC_Conveyor.M_ProcessVIQ">
+      <LineId Id="3" Count="67" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ITC_Conveyor.M_SendData">
+      <LineId Id="3" Count="27" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

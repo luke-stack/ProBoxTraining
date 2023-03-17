@@ -1,0 +1,39 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <DUT Name="ST_CFG_MotionPickupDeposit" Id="{50c4a533-8ee1-496c-aa35-1571a04b6949}">
+    <Declaration><![CDATA[//Shuttle car element configurations
+TYPE ST_CFG_MotionPickupDeposit :
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision:  $
+ *	Revision date	:	$Date: $
+ *	Last changed by	:	$Author: $
+ *	URL				:	$URL: $
+ *
+ *	Purpose			:	Shuttle car element configuration.
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *
+ **************************************************************************************)	
+STRUCT		
+	ConvCFG					: ARRAY[1..GVL_MPD.MAXPDs] OF ST_CFG_PDs; //Configuration settings for Pickup and or Deposit functions
+	TimeOutMove				: TIME := T#30S;		// Motion move timeout value
+	CvCC					: DINT := 1000;  		// Encoder value, Center to Center distance if shuttle car has 2 conveyors
+	EncoderHysterisis		: DINT := 5;			// Encoder fluktuation allowed. default is +- 5mm
+	DriveCFG				: ST_CFG_MPD_Drive;		// Motion drive configuration parameters
+	EnableIdlePosition		: BOOL;					// Enable Idle position for the shuttle car/Vertical lift	
+	IdlePosition			: DINT := 500;			// Idle position [mm]
+	MPD_Type				: E_MotionPD_Type;		// Motion PD type
+	EncoderHoming			: ST_EncoderHoming;	
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

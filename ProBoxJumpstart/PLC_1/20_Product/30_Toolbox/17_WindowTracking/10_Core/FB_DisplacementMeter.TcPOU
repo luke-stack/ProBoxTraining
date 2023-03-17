@@ -1,0 +1,117 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.18">
+  <POU Name="FB_DisplacementMeter" Id="{8ea6cf99-13d0-4c8a-bc28-72f127108b42}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK FB_DisplacementMeter
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 354283 $
+ *	Revision date	:	$Date: 2015-09-02 11:51:42 +0200 (Mi, 02 Sep 2015) $
+ *	Last changed by	:	$Author: d7mangc $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/trunk/01_Software/BoxControlFramework/BoxControlFramework/JumpStart/11_Library/10_Application/10_Base/13_TimerCounter/FB_Timer.TcPOU $
+ *
+ *	Purpose			:	Measures displacement based on encoder value. Output Q gets true when setpoint is reached
+ *						
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+VAR_INPUT
+	Run             	: BOOL; // Start process on rising edge
+	EncoderValueInc		: UDINT; // Encoder value [inc], Ascending = forward
+	MaxEncoderValueInc	: UDINT; // Max encoder value [inc]
+	RateIncPerMM		: LREAL; // Ratio - How many increments represent one mm
+	SetPoint			: DINT; // Displacement value where Q is set true (negative: backward direction, positive: forward direction)
+	StartPoint		    : DINT; // Starting position (offset) for displacement measurement [mm] (negative : backward direction, positive: forward direction)
+END_VAR
+VAR_OUTPUT
+	Q		 			: BOOL; // True when setpoint reached
+	DisplacementInc		: DINT; // Current displacement [inc] (negative : backward direction, positive: forward direction)
+	Displacement		: DINT; // Current displacement [mm] (negative : backward direction, positive: forward direction)
+END_VAR
+VAR
+	Trg			     	: BOOL; // Trigger detection for start signal
+	LastEncoderValueInc	: UDINT; // Last encoder value [inc]
+	Inc 			 	: DINT; // increments
+END_VAR]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[IF Run THEN
+	// Detect start trigger and preset values
+	IF NOT Trg AND Run THEN
+		LastEncoderValueInc := EncoderValueInc;
+		DisplacementInc := LREAL_TO_DINT(DINT_TO_LREAL(StartPoint) * RateIncPerMM);
+		Displacement := 0;
+	END_IF
+
+	Inc := UDINT_TO_DINT(EncoderValueInc) - UDINT_TO_DINT(LastEncoderValueInc);
+	IF ABS(Inc) > UDINT_TO_DINT(MaxEncoderValueInc/2) THEN
+		IF Inc < 0 THEN
+			Inc := Inc + 1 + UDINT_TO_DINT(MaxEncoderValueInc);
+		ELSE
+			Inc := UDINT_TO_DINT(EncoderValueInc) - (UDINT_TO_DINT(LastEncoderValueInc) + UDINT_TO_DINT(MaxEncoderValueInc)) - 1;
+		END_IF
+	END_IF
+	
+	// Update last encoder value
+	LastEncoderValueInc := EncoderValueInc;
+	
+	// Update outputs
+	IF NOT Q THEN
+		DisplacementInc := DisplacementInc + Inc;
+		
+		IF RateIncPerMM > 0 THEN
+			Displacement := LREAL_TO_DINT(DINT_TO_LREAL(DisplacementInc) / RateIncPerMM);
+		ELSE
+			Displacement := 0;
+		END_IF
+		
+		// To ensure counting direction is as desired,
+		// decision is based on the sign of setpoint
+		IF SetPoint >= 0 THEN
+			IF Displacement >= SetPoint THEN
+				Q := TRUE;
+			END_IF
+		ELSE
+			IF Displacement <= SetPoint THEN
+				Q := TRUE;
+			END_IF
+		END_IF
+	END_IF
+ELSE
+	// Reset outputs
+	Q := FALSE;
+END_IF
+
+Trg := Run;
+]]></ST>
+    </Implementation>
+    <ObjectProperties>
+      <XmlArchive>
+        <Data>
+          <o xml:space="preserve" t="UMLStereoTypeContainerObject">
+            <v n="IsType" t="UMLType">BaseArea</v>
+            <v n="Stereotype">""</v>
+            <d n="Stereotypes" t="Hashtable" />
+          </o>
+        </Data>
+        <TypeList>
+          <Type n="Hashtable">System.Collections.Hashtable</Type>
+          <Type n="String">System.String</Type>
+          <Type n="UMLStereoTypeContainerObject">{30250973-b110-4e31-b562-c102e042dca4}</Type>
+          <Type n="UMLType">{0197b136-405a-42ee-bb27-fd08b621d0cf}</Type>
+        </TypeList>
+      </XmlArchive>
+    </ObjectProperties>
+    <LineIds Name="FB_DisplacementMeter">
+      <LineId Id="3" Count="47" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

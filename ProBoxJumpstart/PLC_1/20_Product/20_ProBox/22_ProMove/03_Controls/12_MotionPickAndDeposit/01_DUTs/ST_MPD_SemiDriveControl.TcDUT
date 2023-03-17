@@ -1,0 +1,18 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <DUT Name="ST_MPD_SemiDriveControl" Id="{844a528e-2757-4969-b7b4-db6a0ebf0079}">
+    <Declaration><![CDATA[//MPD semi drive control
+TYPE ST_MPD_SemiDriveControl :
+STRUCT
+	SemiManualMode			: BOOL;
+	SemiControlFWD			: BOOL;
+	SemiControlREV			: BOOL;
+	SemiAutoMode			: BOOL; // Enable semi automatical mode.
+	SemiAutoPositionToGo	: DINT; // Absolut positino to go in Semi Auto mode
+	SemiAutoHalt			: BOOL; // Abort Absolute move command. Possible to apply new Motion parameters.
+	SemiAutoEnableDrive		: BOOL;
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

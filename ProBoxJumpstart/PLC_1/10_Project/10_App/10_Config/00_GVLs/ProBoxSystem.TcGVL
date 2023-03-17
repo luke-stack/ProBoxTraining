@@ -1,0 +1,20 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <GVL Name="ProBoxSystem" Id="{81e943fa-eecc-4dd0-8100-d98d06bb16d6}">
+    <Declaration><![CDATA[///Automatically created by BoxConfigurator
+VAR_GLOBAL
+	///Set manually to true in order to run Emulation
+	EMULATION_ENABLED: BOOL:=TRUE;
+	///Set manually to true in when Demo3D emulation is used.
+	DEMO3D_SIM_ENABLED: BOOL:=FALSE;
+	///Emulation speed. [mm/s]
+	EMULATION_SPEED: INT:=1000;
+	///SIS_BaseDrive - Time after a message will be repeated (Send)
+	REPEAT_TIMEOUT: TIME:=T#10s;
+	///SIS_BaseDrive - Time after a DUM telegram is sent
+	IDLE_TIMEOUT: TIME:=T#1M;
+	///SIS_BaseDrive - Time after connection will be reestablished 
+	LINK_LOSS_TIMEOUT: TIME:=T#1M10s;
+END_VAR]]></Declaration>
+  </GVL>
+</TcPlcObject>

@@ -1,0 +1,12 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <DUT Name="ST_DebugSensors_TurnTableEmulation" Id="{5e68cbac-11a6-49f4-84d6-20f2d260fa80}">
+    <Declaration><![CDATA[TYPE ST_DebugSensors_TurnTableEmulation :
+STRUCT
+	EnableSensorDebug	: BOOL; 					// Overwrite sensor values with debug sensor values
+	HW_Inputs			: ST_HW_InputsTurnTable;	// Debug sensors
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

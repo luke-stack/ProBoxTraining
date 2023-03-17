@@ -1,0 +1,14 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <DUT Name="ST_HW_InputsRunnerCheck" Id="{12265ebb-fb24-4c2b-8937-cdb2059d7571}">
+    <Declaration><![CDATA[//Pallet runner check HW inputs
+TYPE ST_HW_InputsRunnerCheck :
+STRUCT	
+	SensorRunnerLeft		: ARRAY[1..2] OF BOOL; // 2 sensors detecting flaws on pallet left runner. (sensor with reflector, False => flaw detected)
+	SensorRunnerCenter		: ARRAY[1..2] OF BOOL; // 2 sensors detecting flaws on pallet center runner. (sensor with reflector, False => flaw detected)
+	SensorRunnerRight		: ARRAY[1..2] OF BOOL; // 2 sensors detecting flaws on pallet right runner. (sensor with reflector, False => flaw detected)
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

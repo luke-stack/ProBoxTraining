@@ -1,0 +1,35 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.12">
+  <DUT Name="ST_RDQ_6_1" Id="{b5a8ca04-cd5d-47f7-86d0-9a118a9c7a99}">
+    <Declaration><![CDATA[TYPE ST_RDQ_6_1 :
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 404529 $
+ *	Revision date	:	$Date: 2018-04-23 08:21:38 +0200 (Mo., 23 Apr 2018) $
+ *	Last changed by	:	$Author: b7bolm $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/trunk/01_Software/BCF/BCF/JumpStart/20_Product/10_App/11_Com/10_Lib/10_Conv/12_MFCS/11_SIS/01_DUTs/11_SIS_6_1/ST_RDQ_6_1.TcDUT $
+ *
+ *	Purpose			:	RDQ Structure
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				4.12.2015		Kay Röder			Example
+ *
+ **************************************************************************************)
+STRUCT
+	Position				: STRING(SIS_6_1.POSITION_STRINGLENGTH); // 12 Digit SIS Location MM-GGG-EEEE-LLL 
+	CommandDataIndex		: STRING(SIS_6_1.RDQ_COMMAND_DATA_INDEX_STRINGLENGTH);
+	AssignmentID			: STRING(SIS_6_1.ASSIGNMENT_ID_STRINGLENGTH);
+	GroupID					: STRING(SIS_6_1.GROUP_ID_STRINGLENGTH);
+	Code					: STRING(SIS_6_1.RDQ_CODE_STRINGLENGTH);
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

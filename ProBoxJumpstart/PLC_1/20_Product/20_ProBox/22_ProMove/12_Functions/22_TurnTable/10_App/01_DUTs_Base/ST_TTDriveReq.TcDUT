@@ -1,0 +1,38 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.12">
+  <DUT Name="ST_TTDriveReq" Id="{5c38b471-d43f-421a-b33a-7ccd983c14ee}">
+    <Declaration><![CDATA[// Motor drive requests 
+TYPE ST_TTDriveReq :
+
+STRUCT
+	Enable_12			: BOOL; // Zone enables transport axis 1-2
+	Enable_34			: BOOL;
+	Speed_12			: E_ProBoxMotorSpeed; // Speed command axis 1-2		
+	Speed_34			: E_ProBoxMotorSpeed; // Speed command axis 3-4	
+	Drive_Run_12 		: BOOL; // Drive run command axis 1-2 forward
+	Drive_Run_21 		: BOOL; // Drive run command axis 1-2 reverse
+	Drive_Run_34 		: BOOL; // Drive run command axis 3-4 forward
+	Drive_Run_43 		: BOOL; // Drive run command axis 3-4 reverse		
+	
+END_STRUCT
+END_TYPE
+]]></Declaration>
+    <ObjectProperties>
+      <XmlArchive>
+        <Data>
+          <o xml:space="preserve" t="UMLStereoTypeContainerObject">
+            <v n="IsType" t="UMLType">BaseArea</v>
+            <v n="Stereotype">""</v>
+            <d n="Stereotypes" t="Hashtable" />
+          </o>
+        </Data>
+        <TypeList>
+          <Type n="Hashtable">System.Collections.Hashtable</Type>
+          <Type n="String">System.String</Type>
+          <Type n="UMLStereoTypeContainerObject">{30250973-b110-4e31-b562-c102e042dca4}</Type>
+          <Type n="UMLType">{0197b136-405a-42ee-bb27-fd08b621d0cf}</Type>
+        </TypeList>
+      </XmlArchive>
+    </ObjectProperties>
+  </DUT>
+</TcPlcObject>

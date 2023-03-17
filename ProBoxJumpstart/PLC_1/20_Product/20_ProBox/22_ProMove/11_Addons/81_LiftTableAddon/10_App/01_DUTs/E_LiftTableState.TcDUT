@@ -1,0 +1,19 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <DUT Name="E_LiftTableState" Id="{ec6a70b2-b6a7-4958-9c46-ab17cb92bddf}">
+    <Declaration><![CDATA[{attribute 'qualified_only'}
+{attribute 'strict'}
+TYPE E_LiftTableState :
+(
+	INIT,
+	IDLE,
+	READY,
+	PICK,
+	AUTO,
+	STARTTRANSP,
+	ERROR
+);
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

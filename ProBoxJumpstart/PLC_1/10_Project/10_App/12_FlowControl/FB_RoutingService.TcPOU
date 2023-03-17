@@ -1,0 +1,52 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <POU Name="FB_RoutingService" Id="{0908b7b0-4138-42d5-bb51-b6143697cda9}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK FB_RoutingService
+VAR_INPUT
+	///Calling function number
+	eFunctionNumber: E_FunctionNumber;
+END_VAR
+VAR
+	///Debug message service
+	fbDebugMsg: FB_DebugMsg;
+	///Debug message
+	DebugMsg: T_MAXSTRING;
+	///Routing service routines for group 1
+	fbRoutingService_001: FB_RoutingService_001;
+END_VAR
+VAR_OUTPUT
+	///Result next function number
+	eNextFunctionNumber: E_FunctionNumber;
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[
+// Example 
+// Initialize variable
+eNextFunctionNumber := F_BEGIN_FUNCTION;
+
+CASE eFunctionNumber OF
+	
+	E_FunctionNumber.F_10_001_0200_01_0 .. E_FunctionNumber.F_10_001_0233_01_0:
+		fbRoutingService_001(
+			eFunctionNumber := eFunctionNumber,
+			eNextFunctionNumber => eNextFunctionNumber);	
+
+//	E_FunctionNumber.F_10_002_1250_01_0 .. E_FunctionNumber.F_10_002_1250_02_0:
+//		fbRoutingService_002(
+//			eFunctionNumber := eFunctionNumber,
+//			eNextFunctionNumber => eNextFunctionNumber);		
+
+ELSE
+	DebugMsg := CONCAT('Routing area not defined. FunctionNumber: ', INT_TO_STRING(eFunctionNumber));
+	fbDebugMsg.M_SendInfoMsg(DebugMsg);
+END_CASE
+
+]]></ST>
+    </Implementation>
+    <LineIds Name="FB_RoutingService">
+      <LineId Id="3" Count="21" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

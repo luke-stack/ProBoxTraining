@@ -1,0 +1,498 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.4">
+  <POU Name="FB_HddUsage" Id="{facc4dcb-b75e-4a8c-a4d6-65ed79252a2b}" SpecialFunc="None">
+    <Declaration><![CDATA[// reads usage/free and total space of hdd
+FUNCTION_BLOCK PUBLIC FB_HddUsage IMPLEMENTS I_HddUsage
+(**************************************************************************************
+ *  Application     : BoxControl Framework
+ *  Revision        : $Revision: 404529 $
+ *  Revision date   : $Date: 2020-10-20 08:21:38 +0200 (Mo., 20 Oct 2020) $
+ *  Last changed by : $Author: b7lipim $
+ *  URL             : $URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/trunk/01_Software/BCF/BCF/JumpStart/20_Product/10_App/11_Com/10_Lib/FB_DebugMsg.TcPOU $
+ *
+ *  Purpose :	retrieves the total, used and free space of a disk
+ *            and provides it also as percentage
+ *
+ * ------------------------------------------------------------------------------------
+ *  Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ *  VERSION DATE         INITIALS     DESCRIPTION
+ *  0.0     DD.MM.YYYY   (name)       (explain customized modifications)
+ *
+ **************************************************************************************)
+
+(********************************************************************************************************************************)	
+VAR
+  _State                : E_ReadHddUsageStates             := E_ReadHddUsageStates.Idle;
+  _StateLast            : E_ReadHddUsageStates             := E_ReadHddUsageStates.Idle;
+  _StateTime            : TIME                             := T#0S;
+  (*----------------------------------------------------------------------------------------------------------------------------*)
+  _Drive                : STRING[2]                        := '';         // requested drive letter
+  _Busy                 : BOOL                             := FALSE;      // LO = FB is finished -> data valid
+  _Error                : BOOL                             := FALSE;      // HI = unable to retrieve data
+  _PercentageFree       : BYTE                             := 0;          // percentual free space
+  _PercentageUsed       : BYTE                             := 0;          // percentual used space
+  _BytesTotal           : ULINT 							             := 0;          // total capacity of hdd in bytes
+  _BytesFree            : ULINT 							             := 0;          // number of bytes free to use
+  _BytesUsed            : ULINT 							             := 0;          // number of bytes free already used
+  (*----------------------------------------------------------------------------------------------------------------------------*)
+  _ReadMDPElement       : FB_MDP_ReadElement:=();
+  _MdpAddr              : ST_MDP_Addr;
+  _StartWork            : TIME                             := T#0S;
+  _Duration             : TIME                             := T#0S;
+  (*----------------------------------------------------------------------------------------------------------------------------*)
+  _InternalLetter       : STRING[7]                        := '';         // drive letter
+  _InternalTotal        : ULINT                            := 0;
+  _InternalFree         : ULINT                            := 0;
+  (*----------------------------------------------------------------------------------------------------------------------------*)
+  _SubIdx               : BYTE                             := 0;
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[
+// https://infosys.beckhoff.com/index.php?content=../content/1031/devicemanager/262990091.html&id=4043901700019482145
+
+(********************************************************************************************************************************)	
+(** idle - wait for start *******************************************************************************************************)	
+CASE(_State) OF
+E_ReadHddUsageStates.Idle:
+  (*-- ENTRY -------------------------------------------------------------------------------------------------------------------*)
+  _StateLast:= _State;
+  _Busy:= FALSE;
+
+  (*-- ACTION ------------------------------------------------------------------------------------------------------------------*)
+
+  (*-- TRANSITION --------------------------------------------------------------------------------------------------------------*)
+  // in method Start: -> E_DiskStates.WaitShort;
+
+
+
+
+(********************************************************************************************************************************)	
+(** retrieve drive letter *******************************************************************************************************)	
+E_ReadHddUsageStates.Letter:
+  (*-- ENTRY -------------------------------------------------------------------------------------------------------------------*)
+  IF (_StateLast <> _State)
+  THEN
+    _StateLast:= _State;
+    _StateTime:= F_GetTimeMsTick();
+    (*-----------------------------------------------------------------------------------*)
+    _MdpAddr.nArea   := INT_TO_BYTE(eMDP_Area_ConfigArea); 
+    _MdpAddr.nTableId:= 1;              
+    _MdpAddr.nSubIdx := _SubIdx;
+    (*-----------------------------------------------------------------------------------*)
+    _ReadMDPElement(bExecute:= FALSE);
+    _ReadMDPElement.sAmsNetId   := '';
+    _ReadMDPElement.eModuleType := eMDP_ModT_DiskManagement;  // desired module type = Disk Management         
+    _ReadMDPElement.stMDP_Addr  := _MdpAddr;                  // MDP address structure. Dynamic module ID added internally. 
+    _ReadMDPElement.iModIdx     := 0;                         // instance of desired module type (0 = first instance) 
+    _ReadMDPElement.pDstBuf     := ADR   (_InternalLetter);   // buffer for storing data
+    _ReadMDPElement.cbDstBufLen := SIZEOF(_InternalLetter);
+    _ReadMDPElement.bExecute    := TRUE;
+    _ReadMDPElement.tTimeout    := Tc2_System.DEFAULT_ADS_TIMEOUT;
+  END_IF
+
+  (*-- ACTION ------------------------------------------------------------------------------------------------------------------*)
+  _ReadMDPElement();
+
+  (*-- TRANSITION --------------------------------------------------------------------------------------------------------------*)
+  IF(_ReadMDPElement.bBusy = FALSE)
+  THEN     
+    (*-- error --------------------------------------------------------------------------*)
+    IF(_ReadMDPElement.bError = TRUE)
+    THEN    
+    //_ReadMDPElement.nErrID;  // error id (16#ECA60105 = BIOS or HW does not support this data       
+      _Error:= TRUE;
+      (*-----------------------------------------*)
+      _BytesTotal:= 0;
+      _BytesFree := 0;  _PercentageFree:= 0;
+      _BytesUsed := 0;  _PercentageUsed:= 0;
+      (*-----------------------------------------*)
+      _State:= E_ReadHddUsageStates.Idle;
+
+    (*-- all good -----------------------------------------------------------------------*)
+    ELSE
+      (*-- drive not available --------------------------------------*)
+      IF (_InternalLetter = '')
+      THEN
+        _Error:= TRUE;
+        (*-------------------*)
+        _BytesTotal:= 0;
+        _BytesFree := 0;  _PercentageFree:= 0;
+        _BytesUsed := 0;  _PercentageUsed:= 0;
+        (*-------------------*)
+        _State:= E_ReadHddUsageStates.Idle;
+      (*-- drive found ----------------------------------------------*)
+      ELSIF (M_CompareDriveLetter() = TRUE)
+      THEN
+        _State:= E_ReadHddUsageStates.Total;
+      (*-- continue -------------------------------------------------*)
+      ELSE
+        _SubIdx   := _SubIdx + 1;
+        _StateLast:= E_ReadHddUsageStates.Idle;  //re-entry
+      END_IF
+    END_IF
+  END_IF
+
+
+
+
+(********************************************************************************************************************************)	
+(** retrieve total disk space ***************************************************************************************************)	
+E_ReadHddUsageStates.Total:
+  (*-- ENTRY -------------------------------------------------------------------------------------------------------------------*)
+  IF (_StateLast <> _State)
+  THEN
+    _StateLast:= _State;
+    _StateTime:= F_GetTimeMsTick();
+    (*-----------------------------------------------------------------------------------*)
+		_MdpAddr.nArea   := INT_TO_BYTE(eMDP_Area_ConfigArea); 
+		_MdpAddr.nTableId:= 5;
+ 		_MdpAddr.nSubIdx := _SubIdx;
+    (*-----------------------------------------------------------------------------------*)
+    _ReadMDPElement(bExecute:= FALSE);
+    _ReadMDPElement.sAmsNetId   := '';
+    _ReadMDPElement.eModuleType := eMDP_ModT_DiskManagement;  // desired module type = Disk Management         
+    _ReadMDPElement.stMDP_Addr  := _MdpAddr;                  // MDP address structure. Dynamic module ID added internally. 
+    _ReadMDPElement.iModIdx     := 0;                         // instance of desired module type (0 = first instance) 
+    _ReadMDPElement.pDstBuf     := ADR   (_InternalTotal);    // buffer for storing data
+    _ReadMDPElement.cbDstBufLen := SIZEOF(_InternalTotal);
+    _ReadMDPElement.bExecute    := TRUE;
+    _ReadMDPElement.tTimeout    := Tc2_System.DEFAULT_ADS_TIMEOUT;
+    (*-----------------------------------------------------------------------------------*)
+  END_IF
+
+  (*-- ACTION ------------------------------------------------------------------------------------------------------------------*)
+  _ReadMDPElement();
+
+  (*-- TRANSITION --------------------------------------------------------------------------------------------------------------*)
+  IF(_ReadMDPElement.bBusy = FALSE)
+  THEN     
+    (*-- error --------------------------------------------------------------------------*)
+    IF(_ReadMDPElement.bError = TRUE)
+    THEN    
+    //_ReadMDPElement.nErrID;  // error id (16#ECA60105 = BIOS or HW does not support this data       
+      _Error:= TRUE;
+      (*-----------------------------------------*)
+      _BytesTotal:= 0;
+      _BytesFree := 0;  _PercentageFree:= 0;
+      _BytesUsed := 0;  _PercentageUsed:= 0;
+      (*-----------------------------------------*)
+      _State:= E_ReadHddUsageStates.Idle;
+
+    (*-- all good -----------------------------------------------------------------------*)
+    ELSE
+      _State:= E_ReadHddUsageStates.Remaining;
+    END_IF
+  END_IF
+
+
+
+
+(********************************************************************************************************************************)	
+(** retrieve remaining disk space ***********************************************************************************************)	
+E_ReadHddUsageStates.Remaining:
+  IF (_StateLast <> _State)
+  THEN
+    _StateLast:= _State;
+    _StateTime:= F_GetTimeMsTick();
+    (*---------------------------------------------------------------*)
+    _MdpAddr.nArea    := INT_TO_BYTE(eMDP_Area_ConfigArea); 
+    _MdpAddr.nTableId := 6;
+    _MdpAddr.nSubIdx 	:= _SubIdx;
+    (*---------------------------------------------------------------*)
+    _ReadMDPElement(bExecute:= FALSE);
+    _ReadMDPElement.sAmsNetId   := '';
+    _ReadMDPElement.eModuleType := eMDP_ModT_DiskManagement;  // desired module type = Disk Management         
+    _ReadMDPElement.stMDP_Addr  := _MdpAddr;                  // MDP address structure. Dynamic module ID added internally. 
+    _ReadMDPElement.iModIdx     := 0;                         // instance of desired module type (0 = first instance) 
+    _ReadMDPElement.pDstBuf     := ADR   (_InternalFree);     // buffer for storing data
+    _ReadMDPElement.cbDstBufLen := SIZEOF(_InternalFree);
+    _ReadMDPElement.bExecute    := TRUE;
+    _ReadMDPElement.tTimeout    := Tc2_System.DEFAULT_ADS_TIMEOUT;
+  END_IF
+
+  (*-- ACTION ------------------------------------------------------------------------------------------------------------------*)
+  _ReadMDPElement();
+
+  (*-- TRANSITION --------------------------------------------------------------------------------------------------------------*)
+  IF(_ReadMDPElement.bBusy = FALSE)
+  THEN     
+    (*-- error --------------------------------------------------------------------------*)
+    IF(_ReadMDPElement.bError = TRUE)
+    THEN    
+    //_ReadMDPElement.nErrID;  // error id (16#ECA60105 = BIOS or HW does not support this data       
+      _Error:= TRUE;
+      (*-----------------------------------------*)
+      _BytesTotal:= 0;
+      _BytesFree := 0;  _PercentageFree:= 0;
+      _BytesUsed := 0;  _PercentageUsed:= 0;
+      (*-----------------------------------------*)
+      _State:= E_ReadHddUsageStates.Idle;
+
+    (*-- all good -----------------------------------------------------------------------*)
+    ELSE
+      _BytesTotal:= _InternalTotal;
+      _BytesFree := _InternalFree;
+      _BytesUsed := _InternalTotal - _InternalFree;
+      (*-----------------------------------------*)
+      _PercentageFree:= ULINT_TO_BYTE(100 * _InternalFree / _InternalTotal);
+      _PercentageUsed:=               100 - _PercentageFree;
+      (*-----------------------------------------*)
+      _Duration:= F_GetTimeMsDiff(_StartWork);
+      _State   := E_ReadHddUsageStates.Idle;
+    END_IF
+  END_IF	
+
+
+
+
+(********************************************************************************************************************************)	
+(** unknown state ***************************************************************************************************************)	
+ELSE
+  _Error:= TRUE;
+  _State:= E_ReadHddUsageStates.Idle;
+END_CASE
+
+
+
+
+(********************************************************************************************************************************)	
+(** done ************************************************************************************************************************)	
+]]></ST>
+    </Implementation>
+    <Folder Name="_internal" Id="{c8cbe532-7171-4d9e-a13a-8994ccbcd5aa}" />
+    <Folder Name="methods" Id="{a18af42b-cb85-453c-905c-09892a85f74f}" />
+    <Folder Name="properties" Id="{d8d40f27-5cad-4a27-95a0-7ce822b5fb44}" />
+    <Property Name="Busy" Id="{d5550786-8d50-4a6a-9510-74b64fe5acce}" FolderPath="properties\">
+      <Declaration><![CDATA[// LO = FB is finished -> data valid
+{attribute 'monitoring' := 'call'}
+PROPERTY PUBLIC Busy : BOOL]]></Declaration>
+      <Get Name="Get" Id="{4e639da3-1042-48b0-a738-c468333d79c6}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[Busy:= _Busy;]]></ST>
+        </Implementation>
+      </Get>
+    </Property>
+    <Property Name="BytesFree" Id="{2ef757d5-9e4d-48ba-b827-416203ab6650}" FolderPath="properties\">
+      <Declaration><![CDATA[// number of bytes free to use
+{attribute 'monitoring' := 'call'}
+PROPERTY PUBLIC BytesFree : ULINT]]></Declaration>
+      <Get Name="Get" Id="{856bf04b-3795-4f19-82ea-ec39feeb3611}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[BytesFree:= _BytesFree;]]></ST>
+        </Implementation>
+      </Get>
+    </Property>
+    <Property Name="BytesTotal" Id="{7b5cc598-c5f0-4ca3-9abb-d7f08084a768}" FolderPath="properties\">
+      <Declaration><![CDATA[// total capacity of hdd in bytes
+{attribute 'monitoring' := 'call'}
+PROPERTY PUBLIC BytesTotal : ULINT]]></Declaration>
+      <Get Name="Get" Id="{ae48fb60-38ae-4330-978c-ca2d3a5add3f}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[BytesTotal:= _BytesTotal;]]></ST>
+        </Implementation>
+      </Get>
+    </Property>
+    <Property Name="BytesUsed" Id="{8d4c0e24-d532-490d-9484-e2f6cb7d7c00}" FolderPath="properties\">
+      <Declaration><![CDATA[// number of bytes free already used
+{attribute 'monitoring' := 'call'}
+PROPERTY PUBLIC BytesUsed : ULINT]]></Declaration>
+      <Get Name="Get" Id="{7d220fc2-4dcd-4c3e-8039-f00655e6ec82}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[BytesUsed:= _BytesUsed;]]></ST>
+        </Implementation>
+      </Get>
+    </Property>
+    <Property Name="Drive" Id="{a6a8fb27-f846-4a53-b3e0-8b966ab45690}" FolderPath="properties\">
+      <Declaration><![CDATA[// drive letter
+{attribute 'monitoring' := 'call'}
+PROPERTY PUBLIC Drive : STRING[2]]]></Declaration>
+      <Get Name="Get" Id="{1ed466e4-6380-4287-aff4-89acd344bda8}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[Drive:= _Drive;]]></ST>
+        </Implementation>
+      </Get>
+    </Property>
+    <Property Name="Error" Id="{d6eb349c-cab7-453f-8232-b81a24006166}" FolderPath="properties\">
+      <Declaration><![CDATA[// HI = unable to retrieve data
+{attribute 'monitoring' := 'call'}
+PROPERTY PUBLIC Error : BOOL]]></Declaration>
+      <Get Name="Get" Id="{b0bccc59-f53a-4890-9f46-4daf01e90f76}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[Error:= _Error;]]></ST>
+        </Implementation>
+      </Get>
+    </Property>
+    <Method Name="M_CompareDriveLetter" Id="{4f9c31de-e641-4eb7-840d-8b61d94759e0}" FolderPath="_internal\">
+      <Declaration><![CDATA[// compares variables _Drive and _Letter
+METHOD PROTECTED M_CompareDriveLetter : BOOL
+
+(********************************************************************************************************************************)	
+VAR
+  Index                 : BYTE                             := 0;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+(********************************************************************************************************************************)	
+(********************************************************************************************************************************)	
+Index:= 0;
+WHILE(    (_InternalLetter[Index] <> 16#00)
+       AND(_Drive[Index]          <> 16#00)  )
+DO
+  (*-- differ? --------------------------------------------*)
+  IF(_InternalLetter[Index] <> _Drive[Index])
+  THEN
+    M_CompareDriveLetter:= FALSE;
+    RETURN;
+  END_IF
+
+  (*-- next character -------------------------------------*)
+  Index:= Index + 1;
+END_WHILE
+
+
+
+
+(********************************************************************************************************************************)	
+(** success *********************************************************************************************************************)	
+M_CompareDriveLetter:= TRUE;]]></ST>
+      </Implementation>
+    </Method>
+    <Property Name="PercentageFree" Id="{4938094c-9124-4038-9187-914761546eb9}" FolderPath="properties\">
+      <Declaration><![CDATA[// percentual free space
+{attribute 'monitoring' := 'call'}
+PROPERTY PUBLIC PercentageFree : BYTE]]></Declaration>
+      <Get Name="Get" Id="{ca13cda7-c324-493a-9f7a-c44a55c3d44c}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[PercentageFree:= _PercentageFree;]]></ST>
+        </Implementation>
+      </Get>
+    </Property>
+    <Property Name="PercentageUsed" Id="{17d03870-afad-4b82-9d99-2277dbfb173a}" FolderPath="properties\">
+      <Declaration><![CDATA[// percentual used space
+{attribute 'monitoring' := 'call'}
+PROPERTY PUBLIC PercentageUsed : BYTE]]></Declaration>
+      <Get Name="Get" Id="{32f403ac-efcc-41c5-9542-19e526d85c81}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[PercentageUsed:= _PercentageUsed;]]></ST>
+        </Implementation>
+      </Get>
+    </Property>
+    <Method Name="Start" Id="{35bdcb7d-66e9-4ffd-a6ac-352806ed8d4e}" FolderPath="methods\">
+      <Declaration><![CDATA[// starts retrieving data
+METHOD PUBLIC Start
+
+(********************************************************************************************************************************)	
+VAR_INPUT
+  Drive                 : STRING[2]           := '';       // drive letter (eg. 'C:')
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+(********************************************************************************************************************************)	
+(********************************************************************************************************************************)	
+IF (_State <> E_ReadHddUsageStates.Idle)
+THEN
+  RETURN;
+
+ELSIF (Drive = '')
+THEN
+  _Error:= TRUE;
+  RETURN;
+END_IF
+
+
+
+
+(********************************************************************************************************************************)	
+(********************************************************************************************************************************)	
+_State := E_ReadHddUsageStates.Letter;
+_Drive := Drive;
+_SubIdx:= 1;  // start search at index #1 -> C:
+
+_BytesTotal:= 0;
+_BytesFree := 0;  _PercentageFree:= 0;
+_BytesUsed := 0;  _PercentageUsed:= 0;
+
+_Busy     := TRUE;
+_Error    := FALSE;
+_StartWork:= F_GetTimeMsTick();
+
+THIS^();  // perform state change
+
+
+
+
+(********************************************************************************************************************************)	
+(** done ************************************************************************************************************************)	
+]]></ST>
+      </Implementation>
+    </Method>
+    <LineIds Name="FB_HddUsage">
+      <LineId Id="3" Count="209" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_HddUsage.Busy.Get">
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_HddUsage.BytesFree.Get">
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_HddUsage.BytesTotal.Get">
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_HddUsage.BytesUsed.Get">
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_HddUsage.Drive.Get">
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_HddUsage.Error.Get">
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_HddUsage.M_CompareDriveLetter">
+      <LineId Id="3" Count="22" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_HddUsage.PercentageFree.Get">
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_HddUsage.PercentageUsed.Get">
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_HddUsage.Start">
+      <LineId Id="3" Count="36" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

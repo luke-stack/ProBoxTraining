@@ -1,0 +1,185 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <POU Name="FB_DTU_MergingControl" Id="{7605091e-b267-4ae0-b697-57265b088a22}" SpecialFunc="None">
+    <Declaration><![CDATA[//DTU, transter unit Fifo control. Each side of the DTU is added to a fifo and DTU will choose the side as previous according to the FIFO
+//if AutoTracking is enabled then check if the previus function has set the next functionnumber = DTU function number, it may be not ready, or the function is an output function from the DTU
+FUNCTION_BLOCK FB_DTU_MergingControl //Driven Transfer Unit merging control
+VAR_INPUT
+		FunctionNumber 	: E_FunctionNumber;	// The function number of the transferUnit			
+		DisableSide1	: BOOL;				// Optionally Disable adjacent side 1. if adjacent side is not used, then it is NOT mandatory to disable.  
+		DisableSide2	: BOOL;				// Optionally Disable adjacent side 2. if adjacent side is not used, then it is NOT mandatory to disable.
+		DisableSide3	: BOOL;				// Optionally Disable adjacent side 3. if adjacent side is not used, then it is NOT mandatory to disable.
+		DisableSide4	: BOOL;				// Optionally Disable adjacent side 4. if adjacent side is not used, then it is NOT mandatory to disable.
+		AutoTracking	: BOOL:=TRUE;		// Auto disables adjasent sides that do not set nextFunction to the DTU. Default enabled 
+END_VAR
+
+VAR_OUTPUT
+	ePrevFunctionNumber	: E_FunctionNumber;	//the function number that has the highest priority to enter into Loop or intersection.	
+END_VAR
+
+VAR CONSTANT
+	NUMBER_OF_ADJACENT_SIDES	: INT := 4;	
+END_VAR
+
+VAR	
+	_fbFifo			:FB_MergingFiFo;	
+	_Disabled		: ARRAY [1..NUMBER_OF_ADJACENT_SIDES] OF BOOL;			
+	_ExternalFunction:E_FunctionNumber;
+	_ExternalFuncSide:INT:=0;
+END_VAR
+VAR_TEMP
+	i:INT;	
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[
+IF(FunctionNumber<=0 OR FunctionNumber>=E_FunctionNumber.F_BEGIN_EXTERN_FUNCTION) THEN RETURN; END_IF
+IF( NOT __ISVALIDREF(FunctionRegistry[FunctionNumber].rSettingsFunction)) THEN RETURN; END_IF
+
+//copy over user disable status to array.
+_Disabled[1]:=DisableSide1;
+_Disabled[2]:=DisableSide2;
+_Disabled[3]:=DisableSide3;
+_Disabled[4]:=DisableSide4;
+
+ 
+//Run fifo control
+FOR i:=1 TO NUMBER_OF_ADJACENT_SIDES BY 1 DO
+	
+	IF(AutoTracking) THEN
+			_fbFifo.CompareNextFunc := FunctionNumber;
+	ELSE
+			_fbFifo.CompareNextFunc := E_FunctionNumber.F_BEGIN_FUNCTION; //Auto tracking is off
+	END_IF
+	_fbFifo(FunctionNumber:=FunctionRegistry[FunctionNumber].rSettingsFunction.eAdjacentFunctionNumberSide[i],Disable:=_Disabled[i]);	
+END_FOR
+//Run Fifo again to register external function (if supplied)
+//CompareNextFunc argument should always be F_BEGIN_FUNCTION to disable tracking for external functions
+IF(_ExternalFunction>E_FunctionNumber.F_BEGIN_FUNCTION AND _ExternalFuncSide>=0 AND _ExternalFuncSide<=NUMBER_OF_ADJACENT_SIDES) THEN	
+	_fbFifo(FunctionNumber:=_ExternalFunction,Disable:=_Disabled[_ExternalFuncSide],CompareNextFunc:=E_FunctionNumber.F_BEGIN_FUNCTION);	
+END_IF
+
+//Set output
+IF(_fbFifo.ePrevFunctionNumber = _ExternalFunction AND _ExternalFuncSide>0 AND _ExternalFuncSide < NUMBER_OF_ADJACENT_SIDES) THEN 
+	ePrevFunctionNumber := FunctionRegistry[FunctionNumber].rSettingsFunction.eAdjacentFunctionNumberSide[_ExternalFuncSide];
+ELSE
+	ePrevFunctionNumber :=	_fbFifo.ePrevFunctionNumber;
+END_IF
+
+
+
+
+]]></ST>
+    </Implementation>
+    <Method Name="M_FindAdjacentSide" Id="{bd121421-bee5-46bc-ab9f-819ccc637cf1}">
+      <Declaration><![CDATA[METHOD INTERNAL M_FindAdjacentSide : BOOL
+VAR_INPUT
+	AdjacentSide : E_FunctionNumber;
+END_VAR
+VAR_OUTPUT
+	SideIndex:INT; // side 1,2,3 or 4
+	ExternalFunction:BOOL; //The Function is a external Function assigned with M_SetExternalFunction
+END_VAR
+VAR
+	i:INT;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+//check that DTu_MergingControl is assigned to a DTU
+
+IF(THIS^.FunctionNumber=0) THEN
+	RETURN;
+END_IF
+IF(AdjacentSide=0) THEN
+	RETURN;
+END_IF
+
+// Find the side on the DTU where the input function is oriented.
+// check _ExternalFunction 
+IF(_ExternalFunction = AdjacentSide) THEN
+	SideIndex:= _ExternalFuncSide;
+	ExternalFunction := TRUE;
+	M_FindAdjacentSide:=TRUE;	
+	RETURN;
+END_IF
+
+// Find the side on the DTU where the input function is oriented.
+IF(__ISVALIDREF(FunctionRegistry[THIS^.FunctionNumber].rSettingsFunction)) THEN			
+	FOR i:=1 TO NUMBER_OF_ADJACENT_SIDES BY 1 DO			
+		//Get the DTU function number, where the input function is attached to
+		IF( FunctionRegistry[THIS^.FunctionNumber].rSettingsFunction.eAdjacentFunctionNumberSide[i] = AdjacentSide)THEN
+			SideIndex:= i;
+			ExternalFunction := FALSE;
+			M_FindAdjacentSide:=TRUE;
+			EXIT;
+		END_IF						 
+	END_FOR
+END_IF	
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_SetExternalFunction" Id="{b2b38489-decb-4e6e-a02e-aaf7d20b766d}">
+      <Declaration><![CDATA[//Possible to set additional external function to a specific side
+//This is used when DTU has an extended function on side 3-4
+METHOD INTERNAL M_SetExternalFunction : BOOL
+VAR_INPUT
+	ExternalFunction	: E_FunctionNumber;
+	ExternalFunctionSide:INT;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[_ExternalFunction := ExternalFunction;
+_ExternalFuncSide :=ExternalFunctionSide;]]></ST>
+      </Implementation>
+    </Method>
+    <LineIds Name="FB_DTU_MergingControl">
+      <LineId Id="540" Count="0" />
+      <LineId Id="543" Count="7" />
+      <LineId Id="598" Count="0" />
+      <LineId Id="569" Count="2" />
+      <LineId Id="861" Count="0" />
+      <LineId Id="857" Count="3" />
+      <LineId Id="856" Count="0" />
+      <LineId Id="579" Count="1" />
+      <LineId Id="748" Count="0" />
+      <LineId Id="855" Count="0" />
+      <LineId Id="749" Count="2" />
+      <LineId Id="719" Count="0" />
+      <LineId Id="687" Count="0" />
+      <LineId Id="821" Count="2" />
+      <LineId Id="678" Count="0" />
+      <LineId Id="824" Count="0" />
+      <LineId Id="589" Count="0" />
+      <LineId Id="642" Count="0" />
+      <LineId Id="639" Count="0" />
+      <LineId Id="638" Count="0" />
+      <LineId Id="631" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_DTU_MergingControl.M_FindAdjacentSide">
+      <LineId Id="29" Count="1" />
+      <LineId Id="32" Count="0" />
+      <LineId Id="31" Count="0" />
+      <LineId Id="33" Count="1" />
+      <LineId Id="36" Count="1" />
+      <LineId Id="35" Count="0" />
+      <LineId Id="45" Count="0" />
+      <LineId Id="41" Count="0" />
+      <LineId Id="46" Count="0" />
+      <LineId Id="39" Count="0" />
+      <LineId Id="38" Count="0" />
+      <LineId Id="60" Count="0" />
+      <LineId Id="42" Count="2" />
+      <LineId Id="14" Count="1" />
+      <LineId Id="18" Count="3" />
+      <LineId Id="24" Count="0" />
+      <LineId Id="61" Count="0" />
+      <LineId Id="49" Count="0" />
+      <LineId Id="25" Count="3" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_DTU_MergingControl.M_SetExternalFunction">
+      <LineId Id="8" Count="0" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

@@ -1,0 +1,16 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.12">
+  <DUT Name="ST_MaxProfileValues" Id="{d59ddd3f-b30b-4f66-98c7-d02164ab2792}">
+    <Declaration><![CDATA[TYPE ST_MaxProfileValues :
+STRUCT
+	Max_Height  			    : INT; // Maxmium Height 
+	Max_ProfileLeft      		: INT; // Maxmium Profile left 
+	Max_ProfileRight     		: INT; // Maxmium Profile right 
+	Max_ProfileFront     		: INT; // Maxmium Profile front 
+	Max_ProfileRear     		: INT; // Maxmium Profile rear
+	Max_Weight      			: DINT; //Maxmium Weight 
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

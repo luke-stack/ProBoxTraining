@@ -1,0 +1,1040 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <POU Name="FB_SickScannerBase" Id="{6cee04b7-0b7c-410c-96cc-b8e4f7be2b52}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK FB_SickScannerBase EXTENDS FB_FunctionConv
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: $
+ *	Revision date	:	$Date: $
+ *	Last changed by	:	$Author: Q8HEDLS$
+ *	URL				:	$URL: $
+ *
+ *	Purpose			:	Sick function scanner base addon 					
+ *						Once a scanning is started, the FB_SickScannerBase will waith until any data is reveived.
+ *						Ie. the scanner must be setup in such way that an NoRead is delivered uppon timeout or when the Trig signal is set Low.
+ *						This scanner reads a label and determines the corresponding TU Data index.
+ *						(If the read label was already known, the existing index will be returned. 
+ *						Otherwise a new one will be created.
+ *						If no valid label could be determined - no index will be generated.
+ *						Noread = no index!)
+ *
+ *						Counter1 - Good reads
+ *						Counter2 - No reads
+ *						Counter3 - bad reads
+ *						Counter4 - continous no reads
+ *						Counter5 - Spare
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION  
+ *
+ **************************************************************************************)
+
+VAR
+	BaseFunctionData		: ST_SickScannerBase;
+	_pItfCustomFB 			: ITF_PB_ScannerAddon;  //Interface pointer to customized function.
+END_VAR
+
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[
+
+]]></ST>
+    </Implementation>
+    <Method Name="_M_CheckTU_ID" Id="{dd26d1b7-a10d-48df-bd85-802dfdd5d4f5}">
+      <Declaration><![CDATA[METHOD PRIVATE _M_CheckTU_ID : DINT
+VAR_INPUT
+	TU_DataIndex	: DINT; //current TU data index
+	TU_ID			: T_MaxString;
+END_VAR
+VAR_IN_OUT
+	ErrorData		: ST_ErrorDataSet; // Error data set
+END_VAR
+VAR_OUTPUT
+	TU_CheckError	: BOOL;
+END_VAR
+VAR
+	TUixFound		: DINT;	
+	TUix			: DINT;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[	TU_CheckError:=FALSE;
+	TUix := TU_DataIndex;
+	//Check if TU_ID is already used. if so-> reuse the ID ??
+	TUixFound := F_SearchTU_ByHashCode(TU_ID := TU_ID);
+	
+	//Assign the found TU data index with the found one
+	IF(TUix = 0 AND TUixFound>0)THEN
+		TUix := TUixFound;		
+	// If no index was found -> create data set
+	ELSIF(TUix = 0) THEN
+		// Create new data set
+		TUix := F_InsertTU_Data(SettingsFunction.eFunctionNumber, 0);	
+	
+		// Otherwise no free image slot available
+		IF TUix = 0 THEN
+			// Error, no free index
+			TU_CheckError:=TRUE;
+			F_SetError(
+				ErrorType 	:= E_ErrorType.ERROR,
+				ErrorParam 	:= 'No Free data set available',
+				ErrorMsg 	:= E_ErrorConv.NO_FREE_TU_DATA_SET,
+				ErrorData 	:= ErrorData);
+			
+		END_IF
+	END_IF
+	
+	
+	// check for doublettes.
+	// note: if TU_ID = Conveyor.TU_ID_UNKNOWN, then this test will not be executed cince TUixFound will be 0
+	IF( TUix > 0  AND TUixFound > 0 AND TUix <> TUixFound) THEN
+		TUix:=0;
+		TU_CheckError:=TRUE;
+		// Error, TU already exist
+		F_SetError(
+					ErrorType 	:= E_ErrorType.ERROR,
+					ErrorParam 	:= CONCAT('TU-ID already exist: ',TU_ID),
+					ErrorMsg 	:= E_ErrorConv.INDEX_MATCH_WITH_POSITION,
+					ErrorData 	:= FunctionData.ErrorData.ErrorDataSet[6]);
+	END_IF
+	
+	//Set output
+	_M_CheckTU_ID := TUix;
+	]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_CLV6xReadData" Id="{a50e5f45-485a-406a-9904-66deaaa20bf9}">
+      <Declaration><![CDATA[//Method for reading data from Sick CLV 630-650 or CLV 690 scanner
+METHOD PROTECTED _M_CLV6xReadData : BOOL
+VAR_INPUT
+	ClearBuffer		: BOOL;	// set to true to clear buffer, this shall be true typically when waiting for a new TU ie idling
+	CopyBuffer		: BOOL; // set to true when the data shall be copied to the 'ScannerLabel' reference, othervice the data is discarded		
+	ScannerLabel	: REFERENCE TO ST_ScannerLabelData;	
+END_VAR
+VAR_IN_OUT
+	ConfMsgIn	: ARRAY[0..31] OF BYTE;
+	ConfMsgOut	: ARRAY[0..31] OF BYTE;
+END_VAR
+
+VAR
+	//temporary variables
+	RecvLength 			: UINT;
+	ReceiveCountIn		: UINT;
+	ReceiveCountBack	: UINT;
+	i	: INT;
+	TempMessage	: STRING(System.DEBUGMESSAGELENGTH);
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+(*
+ConfMsgIn - Confirm message input
+byte 0	Status byte
+byte 1	Receive counter
+byte 2	transmit couter back
+byte 3	Command length LSB
+byte 4	Command length MSB
+byte 5..32 Device responce from scanner
+
+ConfMsgOut - Confirm message output
+byte 0	Status byte
+byte 1	Receive counter back
+byte 2	transmit couter
+byte 3	Command length LSB
+byte 4	Command length MSB
+byte 5..32 Device responce from scanner
+
+When ConfMsgIn[1] is increasing this means that a new message is available.
+The Command length MSB+LSB is the number number of data left in buffer. if Command lenght is creater than 32-5=27 bytes, this means that the label data is transmitted over several frames
+Note:
+Limitation, currently only one frame data is supported, next frames will be discarded
+The maximum length of label data is 32-5 = 27 bytes
+*)
+
+//Get the  number of data in the buffer
+RecvLength := INT_TO_UINT(SHL(BYTE_TO_INT(ConfMsgIn[4]),8) + ConfMsgIn[3]);
+//If the number of data in the buffer is greater than the size of the data telegram POE size, ie 32 bytes. then the scanner data (label/barcode) is divided into several frames. 
+
+
+ReceiveCountIn		:= ConfMsgIn[1];
+ReceiveCountBack	:= ConfMsgOut[1];
+ScannerLabel.DataReceived:=FALSE;
+
+//echo back the Receive counter, so that the scanner know that the data is received, otherwise the data is discarded after 10 seconds by the sick scanner 
+IF(CopyBuffer OR ClearBuffer) THEN
+	ConfMsgOut[1] := ConfMsgIn[1];
+END_IF
+
+
+//check if new data arrived
+IF(ReceiveCountIn <> ReceiveCountBack AND ReceiveCountIn > 0) THEN
+	IF(ScannerLabel.DebugPrint OR ClearBuffer) THEN
+		IF(ClearBuffer) THEN
+			DebugMsg := CONCAT('Scannner garbage received! bytes: ',UINT_TO_STRING(RecvLength));
+			fbDebugMsg.M_SendInfoMsg(DebugMsg);	
+		END_IF
+		fbDebugMsg.M_SendInfoMsg(CONCAT('Scannner received bytes: ',UINT_TO_STRING(RecvLength))); 
+		//debug print buffer as hex string representation. If number of data in buffer is > 32-5 = 27, this means data is provided over several frames		
+		fbDebugMsg.M_SendInfoMsg(DATA_TO_HEXSTR( pData := ADR(ConfMsgIn[5]), cbData := SEL(ReceiveCountIn>27,27,UINT_TO_UDINT(ReceiveCountIn)), FALSE ));
+		MEMSET(ADR(TempMessage),0, SIZEOF(TempMessage));
+		MEMCPY(ADR(TempMessage),ADR(ConfMsgIn[5]),RecvLength);
+		fbDebugMsg.M_SendInfoMsg(TempMessage);		
+	END_IF
+	
+	//check buffer lenght, ie number of remaining characters.
+	IF(RecvLength=0) THEN
+		//this shall never happen?? but lets wait for next cycle to see if theres data available..
+		;
+	//ELSIF(RecvLength > USINT_TO_UINT(SIZEOF(ConfMsgIn))-5) THEN
+		//The lenght of the data is separated into several frames -> currently not supported. data will be trunkated
+	ELSIF(CopyBuffer AND __ISVALIDREF(ScannerLabel)) THEN
+		//check if received number of bytes is larger than maximum. Make sure there is space left for a NULL char.   
+		IF(RecvLength> GVL_SickScanner.MAX_DATA_LENGTH-1) THEN
+			RecvLength := GVL_SickScanner.MAX_DATA_LENGTH-1; //Note: Data will be trunkated.
+		END_IF
+		//check if received number of bytes is larger than one frame ie 32-5=27 bytes
+		IF(RecvLength> USINT_TO_UINT(SIZEOF(ConfMsgIn))-5) THEN
+			RecvLength := USINT_TO_UINT(SIZEOF(ConfMsgIn))-5; //Note: Data will be trunkated.
+		END_IF		
+		
+		
+		ScannerLabel.DataReceived := TRUE;
+		ScannerLabel.LabelLength := RecvLength;
+		//Clear string buffer 
+		MEMSET(ADR(ScannerLabel.Label), 0, SIZEOF(ScannerLabel.Label));
+		//Copy string to string buffer
+		MEMCPY(ADR(ScannerLabel.Label),ADR(ConfMsgIn[5]),RecvLength);
+
+		IF(ScannerLabel.DebugPrint) THEN
+			DebugMsg := CONCAT('Scanner received string: ', ScannerLabel.Label);
+			fbDebugMsg.M_SendInfoMsg(DebugMsg);	
+		END_IF			
+		
+	END_IF
+END_IF
+					
+_M_CLV6xReadData:= ScannerLabel.DataReceived;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_CLV6xWriteData" Id="{b3a659e0-f08d-4d2d-902c-854cff05bd86}">
+      <Declaration><![CDATA[METHOD PROTECTED _M_CLV6xWriteData : BOOL
+VAR_INPUT
+	Execute		: BOOL; //trig send command
+	WriteData	: REFERENCE TO T_MaxString;
+END_VAR
+VAR_OUTPUT
+	Busy		: BOOL;
+END_VAR
+VAR_IN_OUT
+	ConfMsgIn	: ARRAY[0..31] OF BYTE;
+	ConfMsgOut	: ARRAY[0..31] OF BYTE;
+END_VAR
+
+VAR	
+	ScannerBufferSize	: INT;
+	BytesToSend			: INT;
+END_VAR
+
+VAR_INST
+	WriteState:INT;
+	WriteIndex:INT;
+	WriteBuffer:T_MaxString;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+
+CASE WriteState OF
+	0:
+		//Scanner sending?
+		IF(ConfMsgIn[1] > ConfMsgOut[1]) THEN
+			;//Scanner is sending data. lets wait with sending data until sending complete
+		ELSIF(Execute AND __ISVALIDREF(WriteData)) THEN
+			WriteBuffer:= WriteData;
+			WriteIndex:=0;
+			WriteState:=5;
+		END_IF
+		
+	5:
+		// CHeck if scanner is ready to receive data
+		// note. first time ConfMsgIn[2] may be 0 and this is ok.  
+		IF( (ConfMsgIn[2]=ConfMsgOut[2]) OR
+			(WriteIndex=0 AND ConfMsgIn[2]=0)) THEN
+			WriteState:=10;		 
+		END_IF
+	
+	10:
+		//Trig sending by setting Tr-Cnt +1
+		IF(ConfMsgIn[2]=255) THEN 
+			ConfMsgOut[2] :=1;
+		ELSE
+			ConfMsgOut[2]:= ConfMsgIn[2]+1;
+		END_IF
+		
+		//Set length
+		BytesToSend		:= Len(WriteBuffer)-WriteIndex;	
+		ConfMsgOut[3]	:= INT_TO_BYTE(BytesToSend);
+		ConfMsgOut[4]	:= 0;
+		
+		//Copy data		
+		ScannerBufferSize := UINT_TO_INT(SIZEOF(ConfMsgOut) - 5);
+		//if BytesToSend > 32-5 then BytesToSend= 32-5 else BytesToSend = BytesToSend
+		BytesToSend := SEL(BytesToSend>ScannerBufferSize, BytesToSend,ScannerBufferSize);
+		MEMCPY(ADR(ConfMsgOut[5]),ADR(WriteBuffer[WriteIndex]),INT_TO_UINT(BytesToSend));
+		WriteIndex := WriteIndex + BytesToSend; 
+		//Debug Print
+		//fbDebugMsg.M_SendInfoMsg(DATA_TO_HEXSTR( pData := ADR(ConfMsgOut[5]), cbData := INT_TO_UDINT(BytesToSend), FALSE ));
+		
+		IF(ConfMsgOut[3] > ScannerBufferSize) THEN
+			WriteState:=5; //continue write next frame
+		ELSE
+			WriteState:=20; //Done writing	
+		END_IF		
+		
+	20: //wait for trig to go low
+		IF(NOT Execute) THEN
+			WriteState :=0;
+		END_IF
+		
+END_CASE
+
+Busy := WriteState<>0;
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_ConfigureScanner" Id="{8549fecb-33d3-45aa-aea2-8db9b3fe6107}">
+      <Declaration><![CDATA[//Open an file and read line by line, the content is written to scanner
+//Return: True = Done, ie all data written, or error occured.
+METHOD PRIVATE _M_ConfigureScanner : BOOL
+VAR_INPUT
+	FilePath		: REFERENCE TO T_MaxString;
+END_VAR
+
+VAR_INST
+	ConfigState			: INT; //config scanner sub state
+	fbReadConfigFile	: FB_ReadFileLine;
+END_VAR
+VAR
+	ValidPath			: BOOL;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[//Write config/parameters stored in an file to Scanner	 
+		CASE ConfigState OF
+			0:
+				IF(__ISVALIDREF(FilePath)) THEN
+					ValidPath := FilePath[0]>0;
+				END_IF
+				
+				IF(ValidPath) THEN
+					fbReadConfigFile.FilePath REF= FilePath;					
+					ConfigState := ConfigState+1;
+				ELSE					
+					//File path not valid or empty, skip process.
+					_M_ConfigureScanner :=TRUE; 
+				END_IF
+			1:							
+				fbReadConfigFile.TriggNextLine:=TRUE;
+				BaseFunctionData.WriteData.TrigWrite:=FALSE;
+				ConfigState := ConfigState+1;
+			2:
+				IF(NOT fbReadConfigFile.bBusy AND fbReadConfigFile.bError) THEN
+					ConfigState := 100;
+				ELSIF(NOT fbReadConfigFile.bBusy AND fbReadConfigFile.FileComplete) THEN
+					ConfigState := 100;
+					fbDebugMsg.M_SendInfoMsg('Done reading input file');				 
+				ELSIF(NOT fbReadConfigFile.bBusy AND NOT fbReadConfigFile.bError) THEN
+					ConfigState := ConfigState+1;
+					fbReadConfigFile.TriggNextLine:=FALSE;
+				END_IF
+			3:
+				BaseFunctionData.WriteData.TrigWrite:=TRUE;
+				BaseFunctionData.WriteData.Data := fbReadConfigFile.sLine;
+				ConfigState := ConfigState+1;
+				fbDebugMsg.M_SendInfoMsg(fbReadConfigFile.sLine);
+			4:
+				IF(BaseFunctionData.WriteData.Busy) THEN
+					ConfigState := ConfigState+1;
+					BaseFunctionData.WriteData.TrigWrite:=FALSE;
+				END_IF
+			5:
+				IF(NOT BaseFunctionData.WriteData.Busy) THEN
+					ConfigState := 1;
+				END_IF
+			100: //done!
+				fbReadConfigFile.TriggNextLine:=FALSE;
+				//fbReadConfigFile.Cancel:=TRUE;
+				BaseFunctionData.WriteData.TrigWrite:=FALSE;
+				ConfigState := ConfigState+1;
+
+				IF(fbReadConfigFile.bError) THEN
+					fbDebugMsg.M_SendInfoMsg(CONCAT('Config Scanner completed with error, ADS Code: ', TO_STRING(fbReadConfigFile.nErrId)));
+					
+					F_SetError(
+						ErrorType 	:= E_ErrorType.ERROR,
+						ErrorParam 	:= CONCAT('Param file ADS Code: ', TO_STRING(fbReadConfigFile.nErrId)), // error reading parameter file
+						ErrorMsg 	:= E_ErrorConv.CONFIGURATION_ERROR,
+						ErrorData 	:= FunctionData.ErrorData.ErrorDataSet[4]);
+				ELSE
+					fbDebugMsg.M_SendInfoMsg('Config Scanner completed successfully');		
+				END_IF
+			
+			101:
+				_M_ConfigureScanner:=TRUE;
+				ConfigState := 0; //start over again.				
+			
+		END_CASE
+		fbReadConfigFile();
+		]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_DetectTrigger" Id="{216cc286-edf9-4bef-9d81-d855ec5b05f0}">
+      <Declaration><![CDATA[//Detect if scanning shall start, either by external trigger input, or if the TU destination is equal to the function and takeover is active
+METHOD PROTECTED _M_DetectTrigger : BOOL
+VAR_INPUT
+	ExternalTrigger			: BOOL;	//external trigger signal, ie Inputs.CtrlIn.ExternTrigger
+	EnableExternalTrigger	: BOOL; //External trigger enabled, ie Settings.EnableExternalTrigger
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************************************
+   Detect Trigger
+***************************************************************************************************************)
+	// If an module external error should be used
+	IF(EnableExternalTrigger) THEN 
+		_M_DetectTrigger := ExternalTrigger;
+	ELSE
+				
+		//check if the destination is to this function and zone, then if takevoer state is active we shall trigg the scanner
+		_M_DetectTrigger := (F_PB_GetTuDestination(SettingsFunction.FunctionLink.eFunctionNumber,SettingsFunction.FunctionLink.ZoneNumber,1) = SettingsFunction.FunctionLink.eFunctionNumber) AND
+							F_PB_GetTransportControlDataRef(SettingsFunction.FunctionLink.eFunctionNumber,SettingsFunction.FunctionLink.ZoneNumber).eTakeOverState = E_TakeOverState.ACTIVE;
+		
+	END_IF
+						
+	(*	
+	ELSIF Inputs.TransportData.eTransportState = E_TransportState.OCCUPIED OR
+		  Inputs.TransportData.eTransportState = E_TransportState.FREE OR
+		  Inputs.TransportData.eTransportState = E_TransportState.FREE_RUN OR
+		  Inputs.TransportData.eTransportState = E_TransportState.IDLE THEN
+		  
+		// Reset Trigger
+		Trigger := FALSE;
+	END_IF
+END_IF*)]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_ITF_CustomFunctionControl" Id="{48147fbc-be0b-4625-aa73-0f4456ab53ad}">
+      <Declaration><![CDATA[//Execute customize functionality if enabled( enable by configure an custom Function block with INTERFACE 'ITF_PB_ScannerAddon'
+METHOD PRIVATE _M_ITF_CustomFunctionControl : BOOL
+VAR_OUTPUT
+	HoldExecution : BOOL;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+//Check if an custimized function block is provided. Pointer <> 0 
+IF(_pItfCustomFB=0) THEN
+	RETURN;
+END_IF
+
+
+CASE BaseFunctionData.State.eState OF
+	
+	E_SickScannerState.SETUP:
+		//will be executed once or until HoldExection is false
+		_pItfCustomFB.M_SetupScanner(HoldExecution=>HoldExecution);
+		
+	E_SickScannerState.READ:
+		//will be executed once
+		_pItfCustomFB.M_PreScan();
+		
+	E_SickScannerState.FETCH_DATA, E_SickScannerState.COM:
+		//will be executed once
+		_pItfCustomFB.M_PostScan(BaseFunctionData.LabelData.Label, BaseFunctionData.LabelData.LabelLength);
+		
+	
+END_CASE]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_MonitorCommunication" Id="{24ba144d-5d48-42a1-ace6-48a6b53d997d}">
+      <Declaration><![CDATA[METHOD PROTECTED _M_MonitorCommunication
+VAR_INPUT
+	Heartbeat : BOOL; // the Heartbeat signal from scanner
+	ComTimeout : TIME; //Communication timeout heart beat. ie Settings.tComTimeout
+END_VAR
+VAR_STAT
+	fbComTimeout			: TON; // Communication timeout
+	HeartbeatFlag			: BOOL; // Heartbeat flag
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[// Detect signal change
+IF Heartbeat XOR HeartbeatFlag THEN
+	// Update
+	HeartbeatFlag := Heartbeat;
+	// Reset timer
+	fbComTimeout(IN := FALSE);
+END_IF
+ 
+// Call communication monitor 
+fbComTimeout(IN := TRUE, PT := ComTimeout);
+
+// Communication timeout 
+IF fbComTimeout.Q THEN
+	IF FunctionData.ErrorData.ErrorDataSet[1].ErrorType <> E_ErrorType.ERROR THEN
+		// Error, data timeout
+		F_SetError(
+			ErrorType 	:= E_ErrorType.ERROR,
+			ErrorParam 	:= 'Heartbeat signal lost from scanner',
+			ErrorMsg 	:= E_ErrorConv.TIMEOUT_COMMUNICATION,
+			ErrorData 	:= FunctionData.ErrorData.ErrorDataSet[1]);
+	END_IF
+
+// Communication reestablished
+ELSIF FunctionData.ErrorData.ErrorDataSet[1].ErrorType = E_ErrorType.ERROR THEN
+	// Auto reset
+	F_ResetError(
+		Reset		:= TRUE,
+		ErrorData 	:= FunctionData.ErrorData.ErrorDataSet[1]);
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_MonitorNoReadSeries" Id="{603db823-e446-488e-bc56-9e3ec1b90866}">
+      <Declaration><![CDATA[//Stop the scanner station after a certain amount of no reads.
+METHOD PROTECTED _M_MonitorNoReadSeries : BOOL
+VAR_INPUT
+	AcceptedNoReadSeries	: INT;	//Tolerated no reads in a sequence until an error stops the scanner 0 = off ie Settings.AcceptedNoReadSeries
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+   Continous no reads
+***************************************************************************************)
+(* 
+On systems with a moderate troughput it could be useful
+to stop the scanner station after a certain amount of no reads.
+Otherwise it could happen that a lot of totes drive by as no read, 
+before an operator had the change to fix the issue.
+*)
+IF AcceptedNoReadSeries > 0 THEN
+	// Watch continous no reads
+	IF FunctionData.AddOnData.Counter[4] >= AcceptedNoReadSeries AND
+	   FunctionData.ErrorData.ErrorDataSet[5].ErrorType <> E_ErrorType.ERROR THEN
+		// error, to many no reads
+		F_SetError(
+			ErrorType 	:= E_ErrorType.ERROR,
+			ErrorParam 	:= '',
+			ErrorMsg 	:= E_ErrorConv.SCANNER_CONTINOUS_NO_READ,
+			ErrorData 	:= FunctionData.ErrorData.ErrorDataSet[5]);
+			// Reset counter
+			FunctionData.AddOnData.Counter[4] := 0;	
+	END_IF
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_ResetErrors" Id="{e6226b7d-f578-4702-9eee-02ea96939ed0}">
+      <Declaration><![CDATA[METHOD PROTECTED _M_ResetErrors : BOOL
+VAR_INPUT
+END_VAR
+
+VAR
+	i:INT;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+
+FOR i:= 1 TO NUMBER_OF_ERROR_SETS DO
+	F_ResetError(Reset := FALSE,	ErrorData := FunctionData.ErrorData.ErrorDataSet[i]);
+END_FOR]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_StateControl" Id="{ceb73054-0aed-4ae0-be2e-2cb33081d7ea}">
+      <Declaration><![CDATA[METHOD PROTECTED _M_StateControl : BOOL
+VAR_INPUT
+	Trigger					: BOOL;	//Trig flag to start scanning.
+	ScannerGoodRead			: BOOL; //Good read signal from scanner
+	MaxLabelLength			: UINT; //maximum allowed label length ie Settings.LabelLength
+	MoveDataLabelField		: BOOL;	//from Config settings, Settings.MoveDataLabelField
+	SendTTQ					: BOOL; //From Config settings, Settings.SendTTQ
+	ScannerConfigFilePath	: REFERENCE TO T_MaxString;
+END_VAR
+
+VAR_OUTPUT
+	TrigScanner				: BOOL; //Output trig signal to scanner
+END_VAR
+
+VAR_INST
+	DbgTrig				: BOOL;	
+END_VAR
+VAR
+	//Occupied			: BOOL;
+	TransportData		: REFERENCE TO ST_TransportControlData; // Transport control data of corresponding zone
+	TU_DataIndex		: DINT;
+	TU_CheckError		: BOOL;
+	HoldExecution		: BOOL; //Optionaly an custom function can inhibit the execution of the state machine	
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		M_StateControl 
+ * 	FUNCTION	Handles scanner state machine
+ **************************************************************************************)
+
+ //Get the reference to the transport control data
+ TransportData REF= F_PB_GetTransportControlDataRef(SettingsFunction.FunctionLink.eFunctionNumber,
+													SettingsFunction.FunctionLink.ZoneNumber);
+ TrigScanner:=FALSE;
+
+(**************************************************************************************
+   Scanner states
+***************************************************************************************)
+CASE BaseFunctionData.State.eState OF
+	
+	(**************************************************************************************
+   		INIT
+	***************************************************************************************)
+	E_SickScannerState.SETUP:
+		//Clear base function data contaioner
+		MEMSET(ADR(BaseFunctionData),0,SIZEOF(BaseFunctionData));
+		//Run customized functionality (if enabled)
+		_M_ITF_CustomFunctionControl(HoldExecution=>HoldExecution);
+		IF( HoldExecution) THEN
+			 RETURN;
+		ELSE
+			// Change state
+			BaseFunctionData.State.eLastState := BaseFunctionData.State.eState;
+			BaseFunctionData.State.eState := E_SickScannerState.INIT;
+		END_IF
+	
+	E_SickScannerState.CONFIG:
+		
+		IF(_M_ConfigureScanner(FilePath:=ScannerConfigFilePath) (*== DONE*)) THEN//'c:\ScannerConfig\ScannerConfig.txt')) THEN
+			// Change state
+			BaseFunctionData.State.eLastState := BaseFunctionData.State.eState;
+			BaseFunctionData.State.eState := E_SickScannerState.INIT;
+		END_IF
+	
+	(**************************************************************************************
+   		INIT
+	***************************************************************************************)
+	E_SickScannerState.INIT:
+		BaseFunctionData.Busy	:= FALSE;
+		BaseFunctionData.Ready	:= FALSE;
+		MEMSET(ADR(BaseFunctionData.LabelData),0,SIZEOF(BaseFunctionData.LabelData));
+		FunctionInterface.Out.AddOnOrders.TU_DataIndex := 0;
+		//If function is in error
+		IF(FunctionData.ErrorData.Error.ErrorType = E_ErrorType.ERROR) THEN
+			// Change state
+			BaseFunctionData.State.eLastState := BaseFunctionData.State.eState;
+			BaseFunctionData.State.eState := E_SickScannerState.ERROR;
+		// If no error is pending and group started
+		ELSIF(FunctionData.OperationState.eState = E_PositionState.STARTED) THEN
+			// Change state
+			BaseFunctionData.State.eLastState := BaseFunctionData.State.eState;
+			BaseFunctionData.State.eState := E_SickScannerState.IDLE;
+		END_IF
+	
+	(**************************************************************************************
+   		COM - Commissioning
+	***************************************************************************************)
+	E_SickScannerState.COM:
+		BaseFunctionData.LabelData.DebugPrint:=TRUE;
+		// Set 'DbgTrig' to true in order to activete scanner.
+		// When an barcode is received:
+		//	BaseFunctionData.LabelData.DataReceived is set by _M_CLV6xReadData() method
+		// 	BaseFunctionData.LabelData.Label is set by _M_CLV6xReadData() method
+		// The scanned code is printed on debug channel		 
+		IF(DbgTrig AND BaseFunctionData.LabelData.DataReceived) THEN
+			_M_ITF_CustomFunctionControl();
+			DbgTrig:=FALSE;
+		END_IF
+		TrigScanner := DbgTrig; //set debug trigger.
+		BaseFunctionData.LabelData.DataReceived := DbgTrig;
+		BaseFunctionData.Busy := TrigScanner; 
+		BaseFunctionData.Ready := NOT TrigScanner;
+	
+	(**************************************************************************************
+   		IDLE
+	***************************************************************************************)
+	E_SickScannerState.IDLE:
+		BaseFunctionData.Ready := FunctionData.ErrorData.Error.ErrorType <> E_ErrorType.ERROR;
+		BaseFunctionData.Busy :=FALSE;
+		// Function has to be started and no errors
+		IF(FunctionData.ErrorData.Error.ErrorType = E_ErrorType.ERROR 
+		   OR FunctionData.OperationState.eState <> E_PositionState.STARTED) THEN
+			// Change state
+			BaseFunctionData.State.eLastState := BaseFunctionData.State.eState;
+			BaseFunctionData.State.eState := E_SickScannerState.INIT;
+		// Wait for Trigger request
+		ELSIF Trigger THEN
+			// Run customized functionality (if enabled)
+			 _M_ITF_CustomFunctionControl();
+			// Go to "READ"
+			BaseFunctionData.State.eLastState := BaseFunctionData.State.eState;
+			BaseFunctionData.State.eState := E_SickScannerState.READ;
+		END_IF
+
+	(**************************************************************************************
+   		READ, wait for scanner to send data
+	***************************************************************************************)
+	E_SickScannerState.READ:
+		BaseFunctionData.Ready:=FALSE;
+		BaseFunctionData.Busy := NOT BaseFunctionData.Ready; //busy = TRUE;
+		TrigScanner := NOT TransportData.Occupied; // trig scanner as long zone is not occupied.
+		// If action on corresponding conveyor was aborted, go back to idle
+		IF ( TransportData.eTransportState = E_TransportState.FREE OR TransportData.eTransportState = E_TransportState.IDLE) THEN
+			// Start over???
+			BaseFunctionData.State.eLastState := BaseFunctionData.State.eState;
+			BaseFunctionData.State.eState := E_SickScannerState.INIT;
+		ELSIF(BaseFunctionData.LabelData.DataReceived) THEN
+			BaseFunctionData.LabelData.DataReceived := FALSE;
+			// Go to "FETCH_DATA"
+			BaseFunctionData.State.eLastState := BaseFunctionData.State.eState;
+			BaseFunctionData.State.eState := E_SickScannerState.FETCH_DATA;
+		END_IF
+		
+	(**************************************************************************************
+   		FETCH_DATA		
+	***************************************************************************************)
+	//Note. Set BaseFunctionData.LabelData.DebugPrint in order to print debug logs.
+	E_SickScannerState.FETCH_DATA:
+		BaseFunctionData.Ready:=FALSE;
+		BaseFunctionData.Busy := NOT BaseFunctionData.Ready; //busy = TRUE;
+		// Get/check TU Index
+		TU_DataIndex :=	_M_CheckTU_ID(TransportData.TU_DataIndex, Conveyor.TU_ID_UNKNOWN, FunctionData.ErrorData.ErrorDataSet[6]);
+		// Check label length
+		IF(BaseFunctionData.LabelData.LabelLength <= MaxLabelLength AND BaseFunctionData.LabelData.LabelLength > 0) THEN
+			// Check read feedback
+			IF(BaseFunctionData.LabelData.Label <> 'NoRead' AND ScannerGoodRead) THEN
+				// Update counter good read
+				_M_UpdateScannerCounters(TRUE,FALSE);
+				// Run customized functionality (if enabled)
+				_M_ITF_CustomFunctionControl();
+				// Check if we should move data to label field or TU ID
+				IF NOT MoveDataLabelField THEN					
+					// Get/check TU Index, check for doublettes
+					TU_DataIndex :=	_M_CheckTU_ID(TransportData.TU_DataIndex, BaseFunctionData.LabelData.Label, FunctionData.ErrorData.ErrorDataSet[6],TU_CheckError=>TU_CheckError);
+					// If TU_Data index is valid
+					IF TU_DataIndex > 0 THEN
+						// Update new TU Data set
+						TU_DataTable[TU_DataIndex].DataSet.DataPresent := TRUE;
+						TU_DataTable[TU_DataIndex].TU_ID.ASCII := BaseFunctionData.LabelData.Label;	// TU_ID will be truncated if actual label is > 18 chararchters
+						TU_DataTable[TU_DataIndex].TU_ID.HashCode := F_CreateHashCode(TU_DataTable[TU_DataIndex].TU_ID.ASCII);
+					END_IF
+				// Move label to label field
+				ELSE
+					// If TU_Data index is valid
+					IF TU_DataIndex > 0 THEN
+						TU_DataTable[TU_DataIndex].DataSet.DataPresent := TRUE;
+						TU_DataTable[TU_DataIndex].Label.ASCII := BaseFunctionData.LabelData.Label;
+					END_IF
+				END_IF
+				// Send TTQ
+				IF SendTTQ AND NOT TU_DataTable[TU_DataIndex].DataSet.JobPresent THEN
+					F_ITC_SendTTQ(
+						eChannelSrc		:= 0, 
+						PositionName	:= F_ReduceToAlphaNumeric(SettingsFunction.FunctionName), 
+						TU_DataIndex	:= TU_DataIndex, 
+						TU_ID			:= TU_DataTable[TU_DataIndex].TU_ID.ASCII, 
+						NbrOfTT			:= 1, 
+						Label			:= '');
+				END_IF
+			// NO read
+			ELSE
+				// Update counter no read
+				_M_UpdateScannerCounters(FALSE, TRUE);
+				// Send no read report
+				F_ITC_SendSNR(
+					eChannelSrc	:= 0, 
+					PositionName:= F_ReduceToAlphaNumeric(SettingsFunction.FunctionName), 
+					TU_ID		:= Conveyor.TU_ID_UNKNOWN, 
+					eInfoCode	:= E_ErrorConv.NO_ERROR_CODE);
+				// Reset
+				//TU_DataIndex := 0;
+			END_IF
+			// Store last read string, used for SIQ telegram
+			FunctionData.AddOnData.LastTU_ID := TU_DataTable[TU_DataIndex].TU_ID.ASCII;
+			// update addon order TU_DataIndex			
+			FunctionInterface.Out.AddOnOrders.TU_DataIndex := TU_DataIndex;
+		ELSE
+			// Error, wrong label length
+			DebugMsg := CONCAT('Bad length of string received from Scanner: ', BaseFunctionData.LabelData.Label);
+			fbDebugMsg.M_SendInfoMsg(DebugMsg);
+						
+			F_SetError(
+				ErrorType 	:= E_ErrorType.ERROR,
+				ErrorParam 	:= 'Incorrect string length received',
+				ErrorMsg 	:= E_ErrorConv.WRONG_VALUE,
+				ErrorData 	:= FunctionData.ErrorData.ErrorDataSet[4]);
+
+			// Update counter no read
+			_M_UpdateScannerCounters(FALSE, TRUE);
+		END_IF
+		// Go to "WAIT_ACK"
+		BaseFunctionData.State.eLastState := BaseFunctionData.State.eState;
+		BaseFunctionData.State.eState := E_SickScannerState.WAIT_ACK;
+	
+	(**************************************************************************************
+   		WAIT_ACK
+	***************************************************************************************)
+	E_SickScannerState.WAIT_ACK:
+		BaseFunctionData.Ready:=FALSE;
+		BaseFunctionData.Busy := FALSE;
+		// Wait until zone is occupied and Trigger not set (if an external trigger is used, we have to make sure that the signal is not acitve, else we would start scanner again.
+		IF(TransportData.Occupied AND NOT Trigger) THEN
+			// Go to "IDLE"
+			BaseFunctionData.State.eLastState := BaseFunctionData.State.eState;
+			BaseFunctionData.State.eState := E_SickScannerState.IDLE;
+		END_IF
+	
+	(**************************************************************************************
+   		ERROR
+	***************************************************************************************)
+	E_SickScannerState.ERROR:
+		// Reset trigger
+		//Outputs.Trigger := FALSE;
+		// Set data ready
+		BaseFunctionData.Ready:=FALSE;
+		BaseFunctionData.Busy := FALSE;
+		// Wait until error is resetted
+		IF FunctionData.ErrorData.Error.ErrorType <> E_ErrorType.ERROR THEN
+			// Go back to init
+			BaseFunctionData.State.eLastState := BaseFunctionData.State.eState;
+			BaseFunctionData.State.eState := E_SickScannerState.INIT;
+		END_IF
+ELSE
+	// Programming error
+	DebugMsg := CONCAT(	'Programming error - Invalid scanner state: ',	INT_TO_STRING(BaseFunctionData.State.eState));
+	fbDebugMsg.M_SendErrorMsg(DebugMsg);
+END_CASE
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_UpdateScannerCounters" Id="{880369c5-0847-4088-8384-6074e4a85cdc}">
+      <Declaration><![CDATA[METHOD PRIVATE _M_UpdateScannerCounters : BOOL
+VAR_INPUT
+	GoodRead	: BOOL;
+	NoRead		: BOOL;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+IF(GoodRead) THEN
+	// Update counter good read
+	IF FunctionData.AddOnData.Counter[1] < 9999 THEN
+		FunctionData.AddOnData.Counter[1] := FunctionData.AddOnData.Counter[1] + 1;
+	ELSE
+		FunctionData.AddOnData.Counter[1] := 0;
+	END_IF
+	
+	// Reset continous no read
+	FunctionData.AddOnData.Counter[4] := 0;
+END_IF
+
+IF(NoRead) THEN
+	// Update counter no read	
+	IF FunctionData.AddOnData.Counter[2] < 9999 THEN
+		FunctionData.AddOnData.Counter[2] := FunctionData.AddOnData.Counter[2] + 1;
+	ELSE
+		FunctionData.AddOnData.Counter[2] := 0;
+	END_IF
+	
+	// Update counter continous no read
+	IF FunctionData.AddOnData.Counter[4] < 9999 THEN
+		FunctionData.AddOnData.Counter[4] := FunctionData.AddOnData.Counter[4] + 1;
+	ELSE
+		FunctionData.AddOnData.Counter[4] := 0;
+	END_IF
+END_IF
+ ]]></ST>
+      </Implementation>
+    </Method>
+    <Action Name="A_DataAquisition" Id="{bd84da51-fc8f-4496-8ec7-4c7f0aef085d}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_DataAquisition 
+ * 	FUNCTION	Call Method for Condition Monitoring 
+ **************************************************************************************)
+ 
+				
+	M_ITC_DataAquisition(	mVariableName				:= 'SacannerRead', 
+								meCM_Index				:= E_CM_Index.CM01,
+								mPosition				:= SettingsFunction.FunctionName,
+								mCurrentValue			:= DWORD_TO_STRING(MainConv.fbGetSystemTime.timeLoDW), 
+								meMode					:= E_CM_Mode.DEFAULT);]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="A_Init" Id="{7ec27109-bd41-4e3c-bf75-7c142523e6fd}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_Init
+ * 	FUNCTION	Initialize function
+ **************************************************************************************)
+
+// Update Registry
+M_UpdateRegistry();
+ 
+// Init ongoing - Wait until init is released (Sequencial startup)
+IF NOT FunctionData.Init AND FunctionData.InitRunning THEN
+	// When the subsystem is started, 
+	// and its released to initialize
+	IF FunctionData.OperationState.Info.SystemReady AND
+	   SettingsFunction.eFunctionNumber < FunctionData.OperationState.InitRelease.eLimitFunctionNumber THEN
+	   
+	   IF M_InitFunction(FALSE) THEN
+			// Function initialized - and initialization done
+			FunctionData.Init := TRUE;
+			FunctionData.InitRunning := FALSE;
+			
+			// Set reset cmd
+			FunctionData.ErrorData.Error.ResetError := TRUE;
+			
+			DebugMsg := CONCAT('Initialization done. Function: ', ConfigFunction.FunctionName);
+			fbDebugMsg.M_SendInfoMsg(DebugMsg);
+		END_IF
+	END_IF
+(*
+If the function is not initialized,
+clean all values and wait until init is released
+*)
+ELSIF NOT FunctionData.Init THEN
+	// Reset internal values	
+	BaseFunctionData.State.eState := E_SickScannerState.SETUP;
+	FunctionData.OperationState := FunctionBase.PositionStateEmpty;
+
+	// Load function specific configuration to settings
+	// this must be done by the sub class.
+	//Settings := Config;
+	
+	// Reset values and load config
+	M_PreInit();
+	
+	// To start init a valid functionnumber and element link is needed
+	FunctionData.InitRunning := SettingsFunction.eFunctionNumber > 0 AND
+								SettingsFunction.eElementLink > 0;
+END_IF
+]]></ST>
+      </Implementation>
+    </Action>
+    <Method Name="M_OutputMapping" Id="{bbee287e-7766-44c1-abb0-f2fb8de234ec}">
+      <Declaration><![CDATA[METHOD PROTECTED M_OutputMapping : BOOL
+VAR_INPUT
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+   Order outputs (Commands to corresponding element)
+***************************************************************************************)
+// Drive run not needed
+FunctionInterface.Out.FunctionOrders.ReqDriveRun := FALSE;
+FunctionInterface.Out.FunctionOrders.ReqDriveRun_34 := FALSE;
+// Allow element to drive
+FunctionInterface.Out.FunctionOrders.Enable := TRUE;
+FunctionInterface.Out.FunctionOrders.Enable_34 := TRUE;
+
+
+(**************************************************************************************
+   AddOn outputs
+***************************************************************************************)
+FunctionInterface.Out.AddOnOrders.Enable 		 := FunctionData.ErrorData.Error.ErrorType <> E_ErrorType.ERROR;
+FunctionInterface.Out.AddOnOrders.EnableTakeover := BaseFunctionData.State.eState > E_SickScannerState.INIT;	
+FunctionInterface.Out.AddOnOrders.EnableHandover := BaseFunctionData.State.eState = E_SickScannerState.IDLE
+													OR BaseFunctionData.State.eState = E_SickScannerState.WAIT_ACK;
+FunctionInterface.Out.AddOnOrders.DataReady 	 := NOT BaseFunctionData.Busy;]]></ST>
+      </Implementation>
+    </Method>
+    <Property Name="P_SetCustomFB" Id="{c62b02e2-9aa3-4aeb-88ae-e26247ab8544}">
+      <Declaration><![CDATA[//Optionally interface poniter to ProBox Scanner Addon customized functions of type ITF_PB_ScannerAddon
+PROPERTY Public P_SetCustomFB : ITF_PB_ScannerAddon]]></Declaration>
+      <Set Name="Set" Id="{b631c9b7-a785-4cb8-9266-04f023e12302}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[_pItfCustomFB := P_SetCustomFB;]]></ST>
+        </Implementation>
+      </Set>
+    </Property>
+    <ObjectProperties>
+      <XmlArchive>
+        <Data>
+          <o xml:space="preserve" t="UMLStereoTypeContainerObject">
+            <v n="IsType" t="UMLType">BaseArea</v>
+            <v n="Stereotype">""</v>
+            <d n="Stereotypes" t="Hashtable" />
+          </o>
+        </Data>
+        <TypeList>
+          <Type n="Hashtable">System.Collections.Hashtable</Type>
+          <Type n="String">System.String</Type>
+          <Type n="UMLStereoTypeContainerObject">{30250973-b110-4e31-b562-c102e042dca4}</Type>
+          <Type n="UMLType">{0197b136-405a-42ee-bb27-fd08b621d0cf}</Type>
+        </TypeList>
+      </XmlArchive>
+    </ObjectProperties>
+    <LineIds Name="FB_SickScannerBase">
+      <LineId Id="3" Count="1" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_SickScannerBase._M_CheckTU_ID">
+      <LineId Id="3" Count="41" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_SickScannerBase._M_CLV6xReadData">
+      <LineId Id="3" Count="86" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_SickScannerBase._M_CLV6xWriteData">
+      <LineId Id="3" Count="56" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_SickScannerBase._M_ConfigureScanner">
+      <LineId Id="3" Count="65" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_SickScannerBase._M_DetectTrigger">
+      <LineId Id="3" Count="22" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_SickScannerBase._M_ITF_CustomFunctionControl">
+      <LineId Id="3" Count="21" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_SickScannerBase._M_MonitorCommunication">
+      <LineId Id="3" Count="27" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_SickScannerBase._M_MonitorNoReadSeries">
+      <LineId Id="3" Count="21" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_SickScannerBase._M_ResetErrors">
+      <LineId Id="3" Count="3" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_SickScannerBase._M_StateControl">
+      <LineId Id="3" Count="231" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_SickScannerBase._M_UpdateScannerCounters">
+      <LineId Id="3" Count="27" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_SickScannerBase.A_DataAquisition">
+      <LineId Id="2" Count="9" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_SickScannerBase.A_Init">
+      <LineId Id="2" Count="46" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_SickScannerBase.M_OutputMapping">
+      <LineId Id="3" Count="17" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_SickScannerBase.P_SetCustomFB.Set">
+      <LineId Id="2" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

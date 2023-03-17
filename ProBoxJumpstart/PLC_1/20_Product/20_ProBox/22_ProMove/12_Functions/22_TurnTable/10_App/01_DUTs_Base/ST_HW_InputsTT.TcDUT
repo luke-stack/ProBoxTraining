@@ -1,0 +1,20 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <DUT Name="ST_HW_InputsTT" Id="{184caceb-d60e-4e18-a0d6-82981d2a6c34}">
+    <Declaration><![CDATA[//HW inputs relatated to Turn table
+TYPE ST_HW_InputsTT :
+STRUCT
+	//Turning inputs
+	
+	Sensor_Pos_CW			: BOOL; // Sensor position clockwise
+	Sensor_Creep_CW			: BOOL; // Sensor creep speed clockwise
+	Sensor_Pos_CCW			: BOOL; // Sensor position counter-clockwise
+	Sensor_Creep_CCW		: BOOL; // Sensor creep speed counter-clockwise
+	Sensor_Pos_MIDDLE_CW	: BOOL; // Sensor position middle towards clockwise
+	Sensor_Pos_MIDDLE_CCW	: BOOL; // Sensor position middle towards counter-clockwise
+	Signal_MotorUnitOK		: BOOL; // Signal motor unit OK (lift & roller)
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

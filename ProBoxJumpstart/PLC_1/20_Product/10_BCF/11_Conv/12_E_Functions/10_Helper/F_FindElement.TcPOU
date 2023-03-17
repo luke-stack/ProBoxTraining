@@ -1,0 +1,48 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.4">
+  <POU Name="F_FindElement" Id="{1e95b0d0-e31c-42d0-b3ea-e743f258079a}" SpecialFunc="None">
+    <Declaration><![CDATA[// returns the element number of the element name or E_BEGIN_ELEMENT if not found
+FUNCTION PUBLIC F_FindElement : E_ElementNumber
+
+(**************************************************************************************
+ * Application   : BoxControl Framework
+ * Revision date : $Date: 2013-09-23 11:26:06 +0200 (Wed, 23 Sep 2015) $
+ * Author        : CDC
+ * ------------------------------------------------------------------------------------
+ * © Swisslog AG * Swisslog is not liable for any usage of this source code that is not agreed
+ * on between Swisslog and the other party. The mandatory legal liability remains * unaffected.
+ * ------------------------------------------------------------------------------------
+ * Project revision history:
+ *
+ * VERSION DATE         INITIALS     DESCRIPTION
+ * 0.0     DD.MM.YYYY   (name)       (explain customized modifications)
+ *
+ **************************************************************************************)
+
+//***********************************************************************************************************
+VAR_INPUT
+	Name				: STRING[NAME_LENGTH]		:= '';	// name of position
+END_VAR
+
+//***********************************************************************************************************
+VAR
+	eElementNumber		: E_ElementNumber			:= 0;
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[
+// string length is roughly 12chars -> hashcode is not neccessary
+FOR eElementNumber := E_ElementNumber.E_BEGIN_ELEMENT + 1 TO E_ElementNumber.E_END_ELEMENT - 1 DO
+	IF F_EqualSisNames(Name1:= ElementRegistry[eElementNumber].ElementName,
+					 Name2:= Name) THEN
+		F_FindElement:= eElementNumber;
+		RETURN;
+	END_IF
+
+END_FOR
+
+// done
+F_FindElement:= E_ElementNumber.E_BEGIN_ELEMENT;]]></ST>
+    </Implementation>
+  </POU>
+</TcPlcObject>

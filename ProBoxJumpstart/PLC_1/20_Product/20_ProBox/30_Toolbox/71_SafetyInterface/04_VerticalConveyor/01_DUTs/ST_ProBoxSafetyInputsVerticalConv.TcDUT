@@ -1,0 +1,14 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <DUT Name="ST_ProBoxSafetyInputsVerticalConv" Id="{9d38229b-c3d8-4f88-823a-f6f6bf553a7f}">
+    <Declaration><![CDATA[TYPE ST_ProBoxSafetyInputsVerticalConv :
+STRUCT	
+	FBErr				: BOOL; //FBErr output from Safety
+	ComErr				: BOOL; //FBCom output from Safety
+	EsOk				: BOOL; //ES for cabinet is ok
+	VcOK				: BOOL; //VC OK (summary out from FB_VerticalConv safety block)		
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

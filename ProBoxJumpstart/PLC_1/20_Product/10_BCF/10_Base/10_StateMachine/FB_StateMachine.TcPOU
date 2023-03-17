@@ -1,0 +1,524 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.4">
+  <POU Name="FB_StateMachine" Id="{e60e6c20-6e11-42c1-ad0a-2b8a86ba201a}" SpecialFunc="None">
+    <Declaration><![CDATA[/// represents a state machine
+{attribute 'no_explicit_call' := 'do not call this POU directly'} 
+{attribute 'reflection'} 
+FUNCTION_BLOCK PUBLIC FB_StateMachine
+(**************************************************************************************
+ *  Application     :   BoxControl Framework
+ *  Revision date   :   $Date: 2021-04-09 08:29:02 +0200 (fre, 09 apr 2021) $
+ *  Author          :   CDC
+ * ------------------------------------------------------------------------------------
+ *  © Swisslog AG
+ *  Swisslog is not liable for any usage of this source code that is not agreed 
+ *  on between Swisslog and the other party. The mandatory legal liability remains 
+ *  unaffected.
+ * ------------------------------------------------------------------------------------
+ *  Revision History: 
+ *
+ *  VERSION DATE         INITIALS     DESCRIPTION
+ *  0.0     DD.MM.YYYY   (name)       (explain customized modifications)
+ *
+ **************************************************************************************)
+VAR
+  {attribute 'instance-path'}
+  {attribute 'no_init'}
+  Instance          : STRING[255];     // instance path
+
+  SisNbr            : A_InstancePath;  // SIS Number
+  Name              : A_InstancePath;  // state machine name
+  Tracing           : BOOL  := TRUE;   // HI = state changes are being traced
+
+  State             : UINT;           // current state
+  FStateChanged     : BOOL;           // state changed (and new state not yet arrived) 
+  TimeStamp         : TIME;           // timestamp of state change
+  Duration          : TIME;           // duration of last state
+
+  Callback  : I_StateMachineTextCallback;	// callback event to retrieve state text
+
+  Diagnose  : STRING[255];
+END_VAR
+
+VAR_STAT CONSTANT
+  REASON_TEXT_LENGTH    : UINT          := 127;
+  ARROW                 : STRING[7]     := ' => ';
+  MISSING_CALLBACK		: A_StateText   := 'missing StateTextCallback';
+END_VAR]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[]]></ST>
+    </Implementation>
+    <Method Name="FB_init" Id="{4ab99b46-f056-4185-88ce-074818875e18}">
+      <Declaration><![CDATA[METHOD FB_init : BOOL
+(**************************************************************************************
+ *  Application     :   BoxControl Framework
+ *  Revision date   :   $Date: 2021-04-09 08:29:02 +0200 (fre, 09 apr 2021) $
+ *  Author          :   CDC
+ * ------------------------------------------------------------------------------------
+ *  © Swisslog AG
+ *  Swisslog is not liable for any usage of this source code that is not agreed 
+ *  on between Swisslog and the other party. The mandatory legal liability remains 
+ *  unaffected.
+ * ------------------------------------------------------------------------------------
+ *  Revision History: 
+ *
+ *  VERSION DATE         INITIALS     DESCRIPTION
+ *  0.0     DD.MM.YYYY   (name)       (explain customized modifications)
+ *
+ **************************************************************************************)
+VAR_INPUT
+	bInitRetains		: BOOL; // if TRUE, the retain variables are initialized (warm start / cold start)
+	bInCopyCode			: BOOL;  // if TRUE, the instance afterwards gets moved into the copy code (online change)
+
+	mName				: A_InstancePath;       		// state machine name
+	mStateTextCallback	: I_StateMachineTextCallback;	// callback event to retrieve state text
+END_VAR
+
+VAR
+	SrcPos  : UINT;
+	DstPos  : UINT;
+	Length  : UINT;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[Name        := mName;
+Callback    := mStateTextCallback;
+
+//Remove 'QB2Jumpstart.JumpStart.' from the instance path 
+F_InstancePathRemovals(DestStart     := ADR(Instance),
+                       DestEnd       := ADR(Instance) + SIZEOF(Instance),
+                       RemoveLastPart:= FALSE );
+
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_BuildTraceText" Id="{feebf162-516a-4e46-b9f4-ffbf72452f45}">
+      <Declaration><![CDATA[METHOD PROTECTED M_BuildTraceText
+(**************************************************************************************
+ *  Application     :   BoxControl Framework
+ *  Revision date   :   $Date: 2021-04-09 08:29:02 +0200 (fre, 09 apr 2021) $
+ *  Author          :   CDC
+ * ------------------------------------------------------------------------------------
+ *  © Swisslog AG
+ *  Swisslog is not liable for any usage of this source code that is not agreed 
+ *  on between Swisslog and the other party. The mandatory legal liability remains 
+ *  unaffected.
+ * ------------------------------------------------------------------------------------
+ *  Revision History: 
+ *
+ *  VERSION DATE         INITIALS     DESCRIPTION
+ *  0.0     DD.MM.YYYY   (name)       (explain customized modifications)
+ *
+ **************************************************************************************)
+VAR_INPUT
+  meMsgType       : E_DebugMsgType := E_DebugMsgType.INFO;
+  mNewState      : UINT;
+  mLastState     : UINT;
+  mReason        : POINTER TO BYTE;
+END_VAR
+
+VAR
+  Trace         : STRING[255];
+  LastStateText : A_StateText := MISSING_CALLBACK;
+  StateText     : A_StateText := MISSING_CALLBACK;
+  DestStart     : POINTER TO BYTE;     // start position to concat
+  DestEnd       : POINTER TO BYTE;     // buffer/string end
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[IF (Tracing = FALSE)
+THEN
+  RETURN;
+END_IF
+
+// get state texts
+IF (Callback <> 0)
+THEN
+  LastStateText:= Callback.M_GetStateText(StateMachine:= THIS, StateNbr:= mLastState );
+  StateText    := Callback.M_GetStateText(StateMachine:= THIS, StateNbr:=     P_State );
+END_IF
+
+// create trace text
+DestStart:= ADR(Trace);
+DestEnd  := ADR(Trace) + SIZEOF(Trace);
+// sis nbr
+DestStart:= F_StringCopy     (DestStart:= DestStart,  DestEnd:= DestEnd,  Source:= ADR(SisNbr)  );
+
+// name
+DestStart:= F_StringCopy     (DestStart:= DestStart,  DestEnd:= DestEnd,  Source:= ADR(',  ')  );
+DestStart:= F_StringCopy     (DestStart:= DestStart,  DestEnd:= DestEnd,  Source:= ADR(Name)  );
+DestStart:= F_StringCopy     (DestStart:= DestStart,  DestEnd:= DestEnd,  Source:= ADR(' changed')  );
+
+// old state
+DestStart:= F_StringCopy     (DestStart:= DestStart,  DestEnd:= DestEnd,  Source:= ADR(',  ')  );
+DestStart:= F_StringFromUlint(DestStart:= DestStart,  DestEnd:= DestEnd,  Value := mLastState,  Length:= 0  );
+DestStart:= F_StringCopy     (DestStart:= DestStart,  DestEnd:= DestEnd,  Source:= ADR(' (')  );
+DestStart:= F_StringCopy     (DestStart:= DestStart,  DestEnd:= DestEnd,  Source:= ADR(LastStateText)  );
+DestStart:= F_StringCopy     (DestStart:= DestStart,  DestEnd:= DestEnd,  Source:= ADR(')')  );
+
+// new state
+DestStart:= F_StringCopy     (DestStart:= DestStart,  DestEnd:= DestEnd,  Source:= ADR(ARROW)  );
+DestStart:= F_StringFromUlint(DestStart:= DestStart,  DestEnd:= DestEnd,  Value := State,  Length:= 0  );
+DestStart:= F_StringCopy     (DestStart:= DestStart,  DestEnd:= DestEnd,  Source:= ADR(' (')  );
+DestStart:= F_StringCopy     (DestStart:= DestStart,  DestEnd:= DestEnd,  Source:= ADR(StateText)  );
+DestStart:= F_StringCopy     (DestStart:= DestStart,  DestEnd:= DestEnd,  Source:= ADR(')')  );
+
+// duration
+DestStart:= F_StringCopy     (DestStart:= DestStart,  DestEnd:= DestEnd,  Source:= ADR(', duration = ')  );
+DestStart:= F_StringFromTime (DestStart:= DestStart,  DestEnd:= DestEnd,  Value := Duration  );
+
+// reason
+DestStart:= F_StringCopy     (DestStart:= DestStart,  DestEnd:= DestEnd,  Source:= ADR(', reason = ')  );
+DestStart:= F_StringCopy     (DestStart:= DestStart,  DestEnd:= DestEnd,  Source:= mReason  );
+
+// to debug channel
+fbDebugMsgManager.M_SendMessage(meMessageType:= meMsgType,
+							  mDebugSource := Instance,
+							  mpMsgData    := ADR(Trace),
+							  mMsgDataLen  := DestStart - ADR(Trace) );
+
+Diagnose:= Trace;
+
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_GetRemainingTime" Id="{cfda7da7-72e5-4d4b-ab5e-c3a33b287f5b}">
+      <Declaration><![CDATA[/// returns the remaining time of state for the given duration
+METHOD PUBLIC M_GetRemainingTime : TIME
+(**************************************************************************************
+ *  Application     :   BoxControl Framework
+ *  Revision date   :   $Date: 2021-04-09 08:29:02 +0200 (fre, 09 apr 2021) $
+ *  Author          :   CDC
+ * ------------------------------------------------------------------------------------
+ *  © Swisslog AG
+ *  Swisslog is not liable for any usage of this source code that is not agreed 
+ *  on between Swisslog and the other party. The mandatory legal liability remains 
+ *  unaffected.
+ * ------------------------------------------------------------------------------------
+ *  Revision History: 
+ *
+ *  VERSION DATE         INITIALS     DESCRIPTION
+ *  0.0     DD.MM.YYYY   (name)       (explain customized modifications)
+ *
+ **************************************************************************************)
+VAR_INPUT
+  mDuration  : TIME;    // total duration
+END_VAR
+
+VAR
+  Remain    : TIME;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[IF (P_TimeInState > mDuration)  THEN 
+    Remain:= T#0S;
+ELSE
+    Remain:= mDuration - P_TimeInState;
+END_IF
+
+M_GetRemainingTime:= Remain;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_ReEntry" Id="{a70ea4af-268c-4791-a10d-c80aeba630b3}">
+      <Declaration><![CDATA[/// re entres the same state with reason
+METHOD PUBLIC M_ReEntry
+(**************************************************************************************
+ *  Application     :   BoxControl Framework
+ *  Revision date   :   $Date: 2021-04-09 08:29:02 +0200 (fre, 09 apr 2021) $
+ *  Author          :   CDC
+ * ------------------------------------------------------------------------------------
+ *  © Swisslog AG
+ *  Swisslog is not liable for any usage of this source code that is not agreed 
+ *  on between Swisslog and the other party. The mandatory legal liability remains 
+ *  unaffected.
+ * ------------------------------------------------------------------------------------
+ *  Revision History: 
+ *
+ *  VERSION DATE         INITIALS     DESCRIPTION
+ *  0.0     DD.MM.YYYY   (name)       (explain customized modifications)
+ *
+ **************************************************************************************)
+VAR_INPUT
+  mReason                : STRING[REASON_TEXT_LENGTH]       := '';
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[FStateChanged:= TRUE;
+Duration     := F_GetTimeMsDiff(TimeStamp);
+TimeStamp    := F_GetTimeMsTick();
+
+
+M_BuildTraceText(meMsgType  := E_DebugMsgType.INFO,
+                 mNewState := State,
+                 mLastState:= State,
+                 mReason   := ADR(mReason)  );
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_SetState" Id="{250b2403-a61c-49ff-9b09-44dbd54fb7a9}">
+      <Declaration><![CDATA[/// sets a new state with reason for change
+METHOD PUBLIC M_SetState
+(**************************************************************************************
+ *  Application     :   BoxControl Framework
+ *  Revision date   :   $Date: 2021-04-09 08:29:02 +0200 (fre, 09 apr 2021) $
+ *  Author          :   CDC
+ * ------------------------------------------------------------------------------------
+ *  © Swisslog AG
+ *  Swisslog is not liable for any usage of this source code that is not agreed 
+ *  on between Swisslog and the other party. The mandatory legal liability remains 
+ *  unaffected.
+ * ------------------------------------------------------------------------------------
+ *  Revision History: 
+ *
+ *  VERSION DATE         INITIALS     DESCRIPTION
+ *  0.0     DD.MM.YYYY   (name)       (explain customized modifications)
+ *
+ **************************************************************************************)
+VAR_INPUT
+  mState     : UINT;
+  mReason    : STRING[REASON_TEXT_LENGTH];
+END_VAR
+
+VAR
+  LastState : UINT;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[IF State = mState
+THEN
+  RETURN;
+END_IF
+
+LastState:= State;
+State   :=  mState;
+
+FStateChanged:= TRUE;
+Duration     := F_GetTimeMsDiff(TimeStamp);
+TimeStamp    := F_GetTimeMsTick();
+
+
+M_BuildTraceText(meMsgType  := E_DebugMsgType.INFO,
+                 mNewState := State,
+                 mLastState:= LastState,
+                 mReason   := ADR(mReason)  );
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_SetState1" Id="{fd1430d8-d4f4-4670-a83a-3c73976aeec1}">
+      <Declaration><![CDATA[/// sets a new state with reason for change and severity
+METHOD PUBLIC M_SetState1
+(**************************************************************************************
+ *  Application     :   BoxControl Framework
+ *  Revision date   :   $Date: 2021-04-09 08:29:02 +0200 (fre, 09 apr 2021) $
+ *  Author          :   CDC
+ * ------------------------------------------------------------------------------------
+ *  © Swisslog AG
+ *  Swisslog is not liable for any usage of this source code that is not agreed 
+ *  on between Swisslog and the other party. The mandatory legal liability remains 
+ *  unaffected.
+ * ------------------------------------------------------------------------------------
+ *  Revision History: 
+ *
+ *  VERSION DATE         INITIALS     DESCRIPTION
+ *  0.0     DD.MM.YYYY   (name)       (explain customized modifications)
+ *
+ **************************************************************************************)
+VAR_INPUT
+  mMsgType   : E_DebugMsgType := E_DebugMsgType.INFO;
+  mState     : UINT;
+  mReason    : STRING[REASON_TEXT_LENGTH];
+END_VAR
+
+VAR
+  LastState : UINT;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[IF State = mState
+THEN
+  RETURN;
+END_IF
+
+LastState:= State;
+State   :=  mState;
+
+FStateChanged:= TRUE;
+Duration     := F_GetTimeMsDiff(TimeStamp);
+TimeStamp    := F_GetTimeMsTick();
+
+
+M_BuildTraceText(meMsgType  := mMsgType,
+                 mNewState := State,
+                 mLastState:= LastState,
+                 mReason   := ADR(mReason)  );
+]]></ST>
+      </Implementation>
+    </Method>
+    <Property Name="P_Entering" Id="{03c4a77b-e2f2-43c5-865d-3043c43ab03d}">
+      <Declaration><![CDATA[// entry into new state (must be checked)
+//{attribute 'monitoring' := 'call'} no call here
+PROPERTY PUBLIC P_Entering : BOOL]]></Declaration>
+      <Get Name="Get" Id="{d7a40a30-c9ae-4ff9-bb4c-451107d88d96}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[
+(**************************************************************************************************************)
+(**************************************************************************************************************)
+IF ( FStateChanged = FALSE )
+THEN
+  P_Entering:= FALSE;
+  RETURN;
+END_IF
+
+
+
+
+(**************************************************************************************************************)
+(**************************************************************************************************************)
+FStateChanged:= FALSE;
+
+
+
+
+(**************************************************************************************************************)
+(** done ******************************************************************************************************)
+P_Entering := TRUE;
+]]></ST>
+        </Implementation>
+      </Get>
+    </Property>
+    <Property Name="P_Exiting" Id="{809e0b6e-50ca-44ad-9e3a-d590471c1ec3}">
+      <Declaration><![CDATA[// exit from old state (optionally)
+{attribute 'monitoring' := 'call'}
+PROPERTY PUBLIC P_Exiting : BOOL]]></Declaration>
+      <Get Name="Get" Id="{ac0a47d9-5a69-4b2f-89d2-196e1861c452}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[P_Exiting:= FStateChanged;]]></ST>
+        </Implementation>
+      </Get>
+    </Property>
+    <Property Name="P_SisNbr" Id="{0377cf0d-2c06-4c7f-9bd3-74d96c54e929}">
+      <Declaration><![CDATA[// SisNbr to trace
+{attribute 'monitoring' := 'call'}
+PROPERTY PUBLIC P_SisNbr : A_InstancePath]]></Declaration>
+      <Get Name="Get" Id="{18f481e9-d0ec-4868-8789-cea6f60ba949}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[P_SisNbr:= SisNbr;]]></ST>
+        </Implementation>
+      </Get>
+      <Set Name="Set" Id="{4d84a1b7-d9aa-4e44-9add-880685fe1d9a}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[SisNbr:= P_SisNbr;]]></ST>
+        </Implementation>
+      </Set>
+    </Property>
+    <Property Name="P_State" Id="{cfbcc849-f817-440f-aaec-07d724c95099}">
+      <Declaration><![CDATA[// current state as UINT
+{attribute 'monitoring' := 'call'}
+PROPERTY PUBLIC P_State : UINT]]></Declaration>
+      <Get Name="Get" Id="{fd462204-fc84-43e0-9a09-105d4094df16}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[P_State:= State;]]></ST>
+        </Implementation>
+      </Get>
+    </Property>
+    <Property Name="P_TimeInState" Id="{aa04fd3e-41bd-4315-bcaf-815780cb2f28}">
+      <Declaration><![CDATA[// duration of this state
+{attribute 'monitoring' := 'call'}
+PROPERTY PUBLIC P_TimeInState : TIME]]></Declaration>
+      <Get Name="Get" Id="{a65c243f-9265-4f78-b112-5c053ec4d0fd}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[P_TimeInState:= F_GetTimeMsDiff( TimeStamp );]]></ST>
+        </Implementation>
+      </Get>
+    </Property>
+    <Property Name="P_Tracing" Id="{6c1ac8d8-bce0-4b86-81d9-7a8c0c5f50a0}">
+      <Declaration><![CDATA[// HI = state changes are being traced
+{attribute 'monitoring' := 'call'}
+PROPERTY PUBLIC P_Tracing : BOOL]]></Declaration>
+      <Get Name="Get" Id="{6ee57ae2-8060-4313-900e-5580e238ca6e}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[P_Tracing:= Tracing;]]></ST>
+        </Implementation>
+      </Get>
+      <Set Name="Set" Id="{8f332eb2-2df5-4726-817a-bdbfe364e123}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[Tracing:= P_Tracing;]]></ST>
+        </Implementation>
+      </Set>
+    </Property>
+    <LineIds Name="FB_StateMachine">
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_StateMachine.FB_init">
+      <LineId Id="3" Count="7" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_StateMachine.M_BuildTraceText">
+      <LineId Id="3" Count="52" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_StateMachine.M_GetRemainingTime">
+      <LineId Id="3" Count="5" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_StateMachine.M_ReEntry">
+      <LineId Id="3" Count="8" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_StateMachine.M_SetState">
+      <LineId Id="3" Count="16" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_StateMachine.M_SetState1">
+      <LineId Id="3" Count="16" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_StateMachine.P_Entering.Get">
+      <LineId Id="3" Count="21" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_StateMachine.P_Exiting.Get">
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_StateMachine.P_SisNbr.Get">
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_StateMachine.P_SisNbr.Set">
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_StateMachine.P_State.Get">
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_StateMachine.P_TimeInState.Get">
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_StateMachine.P_Tracing.Get">
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_StateMachine.P_Tracing.Set">
+      <LineId Id="2" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

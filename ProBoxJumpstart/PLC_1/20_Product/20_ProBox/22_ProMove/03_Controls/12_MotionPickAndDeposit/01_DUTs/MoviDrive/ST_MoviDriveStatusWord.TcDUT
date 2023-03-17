@@ -1,0 +1,26 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.12">
+  <DUT Name="ST_MoviDriveStatusWord" Id="{cc6580ff-7c94-467c-95c4-ab5a3fc25e14}">
+    <Declaration><![CDATA[TYPE ST_MoviDriveStatusWord :
+STRUCT
+	EnableOutputStage			: BIT;
+	InverterReadyForOperation	: bit;
+	PoDataEnabled				: bit; 
+	ActiveRampGeneratorSet		: bit;
+	ActiveParameterSet			: bit;
+	InverterError				: bit;
+	LimitSwitchCWEnabled		: bit;
+	LimitSwitchCCWEnabled		: BIT;
+	Spare_1						: BIT; 
+	Spare_2						: BIT; 
+	Spare_3						: bit; 
+	Spare_4						: bit; 
+	Spare_5						: bit; 
+	Spare_6						: bit; 
+	Spare_7						: bit; 	
+	Spare_8						: bit; 		
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

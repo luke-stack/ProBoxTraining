@@ -1,0 +1,36 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <DUT Name="ST_CFG_SideShiftEmulation" Id="{b048ff1b-04cc-46e1-abb5-53eeeb6e79c7}">
+    <Declaration><![CDATA[TYPE ST_CFG_SideShiftEmulation :
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision:  $
+ *	Revision date	:	$Date:  $
+ *	Last changed by	:	$Author: q8hedls $
+ *	URL				:	$URL:  $
+ *
+ *	Purpose			:	Scanner emulation configuration
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+STRUCT
+	Position_CW							: INT := 400;
+	Position_CCW	  					: INT := 0;	
+	Position_Middle_CW					: INT := 200;
+	Position_Middle_CCW	  				: INT := 200;
+	Position_Max_CW						: INT := 500;
+	Position_Max_CCW	  				: INT := 0;	
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

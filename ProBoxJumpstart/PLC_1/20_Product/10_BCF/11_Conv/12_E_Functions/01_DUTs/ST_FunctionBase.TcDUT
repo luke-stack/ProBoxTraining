@@ -1,0 +1,82 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.12">
+  <DUT Name="ST_FunctionBase" Id="{3b7092ef-ce54-4cd1-a8d6-d55f8ce280cb}">
+    <Declaration><![CDATA[TYPE ST_FunctionBase :
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 404529 $
+ *	Revision date	:	$Date: 2018-04-23 08:21:38 +0200 (Mo., 23 Apr 2018) $
+ *	Last changed by	:	$Author: b7bolm $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/trunk/01_Software/BCF/BCF/JumpStart/20_Product/10_App/12_E_Functions/10_Lib/10_Conv/01_DUTs/ST_FunctionBase.TcDUT $
+ *
+ *	Purpose			:	Function interface - Contains data which is provided by the
+ *						function or is input from other objects.
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+STRUCT
+	AddOnAck					: BOOL; // Addon acknowledge
+	STI_Instance				: ITF_SubsystemTransport; // Instance to compare valid interfaces
+	eMsgType					: E_ITC_MsgTypeConv;
+	Position					: ST_PositionIdent; // Position idents
+	NextPositionName			: STRING(NAME_LENGTH); // Position idents
+	PrevPositionName			: STRING(NAME_LENGTH); // Position idents
+	PositionName				: STRING(NAME_LENGTH); // Position name
+	DestinationName				: STRING(NAME_LENGTH); // Position name
+	TU_DataIndex				: DINT; // Data index
+	ErrorDataSet				: ST_ErrorDataSet; // Temporary error set
+	ErrorDataZone				: ST_ZoneErrorStruct; // Temporary error data
+	eReturnCode					: E_ErrorConv;
+	DataITC						: ST_ITC_GeneralData; // ITC Message
+	OperatingState				: ST_PositionState; // States
+	LinkedFunctionStopped		: BOOL; // Linked function stopped
+	AllZonesStopped				: BOOL; // All zones are stopped
+	TransportControlParam		: ST_TransportControlParam; // Transportcontrol param
+	TransportData				: ST_TransportData; // Transport data
+	PrevTransportData			: ST_TransportData; // Previous data
+	NextTransportData			: ST_TransportData; // Next data
+	TransportDataEmpty			: ST_TransportData; // Transport data
+	TransportControlDataEmpty 	: ST_TransportControlData; // Transport control data
+	ZoneSettingsEmpty			: ST_CFG_Zone; // Zone settings
+	PositionStateEmpty			: ST_PositionState;
+	Idx							: INT; // iterator
+	FSQ							: ST_ITC_FSQ; // ITC Message
+	FCQ							: ST_ITC_FCQ; // ITC Message
+	MCQ							: ST_ITC_MCQ; // ITC Message
+	SIQ							: ST_ITC_SIQ; // ITC Message
+	DAQ							: ST_ITC_DAQ; // ITC Message
+	GDQ							: ST_ITC_GDQ; // ITC Message
+	RAA							: ST_ITC_RAA; // ITC Message
+	RDQ							: ST_ITC_RDQ; // ITC Message
+	CM_Zone						: ARRAY [1..NUMBER_OF_ZONES_PER_FUNCTION] OF ST_CM_Base;	/// Data Aquisition Variables Staorage and Settings // CM inside base
+END_STRUCT
+END_TYPE
+]]></Declaration>
+    <ObjectProperties>
+      <XmlArchive>
+        <Data>
+          <o xml:space="preserve" t="UMLStereoTypeContainerObject">
+            <v n="IsType" t="UMLType">BaseArea</v>
+            <v n="Stereotype">""</v>
+            <d n="Stereotypes" t="Hashtable" />
+          </o>
+        </Data>
+        <TypeList>
+          <Type n="Hashtable">System.Collections.Hashtable</Type>
+          <Type n="String">System.String</Type>
+          <Type n="UMLStereoTypeContainerObject">{30250973-b110-4e31-b562-c102e042dca4}</Type>
+          <Type n="UMLType">{0197b136-405a-42ee-bb27-fd08b621d0cf}</Type>
+        </TypeList>
+      </XmlArchive>
+    </ObjectProperties>
+  </DUT>
+</TcPlcObject>

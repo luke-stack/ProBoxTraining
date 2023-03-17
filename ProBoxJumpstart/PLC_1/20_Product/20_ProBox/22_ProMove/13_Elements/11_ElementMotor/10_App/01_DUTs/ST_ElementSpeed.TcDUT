@@ -1,0 +1,14 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <DUT Name="ST_ElementSpeed" Id="{a29ebbb1-a00b-43f1-b528-33ccbd41536a}">
+    <Declaration><![CDATA[//Actual element speed used for syntetic encoder
+TYPE ST_ElementSpeed :
+STRUCT
+	NormalEncSpeed	: REAL := 350;	// Syntetic encoder Normal speed [mm/s]
+	SlowEncSpeed	: REAL := 200;	// Syntetic encoder Slow speed [mm/s]
+	CreepEncSpeed	: REAL := 80;	// Syntetic encoder Creep speed [mm/s]  
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

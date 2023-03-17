@@ -1,0 +1,13 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <DUT Name="ST_FastDoorData" Id="{f66a3f24-f5d2-4456-8940-62821802c266}">
+    <Declaration><![CDATA[TYPE ST_FastDoorData :
+STRUCT
+	EnableTransport				: BOOL; //Controls handover and takover, false when door is moving
+	OrderPos					: E_DoorPos; //Order position of fast door
+	DoorSide					: BOOL;  //Varieble that is true if transport is on the side with door 
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

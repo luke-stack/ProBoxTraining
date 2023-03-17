@@ -1,0 +1,380 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.12">
+  <POU Name="FB_SeqGetNextTU" Id="{ba164d2b-3518-4916-9c5a-916867eb6503}" SpecialFunc="None">
+    <Declaration><![CDATA[/// Returns next TU which is expected after the requesting sequence information.
+/// Valid next TU : TU location unknow, or found (Default) /not found (Exception mode) on a branch
+FUNCTION_BLOCK FB_SeqGetNextTU
+(************************************************************************************** 
+* 	Application 		: BoxControl Framework 
+* 	Revision 			: $Revision: 404877 $ 
+* 	Revision date 		: $Date: 2018-04-26 14:10:34 +0200 (Thu, 26 Apr 2018) $ 
+* 	Last changed by 	: $Author: b7ernsb $ 
+* 	URL 				: $URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/21_Projects/BCF_2.0/trunk/BCF/BCF/JumpStart/20_Product/10_App/12_E_Functions/10_Lib/10_Conv/FB_FunctionConv.TcPOU $ 
+* ------------------------------------------------------------------------------------ 
+* 	© Swisslog AG 
+* 	Swisslog is not liable for any usage of this source code that is not agreed 
+* 	on between Swisslog and the other party. The mandatory legal liability remains 
+* 	unaffected. 
+* ------------------------------------------------------------------------------------ 
+* 	Revision History: 
+* 
+* 	VERSION 		DATE 			INITIALS 			DESCRIPTION 
+* 	0.1 			03.05.2018 		mbo 				Created.
+*	0.2				08.02.2019		mbo 				Checkpoint of next included
+* 
+**************************************************************************************)
+VAR_INPUT
+	Execute						: BOOL; // Rising edge, starts new search process
+	TU_Index					: DINT; // Requesting TU Index
+	Destination					: ST_PositionIdent; // Destination of requesting Sequence
+	DestinationSlot				: INT; // Destination slot of requesting Sequence
+	Sequence					: ULINT; // Requesting sequence
+	SubSequence					: DINT; // Requesting sub sequence
+	BranchExclusionMode			: BOOL := FALSE; // False = TU on a branch is possible next, TRUE = TU on a branch is excluded as possible next
+	Branch						: I_BranchCheckpoint; // Branch to check
+END_VAR
+VAR_OUTPUT
+	Busy						: BOOL; // Process ongoing
+	NextTU_Index				: DINT; // Next expected TU_Index which is not located or found on branch
+	NextTU_Checkpoint			: STRING(5); // Checkpoint location of next TU at point when it was detected
+	Error 						: BOOL; // Error configuration or invalid result, Reset with new trigger
+END_VAR
+VAR_IN_OUT
+	TU_Table					: ARRAY[0..Conveyor.NUMBER_OF_TU_DATA] OF ST_TU_Data; // TU Table
+END_VAR
+VAR
+	EntriesPerCycle				: DINT := SequencingParameter.SCAN_ENTRIES_PER_CYCLE; // Entries scanned per cylce
+	EntryIdx					: DINT; // Entry iterator
+	MinArrayIndex				: DINT; // Minimum index of TU Array
+	MaxArrayIndex				: DINT; // Maximum index of TU Array
+	StartIndex					: DINT; // Start index of current iteration
+	EndIndex					: DINT; // End index of current iteration
+	IterationCounter			: DINT; // Iteration counter
+	FoundOnBranch				: BOOL; // Checkpoint ID found on one of the configured branches
+	BranchRecursive				: BOOL := TRUE; // Recursive branch search active (Default = True)
+	
+
+	CurrentNextTU_Index			: DINT; // Current next TU Index
+	State						: INT; // State machine, 0=Idle, 1 = Search
+	fbTrigExecute				: R_TRIG; // Trigger new request
+	
+	LowestNextSequence			: ULINT; // Lowest possible next sequence number
+	LowestNextSubSequence		: DINT; // Lowest possible next sub sequence number
+	rTU_DataEntry				: REFERENCE TO ST_TU_Data; // Currently checked entry
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[// Monitor new request trigger
+fbTrigExecute(CLK := Execute);
+
+CASE State OF
+	// Idle - State
+	0:
+		// Wait for new start trigger
+		IF fbTrigExecute.Q THEN
+			// Validate inputs
+			IF Sequence = 0 OR
+			   Destination.eFunctionNumber = E_FunctionNumber.F_BEGIN_FUNCTION OR
+			   Branch = 0 THEN
+			   // Invalid inputs
+			   Error := TRUE;
+			   RETURN;
+			END_IF
+			
+			// Initialize 
+			Error := FALSE;
+			Busy := TRUE;
+
+			IterationCounter := 0;
+			NextTU_Index := 0;
+			NextTU_Checkpoint := '';
+			CurrentNextTU_Index := 0;
+			LowestNextSequence := 0;
+			LowestNextSubSequence := 0;
+			
+			MinArrayIndex := 1; //LOWER_BOUND(TU_Table,1);
+			MaxArrayIndex := Conveyor.NUMBER_OF_TU_DATA; //UPPER_BOUND(TU_Table,1);
+			State := 1;
+		END_IF
+		
+	// Iterate over multiple cycles through TU Table	
+	1:
+		StartIndex := MinArrayIndex + IterationCounter * EntriesPerCycle;
+		EndIndex   := StartIndex + EntriesPerCycle;
+	
+		FOR EntryIdx := StartIndex TO EndIndex DO
+			// When scan of TU is complete
+			IF EntryIdx > MaxArrayIndex THEN
+				// No possible next found
+				IF CurrentNextTU_Index = 0 THEN
+					NextTU_Index := 0;
+					NextTU_Checkpoint := '';
+					
+				// Otherwise, ensure found index is still valid
+				ELSE
+					IF M_IsFoundNextIndexValid(TU_Table) THEN
+						NextTU_Index := CurrentNextTU_Index;
+						NextTU_Checkpoint := TU_Table[NextTU_Index].DataSet.CheckpointID;
+						
+					ELSE
+						NextTU_Index := 0;
+						NextTU_Checkpoint := '';
+						
+						Error := TRUE;
+					END_IF
+				END_IF
+				
+				Busy := FALSE;
+			
+				State := 0;
+				RETURN;
+			END_IF
+			
+			rTU_DataEntry REF= TU_Table[EntryIdx];
+			
+			// Skip this loop if...
+            // - own index is found
+            // - Empty data set is found
+			// - Data set without job present is found ( no destination)
+			IF EntryIdx = TU_Index OR 
+               NOT rTU_DataEntry.DataSet.DataPresent OR 
+               NOT rTU_DataEntry.DataSet.JobPresent THEN
+				CONTINUE;
+			END_IF
+			
+			// Check if TU has same Destination and Destination slot, 
+			// otherwise it is not relevant for sequencing of requesting TU
+			IF rTU_DataEntry.Destination[1].eFunctionNumber = Destination.eFunctionNumber AND
+			   rTU_DataEntry.Destination[1].ZoneNumber = Destination.ZoneNumber THEN
+				IF rTU_DataEntry.DataSet.DestinationSlot = DestinationSlot THEN
+					
+					// TU's can be ignored if...
+					// - Sequence is lower than requesting sequence
+					// - Sequence is 0 and is therefore not part of a sequence
+					// - Sequence is higher than an already found next sequence
+					// - Sequence is equal to requesting, but subsequence is lower
+					IF rTU_DataEntry.DataSet.Sequence < Sequence OR
+					   rTU_DataEntry.DataSet.Sequence = 0 OR
+					   (rTU_DataEntry.DataSet.Sequence = Sequence AND
+					   rTU_DataEntry.DataSet.SubSequence < SubSequence) OR   
+					   (rTU_DataEntry.DataSet.Sequence > LowestNextSequence AND
+					   LowestNextSequence <> 0) THEN
+						// Skip
+						;
+				
+					// Sequence is in a valid range for a possible next
+					ELSE
+						// check possible next TU
+						IF rTU_DataEntry.DataSet.Sequence = LowestNextSequence THEN
+							// Only lower sub sequences are checked for blocking
+							IF rTU_DataEntry.DataSet.SubSequence < LowestNextSubSequence THEN
+								// Check if current comapared TU is a possible next
+								IF M_IsTU_Next(rTU_DataEntry) THEN
+									LowestNextSubSequence := rTU_DataEntry.DataSet.SubSequence;
+									
+								   	// Store index and position at time when it was found
+								   	CurrentNextTU_Index := EntryIdx;	
+									
+								// Otherwise the found TU is not influence sequencing of requesting
+								ELSE
+								   // Skip
+								   ;
+								END_IF
+							END_IF
+						// Less or equal
+						ELSE
+							// Check if current comapared TU is a possible next
+							IF M_IsTU_Next(rTU_DataEntry) THEN
+							   // TU is possible next, update Lowest next sequence pair
+							   LowestNextSequence := rTU_DataEntry.DataSet.Sequence;
+							   LowestNextSubSequence := rTU_DataEntry.DataSet.SubSequence;
+							   
+							   // Store index and position at time when it was found
+							   CurrentNextTU_Index := EntryIdx;		
+							END_IF
+						END_IF
+					END_IF
+				END_IF
+			END_IF
+		END_FOR
+
+		IterationCounter := IterationCounter + 1;
+ELSE
+	// Default
+	State := 0;
+END_CASE
+]]></ST>
+    </Implementation>
+    <Method Name="M_IsFoundNextIndexValid" Id="{52f573a9-e320-405f-8735-669839b3a1ba}">
+      <Declaration><![CDATA[/// This method checks if found index is still valid after a search over multiple cycles, 
+/// because during search the state of index could have changed (Race condition).
+METHOD PROTECTED M_IsFoundNextIndexValid : BOOL // Returns true if still valid, otherwise false
+VAR_IN_OUT
+	mTU_Table					: ARRAY[0..Conveyor.NUMBER_OF_TU_DATA] OF ST_TU_Data; // TU Table
+END_VAR
+VAR
+	mrTU_DataEntry			: REFERENCE TO ST_TU_Data; // Currently checked entry
+END_VAR
+VAR_INST
+	SequenceDataPresent		: BOOL; // Sequence data present
+	TU_IsPartOfDestSequence	: BOOL; // Sequence data are for requested destination
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[M_IsFoundNextIndexValid := FALSE;
+
+// Validate inputs
+IF CurrentNextTU_Index <= 0 THEN
+	RETURN;
+END_IF
+
+mrTU_DataEntry REF= mTU_Table[CurrentNextTU_Index];
+
+// Check reference is valid
+IF NOT __ISVALIDREF(mrTU_DataEntry) THEN
+	RETURN;
+END_IF
+
+// Validate its TU data
+// - Sequencing, 
+// - Part of that sequence (destination)
+// - Still at the detected checkpoint
+SequenceDataPresent := mrTU_DataEntry.DataSet.Sequence > 0 AND
+					   mrTU_DataEntry.Destination[1].eFunctionNumber > 0;
+					   
+TU_IsPartOfDestSequence := mrTU_DataEntry.Destination[1].eFunctionNumber = Destination.eFunctionNumber AND
+						   mrTU_DataEntry.Destination[1].ZoneNumber = Destination.ZoneNumber AND
+						   mrTU_DataEntry.DataSet.DestinationSlot = DestinationSlot;
+
+IF SequenceDataPresent AND
+   TU_IsPartOfDestSequence THEN	
+
+	M_IsFoundNextIndexValid := M_IsTU_Next(rTU_DataEntry);
+END_IF
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_IsTU_Next" Id="{bf7ee00d-41b7-45e6-b1b1-267c5fb84908}">
+      <Declaration><![CDATA[/// Check if current comapared TU is:
+/// - Not located,
+/// - Found on branch (Default mode) or Not found on a branch (Exclusion mode) 
+/// Sequencing is temporarily haltet for this TU				
+/// so its a possible next TU
+METHOD PROTECTED M_IsTU_Next : BOOL // Returns true if it is a possible next
+VAR_INPUT
+	mrTU_DataEntry		: REFERENCE TO ST_TU_Data; // Currently checked entry
+END_VAR
+VAR
+	mFoundOnBranch		: BOOL;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[M_IsTU_Next := FALSE;
+
+// Ensure it is still a problem for the branch	
+mFoundOnBranch := Branch.M_IsOnBranches(BranchRecursive, mrTU_DataEntry.DataSet.CheckpointID);
+
+IF (mFoundOnBranch AND NOT BranchExclusionMode) OR
+   (NOT mFoundOnBranch AND BranchExclusionMode) OR
+   (mrTU_DataEntry.DataSet.CheckpointID = '') OR
+    mrTU_DataEntry.DataSet.HaltSequencing THEN
+   
+   M_IsTU_Next := TRUE;
+END_IF
+
+]]></ST>
+      </Implementation>
+    </Method>
+    <Property Name="P_BranchRecursive" Id="{b172f189-f78f-4ea0-9675-c50a81ae9b4e}">
+      <Declaration><![CDATA[{attribute 'monitoring' := 'call'}
+/// Recursive branch search active. Remark: No automated loop detection.
+PROPERTY P_BranchRecursive : BOOL]]></Declaration>
+      <Get Name="Get" Id="{dc9e27a0-f6e7-4bf8-a1d9-ced8b5f11891}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[P_BranchRecursive := BranchRecursive;]]></ST>
+        </Implementation>
+      </Get>
+      <Set Name="Set" Id="{17c73a22-57d3-41e4-9890-ab44dc0dca1d}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[BranchRecursive := P_BranchRecursive;]]></ST>
+        </Implementation>
+      </Set>
+    </Property>
+    <Property Name="P_EntriesPerCycle" Id="{6e33a65a-5c9d-4d40-ae62-08af95388453}">
+      <Declaration><![CDATA[/// TU Entries scanned per cycle
+PROPERTY P_EntriesPerCycle : DINT // Default 600]]></Declaration>
+      <Get Name="Get" Id="{9561bb77-9b57-4bf9-8532-2ad37166a429}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[P_EntriesPerCycle := EntriesPerCycle;]]></ST>
+        </Implementation>
+      </Get>
+      <Set Name="Set" Id="{81bf7152-7757-46fd-a845-c1e74bbb6d92}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[EntriesPerCycle := P_EntriesPerCycle;]]></ST>
+        </Implementation>
+      </Set>
+    </Property>
+    <LineIds Name="FB_SeqGetNextTU">
+      <LineId Id="3" Count="22" />
+      <LineId Id="201" Count="0" />
+      <LineId Id="270" Count="0" />
+      <LineId Id="26" Count="15" />
+      <LineId Id="487" Count="0" />
+      <LineId Id="492" Count="1" />
+      <LineId Id="514" Count="0" />
+      <LineId Id="500" Count="0" />
+      <LineId Id="515" Count="0" />
+      <LineId Id="501" Count="1" />
+      <LineId Id="509" Count="0" />
+      <LineId Id="507" Count="1" />
+      <LineId Id="505" Count="0" />
+      <LineId Id="510" Count="3" />
+      <LineId Id="504" Count="0" />
+      <LineId Id="494" Count="0" />
+      <LineId Id="266" Count="0" />
+      <LineId Id="42" Count="44" />
+      <LineId Id="402" Count="10" />
+      <LineId Id="103" Count="2" />
+      <LineId Id="416" Count="0" />
+      <LineId Id="486" Count="0" />
+      <LineId Id="417" Count="5" />
+      <LineId Id="119" Count="11" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_SeqGetNextTU.M_IsFoundNextIndexValid">
+      <LineId Id="157" Count="29" />
+      <LineId Id="39" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_SeqGetNextTU.M_IsTU_Next">
+      <LineId Id="15" Count="1" />
+      <LineId Id="7" Count="5" />
+      <LineId Id="19" Count="0" />
+      <LineId Id="13" Count="1" />
+      <LineId Id="5" Count="0" />
+      <LineId Id="21" Count="0" />
+      <LineId Id="20" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_SeqGetNextTU.P_BranchRecursive.Get">
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_SeqGetNextTU.P_BranchRecursive.Set">
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_SeqGetNextTU.P_EntriesPerCycle.Get">
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_SeqGetNextTU.P_EntriesPerCycle.Set">
+      <LineId Id="2" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

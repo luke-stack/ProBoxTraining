@@ -1,0 +1,12 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <DUT Name="ST_InputsFunctionForks" Id="{6ddd0264-ef1e-4de2-9758-47c33f583f4b}">
+    <Declaration><![CDATA[TYPE ST_InputsFunctionForks :
+STRUCT
+	ForkRequest					: ST_ForkRequest;//in from element
+	HW							: ST_HW_InputsFunctionFork;
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

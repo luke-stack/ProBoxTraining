@@ -1,0 +1,28 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <Itf Name="ITF_PB_Element" Id="{fa2b6137-22b8-487e-9b45-0b34c434ee11}">
+    <Declaration><![CDATA[INTERFACE ITF_PB_Element EXTENDS __SYSTEM.IQueryInterface 
+]]></Declaration>
+    <Property Name="P_DisableAxis12" Id="{add6aa3c-f5b8-4e7a-bfb5-048c5a43263e}">
+      <Declaration><![CDATA[PROPERTY PUBLIC P_DisableAxis12 : BOOL]]></Declaration>
+      <Set Name="Set" Id="{83774731-1cd7-4235-bb19-91780f867a92}">
+        <Declaration><![CDATA[]]></Declaration>
+      </Set>
+    </Property>
+    <Property Name="P_EmuSpeed" Id="{64397e0a-0a25-4855-9402-fd3fac618dea}">
+      <Declaration><![CDATA[PROPERTY PUBLIC P_EmuSpeed : INT]]></Declaration>
+      <Set Name="Set" Id="{5b7704bc-56ef-44e8-845a-ba40e2b91e71}">
+        <Declaration><![CDATA[]]></Declaration>
+      </Set>
+    </Property>
+    <Property Name="P_RegisterFuncton" Id="{c40bc93f-1631-4b16-ba95-d22721ca5b66}">
+      <Declaration><![CDATA[PROPERTY PUBLIC P_RegisterFuncton : PVOID]]></Declaration>
+      <Get Name="Get" Id="{cb093a35-fbda-46b8-8083-7144ae06e9af}">
+        <Declaration><![CDATA[]]></Declaration>
+      </Get>
+      <Set Name="Set" Id="{dc867f87-c0d3-4c6e-88e8-991426820f33}">
+        <Declaration><![CDATA[]]></Declaration>
+      </Set>
+    </Property>
+  </Itf>
+</TcPlcObject>

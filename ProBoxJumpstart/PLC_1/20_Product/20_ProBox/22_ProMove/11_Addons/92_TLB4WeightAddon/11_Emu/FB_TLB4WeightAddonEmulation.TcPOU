@@ -1,0 +1,223 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <POU Name="FB_TLB4WeightAddonEmulation" Id="{864ca29d-ea20-4191-93e1-ae73de86e293}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK FB_TLB4WeightAddonEmulation EXTENDS FB_FunctionConvEmulation
+VAR_INPUT
+END_VAR
+VAR_OUTPUT
+END_VAR
+VAR
+	pFunction						: POINTER TO FB_TLB4WeightAddon; // Address to function
+	rFunction						: REFERENCE TO FB_TLB4WeightAddon; // Reference to function	
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[(**************************************************************************************************************
+   Initialization
+***************************************************************************************************************)
+A_Init();
+
+
+(**************************************************************************************************************
+   Update reference
+***************************************************************************************************************)
+A_UpdateReference();
+
+(**************************************************************************************************************
+   Emulation
+***************************************************************************************************************)
+// If emulation function is initialized
+IF FunctionData.Init THEN
+
+	// Update data of real object
+	M_UpdateRealObjectData();
+		
+	// Overwrite inputs	
+	_M_OverWriteInputs();
+END_IF]]></ST>
+    </Implementation>
+    <Method Name="_M_GetFunctionEmuData" Id="{53791bff-0a29-4ff3-89f0-df1e3a79c40b}">
+      <Declaration><![CDATA[//Get the TU data index from the function that owns the Addon according to the function link of the addon.
+METHOD PRIVATE _M_GetFunctionEmuData : BOOL
+VAR_OUTPUT
+	Weight				:UINT;	
+END_VAR
+VAR
+	EmuTuTableIx			: DINT;	//index of the emulation TU Table (ConveyorEmulation.TU_DataTableEmulation)	
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+IF __ISVALIDREF(FunctionRegistryEmulation[rFunction.ConfigFunction.FunctionLink.eFunctionNumber].rFunction) THEN
+	FunctionRegistryEmulation[rFunction.ConfigFunction.FunctionLink.eFunctionNumber].rFunction.M_GetTU_PresentState(rFunction.ConfigFunction.FunctionLink.ZoneNumber,100(*mm*),mTU_DataIndex=>EmuTuTableIx);
+		
+	IF(EmuTuTableIx>0) THEN
+		_M_GetFunctionEmuData:= TRUE;		
+		Weight := DINT_TO_UINT((ConveyorEmulation.TU_DataTableEmulation[DINT_TO_INT(EmuTuTableIx)].DataSet.Dimension.Weight)); 		
+	END_IF
+		
+END_IF	
+		
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_OverWriteInputs" Id="{62b6678b-909d-4423-8336-eea717858e42}">
+      <Declaration><![CDATA[METHOD PRIVATE _M_OverWriteInputs
+VAR_INPUT
+END_VAR
+
+VAR	
+	Occupied						: BOOL :=FALSE;	
+	ATQ_MessageDataAvailable		: BOOL;	
+	EmuWeight						: UINT;	
+END_VAR
+VAR_INST
+	EmuState						: INT;
+	StabilityTmr					:TON :=(PT:= T#1S);	
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_OverWriteInputs
+ * 	FUNCTION	Overwrite inputs TLB4WeightAddon for emulation
+ **************************************************************************************)
+Occupied := F_PB_GetTransportControlDataRef(rFunction.ConfigFunction.FunctionLink.eFunctionNumber, rFunction.ConfigFunction.FunctionLink.ZoneNumber).Occupied;
+
+//Get ATQ Data
+IF(Occupied AND _M_GetFunctionEmuData(Weight=>EmuWeight)) THEN
+	ATQ_MessageDataAvailable := TRUE;		
+END_IF
+
+//if Weight extracted from ATQ message was not possible to extract
+IF(NOT ATQ_MessageDataAvailable) THEN
+	EmuWeight := DINT_TO_UINT(rFunction.Config.MaxWeight);
+END_IF 
+
+//Set HW signals
+StabilityTmr(IN:= Occupied);
+rFunction.HW_Inputs.ByteIn12.3 := StabilityTmr.Q;	//WeightStable
+rFunction.HW_Inputs.ByteIn12.7 := FALSE; 			//GrossWeightNegative
+rFunction.HW_Inputs.ByteIn13.1 := FALSE;			//ADConverterMalfunction
+rFunction.HW_Inputs.ByteIn13.5 := FALSE; 			//NetWeightOutsideRange
+
+// GrossWeight
+IF(StabilityTmr.Q) THEN
+	rFunction.HW_Inputs.ByteIn2 :=UINT_TO_BYTE(SHR(EmuWeight AND 16#FF00,8));
+	rFunction.HW_Inputs.ByteIn3 :=UINT_TO_BYTE(EmuWeight AND 16#00FF);
+ELSE
+	rFunction.HW_Inputs.ByteIn2 :=0;
+	rFunction.HW_Inputs.ByteIn3 :=0;
+END_IF
+
+
+
+
+
+
+]]></ST>
+      </Implementation>
+    </Method>
+    <Action Name="A_Init" Id="{aa99f9c7-1063-48b6-8a4b-747284d365ec}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_Init
+ * 	FUNCTION	Initialize emulated dummy function
+ **************************************************************************************)
+
+// If dummy function is not initialized
+IF NOT FunctionData.Init Then
+	// Check that linked dummy function number is valid
+	IF eFunctionNumber > E_FunctionNumber.F_BEGIN_FUNCTION AND
+	   eFunctionNumber < E_FunctionNumber.F_END_FUNCTION THEN   
+		
+		// Check if the real module is initialized
+		IF F_IsFunctionInitialized(eFunctionNumber := eFunctionNumber) THEN
+			// Module is initialized
+			FunctionData.Init:= TRUE;
+			
+			// Send debug message
+			DebugMsg := CONCAT('Initialization done. Element Function: ', FunctionRegistry[eFunctionNumber].FunctionName);
+			fbDebugMsg.M_SendInfoMsg(DebugMsg);
+			
+			// Initialize real module
+			F_InitializeFunction(eFunctionNumber := eFunctionNumber);
+		END_IF
+	END_IF
+END_IF
+]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="A_UpdateReference" Id="{d304d024-0bc1-4115-8f1d-2eca0a24b8ea}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_UpdateReference
+ * 	FUNCTION	Update reference to real object
+ **************************************************************************************)
+
+// Check valid function number
+IF eFunctionNumber > E_FunctionNumber.F_BEGIN_FUNCTION AND
+   eFunctionNumber < E_FunctionNumber.F_END_FUNCTION THEN
+
+	// Is reference valid  
+	IF __ISVALIDREF(FunctionRegistry[eFunctionNumber].rFunction) THEN
+		// Build address to reference
+		pFunction := ADR(FunctionRegistry[eFunctionNumber].rFunction);
+
+		// If address is possible
+		IF pFunction <> 0 THEN
+			// Build reference to memory
+			rFunction REF= pFunction^;
+		ELSE
+			// Reinitialize module
+			FunctionData.Init:= FALSE;
+		END_IF
+	ELSE
+		// Reinitialize module
+		FunctionData.Init:= FALSE;
+	END_IF
+END_IF
+		]]></ST>
+      </Implementation>
+    </Action>
+    <LineIds Name="FB_TLB4WeightAddonEmulation">
+      <LineId Id="20" Count="21" />
+      <LineId Id="9" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_TLB4WeightAddonEmulation._M_GetFunctionEmuData">
+      <LineId Id="14" Count="1" />
+      <LineId Id="67" Count="0" />
+      <LineId Id="78" Count="0" />
+      <LineId Id="82" Count="0" />
+      <LineId Id="81" Count="0" />
+      <LineId Id="89" Count="0" />
+      <LineId Id="80" Count="0" />
+      <LineId Id="76" Count="0" />
+      <LineId Id="42" Count="0" />
+      <LineId Id="36" Count="1" />
+    </LineIds>
+    <LineIds Name="FB_TLB4WeightAddonEmulation._M_OverWriteInputs">
+      <LineId Id="7" Count="3" />
+      <LineId Id="152" Count="0" />
+      <LineId Id="279" Count="2" />
+      <LineId Id="286" Count="0" />
+      <LineId Id="282" Count="0" />
+      <LineId Id="266" Count="3" />
+      <LineId Id="251" Count="0" />
+      <LineId Id="235" Count="14" />
+      <LineId Id="211" Count="1" />
+      <LineId Id="175" Count="0" />
+      <LineId Id="196" Count="0" />
+      <LineId Id="205" Count="0" />
+      <LineId Id="165" Count="0" />
+      <LineId Id="161" Count="0" />
+      <LineId Id="24" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_TLB4WeightAddonEmulation.A_Init">
+      <LineId Id="2" Count="24" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_TLB4WeightAddonEmulation.A_UpdateReference">
+      <LineId Id="2" Count="26" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

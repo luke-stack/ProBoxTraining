@@ -1,0 +1,20 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <GVL Name="HardwareMapping" Id="{6f8e52ce-f278-4fde-80a8-3af0f2352c08}">
+    <Declaration><![CDATA[///Automatically created by BoxConfigurator
+VAR_GLOBAL
+	///ASI HW I/O interface
+	AK11_ASI                               : ST_ASI_HW_IO;
+	///ASI HW I/O interface
+	AK12_ASI                               : ST_ASI_HW_IO;
+	///ASI HW I/O interface
+	AK13_ASI                               : ST_ASI_HW_IO;
+	///Switching group HW interface
+	I_10_001_SG                     AT %I* : ST_HW_InputsSG_ProBOX;
+	Q_10_001_SG                     AT %Q* : ST_HW_OutputsSG_ProBOX;
+	///Switching group HW interface
+	I_10_002_SG                     AT %I* : ST_HW_InputsSG_ProBOX;
+	Q_10_002_SG                     AT %Q* : ST_HW_OutputsSG_ProBOX;
+END_VAR]]></Declaration>
+  </GVL>
+</TcPlcObject>

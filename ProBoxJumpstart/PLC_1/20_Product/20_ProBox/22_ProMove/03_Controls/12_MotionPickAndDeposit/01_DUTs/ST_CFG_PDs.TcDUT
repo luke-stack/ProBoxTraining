@@ -1,0 +1,17 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <DUT Name="ST_CFG_PDs" Id="{df3fba0b-f31f-40f7-8341-f5697308e023}">
+    <Declaration><![CDATA[//Configuration settings for Pickup and Deposit functions to the shuttle car / Vertical Conveyor
+TYPE ST_CFG_PDs :
+STRUCT
+	eFunctionNumber					: E_FunctionNumber; // Function number of the pickup/deposit function
+	Side							: E_PickupDepositSide:= E_PickupDepositSide.Unknown; //Seen from laser to shuttle. This parameter is used to set the correct drive direction (rev/fwd)
+	EnableConv						: ARRAY[1..2] OF BOOL; 	//Conveyor A/B on the shuttle can reach the pickup/deposit station
+	PositionConv					: DINT; 				//Value [mm] from Laser/Encoder where to position the MPD (in relation to CV A)
+	PickupPositionOffset			: DINT :=0;				//Offset value [mm] for the pickup position. Can be positive or negative. Only valid for VC
+	DepsitPositionOffset			: DINT :=0;				//Offset value [mm] for the deposit position. Can be positive or negative. Only valid for VC
+	PossibleDestinations			: ARRAY[1..GVL_MPD.MAXDEST] OF E_FunctionNumber; //Possible destination for pallet to go to from deposit station (SIS adress provided by TTA)	 
+END_STRUCT
+END_TYPE]]></Declaration>
+  </DUT>
+</TcPlcObject>

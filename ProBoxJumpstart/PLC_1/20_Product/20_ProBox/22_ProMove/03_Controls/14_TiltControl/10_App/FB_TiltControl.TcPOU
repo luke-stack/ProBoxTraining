@@ -1,0 +1,328 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <POU Name="FB_TiltControl" Id="{e0083654-42cc-40fe-bd5c-824f84f010bd}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK FB_TiltControl
+VAR_INPUT
+	ElementData				: ST_ElementData; // Function data
+	OP_Up					: BOOL; // Switch for moving up
+	OP_Down					: BOOL; // Switch for moving down
+	Sensor_Pos_Up			: BOOL; // Sensor position clockwise	
+	Sensor_Pos_Down			: BOOL; // Sensor position counter-clockwise
+	Sensor_Pos_Middle		: BOOL; // Sensor position middle towards clockwise
+	TimeoutValueLift		: TIME; // Timeout value for turning
+	OrderPos				: E_Positions_TiltControl; // Order position turn table	
+	HomePos					: E_Positions_TiltControl; // Home position turn table
+	Disable					: BOOL;					   // Disable turning, if turning is ongoing, the movement is finished, no new turning will take place if Disable is true
+END_VAR
+
+VAR_OUTPUT
+	Drive_Run_Up			: BOOL; // Drive run command turn table clockwise
+	Drive_Run_Down			: BOOL; // Drive run command turn table counter-clockwise
+	
+	
+	EnableTransport			: BOOL;	// Enable transport		
+	ActualPosition			: E_Positions_TiltControl;
+END_VAR
+
+VAR_IN_OUT
+	ErrorData 				: ST_ErrorDataSet; // Error data
+END_VAR
+
+VAR
+	eState					: E_States_TiltControl;
+	eLastState				: E_States_TiltControl;	
+	fbTimerMovement		: TON;		
+END_VAR	]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[F_ResetError(
+	Reset 	  := FALSE,
+	ErrorData := ErrorData);
+
+// Sensor error check
+IF (Sensor_Pos_Up AND Sensor_Pos_Down) OR 
+   	(Sensor_Pos_Up AND Sensor_Pos_Middle) OR 
+	(Sensor_Pos_Down  AND Sensor_Pos_Middle) THEN
+		EnableTransport := FALSE;	
+		F_SetError(
+			ErrorType := E_ErrorType.ERROR, 
+			ErrorParam := 'Two lift positions active', 
+			ErrorMsg := E_ErrorConv.INCORRECT_SENSOR_SIGNAL, 
+			ErrorData := ErrorData);
+END_IF	
+	
+// Initialise variables	
+Drive_Run_Up := FALSE;
+Drive_Run_Down := FALSE;
+EnableTransport := FALSE;
+ActualPosition := E_Positions_TiltControl.UNDEFINED;	
+fbTimerMovement.IN := FALSE;
+fbTimerMovement.PT := TimeoutValueLift;
+
+CASE eState OF
+	(*************************************************************************
+	  Initialise
+	*************************************************************************)	
+	E_States_TiltControl.INIT:
+		Drive_Run_Up := FALSE;
+		Drive_Run_Down := FALSE;
+		EnableTransport := FALSE;	
+	
+		IF ElementData.OperationState.eState = E_PositionState.STARTED THEN
+			eLastState := eState;
+			eState := E_States_TiltControl.IDLE;
+		END_IF
+		
+	(*************************************************************************
+	  Error
+	*************************************************************************)	
+	E_States_TiltControl.Error:
+		Drive_Run_Up := FALSE;
+		Drive_Run_Down := FALSE;
+		EnableTransport := FALSE;	
+		
+		// Acknowledge request error
+		IF ElementData.OperationState.eMode = E_PositionMode.MANUAL_MODE THEN
+			eLastState := eState;
+			eState := E_States_TiltControl.MANUAL;	
+
+		ELSIF ErrorData.ErrorType <> E_ErrorType.ERROR AND ElementData.ErrorData.ErrorState <> E_ErrorState.ERROR THEN	
+			eLastState := eState;
+			eState := E_States_TiltControl.INIT;			
+		END_IF	
+		
+	(*************************************************************************
+	  Manual
+	*************************************************************************)	
+	E_States_TiltControl.MANUAL:
+		Drive_Run_Up := FALSE;
+		Drive_Run_Down := FALSE;
+		EnableTransport := FALSE;	
+		
+		// Acknowledge request error
+		IF ElementData.OperationState.eMode <> E_PositionMode.MANUAL_MODE THEN
+			eLastState := eState;
+			eState := E_States_TiltControl.IDLE;	
+
+		ELSE 
+			IF  OP_Up AND OP_Down THEN
+				F_SetError(
+					ErrorType := E_ErrorType.ERROR, 
+					ErrorParam := 'Both up & down switch active', 
+					ErrorMsg := E_ErrorConv.INCORRECT_SENSOR_SIGNAL, 
+					ErrorData := ErrorData);				
+					
+			ELSE 				
+				Drive_Run_Down := OP_Down;
+				Drive_Run_Up := OP_Up;	
+			END_IF			
+		END_IF		
+		
+	(*************************************************************************
+	  Idle
+	*************************************************************************)		
+	E_States_TiltControl.IDLE:
+		
+		// If function is started and no error	
+		IF ElementData.OperationState.eMode = E_PositionMode.MANUAL_MODE THEN
+			eLastState := eState;
+			eState := E_States_TiltControl.MANUAL;		
+
+	 	ELSIF ElementData.OperationState.eState = E_PositionState.STARTED AND
+		   ElementData.ErrorData.Error.ErrorType <> E_ErrorType.ERROR AND ElementData.ErrorData.ErrorState <> E_ErrorState.ERROR THEN		  	
+			IF OrderPos = E_Positions_TiltControl.Down OR 
+				(OrderPos = E_Positions_TiltControl.UNDEFINED AND HomePos = E_Positions_TiltControl.Down) THEN
+				// When turn table is on position ccw
+				IF Sensor_Pos_Down THEN
+					EnableTransport := OrderPos <> E_Positions_TiltControl.UNDEFINED; // Only set True if OrderPos is valid
+					ActualPosition := E_Positions_TiltControl.Down;
+					
+				ELSIF Disable=FALSE THEN
+					eLastState := eState;
+					eState := E_States_TiltControl.TURN_DOWN;
+				END_IF
+				
+			ELSIF OrderPos = E_Positions_TiltControl.Up OR 
+				(OrderPos = E_Positions_TiltControl.UNDEFINED AND HomePos = E_Positions_TiltControl.Up)  THEN
+				// When turn table is on position cw
+				IF Sensor_Pos_Up THEN
+					EnableTransport := OrderPos <> E_Positions_TiltControl.UNDEFINED; // Only set True if OrderPos is valid
+					ActualPosition := E_Positions_TiltControl.Up;	
+					
+				ELSIF Disable=FALSE THEN
+					eLastState := eState;
+					eState := E_States_TiltControl.TURN_UP;
+				END_IF
+				
+			ELSIF OrderPos = E_Positions_TiltControl.Middle  OR 
+				(OrderPos = E_Positions_TiltControl.UNDEFINED AND HomePos = E_Positions_TiltControl.Middle) THEN
+				// When turn table is on position middle 
+				IF Sensor_Pos_Middle THEN
+					EnableTransport := OrderPos <> E_Positions_TiltControl.UNDEFINED; // Only set True if OrderPos is valid
+					ActualPosition := E_Positions_TiltControl.Middle;
+					
+				ELSIF Disable=FALSE THEN 
+					IF Sensor_Pos_Down THEN
+						eLastState := eState;
+						eState := E_States_TiltControl.TURN_MIDDLE_FROM_DOWN;
+						
+					ELSIF Sensor_Pos_Up THEN
+						eLastState := eState;
+						eState := E_States_TiltControl.TURN_MIDDLE_FROM_UP;
+					ELSE
+						eLastState := eState;
+						eState := E_States_TiltControl.TURN_DOWN;						
+					END_IF
+				END_IF		
+			END_IF
+		ELSE	
+			eLastState := eState;
+			eState := E_States_TiltControl.ERROR;
+		END_IF	
+	
+	(*************************************************************************
+	  Turn to ccw
+	*************************************************************************)	
+	E_States_TiltControl.TURN_DOWN:
+	
+		// If function is started or stopping and no error
+		IF (ElementData.OperationState.eState = E_PositionState.STARTED OR ElementData.OperationState.eState = E_PositionState.STOPPING) AND
+		   ElementData.ErrorData.ErrorState <> E_ErrorState.ERROR THEN
+			// When turn table is on position ccw
+			IF Sensor_Pos_Down THEN
+				Drive_Run_Down := FALSE;
+				
+				eLastState := eState;
+				eState := E_States_TiltControl.IDLE;
+			ELSE
+				Drive_Run_Down := TRUE;
+	
+			END_IF
+		ELSE
+			eLastState := eState;
+			eState := E_States_TiltControl.ERROR;	
+		END_IF
+		
+	
+	(*************************************************************************
+	  Turn to cw
+	*************************************************************************)		
+	E_States_TiltControl.TURN_UP:
+	
+		IF (ElementData.OperationState.eState = E_PositionState.STARTED OR ElementData.OperationState.eState = E_PositionState.STOPPING) AND
+		   ElementData.ErrorData.ErrorState <> E_ErrorState.ERROR THEN
+			// When turn table is on position cw
+			IF Sensor_Pos_Up THEN
+				Drive_Run_Up := FALSE;
+				
+				eLastState := eState;
+				eState := E_States_TiltControl.IDLE;
+			ELSE
+				Drive_Run_Up := TRUE;	
+			END_IF
+		ELSE
+			eLastState := eState;
+			eState := E_States_TiltControl.ERROR;				
+		END_IF
+
+	(*************************************************************************
+	  Turn to middle from ccw
+	*************************************************************************)
+	E_States_TiltControl.TURN_MIDDLE_FROM_DOWN:
+	
+		IF (ElementData.OperationState.eState = E_PositionState.STARTED OR ElementData.OperationState.eState = E_PositionState.STOPPING) AND
+		   ElementData.ErrorData.ErrorState <> E_ErrorState.ERROR THEN
+			// When turn table is on position middle
+			IF Sensor_Pos_Middle THEN
+				Drive_Run_Up := FALSE;
+				
+				eLastState := eState;
+				eState := E_States_TiltControl.IDLE;
+			ELSE
+				Drive_Run_Up := TRUE;
+			END_IF
+		ELSE
+			eLastState := eState;
+			eState := E_States_TiltControl.ERROR;				
+		END_IF
+		
+	(*************************************************************************
+	  Turn to middle from cw
+	*************************************************************************)		
+	E_States_TiltControl.TURN_MIDDLE_FROM_UP:
+	
+		IF (ElementData.OperationState.eState = E_PositionState.STARTED OR ElementData.OperationState.eState = E_PositionState.STOPPING) AND
+		   ElementData.ErrorData.ErrorState <> E_ErrorState.ERROR THEN
+			// When turn table is on position middle
+			IF Sensor_Pos_Middle THEN
+				Drive_Run_Down := FALSE;		
+				eLastState := eState;
+				eState := E_States_TiltControl.IDLE;
+			ELSE
+
+					Drive_Run_Down := TRUE;		
+		  	END_IF
+		ELSE
+			eLastState := eState;
+			eState := E_States_TiltControl.ERROR;				
+		END_IF
+END_CASE
+
+fbTimerMovement.IN :=  Drive_Run_Up OR Drive_Run_Down;
+
+fbTimerMovement();
+
+// If time is up
+IF fbTimerMovement.Q THEN
+	Drive_Run_Down := FALSE;
+	F_SetError(
+		ErrorType := E_ErrorType.ERROR, 
+		ErrorParam := 'Timeout Lifting', 
+		ErrorMsg := E_ErrorConv.TIMEOUT_MOVEMENT, 
+		ErrorData := ErrorData);
+END_IF
+
+]]></ST>
+    </Implementation>
+    <LineIds Name="FB_TiltControl">
+      <LineId Id="6662" Count="46" />
+      <LineId Id="6981" Count="1" />
+      <LineId Id="6709" Count="0" />
+      <LineId Id="6979" Count="0" />
+      <LineId Id="6978" Count="0" />
+      <LineId Id="6710" Count="2" />
+      <LineId Id="6983" Count="0" />
+      <LineId Id="6985" Count="12" />
+      <LineId Id="7000" Count="0" />
+      <LineId Id="7005" Count="0" />
+      <LineId Id="7007" Count="3" />
+      <LineId Id="7006" Count="0" />
+      <LineId Id="7011" Count="1" />
+      <LineId Id="7014" Count="0" />
+      <LineId Id="7013" Count="0" />
+      <LineId Id="7003" Count="0" />
+      <LineId Id="6984" Count="0" />
+      <LineId Id="6713" Count="7" />
+      <LineId Id="6975" Count="0" />
+      <LineId Id="6977" Count="0" />
+      <LineId Id="6974" Count="0" />
+      <LineId Id="6971" Count="0" />
+      <LineId Id="6721" Count="65" />
+      <LineId Id="6801" Count="0" />
+      <LineId Id="6806" Count="11" />
+      <LineId Id="6828" Count="9" />
+      <LineId Id="6852" Count="0" />
+      <LineId Id="6858" Count="9" />
+      <LineId Id="6878" Count="9" />
+      <LineId Id="6902" Count="0" />
+      <LineId Id="6908" Count="15" />
+      <LineId Id="6925" Count="2" />
+      <LineId Id="6941" Count="1" />
+      <LineId Id="6948" Count="5" />
+      <LineId Id="6957" Count="1" />
+      <LineId Id="6954" Count="1" />
+      <LineId Id="6960" Count="9" />
+      <LineId Id="6956" Count="0" />
+      <LineId Id="926" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

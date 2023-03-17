@@ -1,0 +1,434 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <POU Name="FB_ClosedPalletCheckAddon" Id="{26f6fe0a-0822-4889-b8d6-883a0d685b96}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK FB_ClosedPalletCheckAddon EXTENDS FB_FunctionConv
+VAR_INPUT
+	Config						: ST_CFG_ClosedPalletCheck; 		// Configuration
+	HW_Inputs					: ST_HW_InputsClosedPalletCheck; 	// Hardware inputs
+	CtrlIn						: ST_CtrlInClosedPalletCheck;		// User function control inputs
+END_VAR
+VAR_OUTPUT
+	HW_Outputs					: ST_HW_OutputsClosedPalletCheck;	// Hardware outputs
+//	CtrlOut						: ST_MovableStop_CtrlOut;	// User function control outputs
+END_VAR
+VAR
+	ClosedPalletCheckStates		: ST_ClosedPalletCheckStates;	
+	Inputs						: ST_InputsClosedPalletCheck; 	// Function specific inputs
+	Outputs						: ST_HW_OutputsClosedPalletCheck; 	// Function specific outputs
+	fbAddOnErrHandler			: FB_AddOnErrHandler;		
+	TransportData				: REFERENCE TO ST_TransportControlData;		
+	Trigger						: BOOL;
+	MaxNumberOfFingersLeft		: INT;
+	MinNumberOfFingersLeft		: INT;
+	MaxNumberOfFingersRight		: INT;
+	MinNumberOfFingersRight		: INT;	
+	
+END_VAR
+VAR PERSISTENT
+	Settings					: ST_CFG_ClosedPalletCheck; 		// Settings - activated configuration 
+END_VAR]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[(**************************************************************************************************************
+   Input mapping
+***************************************************************************************************************)
+A_InputMapping();
+
+(**************************************************************************************************************
+   Initialization
+***************************************************************************************************************)
+A_Init();
+
+
+(**************************************************************************************************************
+   BCF State control
+***************************************************************************************************************)
+A_StateControl();
+
+(**************************************************************************************************************
+   Error handler
+***************************************************************************************************************)
+A_ErrorHandler();
+fbAddOnErrHandler(AddOnSettingsFunction:= SettingsFunction, AddOnFunctionData:= FunctionData);
+
+(**************************************************************************************************************
+   BCF Process AddOns
+***************************************************************************************************************)
+M_ProcessAddOns();
+
+(**********************************************************************************************************
+   MovableStop sequence
+***********************************************************************************************************)
+A_ClosedPalletCheckStates();
+
+
+(**************************************************************************************************************
+   BCF Interface handler out
+***************************************************************************************************************)
+M_ITC_ProcessOut();
+
+(**************************************************************************************************************
+   Output mapping
+***************************************************************************************************************)
+A_OutputMapping();	]]></ST>
+    </Implementation>
+    <Method Name="_M_CountFingers" Id="{bb3d957e-104c-48cc-a7b6-63511f48ba3d}">
+      <Declaration><![CDATA[METHOD PRIVATE _M_CountFingers : INT
+VAR_INPUT
+	HW_Inputs : ARRAY[1..10] OF BOOL;
+	NumberOfFingers : INT;
+END_VAR
+
+VAR
+	i :INT;
+	
+END_VAR
+
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+_M_CountFingers := 0;
+	// Checks how many fingers have been activated finger activated = false			   
+FOR i := 1 TO NumberOfFingers DO
+	IF NOT HW_Inputs[i] THEN
+		_M_CountFingers := _M_CountFingers + 1;
+	END_IF
+END_FOR]]></ST>
+      </Implementation>
+    </Method>
+    <Action Name="A_ClosedPalletCheckStates" Id="{56744a3a-c78a-4142-9dfb-6a0d6bbfb1e3}">
+      <Implementation>
+        <ST><![CDATA[// Reset Error - Infeed addon failed to add TU Data Index during TU detection.
+F_ResetError(
+	Reset 	  := FALSE,
+	ErrorData := FunctionData.ErrorData.ErrorDataSet[1]);
+	
+F_ResetError(
+	Reset 	  := FALSE,
+	ErrorData := FunctionData.ErrorData.ErrorDataSet[2]);
+	
+IF Settings.HW_NumberOfFingers = 0 OR Settings.HW_NumberOfFingers > 10 THEN
+			// Error
+			F_SetError(
+				ErrorType 	:= E_ErrorType.ERROR,
+				ErrorParam 	:= 'Incorrect configured number of sensors',
+				ErrorMsg 	:= E_ErrorConv.CONFIGURATION_ERROR,
+				ErrorData 	:= FunctionData.ErrorData.ErrorDataSet[2]);		
+END_IF
+
+//Get transportdata reference(only for reading)
+TransportData REF= F_PB_GetTransportControlDataRef(ConfigFunction.FunctionLink.eFunctionNumber, ConfigFunction.FunctionLink.ZoneNumber);	
+
+
+//Trigger to start alignment
+IF Settings.EnableExternalTrigger AND CtrlIn.ExternalTrigger THEN
+	Trigger := TRUE;
+ELSIF NOT Settings.EnableExternalTrigger AND  TransportData.eTakeOverState = E_TakeOverState.ACTIVE THEN
+	Trigger := TRUE;
+ELSE
+	Trigger := FALSE;
+END_IF
+
+
+(**************************************************************************************
+   States
+***************************************************************************************)
+CASE ClosedPalletCheckStates.eState OF
+
+(**************************************************************************************************************
+   INIT
+***************************************************************************************************************)
+	E_ClosedPalletCheckStates.INIT:
+
+	
+		IF FunctionData.ErrorData.Error.ErrorType <> E_ErrorType.ERROR AND
+			FunctionInterface.In.Element.OperationState.eState = E_PositionState.STARTED THEN
+			
+			ClosedPalletCheckStates.eLastState := ClosedPalletCheckStates.eState;
+			ClosedPalletCheckStates.eState := E_ClosedPalletCheckStates.IDLE;
+			
+		ELSIF FunctionData.ErrorData.Error.ErrorType = E_ErrorType.ERROR THEN
+			// Change state
+			ClosedPalletCheckStates.eLastState := ClosedPalletCheckStates.eState;
+			ClosedPalletCheckStates.eState := E_ClosedPalletCheckStates.ERROR;
+		END_IF	
+	
+(**************************************************************************************************************
+   Idle
+***************************************************************************************************************)	
+	E_ClosedPalletCheckStates.IDLE:
+	
+		//If an finger is blocked when no pallet is moving through set an error
+		IF ((_M_CountFingers(HW_Inputs.FingersLeft, Settings.HW_NumberOfFingers) > 0) OR 
+			(_M_CountFingers(HW_Inputs.FingersRight, Settings.HW_NumberOfFingers) > 0)) AND 
+			 NOT Trigger AND NOT (TransportData.eTransportState = E_TransportState.HANDOVER) THEN
+			// Error
+			F_SetError(
+				ErrorType 	:= E_ErrorType.ERROR,
+				ErrorParam 	:= 'Sensors not clear before measuring',
+				ErrorMsg 	:= E_ErrorConv.INCORRECT_SENSOR_SIGNAL,
+				ErrorData 	:= FunctionData.ErrorData.ErrorDataSet[1]);	
+		END_IF
+		
+	
+		IF FunctionData.ErrorData.Error.ErrorType = E_ErrorType.ERROR THEN
+			// Change state
+			ClosedPalletCheckStates.eLastState := ClosedPalletCheckStates.eState;
+			ClosedPalletCheckStates.eState := E_ClosedPalletCheckStates.ERROR;
+		
+		ELSIF Trigger AND Inputs.HW.SensorTriggerStart THEN 
+			
+			MaxNumberOfFingersLeft := 0;
+			MinNumberOfFingersLeft := 10;
+			MaxNumberOfFingersRight := 0;
+			MinNumberOfFingersRight := 10;			
+			
+			// Change state
+			ClosedPalletCheckStates.eLastState := ClosedPalletCheckStates.eState;
+			ClosedPalletCheckStates.eState := E_ClosedPalletCheckStates.MEASURING;
+
+		END_IF		
+		
+	(**************************************************************************************
+   		MEASURING
+	***************************************************************************************)		
+	E_ClosedPalletCheckStates.MEASURING:
+
+	
+		//Count max number of fingers
+		IF (_M_CountFingers(HW_Inputs.FingersLeft, Settings.HW_NumberOfFingers) > MaxNumberOfFingersLeft) THEN
+				MaxNumberOfFingersLeft := _M_CountFingers(HW_Inputs.FingersLeft, Settings.HW_NumberOfFingers);
+		END_IF	
+
+		IF _M_CountFingers(HW_Inputs.FingersRight, Settings.HW_NumberOfFingers) > MaxNumberOfFingersRight THEN
+				MaxNumberOfFingersRight := _M_CountFingers(HW_Inputs.FingersRight, Settings.HW_NumberOfFingers);
+		END_IF	
+
+		//Count min number of fingers
+		IF (_M_CountFingers(HW_Inputs.FingersLeft, Settings.HW_NumberOfFingers) < MinNumberOfFingersLeft) THEN
+				MinNumberOfFingersLeft := _M_CountFingers(HW_Inputs.FingersLeft, Settings.HW_NumberOfFingers);
+		END_IF	
+
+		IF (_M_CountFingers(HW_Inputs.FingersRight, Settings.HW_NumberOfFingers) < MinNumberOfFingersRight) THEN
+				MinNumberOfFingersRight := _M_CountFingers(HW_Inputs.FingersRight, Settings.HW_NumberOfFingers);
+		END_IF			
+		
+
+		//When pallet has gone through stop measurement	
+		IF Inputs.HW.SensorTriggerStop THEN 
+			// Change state
+			ClosedPalletCheckStates.eLastState 	:= ClosedPalletCheckStates.eState;
+			ClosedPalletCheckStates.eState 		:= E_ClosedPalletCheckStates.DATA_AVAIABLE;				
+		END_IF
+
+		
+			
+	
+	
+	(**************************************************************************************
+   		DATA AVAIABLE
+	***************************************************************************************)			
+			
+	E_ClosedPalletCheckStates.DATA_AVAIABLE:
+	
+			IF TransportData.TU_DataIndex <> 0 THEN 
+				
+				//If nothing has been detected during trigger set unknown
+				IF MaxNumberOfFingersLeft = 0 AND MinNumberOfFingersLeft = 10 AND MaxNumberOfFingersRight = 0 AND MinNumberOfFingersRight = 10 THEN
+						TU_DataTable[TransportData.TU_DataIndex].Profile.Runner := 9;
+				
+				//If more than or equal to the configured of fingers are activated = okey
+				ELSIF NOT Settings.EnableMultipleTU_Types AND (Settings.NumberOfFingersOk <= MinNumberOfFingersLeft) AND (Settings.NumberOfFingersOk <= MinNumberOfFingersRight) THEN
+						TU_DataTable[TransportData.TU_DataIndex].Profile.Runner := 1;
+				
+				//If more than or equal to the configured of fingers are activated = okey
+				ELSIF Settings.EnableMultipleTU_Types AND (CtrlIn.ExternalNumberOfFingersOk <= MinNumberOfFingersLeft) AND (CtrlIn.ExternalNumberOfFingersOk <= MinNumberOfFingersRight) THEN
+						TU_DataTable[TransportData.TU_DataIndex].Profile.Runner := 1;						
+				
+				ELSE	
+				//Less than configured fingers found set an error
+						TU_DataTable[TransportData.TU_DataIndex].Profile.Runner := 2;				
+				END_IF
+			
+				// Change state
+				ClosedPalletCheckStates.eLastState 	:= ClosedPalletCheckStates.eState;
+				ClosedPalletCheckStates.eState 		:= E_ClosedPalletCheckStates.WAIT_UNTIL_FREE;		
+				
+			ELSE			
+				// Error, no data present
+				F_SetError(
+					ErrorType 	:= E_ErrorType.ERROR,
+					ErrorParam 	:= 'No TU Data found',
+					ErrorMsg 	:= E_ErrorConv.NO_FREE_TU_DATA_SET,
+					ErrorData 	:= FunctionData.ErrorData.ErrorDataSet[2]);
+
+				// Change state
+				ClosedPalletCheckStates.eLastState 	:= ClosedPalletCheckStates.eState;
+				ClosedPalletCheckStates.eState 		:= E_ClosedPalletCheckStates.ERROR;					
+			END_IF
+				
+														
+	
+	(**********************************************************************************
+   		WAIT_UNTIL_FREE
+	***********************************************************************************)
+	E_ClosedPalletCheckStates.WAIT_UNTIL_FREE:
+	
+		// Wait until zone is free
+		IF TransportData.eTransportState = E_TransportState.FREE OR 
+		   TransportData.eTransportState = E_TransportState.FREE_RUN OR
+		   TransportData.eTransportState = E_TransportState.IDLE	THEN		   
+		   
+			// Change state
+			ClosedPalletCheckStates.eLastState 	:= ClosedPalletCheckStates.eState;
+			ClosedPalletCheckStates.eState 		:= E_ClosedPalletCheckStates.IDLE;
+		END_IF	
+				
+
+	(**************************************************************************************
+   		ERROR 
+	***************************************************************************************)	
+	E_ClosedPalletCheckStates.ERROR:	
+		
+		// Wait until error is resetted
+		IF FunctionData.ErrorData.Error.ErrorType <> E_ErrorType.ERROR THEN
+			// Go back to init
+			ClosedPalletCheckStates.eLastState 	:= ClosedPalletCheckStates.eState;
+			ClosedPalletCheckStates.eState 		:= E_ClosedPalletCheckStates.INIT;
+		END_IF
+END_CASE
+
+
+
+
+]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="A_Init" Id="{f6cc17c6-825e-42fe-a7b0-734cd7ea7f2d}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_Init
+ * 	FUNCTION	Initialize function
+ **************************************************************************************)
+ 
+// Update Registry
+M_UpdateRegistry();
+
+IF NOT FunctionData.Init AND FunctionData.InitRunning THEN
+	// When the subsystem is started, 
+	// and its released to initialize
+	IF FunctionData.OperationState.Info.SystemReady AND
+	   SettingsFunction.eFunctionNumber < FunctionData.OperationState.InitRelease.eLimitFunctionNumber THEN
+	   
+	   IF M_InitFunction(FALSE) THEN
+			// Function initialized - and initialization done
+			FunctionData.Init := TRUE;
+			FunctionData.InitRunning := FALSE;
+			
+			 ClosedPalletCheckStates.eLastState := ClosedPalletCheckStates.eState;
+			ClosedPalletCheckStates.eState := E_ClosedPalletCheckStates.INIT;
+			
+			// Set reset cmd
+			FunctionData.ErrorData.Error.ResetError := TRUE;
+			
+			DebugMsg := CONCAT('Initialization done. Function: ', ConfigFunction.FunctionName);
+			fbDebugMsg.M_SendInfoMsg(DebugMsg);
+		END_IF
+	END_IF
+ELSIF NOT FunctionData.Init THEN
+	ClosedPalletCheckStates.eLastState := ClosedPalletCheckStates.eState;
+	ClosedPalletCheckStates.eState := E_ClosedPalletCheckStates.INIT;
+	
+	FunctionData.OperationState := FunctionBase.PositionStateEmpty;
+	
+	Settings := Config;
+	
+	M_PreInit();
+	
+	FunctionData.InitRunning := SettingsFunction.eFunctionNumber > 0 AND
+								SettingsFunction.eElementLink > 0;
+	
+END_IF
+ ]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="A_InputMapping" Id="{2b0e7241-5833-4252-803f-8152c7246e4a}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_InputMapping
+ * 	FUNCTION	Input mapping
+ **************************************************************************************)
+ 
+(**************************************************************************************
+   Hardware Inputs
+***************************************************************************************)
+Inputs.HW		:= Hw_Inputs;
+Inputs.CtrlIn	:= CtrlIn;
+
+(**************************************************************************************
+   Element states
+***************************************************************************************)
+// Get status of the corresponding element
+M_GetElementStates(); ]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="A_OutputMapping" Id="{6f254cd3-6d14-411e-a1d9-2eb28bbca7cf}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_OutputMapping
+ * 	FUNCTION	Output mapping
+ **************************************************************************************)
+ 
+(**************************************************************************************
+   Hardware outputs
+***************************************************************************************)
+
+HW_Outputs													:= Outputs;
+
+
+(**************************************************************************************
+   Order outputs (Commands to corresponding element)
+***************************************************************************************)
+                                                        	
+// Allow element to drive                               	
+	FunctionInterface.Out.FunctionOrders.Enable 				:= FunctionData.ErrorData.Error.ErrorType <> E_ErrorType.ERROR;
+
+	FunctionInterface.Out.FunctionOrders.Enable_34 				:= FunctionData.ErrorData.Error.ErrorType <> E_ErrorType.ERROR;
+(**************************************************************************************
+   AddOn outputs
+***************************************************************************************)
+FunctionInterface.Out.AddOnOrders.Enable 					:= FunctionData.ErrorData.Error.ErrorType <> E_ErrorType.ERROR;
+FunctionInterface.Out.AddOnOrders.EnableHandover 			:= ClosedPalletCheckStates.eState = E_ClosedPalletCheckStates.IDLE OR ClosedPalletCheckStates.eState = E_ClosedPalletCheckStates.WAIT_UNTIL_FREE;
+FunctionInterface.Out.AddOnOrders.EnableTakeover 			:= ClosedPalletCheckStates.eState = E_ClosedPalletCheckStates.IDLE;
+
+(**************************************************************************************
+   Status outputs
+***************************************************************************************)
+]]></ST>
+      </Implementation>
+    </Action>
+    <LineIds Name="FB_ClosedPalletCheckAddon">
+      <LineId Id="3" Count="40" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ClosedPalletCheckAddon._M_CountFingers">
+      <LineId Id="3" Count="6" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ClosedPalletCheckAddon.A_ClosedPalletCheckStates">
+      <LineId Id="2" Count="202" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ClosedPalletCheckAddon.A_Init">
+      <LineId Id="2" Count="42" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ClosedPalletCheckAddon.A_InputMapping">
+      <LineId Id="2" Count="14" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ClosedPalletCheckAddon.A_OutputMapping">
+      <LineId Id="2" Count="29" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

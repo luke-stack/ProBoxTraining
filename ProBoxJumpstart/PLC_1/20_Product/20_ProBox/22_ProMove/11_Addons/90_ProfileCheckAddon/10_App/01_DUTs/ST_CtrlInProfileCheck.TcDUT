@@ -1,0 +1,12 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <DUT Name="ST_CtrlInProfileCheck" Id="{8bdf5e9e-e8c1-4143-aa29-88528e611641}">
+    <Declaration><![CDATA[TYPE ST_CtrlInProfileCheck :
+STRUCT
+	Trigger 			: BOOL;
+	CommisioningMode	: BOOL;	
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

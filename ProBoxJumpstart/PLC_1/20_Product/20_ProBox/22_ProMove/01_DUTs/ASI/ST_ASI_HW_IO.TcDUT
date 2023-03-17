@@ -1,0 +1,14 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <DUT Name="ST_ASI_HW_IO" Id="{84ac4fda-a109-48b9-855e-60d7035b0ab8}">
+    <Declaration><![CDATA[TYPE ST_ASI_HW_IO :
+STRUCT
+	I 	AT %I* : ST_ASI_HW_Input; //ASI Ring 1 Inputs
+	//I2 : ST_ASI_HW_Input; //ASI Ring 2 Inputs
+	Q 	AT %Q* : ST_ASI_HW_Output; //ASI ring 1 Outputs
+	//Q2 : ST_ASI_HW_Output; //ASI ring 2 Outputs
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

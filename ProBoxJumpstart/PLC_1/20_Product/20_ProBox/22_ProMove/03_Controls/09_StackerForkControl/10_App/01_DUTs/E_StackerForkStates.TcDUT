@@ -1,0 +1,36 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.4">
+  <DUT Name="E_StackerForkStates" Id="{90e675ca-fa18-4e62-bd09-232b0d18e77b}">
+    <Declaration><![CDATA[TYPE E_StackerForkStates :
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision:  $
+ *	Revision date	:	$Date: $
+ *	Last changed by	:	$Author: $
+ *	URL				:	$URL: $
+ *
+ *	Purpose			:	Motorized Fork Pallet Magazine States
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)	
+(
+	INIT,
+	ERROR,
+	IDLE,
+	DRIVE_IN,
+	DRIVE_OUT,
+	MANUAL
+);
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

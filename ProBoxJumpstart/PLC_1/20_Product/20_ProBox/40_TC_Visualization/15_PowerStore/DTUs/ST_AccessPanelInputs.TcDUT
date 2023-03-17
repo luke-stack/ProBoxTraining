@@ -1,0 +1,16 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.4">
+  <DUT Name="ST_AccessPanelInputs" Id="{9520aae2-6e38-41f4-a85b-8fc1ac9205f4}">
+    <Declaration><![CDATA[TYPE ST_AccessPanelInputs :
+STRUCT
+	PB_ActivateMainContactor : BOOL; // Pushbutton activate main contactor
+	PB_AutoOn : BOOL; // Pushbutton activate automatic mode
+	PB_EmergencyStopReset : BOOL; // Pushbutton reset emergency stop
+	PB_ErrorReset : BOOL; // Pushbutton reset error
+	PB_EmergencyStop : BOOL; // Pushbutton Emergency stop
+	SW_EntryRequest : BOOL; // Auto/Entry request switch
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

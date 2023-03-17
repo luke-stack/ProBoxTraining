@@ -1,0 +1,50 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.4">
+  <DUT Name="E_BlinkFrequencies" Id="{b6b35f6d-ba58-457e-a544-774f89643e52}">
+    <Declaration><![CDATA[// blink frequencies for F_GetBlinkCycle
+{attribute 'qualified_only'}
+{attribute 'strict'}
+TYPE E_BlinkFrequencies:
+
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		  :	$Revision: 461868 $
+ *	Revision date	:	$Date: 1979-01-09 14:35:13 +0200 (Di., 09 Jan 1979) $
+ *	Last changed by	:	$Author: b7lipim $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/branches/R1.x/01_Software/BCF/BCF/JumpStart/20_Product/10_BCF/10_Base/11_Com/12_DebugMsg/00_GVLs/DebugTextBlocks.TcGVL $
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * VERSION DATE         INITIALS     DESCRIPTION
+ * 0.0     DD.MM.YYYY   (name)       (explain customized modifications)
+ *
+ **************************************************************************************)
+
+(
+  Off          := 2#0000_0000_0000_0000,     // off
+  //----------------------------------------------------------------------
+//Hertz_500    := 2#0000_0000_0000_0001,     // 500Hz
+//Hertz_250    := 2#0000_0000_0000_0010,     // 250Hz
+//Hertz_125    := 2#0000_0000_0000_0100,     // 125Hz
+//Hertz_64     := 2#0000_0000_0000_1000,     //  64Hz    ( 62.5 )
+//Hertz_32     := 2#0000_0000_0001_0000,     //  32Hz    ( 31.25 )
+//Hertz_16     := 2#0000_0000_0010_0000,     //  16Hz    ( 15.625 )
+  Hertz_8      := 2#0000_0000_0100_0000,     //   8Hz    (  7.8125 )
+  Hertz_4      := 2#0000_0000_1000_0000,     //   4Hz    (  3.90625 ) 
+  Hertz_2      := 2#0000_0001_0000_0000,     //   2Hz    (  1.953125 )
+  Hertz_1      := 2#0000_0010_0000_0000,     //   1Hz    (  0.9765625 )
+  Hertz_0_5    := 2#0000_0100_0000_0000,     // 1/2 Hz   (  0.48828125 )
+  Hertz_0_25   := 2#0000_1000_0000_0000,     // 1/4 Hz   (  0.244140625 )
+  Hertz_0_125  := 2#0001_0000_0000_0000,     // 1/8 Hz   (  0.1220703125 )
+  //----------------------------------------------------------------------
+  On           := 2#1111_1111_1111_1111      // on
+) DWORD;
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

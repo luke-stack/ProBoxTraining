@@ -1,0 +1,11 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <DUT Name="ST_HW_OutputsMovableStop" Id="{71523ebf-8c9d-451f-9713-7063150555bb}">
+    <Declaration><![CDATA[TYPE ST_HW_OutputsMovableStop :
+STRUCT		
+	Drive_Run_UpDown		: BOOL; // Drive run command lift up/down
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

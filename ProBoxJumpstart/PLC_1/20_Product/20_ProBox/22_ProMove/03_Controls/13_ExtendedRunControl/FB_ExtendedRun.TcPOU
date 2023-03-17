@@ -1,0 +1,339 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <POU Name="FB_ExtendedRun" Id="{b783f4a7-6cda-49bb-9bff-2eb512333081}" SpecialFunc="None">
+    <Declaration><![CDATA[//Extended run means that an TU can run beyond the stop sensor until the TU raches the extended run stop sensor
+//The conveyor starts when next function is determined.
+FUNCTION_BLOCK PUBLIC FB_ExtendedRun
+VAR_INPUT
+	HostFunction	: E_FunctionNumber;	//Function  number of the element that shall run extended run	
+	HWSensorStop	: BOOL; //the actual HW sensor input that shall stop the extended run
+	Enable			: BOOL; //The extended run will start when Enable signal is true, possible to delay the start of the transfer towards ExtRunStop sensor
+	Config			: REFERENCE TO ST_CFG_ExtendedRun;
+END_VAR
+VAR_OUTPUT
+	ExtRunStarted:BOOL;	//TRUE = Extended run functionality started->For functions to disable TransportEnableHandOver	
+	ExtRunSynteticSensor:BOOL;	//Signal representing an TU Occupied sensor.
+END_VAR
+VAR_IN_OUT
+	ErrorData 				: ST_ErrorDataSet; // Error data
+	//FunctionOrders			: ST_FunctionOrders;
+END_VAR
+VAR	
+	_StartTrig:R_TRIG;	
+	_DriveTimeout : TON;
+	_State:INT;
+	_ExtRunDrive:BOOL;
+	_ExtRunError:BOOL;
+	
+	//property
+	_pOverrideNextUnDef	: BOOL := FALSE; //TRUE:= Next is not required to start extended run, not recomended for DTU.
+END_VAR
+VAR_TEMP
+	Occupied:BOOL;
+	EnableDrive:BOOL;		
+	TakeingOver:BOOL;
+	
+END_VAR
+VAR CONSTANT 
+	EXTRUN_IDLE:INT :=1; //Idleing...
+	EXTRUN_WAIT:INT :=2; //Wait for enable signal
+	EXTRUN_BUSY:INT :=3; //Busy driving element
+	EXTRUN_DONE:INT :=0; //Complete
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[
+//SanityCheck
+IF( NOT __ISVALIDREF(FunctionRegistry[HostFunction].rFunctionData) OR 
+	NOT __ISVALIDREF(FunctionRegistry[HostFunction].rFunctionInterface) OR
+	Config.FunctionZone<=0 OR NOT Config.Activated) THEN
+	ExtRunStarted:=ExtRunSynteticSensor:=FALSE;
+	RETURN;
+END_IF
+
+
+Occupied := F_PB_GetTransportControlDataRef(HostFunction,Config.FunctionZone).Occupied;
+TakeingOver := _M_CheckConditionsPreCheckState();
+
+CASE _State OF
+	EXTRUN_IDLE:			
+		IF(_M_CheckConditionsBusyState(Occupied,NOT TakeingOver AND ErrorData.ErrorType <> E_ErrorType.ERROR)) THEN
+			_State:=EXTRUN_WAIT; //Wait for Enable signal, but set Busy, in order to disable handover for the function		 
+		END_IF
+	EXTRUN_WAIT:
+		IF(NOT Occupied OR Enable) THEN
+			_State:=EXTRUN_BUSY; //Start element driving
+		END_IF
+	EXTRUN_BUSY:
+		IF(NOT Occupied OR HWSensorStop) THEN
+			_State:=EXTRUN_DONE; //extended run complete
+		END_IF
+	EXTRUN_DONE: 
+		IF(NOT Occupied) THEN
+			_State:=EXTRUN_IDLE; //Idle
+		END_IF			
+END_CASE
+
+
+// ---------------------------------------------------
+//Set output
+// ---------------------------------------------------
+ExtRunStarted := _State=EXTRUN_BUSY OR _State=EXTRUN_WAIT OR TakeingOver; //For functions to disable TransportEnableHandOver;
+ExtRunSynteticSensor := (HWSensorStop OR _State=EXTRUN_BUSY) AND NOT TakeingOver;//Disabled during takeover, sine we dont want the transfer to stop if ext.run sensor is blocked
+
+
+// ---------------------------------------------------
+// Set errors
+// ---------------------------------------------------
+F_ResetError(FALSE,ErrorData);
+//Check Timeout
+_DriveTimeout(IN:= _ExtRunDrive, PT:=Config.TimeoutDriveRun);
+IF(_DriveTimeout.Q) THEN	
+	F_SetError(E_ErrorType.ERROR,'Timeout reaching extended run stop sensor',E_ErrorConv.TIMEOUT_MOVEMENT, ErrorData);
+END_IF
+
+//check if stopsensor is blocked when starting an extended run
+_StartTrig(CLK:=_State=EXTRUN_BUSY AND _ExtRunDrive);
+IF(_StartTrig.Q  AND HWSensorStop) THEN
+	F_SetError(E_ErrorType.ERROR,'Extended run stop sensor blocked',E_ErrorConv.POSITION_OCCUPIED_BEFORE_TAKEOVER, ErrorData);	
+	_State:=EXTRUN_IDLE; //start over
+END_IF
+
+
+_ExtRunError := ErrorData.ErrorType = E_ErrorType.ERROR;]]></ST>
+    </Implementation>
+    <Method Name="_M_CheckConditionsBusyState" Id="{9c9ad7a4-1ff5-4929-b32d-ddd9a1abf2f9}">
+      <Declaration><![CDATA[METHOD PRIVATE _M_CheckConditionsBusyState : BOOL
+VAR_INPUT
+	Occupied:BOOL;
+	Enabled:BOOL;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[//Start conditions
+
+IF( NOT Enabled OR NOT Occupied OR NOT Config.Activated OR
+	FunctionRegistry[HostFunction].rFunctionData.OperationState.eMode <> E_PositionMode.AUTO_MODE OR
+	FunctionRegistry[HostFunction].rFunctionData.ErrorData.ErrorState = E_ErrorState.ERROR OR
+	FunctionRegistry[HostFunction].rFunctionData.ErrorData.ZoneErrorPending OR	
+	FunctionRegistry[HostFunction].rFunctionData.OperationState.eState <> E_PositionState.STARTED) THEN
+	RETURN;
+END_IF
+
+IF(_pOverrideNextUnDef) THEN
+	_M_CheckConditionsBusyState :=TRUE;
+
+//check that nextfunction is determined
+ELSIF(FunctionRegistry[HostFunction].rFunctionInterface.In.eNextFunctionNumber<> E_FunctionNumber.F_BEGIN_FUNCTION) THEN
+	//determine if next function is on the sided configured with RunAxis config parameter
+	CASE Config.ElementRunAxis OF
+		E_Axis_Orientation.Element_12:
+			_M_CheckConditionsBusyState:= FunctionRegistry[HostFunction].rFunctionInterface.In.eNextFunctionNumber = FunctionRegistry[HostFunction].rSettingsFunction.eAdjacentFunctionNumberSide[2];			 
+		E_Axis_Orientation.Element_21:
+			_M_CheckConditionsBusyState:= FunctionRegistry[HostFunction].rFunctionInterface.In.eNextFunctionNumber = FunctionRegistry[HostFunction].rSettingsFunction.eAdjacentFunctionNumberSide[1];			
+		E_Axis_Orientation.Element_34:
+			_M_CheckConditionsBusyState:= FunctionRegistry[HostFunction].rFunctionInterface.In.eNextFunctionNumber = FunctionRegistry[HostFunction].rSettingsFunction.eAdjacentFunctionNumberSide[4];			
+		E_Axis_Orientation.Element_43:
+			_M_CheckConditionsBusyState:= FunctionRegistry[HostFunction].rFunctionInterface.In.eNextFunctionNumber = FunctionRegistry[HostFunction].rSettingsFunction.eAdjacentFunctionNumberSide[3];				
+	END_CASE
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_CheckConditionsPreCheckState" Id="{ce220876-fcc3-42f8-9bea-e505a47ac021}">
+      <Declaration><![CDATA[METHOD PRIVATE _M_CheckConditionsPreCheckState : BOOL
+VAR_INPUT
+END_VAR
+VAR
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[//check if takeover is active, (ignored when simultaneous mode is active)
+_M_CheckConditionsPreCheckState :=  (F_PB_GetTransportControlDataRef(HostFunction,Config.FunctionZone).eTakeOverState = E_TakeOverState.ACTIVE OR
+									 F_PB_GetTransportControlDataRef(HostFunction,Config.FunctionZone).eTakeOverState = E_TakeOverState.COMPLETE) AND
+									 (F_PB_GetTransportControlDataRef(HostFunction,Config.FunctionZone).eTransportState <> E_TransportState.SIMULTANEOUS AND
+									  F_PB_GetTransportControlDataRef(HostFunction,Config.FunctionZone).eTransportState <> E_TransportState.SIMULTANEOUS_OCCUPIED);
+									
+
+									
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_FunctionOrder" Id="{8aa79b70-60fd-45e1-b1d1-77418781acbb}">
+      <Declaration><![CDATA[//Set enable status on correct axis
+METHOD PRIVATE _M_FunctionOrder : BOOL
+VAR_INPUT	
+	ExtRunError:BOOL; //True = extended run function has error
+	Enabled:BOOL; //Conditions ok for driving motor
+END_VAR
+VAR_IN_OUT
+	FunctionOrders			: ST_FunctionOrders;
+END_VAR
+
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+
+// Check that input functionorder is enable drive, ie do not override host function
+
+//determine if next function is on the sided configured with RunAxis config parameter
+CASE Config.ElementRunAxis OF
+	E_Axis_Orientation.Element_12, E_Axis_Orientation.Element_21:			
+		FunctionOrders.Enable := FunctionOrders.Enable AND Enabled AND NOT ExtRunError;
+		_M_FunctionOrder := FunctionOrders.Enable;				 
+	
+	E_Axis_Orientation.Element_34, E_Axis_Orientation.Element_43:			
+		FunctionOrders.Enable_34 := FunctionOrders.Enable_34 AND Enabled AND NOT ExtRunError;
+		_M_FunctionOrder := FunctionOrders.Enable_34;
+		
+END_CASE
+
+
+
+
+
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_SetProBoxFunctionOrder" Id="{650a4ded-c234-462f-a085-c25f354f925f}">
+      <Declaration><![CDATA[//Set enable status on correct axis
+METHOD PUBLIC M_SetProBoxFunctionOrder : BOOL
+VAR_IN_OUT
+	FunctionOrders			: ST_FunctionOrders;
+END_VAR
+VAR
+	EnableDrive:BOOL;
+	ErrorActive:BOOL;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+_ExtRunDrive:=FALSE;
+ErrorActive :=FALSE;
+IF(__ISVALIDREF(FunctionRegistry[HostFunction].rFunctionData)) THEN
+	ErrorActive := FunctionRegistry[HostFunction].rFunctionData.ErrorData.ErrorState = E_ErrorState.ERROR OR _ExtRunError;
+END_IF
+
+//Get host function enable drive signals, and apply own enable signals
+IF(_State=EXTRUN_BUSY) THEN
+	EnableDrive := _M_FunctionOrder(ErrorActive,Enable, FunctionOrders :=FunctionOrders);
+
+	_ExtRunDrive := EnableDrive AND		 
+			 FunctionRegistry[HostFunction].rFunctionData.OperationState.eMode = E_PositionMode.AUTO_MODE AND
+			 FunctionRegistry[HostFunction].rFunctionData.ErrorData.ErrorState <> E_ErrorState.ERROR AND 
+			(FunctionRegistry[HostFunction].rFunctionData.OperationState.eState =E_PositionState.STARTED OR
+			 FunctionRegistry[HostFunction].rFunctionData.OperationState.eState =E_PositionState.STOPPING); 
+		 
+END_IF
+
+IF(_ExtRunDrive) THEN
+    FunctionOrders := F_ProBoxToFunctionOrders(
+                        CreepSpeed_12	:= Config.DriveSpeed = E_ProBoxMotorSpeed.CREEP_SPEED, 
+                        LowSpeed_12 	:= Config.DriveSpeed = E_ProBoxMotorSpeed.LOW_SPEED,
+                        CreepSpeed_34 	:= Config.DriveSpeed = E_ProBoxMotorSpeed.CREEP_SPEED, 
+                        LowSpeed_34 	:= Config.DriveSpeed = E_ProBoxMotorSpeed.LOW_SPEED, 
+                        Forward_12		:= _ExtRunDrive AND Config.ElementRunAxis = E_Axis_Orientation.Element_12, 
+                        Reverse_12 		:= _ExtRunDrive AND Config.ElementRunAxis = E_Axis_Orientation.Element_21,	
+                        Forward_34 		:= _ExtRunDrive AND Config.ElementRunAxis = E_Axis_Orientation.Element_34, 
+                        Reverse_34 		:= _ExtRunDrive AND Config.ElementRunAxis = E_Axis_Orientation.Element_43,
+                        Enable_12		:= FunctionOrders.Enable,
+                        Enable_34		:= FunctionOrders.Enable_34);
+END_IF
+]]></ST>
+      </Implementation>
+    </Method>
+    <Property Name="P_OverrideNextUnDef" Id="{10a40ed5-dd33-42ca-8667-c5bb366b168f}">
+      <Declaration><![CDATA[//Enable extended run without having next function defined
+//TRUE:= Next is not required to be defined in order to start extended run.
+//Not recomended for DTU's
+PROPERTY PUBLIC P_OverrideNextUnDef : BOOL]]></Declaration>
+      <Set Name="Set" Id="{7795af1b-b32d-4acd-b118-76b21dd43da6}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[_pOverrideNextUnDef	:= P_OverrideNextUnDef; ]]></ST>
+        </Implementation>
+      </Set>
+    </Property>
+    <LineIds Name="FB_ExtendedRun">
+      <LineId Id="915" Count="11" />
+      <LineId Id="1029" Count="0" />
+      <LineId Id="927" Count="3" />
+      <LineId Id="933" Count="0" />
+      <LineId Id="1066" Count="0" />
+      <LineId Id="1068" Count="0" />
+      <LineId Id="1067" Count="0" />
+      <LineId Id="1069" Count="0" />
+      <LineId Id="938" Count="16" />
+      <LineId Id="974" Count="14" />
+      <LineId Id="1027" Count="0" />
+      <LineId Id="989" Count="0" />
+      <LineId Id="1108" Count="0" />
+      <LineId Id="1107" Count="0" />
+      <LineId Id="206" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ExtendedRun._M_CheckConditionsBusyState">
+      <LineId Id="59" Count="0" />
+      <LineId Id="52" Count="0" />
+      <LineId Id="51" Count="0" />
+      <LineId Id="57" Count="1" />
+      <LineId Id="66" Count="0" />
+      <LineId Id="56" Count="0" />
+      <LineId Id="53" Count="1" />
+      <LineId Id="73" Count="0" />
+      <LineId Id="72" Count="0" />
+      <LineId Id="74" Count="0" />
+      <LineId Id="28" Count="6" />
+      <LineId Id="37" Count="1" />
+      <LineId Id="41" Count="1" />
+      <LineId Id="45" Count="1" />
+      <LineId Id="49" Count="0" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ExtendedRun._M_CheckConditionsPreCheckState">
+      <LineId Id="10" Count="0" />
+      <LineId Id="5" Count="0" />
+      <LineId Id="14" Count="0" />
+      <LineId Id="56" Count="1" />
+      <LineId Id="18" Count="0" />
+      <LineId Id="21" Count="0" />
+      <LineId Id="36" Count="1" />
+    </LineIds>
+    <LineIds Name="FB_ExtendedRun._M_FunctionOrder">
+      <LineId Id="42" Count="0" />
+      <LineId Id="40" Count="1" />
+      <LineId Id="6" Count="3" />
+      <LineId Id="11" Count="0" />
+      <LineId Id="62" Count="0" />
+      <LineId Id="16" Count="1" />
+      <LineId Id="20" Count="0" />
+      <LineId Id="63" Count="0" />
+      <LineId Id="24" Count="1" />
+      <LineId Id="5" Count="0" />
+      <LineId Id="61" Count="0" />
+      <LineId Id="60" Count="0" />
+      <LineId Id="58" Count="1" />
+      <LineId Id="57" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ExtendedRun.M_SetProBoxFunctionOrder">
+      <LineId Id="121" Count="0" />
+      <LineId Id="107" Count="0" />
+      <LineId Id="151" Count="0" />
+      <LineId Id="150" Count="0" />
+      <LineId Id="152" Count="0" />
+      <LineId Id="155" Count="0" />
+      <LineId Id="122" Count="0" />
+      <LineId Id="108" Count="8" />
+      <LineId Id="198" Count="0" />
+      <LineId Id="118" Count="0" />
+      <LineId Id="146" Count="0" />
+      <LineId Id="145" Count="0" />
+      <LineId Id="169" Count="0" />
+      <LineId Id="199" Count="9" />
+      <LineId Id="90" Count="0" />
+      <LineId Id="94" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ExtendedRun.P_OverrideNextUnDef.Set">
+      <LineId Id="2" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

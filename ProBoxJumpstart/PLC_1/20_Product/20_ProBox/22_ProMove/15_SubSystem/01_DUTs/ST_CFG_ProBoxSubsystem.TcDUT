@@ -1,0 +1,23 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.12">
+  <DUT Name="ST_CFG_ProBoxSubsystem" Id="{062c5a47-28ea-4554-8e62-a1cc13c72408}">
+    <Declaration><![CDATA[TYPE ST_CFG_ProBoxSubsystem :
+STRUCT
+	AM_Exists					: BOOL; // Automation manager is existing
+	SPOC_Exists					: BOOL; // SPOC exists			
+	tRequestReset				: TIME; // Time to reset a request
+	tDelayMonitoring			: TIME; // Time to delay monitoring	
+	tDelayStopping				: TIME; // Time to delay stopping
+	EnableTimeSync				: BOOL; // Enable time sync
+	MinTimeSync					: TIME; // Minimal time sync value
+	CPU_FanExists				: BOOL; // Is true if CPU with fan equiped 
+	MinFanSpeed					: UINT; // Min FAN speed
+	CPU_UsageWarning			: INT; // CPU usage warning [%]
+	CPU_UsageError				: INT; // CPU usage error [%]
+	CPU_TemperatureWarning		: INT; // CPU temperatur warning
+	CPU_TemperatureError		: INT; // CPU temperatur error
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

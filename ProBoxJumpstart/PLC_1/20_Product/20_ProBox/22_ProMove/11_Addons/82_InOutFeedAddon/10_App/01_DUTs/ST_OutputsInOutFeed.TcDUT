@@ -1,0 +1,13 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <DUT Name="ST_OutputsInOutFeed" Id="{8a85b2a8-7832-48a0-b372-69e6b47c8b44}">
+    <Declaration><![CDATA[TYPE ST_OutputsInOutFeed :
+STRUCT
+	HW				: ST_HW_OutputsInOutFeed;
+	EnableHandover	: BOOL;
+	EnableTakeover	: BOOL; 
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

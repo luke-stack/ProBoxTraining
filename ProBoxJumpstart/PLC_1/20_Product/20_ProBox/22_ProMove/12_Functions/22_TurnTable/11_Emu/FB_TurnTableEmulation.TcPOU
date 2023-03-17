@@ -1,0 +1,217 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <POU Name="FB_TurnTableEmulation" Id="{17002357-272e-4854-a651-166fc5e1a86f}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK FB_TurnTableEmulation EXTENDS FB_FunctionConvEmulation
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision:  $
+ *	Revision date	:	$Date: $
+ *	Last changed by	:	$Author:  $
+ *	URL				:	$URL: $
+ *
+ *	Purpose			:	Emulation 
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+VAR_INPUT
+	Config							: ST_CFG_TurnTableEmulation; // emulation config	
+END_VAR 
+
+VAR
+	pFunction						: POINTER TO FB_TurnTable ; // Address to function
+	rFunction						: REFERENCE TO FB_TurnTable; // Reference to function
+	fbEncoder						: FB_PB_Element_Encoder();
+	fbTransportControl 				: FB_PB_TransportControlEmulation; // Transport control emulation
+	fbTurnControl					: FB_TurnControlEmulation;
+	DebugSensors					: ST_DebugSensors_TurnTableEmulation;
+END_VAR]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[(**************************************************************************************************************
+   Initialization
+***************************************************************************************************************)
+A_Init();
+
+(**************************************************************************************************************
+   Update reference
+***************************************************************************************************************)
+A_UpdateReference();
+
+(**************************************************************************************************************
+   Emulation
+***************************************************************************************************************)
+// If emulation function is initialized
+IF FunctionData.Init THEN
+
+	// Update data of real object
+	M_UpdateRealObjectData();
+	
+	// Handle external Subsystem-Subsystem interfaces
+	A_ExternalSTI();
+		
+	//TODO: Move to Element???
+	fbEncoder(	Run:=FunctionBase.rFunctionInterfaceReal.In.Element.State.DriveRunning OR FunctionBase.rFunctionInterfaceReal.In.Element.State.DriveRunning_34, // Feedback drive is running
+				Speed:= ProBoxSystem.EMULATION_SPEED);	//speed [mm/s]
+	
+	// Call transport control 
+	fbTransportControl(
+		Param 					:= M_GetTransportControlParam(mZoneNumber := 1), // Parameter of transport control
+		PrevTransportData 		:= M_GetPreviousTransportData(mZoneNumber := 1), // Previous transport data
+		NextTransportData 		:= M_GetNextTransportData(mZoneNumber := 1), // Next transport data	
+		TransportEnable			:= TRUE, // Transport enable	
+		DriveRunning			:= fbEncoder.Run,		
+		EncoderValue			:= fbEncoder.EncoderValue,
+		ZoneData 				:= ZoneData[1]); // Zone data		
+		
+	// Call turn control
+	fbTurnControl(
+		Config := Config.TurnTableCfg,
+        DriveRun_CW:= rFunction.HW_Outputs.Drive_Run_CW,
+        DriveRun_CCW:= rFunction.HW_Outputs.Drive_Run_CCW);	
+		
+
+						
+	// Overwrite inputs
+	A_OverWriteInputs();
+END_IF]]></ST>
+    </Implementation>
+    <Action Name="A_Init" Id="{a8c53d8e-bf75-42dd-8db7-c7a80c3346ef}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_Init
+ * 	FUNCTION	Initialize emulated dummy function
+ **************************************************************************************)
+
+// If dummy function is not initialized
+IF NOT FunctionData.Init Then
+	// Check that linked dummy function number is valid
+	IF eFunctionNumber > E_FunctionNumber.F_BEGIN_FUNCTION AND
+	   eFunctionNumber < E_FunctionNumber.F_END_FUNCTION THEN   
+		
+		// Check if the real module is initialized
+		IF F_IsFunctionInitialized(eFunctionNumber := eFunctionNumber) THEN
+			// Module is initialized
+			FunctionData.Init:= TRUE;
+			
+			// Send debug message
+			DebugMsg := CONCAT('Initialization done. Element Function: ', FunctionRegistry[eFunctionNumber].FunctionName);
+			fbDebugMsg.M_SendInfoMsg(DebugMsg);
+			
+			// Initialize real module
+			F_InitializeFunction(eFunctionNumber := eFunctionNumber);
+		END_IF
+	END_IF
+END_IF
+]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="A_OverWriteInputs" Id="{4c58df43-96da-4b84-8ab1-1d3b404f3757}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_OverWriteInputs
+ * 	FUNCTION	Overwrite inputs for emulation
+ **************************************************************************************)
+ 
+ZoneData[1].TransportControlData.TransportParam.ZoneLength := FunctionBase.rSettingsFunctionReal.Zone[1].Length[1];	 
+// Debug sensors or proceed with overwriting inputs
+IF (DebugSensors.EnableSensorDebug) THEN
+	rFunction.HW_Inputs := DebugSensors.HW_Inputs;
+ELSE
+	rFunction.HW_Inputs.Sensor_Stop_12	:=fbTransportControl.M_TU_PresentState(
+											mPosition := FunctionBase.rSettingsFunctionReal.Zone[1].Length[1] - FunctionBase.rSettingsFunctionReal.Zone[1].ZoneEndLengthToSide[2],
+											mIndex => FunctionBase.IndexToRemove[1],
+											mLeadingEdgePos => ZoneData[1].TransportControlData.TU_LeadingEdgePos);
+	
+	rFunction.HW_Inputs.Sensor_Stop_21	:= 	rFunction.HW_Inputs.Sensor_Stop_12;	
+	
+	rFunction.HW_Inputs.TT.Signal_MotorUnitOK := TRUE;
+	rFunction.HW_Inputs.TT.Sensor_Pos_CCW := fbTurnControl.Turn_Pos_CCW;	
+	rFunction.HW_Inputs.TT.Sensor_Creep_CCW := fbTurnControl.Turn_Pos_CCW;	
+	rFunction.HW_Inputs.TT.Sensor_Pos_CW := fbTurnControl.Turn_Pos_CW;
+	rFunction.HW_Inputs.TT.Sensor_Creep_CW :=fbTurnControl.Turn_Pos_CW;
+	rFunction.HW_Inputs.TT.Sensor_Pos_MIDDLE_CCW := fbTurnControl.Turn_Pos_Middle_CCW;	
+	rFunction.HW_Inputs.TT.Sensor_Pos_MIDDLE_CW := fbTurnControl.Turn_Pos_Middle_CW;
+	rFunction.HW_Inputs.Sensor_Overhang_12	:= TRUE;
+	rFunction.HW_Inputs.Sensor_Overhang_21	:= TRUE;
+END_IF
+]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="A_UpdateReference" Id="{896c0967-8312-49b3-a08c-9d30cd24a45a}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_UpdateReference
+ * 	FUNCTION	Update reference to real object
+ **************************************************************************************)
+
+// Check valid function number
+IF eFunctionNumber > E_FunctionNumber.F_BEGIN_FUNCTION AND
+   eFunctionNumber < E_FunctionNumber.F_END_FUNCTION THEN
+
+	// Is reference valid  
+	IF __ISVALIDREF(FunctionRegistry[eFunctionNumber].rFunction) THEN
+		// Build address to reference
+		pFunction := ADR(FunctionRegistry[eFunctionNumber].rFunction);
+
+		// If address is possible
+		IF pFunction <> 0 THEN
+			// Build reference to memory
+			rFunction REF= pFunction^;
+		ELSE
+			// Reinitialize module
+			FunctionData.Init:= FALSE;
+		END_IF
+	ELSE
+		// Reinitialize module
+		FunctionData.Init:= FALSE;
+	END_IF
+END_IF
+		]]></ST>
+      </Implementation>
+    </Action>
+    <ObjectProperties>
+      <XmlArchive>
+        <Data>
+          <o xml:space="preserve" t="UMLStereoTypeContainerObject">
+            <v n="IsType" t="UMLType">BaseArea</v>
+            <v n="Stereotype">""</v>
+            <d n="Stereotypes" t="Hashtable" />
+          </o>
+        </Data>
+        <TypeList>
+          <Type n="Hashtable">System.Collections.Hashtable</Type>
+          <Type n="String">System.String</Type>
+          <Type n="UMLStereoTypeContainerObject">{30250973-b110-4e31-b562-c102e042dca4}</Type>
+          <Type n="UMLType">{0197b136-405a-42ee-bb27-fd08b621d0cf}</Type>
+        </TypeList>
+      </XmlArchive>
+    </ObjectProperties>
+    <LineIds Name="FB_TurnTableEmulation">
+      <LineId Id="3" Count="45" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_TurnTableEmulation.A_Init">
+      <LineId Id="2" Count="24" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_TurnTableEmulation.A_OverWriteInputs">
+      <LineId Id="2" Count="5" />
+      <LineId Id="28" Count="2" />
+      <LineId Id="8" Count="6" />
+      <LineId Id="17" Count="10" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_TurnTableEmulation.A_UpdateReference">
+      <LineId Id="2" Count="26" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

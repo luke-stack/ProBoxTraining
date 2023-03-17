@@ -1,0 +1,21 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.4">
+  <DUT Name="ST_LSPM_Inp_ManualControl" Id="{4321964f-ebee-4aa9-835d-4ae775a07f7b}">
+    <Declaration><![CDATA[TYPE ST_LSPM_Inp_ManualControl :
+STRUCT	
+	SwitchManualAuto			: BOOL; //Switch to put machine in,  1 = Auto, 0 = Manual
+	SwitchDriveUp				: BOOL; //Switch to manually drive up
+	SwitchDriveDown				: BOOL; //Switch to manually drive down
+	SwitchDriveFWD				: BOOL; //Switch to manually drive forward
+	SwitchDriveREV				: BOOL; //Switch to manually drive reverse
+	SwitchDriveRightForkOut		: BOOL; //Switch to manually drive right fork out (engage pallet)
+	SwitchDriveRightForkIn		: BOOL; //Switch to manually drive right fork in (home)
+	SwitchDriveLeftForkOut		: BOOL; //Switch to manually drive left fork out (engage pallet)
+	SwitchDriveLeftForkIn		: BOOL; //Swtich to manually drive left fork in (home)
+	ResetSequence				: BOOL; //Button to reset the sequence on the machine	
+	PresetEncoder				: BOOL; //Key-switch to preset the encoder. 
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

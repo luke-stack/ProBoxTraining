@@ -1,0 +1,18 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <DUT Name="ST_LiftTable_Inp_LiftSensors" Id="{be24817c-3c13-4c5b-aedb-5d684c5ad408}">
+    <Declaration><![CDATA[TYPE ST_LiftTable_Inp_LiftSensors :
+STRUCT
+	SensorPosDown		: BOOL; //Sensor position lift down
+	SensorPosUp			: BOOL; //Sensor position lift up
+	LiftTableStart		: BOOL; //Sensor lift table start
+	ErrorPos			: BOOL; //Sensor error pos
+	SignalMotorUnitOK	: BOOL; //Sensor motor unit OK
+	Sensor_overhang_12	: BOOL; //Sensor Overhang forward
+	Sensor_overhang_21 	: BOOL; //Sensor Overhang reverse
+	
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

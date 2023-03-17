@@ -1,0 +1,13 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <DUT Name="ST_CFG_FastDoor" Id="{99482e60-ad3d-4149-bc80-f9d0727d683e}">
+    <Declaration><![CDATA[TYPE ST_CFG_FastDoor :
+STRUCT
+	TimeoutValueDoor	: TIME; //Timeout value for door 
+	WaitTime			: TIME; //Timeout value for wait on next TU with Door open
+	DoorSide			: INT; //Door placement, adj. function side 1,2,3 or 4 
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

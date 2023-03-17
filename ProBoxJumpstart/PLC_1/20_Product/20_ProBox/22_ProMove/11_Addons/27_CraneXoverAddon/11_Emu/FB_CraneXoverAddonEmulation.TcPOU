@@ -1,0 +1,457 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <POU Name="FB_CraneXoverAddonEmulation" Id="{335b3020-e2c7-4622-ba05-0b024072e523}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK FB_CraneXoverAddonEmulation EXTENDS FB_FunctionConvEmulation
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: q8hedls $
+ *	Revision date	:	$Date: $
+ *	Last changed by	:	$Author:  $
+ *	URL				:	$URL:  $
+ *
+ *	Purpose			:	Emulation of inOutFeed
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				26.04.2019		SHE					LowLiftUnitEmulation
+ *
+ **************************************************************************************)
+VAR_INPUT
+	//Config							: ST_CFG_TransferUnitEmulation; // emulation config	
+END_VAR 
+
+VAR
+	pFunction						: POINTER TO FB_CraneXoverAddon; // Address to function
+	rFunction						: REFERENCE TO FB_CraneXoverAddon; // Reference to function
+	fbLowLiftControlEmu 			: FB_LowLiftControlEmulation; // Lift control emulation
+	fbMotorControlLift				: FB_MotorControlEmulation; // Motor control emulation				
+	_Config							: ST_CFG_LowLiftUnitEmulation;	
+	//move to _M_OverWriteInputs
+	TranspCtrlData					: ST_TransportControlData;
+	LinkedFunctionSettings 			: ST_CFG_Function;
+	Occupied	:BOOL;
+	_EmuState : INT:=0;
+	_ForkTimerEmu		:TON;
+				
+END_VAR]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[(**************************************************************************************************************
+   Initialization
+***************************************************************************************************************)
+//initialize configuration of lift
+IF NOT FunctionData.Init THEN
+	_Config.Position_Down := 100;
+	_Config.Position_Max_Down := 0;
+	_Config.Position_Max_Up := 300;
+	_Config.Position_Up := 290;	
+END_IF
+A_Init();
+
+
+
+
+(**************************************************************************************************************
+   Update reference
+***************************************************************************************************************)
+A_UpdateReference();
+
+(**************************************************************************************************************
+   Emulation
+***************************************************************************************************************)
+// If emulation function is initialized
+IF FunctionData.Init THEN
+
+	// Update data of real object
+	M_UpdateRealObjectData();
+	
+	// Handle external Subsystem-Subsystem interfaces
+	// not needed for Add On emulation
+	//A_ExternalSTI();
+	
+	// Call Lift control
+	fbLowLiftControlEmu(
+		Config := _Config, 
+		DriveRun_Lift := rFunction.HW_Outputs.Drive_Run_UpDown);	
+		
+	// Call motor control lift		
+	fbMotorControlLift(
+		Run_fw:= rFunction.HW_Outputs.Drive_Run_UpDown,  
+		Run_bw:= FALSE, 
+		CommandSpeed:= 100, 
+		SpeedRatio:= rFunction.ConfigFunction.Zone[1].SpeedRatio);
+	
+	
+	// Overwrite inputs
+	A_OverWriteInputs();
+END_IF]]></ST>
+    </Implementation>
+    <Action Name="A_Init" Id="{6e817f62-8d84-4e4e-930c-8e5edb8becab}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_Init
+ * 	FUNCTION	Initialize emulated dummy function
+ **************************************************************************************)
+
+// If dummy function is not initialized
+IF NOT FunctionData.Init Then
+	// Check that linked dummy function number is valid
+	IF eFunctionNumber > E_FunctionNumber.F_BEGIN_FUNCTION AND
+	   eFunctionNumber < E_FunctionNumber.F_END_FUNCTION THEN   
+		
+		// Check if the real module is initialized
+		IF F_IsFunctionInitialized(eFunctionNumber := eFunctionNumber) THEN
+			// Module is initialized
+			FunctionData.Init:= TRUE;
+			
+			// Send debug message
+			DebugMsg := CONCAT('Initialization done. Element Function: ', FunctionRegistry[eFunctionNumber].FunctionName);
+			fbDebugMsg.M_SendInfoMsg(DebugMsg);
+			
+			// Initialize real module
+			F_InitializeFunction(eFunctionNumber := eFunctionNumber);
+		END_IF
+	END_IF
+END_IF
+]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="A_OverWriteInputs" Id="{bfae6c76-15d9-49f2-a625-b36b51dcb887}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_OverWriteInputs
+ * 	FUNCTION	Overwrite inputs for emulation
+ **************************************************************************************)
+LinkedFunctionSettings := F_GetFunctionSettings(rFunction.ConfigFunction.FunctionLink.eFunctionNumber);
+TranspCtrlData	:= F_GetTransportControlData(rFunction.ConfigFunction.FunctionLink.eFunctionNumber, rFunction.ConfigFunction.FunctionLink.ZoneNumber);
+Occupied := TranspCtrlData.SensorOccupied;
+
+
+
+//Lift emulation
+rFunction.HW_Inputs.Sensor_Pos_Down := fbLowLiftControlEmu.Lift_Pos_Down;
+rFunction.HW_Inputs.Sensor_Pos_Up := fbLowLiftControlEmu.Lift_Pos_Up;
+rFunction.HW_Inputs.Signal_MotorUnitOK := fbMotorControlLift.MotorUnitOK;
+
+
+IF(_EmuState >0 AND _EmuState<100) THEN //Takeover mode
+	rFunction.HW_Inputs.HandshakeCraneInterfaceReceive.NbrOfTUs :=1;
+	rFunction.HW_Inputs.HandshakeCraneInterfaceReceive.TUs[1].TU_ID :=TU_ID_UNKNOWN;
+	rFunction.HW_Inputs.HandshakeCraneInterfaceReceive.TUs[1].TU_Type :=1;
+END_IF
+
+
+
+
+//Crane handshake handling
+
+// Takeing over
+
+CASE _EmuState OF
+	0:
+		rFunction.HW_Inputs.HandshakeCraneInterfaceReceive.HandOverState := E_Conveyor_InterfaceState.IDLE;
+		rFunction.HW_Inputs.HandshakeCraneInterfaceReceive.TakeOverState := E_Conveyor_InterfaceState.IDLE;
+		rFunction.HW_Inputs.Sensor_Occupied := Occupied;
+		rFunction.HW_Inputs.HW_InputsMotorTransfer.TakeoverSensorStop := FALSE;
+		rFunction.HW_Inputs.HW_InputsMotorTransfer.Sensor_Overhang := TRUE;
+		rFunction.HW_Inputs.HW_InputsMotorTransfer.Sensor_SRM_Present := FALSE;
+		_ForkTimerEmu(IN:=FALSE,PT:=T#3S);
+		IF(Occupied AND _EmuState=0) THEN
+			IF( TranspCtrlData.TU_DataIndex= 0 AND (TranspCtrlData.eTransportState = E_TransportState.FREE OR TranspCtrlData.eTransportState = E_TransportState.TAKEOVER)) THEN
+				_EmuState:=1; //start takeover
+			ELSE 
+				_EmuState:=100; //start handover
+			END_IF
+			
+		END_IF	
+	
+	1: //start taking over process
+		rFunction.HW_Inputs.Sensor_Occupied := FALSE; //overwrite sensor with false since we want to emulate crane handing over TU.
+		rFunction.HW_Inputs.HandshakeCraneInterfaceReceive.HandOverState := E_Conveyor_InterfaceState.READYTOHANDOVER;
+		rFunction.HW_Inputs.HW_InputsMotorTransfer.Sensor_SRM_Present := TRUE;
+		_EmuState :=_EmuState+1;
+	2:
+		//check internal crane handler if moved on to takeoverActive state
+		IF(rFunction.HW_Outputs.HandshakeCraneInterfaceSend.TakeOverState = E_Conveyor_InterfaceState.TAKEOVERACTIVE) THEN			
+			//set timer..to simulate crane transter TU
+			//now TTQ was sent. and we are waiting for TU occupied	
+			_ForkTimerEmu(IN:=TRUE,PT:=T#3S);
+			rFunction.HW_Inputs.HandshakeCraneInterfaceReceive.HandOverState := E_Conveyor_InterfaceState.HANDOVERACTIVE;
+			rFunction.HW_Inputs.HW_InputsMotorTransfer.Sensor_Overhang := FALSE;
+		END_IF
+		IF (_ForkTimerEmu.Q) THEN
+			rFunction.HW_Inputs.Sensor_Occupied := TRUE;
+			rFunction.HW_Inputs.HW_InputsMotorTransfer.TakeoverSensorStop := TRUE;
+			rFunction.HW_Inputs.HW_InputsMotorTransfer.Sensor_Overhang := TRUE;
+			_EmuState :=_EmuState+1;
+			_ForkTimerEmu(IN:=FALSE);			
+		END_IF
+	3:
+		//Reset the timer to simulate crane-fork going back in.
+		_ForkTimerEmu(IN:=TRUE);
+		IF (_ForkTimerEmu.Q) THEN
+			rFunction.HW_Inputs.HandshakeCraneInterfaceReceive.HandOverState := E_Conveyor_InterfaceState.HANDOVERCOMPLETE;			
+		END_IF
+		IF(rFunction.HW_Outputs.HandshakeCraneInterfaceSend.TakeOverState = E_Conveyor_InterfaceState.IDLE) THEN
+			_EmuState :=_EmuState+1;
+			DebugMsg := CONCAT('CraneXover. TU added with index : ', DINT_TO_STRING(TranspCtrlData.TU_DataIndex));
+			fbDebugMsg.M_SendInfoMsg(DebugMsg);
+
+		END_IF
+	4: 
+		rFunction.HW_Inputs.Sensor_Occupied := Occupied;		
+		IF(TranspCtrlData.eHandOverState = E_HandOverState.COMPLETE) THEN
+			_EmuState :=_EmuState+1;
+			rFunction.HW_Inputs.HW_InputsMotorTransfer.TakeoverSensorStop := FALSE;
+		END_IF		
+	5:
+		rFunction.HW_Inputs.Sensor_Occupied := Occupied;	
+		IF(NOT Occupied)THEN
+			_EmuState := 0;
+		END_IF	
+		
+		
+		
+	// handover to crane (pickup)
+	100: 
+		// start handing over process emulation process
+		// Set TU occupied TRUE
+		rFunction.HW_Inputs.Sensor_Occupied := TRUE;
+		_EmuState :=_EmuState+1;
+		
+	101:
+		//wait for CV to enter ReadyToHandover state
+		IF(rFunction.HW_Outputs.HandshakeCraneInterfaceSend.HandOverState = E_Conveyor_InterfaceState.READYTOHANDOVER) THEN
+			DebugMsg := CONCAT('CraneXover. TU received. ID: ', rFunction.HW_Outputs.HandshakeCraneInterfaceSend.TUs[1].TU_ID);
+			fbDebugMsg.M_SendInfoMsg(DebugMsg);
+			_EmuState :=_EmuState+1;
+		END_IF
+	102:
+		_ForkTimerEmu(IN:=TRUE,PT:=T#3S);
+		IF (rFunction.HW_Outputs.HandshakeCraneInterfaceSend.HandOverState = E_Conveyor_InterfaceState.IDLE) THEN
+			_EmuState := 0;
+		ELSIF(_ForkTimerEmu.Q) THEN
+			rFunction.HW_Inputs.HandshakeCraneInterfaceReceive.TakeOverState := E_Conveyor_InterfaceState.TAKEOVERACTIVE;
+			_ForkTimerEmu(IN:=FALSE);
+			rFunction.HW_Inputs.HW_InputsMotorTransfer.Sensor_SRM_Present:=TRUE;
+			_EmuState :=_EmuState+1;
+		END_IF
+	103:	
+		_ForkTimerEmu(IN:=TRUE,PT:=T#3S);
+		rFunction.HW_Inputs.HW_InputsMotorTransfer.Sensor_Overhang:=FALSE;
+		//At this point, user shall remove TU with RTQ SIS message
+		IF(_ForkTimerEmu.Q AND NOT Occupied) THEN			
+			// Set TU occupied FALSE before setting TakeOverComplete
+			rFunction.HW_Inputs.Sensor_Occupied := FALSE;			
+			_EmuState :=_EmuState+1;
+		END_IF
+	104:
+		rFunction.HW_Inputs.HandshakeCraneInterfaceReceive.TakeOverState := E_Conveyor_InterfaceState.TAKEOVERCOMPLETE;
+		rFunction.HW_Inputs.HW_InputsMotorTransfer.Sensor_Overhang:=TRUE;
+		_EmuState :=_EmuState+1;
+	105:		
+		IF(rFunction.HW_Outputs.HandshakeCraneInterfaceSend.HandOverState = E_Conveyor_InterfaceState.HANDOVERCOMPLETE) THEN
+			rFunction.HW_Inputs.HandshakeCraneInterfaceReceive.TakeOverState := E_Conveyor_InterfaceState.IDLE;
+			_EmuState :=_EmuState+1;
+		END_IF
+	106:
+		IF(NOT Occupied)THEN
+			_EmuState := 0;
+		END_IF						
+		
+END_CASE
+
+
+
+//Emulate watchdog
+
+//emulate watchdog
+rFunction.HW_Inputs.HandshakeCraneInterfaceReceive.Watchdog:= fbBlink_1s.Pulse;]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="A_UpdateReference" Id="{b106fc15-5b1e-468c-8096-803b7ede99c0}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_UpdateReference
+ * 	FUNCTION	Update reference to real object
+ **************************************************************************************)
+
+// Check valid function number
+IF eFunctionNumber > E_FunctionNumber.F_BEGIN_FUNCTION AND
+   eFunctionNumber < E_FunctionNumber.F_END_FUNCTION THEN
+
+	// Is reference valid  
+	IF __ISVALIDREF(FunctionRegistry[eFunctionNumber].rFunction) THEN
+		// Build address to reference
+		pFunction := ADR(FunctionRegistry[eFunctionNumber].rFunction);
+
+		// If address is possible
+		IF pFunction <> 0 THEN
+			// Build reference to memory
+			rFunction REF= pFunction^;
+		ELSE
+			// Reinitialize module
+			FunctionData.Init:= FALSE;
+		END_IF
+	ELSE
+		// Reinitialize module
+		FunctionData.Init:= FALSE;
+	END_IF
+END_IF
+		]]></ST>
+      </Implementation>
+    </Action>
+    <LineIds Name="FB_CraneXoverAddonEmulation">
+      <LineId Id="3" Count="2" />
+      <LineId Id="335" Count="5" />
+      <LineId Id="334" Count="0" />
+      <LineId Id="6" Count="0" />
+      <LineId Id="289" Count="0" />
+      <LineId Id="286" Count="0" />
+      <LineId Id="281" Count="0" />
+      <LineId Id="7" Count="15" />
+      <LineId Id="229" Count="0" />
+      <LineId Id="23" Count="0" />
+      <LineId Id="205" Count="0" />
+      <LineId Id="269" Count="9" />
+      <LineId Id="268" Count="0" />
+      <LineId Id="267" Count="0" />
+      <LineId Id="54" Count="0" />
+      <LineId Id="69" Count="2" />
+    </LineIds>
+    <LineIds Name="FB_CraneXoverAddonEmulation.A_Init">
+      <LineId Id="2" Count="24" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_CraneXoverAddonEmulation.A_OverWriteInputs">
+      <LineId Id="2" Count="3" />
+      <LineId Id="105" Count="0" />
+      <LineId Id="187" Count="0" />
+      <LineId Id="110" Count="0" />
+      <LineId Id="331" Count="0" />
+      <LineId Id="112" Count="0" />
+      <LineId Id="116" Count="1" />
+      <LineId Id="147" Count="0" />
+      <LineId Id="150" Count="0" />
+      <LineId Id="118" Count="0" />
+      <LineId Id="154" Count="0" />
+      <LineId Id="231" Count="0" />
+      <LineId Id="164" Count="0" />
+      <LineId Id="155" Count="0" />
+      <LineId Id="233" Count="1" />
+      <LineId Id="232" Count="0" />
+      <LineId Id="310" Count="2" />
+      <LineId Id="156" Count="0" />
+      <LineId Id="114" Count="0" />
+      <LineId Id="161" Count="0" />
+      <LineId Id="160" Count="0" />
+      <LineId Id="195" Count="0" />
+      <LineId Id="194" Count="0" />
+      <LineId Id="196" Count="0" />
+      <LineId Id="201" Count="1" />
+      <LineId Id="235" Count="0" />
+      <LineId Id="333" Count="0" />
+      <LineId Id="340" Count="1" />
+      <LineId Id="207" Count="0" />
+      <LineId Id="211" Count="0" />
+      <LineId Id="315" Count="0" />
+      <LineId Id="212" Count="0" />
+      <LineId Id="242" Count="0" />
+      <LineId Id="324" Count="0" />
+      <LineId Id="241" Count="0" />
+      <LineId Id="240" Count="0" />
+      <LineId Id="210" Count="0" />
+      <LineId Id="200" Count="0" />
+      <LineId Id="199" Count="0" />
+      <LineId Id="336" Count="0" />
+      <LineId Id="198" Count="0" />
+      <LineId Id="343" Count="0" />
+      <LineId Id="208" Count="0" />
+      <LineId Id="203" Count="0" />
+      <LineId Id="214" Count="0" />
+      <LineId Id="219" Count="0" />
+      <LineId Id="216" Count="1" />
+      <LineId Id="209" Count="0" />
+      <LineId Id="223" Count="0" />
+      <LineId Id="342" Count="0" />
+      <LineId Id="218" Count="0" />
+      <LineId Id="220" Count="1" />
+      <LineId Id="334" Count="0" />
+      <LineId Id="349" Count="0" />
+      <LineId Id="225" Count="0" />
+      <LineId Id="224" Count="0" />
+      <LineId Id="222" Count="0" />
+      <LineId Id="226" Count="0" />
+      <LineId Id="325" Count="0" />
+      <LineId Id="228" Count="1" />
+      <LineId Id="227" Count="0" />
+      <LineId Id="230" Count="0" />
+      <LineId Id="236" Count="1" />
+      <LineId Id="328" Count="1" />
+      <LineId Id="350" Count="0" />
+      <LineId Id="205" Count="0" />
+      <LineId Id="291" Count="0" />
+      <LineId Id="318" Count="0" />
+      <LineId Id="317" Count="0" />
+      <LineId Id="293" Count="0" />
+      <LineId Id="352" Count="0" />
+      <LineId Id="294" Count="0" />
+      <LineId Id="319" Count="0" />
+      <LineId Id="323" Count="0" />
+      <LineId Id="320" Count="0" />
+      <LineId Id="243" Count="0" />
+      <LineId Id="322" Count="0" />
+      <LineId Id="244" Count="3" />
+      <LineId Id="255" Count="0" />
+      <LineId Id="262" Count="1" />
+      <LineId Id="256" Count="0" />
+      <LineId Id="261" Count="0" />
+      <LineId Id="266" Count="0" />
+      <LineId Id="258" Count="0" />
+      <LineId Id="267" Count="1" />
+      <LineId Id="278" Count="1" />
+      <LineId Id="269" Count="3" />
+      <LineId Id="338" Count="1" />
+      <LineId Id="273" Count="0" />
+      <LineId Id="264" Count="0" />
+      <LineId Id="276" Count="0" />
+      <LineId Id="345" Count="0" />
+      <LineId Id="265" Count="0" />
+      <LineId Id="274" Count="1" />
+      <LineId Id="277" Count="0" />
+      <LineId Id="346" Count="0" />
+      <LineId Id="332" Count="0" />
+      <LineId Id="280" Count="0" />
+      <LineId Id="330" Count="0" />
+      <LineId Id="283" Count="0" />
+      <LineId Id="285" Count="0" />
+      <LineId Id="282" Count="0" />
+      <LineId Id="307" Count="0" />
+      <LineId Id="309" Count="0" />
+      <LineId Id="347" Count="0" />
+      <LineId Id="308" Count="0" />
+      <LineId Id="286" Count="0" />
+      <LineId Id="289" Count="1" />
+      <LineId Id="305" Count="0" />
+      <LineId Id="288" Count="0" />
+      <LineId Id="301" Count="0" />
+      <LineId Id="303" Count="1" />
+      <LineId Id="302" Count="0" />
+      <LineId Id="204" Count="0" />
+      <LineId Id="197" Count="0" />
+      <LineId Id="295" Count="2" />
+      <LineId Id="163" Count="0" />
+      <LineId Id="299" Count="1" />
+      <LineId Id="298" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_CraneXoverAddonEmulation.A_UpdateReference">
+      <LineId Id="2" Count="26" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

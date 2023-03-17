@@ -1,0 +1,11 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.4">
+  <DUT Name="ST_ProBoxSafetyOutputsSZPCo" Id="{ce4dee60-b2f4-4b29-a7e1-c49b10362e3c}">
+    <Declaration><![CDATA[TYPE ST_ProBoxSafetyOutputsSZPCo :
+STRUCT
+	ErrorAck                : BOOL; //Error acknowledgement sent to safety
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

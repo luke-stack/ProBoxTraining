@@ -1,0 +1,12 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.4">
+  <DUT Name="ST_ProBoxSafetySZPCo" Id="{f575a2e1-3b1c-40f0-b549-a441c35b7c1f}">
+    <Declaration><![CDATA[TYPE ST_ProBoxSafetySZPCo :
+STRUCT
+	Inputs	AT %I* : ST_ProBoxSafetyInputsSZPCo;
+	Outputs AT %Q* : ST_ProBoxSafetyOutputsSZPCo;
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

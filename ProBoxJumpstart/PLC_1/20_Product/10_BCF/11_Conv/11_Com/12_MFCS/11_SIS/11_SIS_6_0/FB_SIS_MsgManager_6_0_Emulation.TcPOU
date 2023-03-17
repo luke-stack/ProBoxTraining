@@ -1,0 +1,273 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.12">
+  <POU Name="FB_SIS_MsgManager_6_0_Emulation" Id="{43191082-558b-4b16-84c9-45d08a2a7630}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK FB_SIS_MsgManager_6_0_Emulation IMPLEMENTS ITF_MFCS_Emulation
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 404529 $
+ *	Revision date	:	$Date: 2018-04-23 08:21:38 +0200 (Mo., 23 Apr 2018) $
+ *	Last changed by	:	$Author: b7bolm $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/trunk/01_Software/BCF/BCF/JumpStart/20_Product/11_Emu/11_Com/10_Lib/10_Conv/12_MFCS/11_SIS/FB_SIS_MsgManager_6_0_Emulation.TcPOU $
+ *
+ *	Purpose			:	SIS 6.0 Emulation
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+VAR
+	TelegramType	: STRING(3); // SIS Telegram type from the incoming message
+	ChannelSrc		: INT; // Channel
+	Data			: ST_PointerSet;
+	IdxOffset		: UINT; // Index offset
+	
+	ATQ				: ST_ATQ_6_0; // ATQ
+	ATQ_ITC			: ST_ITC_ATQ; // ATQ
+	RTQ				: ST_RTQ_6_0; // RTQ
+	RTQ_ITC			: ST_ITC_RTQ; // RTQ
+	ERQ				: ST_ERQ_6_0; // ERQ
+	ERQ_ITC			: ST_ITC_ERQ; // ERQ
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[]]></ST>
+    </Implementation>
+    <Action Name="A_PutATQ" Id="{25bba98f-fd40-4e4f-ad9e-fa4c276733f8}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_PutATQ
+ * 	FUNCTION	Process ATQ
+ **************************************************************************************)
+ 
+// Clear data structure 
+MEMSET(destAddr := ADR(ATQ), fillByte := 0, n := SIZEOF(ATQ));
+
+// Copy the ATQ data fields to the ATQ data structure 
+IdxOffset := INT_TO_UINT(SIS_6_0.APP_DATA_OFFSET);
+
+// Copy
+MEMCPY(destAddr := ADR(ATQ.Position), srcAddr := Data.pAdr + IdxOffset, n := INT_TO_UDINT(SIS_6_0.POSITION_STRINGLENGTH));
+
+// Adjust index
+IdxOffset := IdxOffset + INT_TO_UINT(SIS_6_0.POSITION_STRINGLENGTH);
+
+MEMCPY(destAddr := ADR(ATQ.Weight), srcAddr := Data.pAdr + IdxOffset, n := INT_TO_UDINT(SIS_6_0_Emulation.ATQ_WEIGHT_STRINGLENGTH));
+
+// Adjust index
+IdxOffset := IdxOffset + INT_TO_UINT(SIS_6_0_Emulation.ATQ_WEIGHT_STRINGLENGTH);
+
+MEMCPY(destAddr := ADR(ATQ.Length), srcAddr := Data.pAdr + IdxOffset, n := INT_TO_UDINT(SIS_6_0_Emulation.ATQ_DIMENSION_STRINGLENGTH));
+
+// Adjust index
+IdxOffset := IdxOffset + INT_TO_UINT(SIS_6_0_Emulation.ATQ_DIMENSION_STRINGLENGTH);
+
+MEMCPY(destAddr := ADR(ATQ.Width), srcAddr := Data.pAdr + IdxOffset, n := INT_TO_UDINT(SIS_6_0_Emulation.ATQ_DIMENSION_STRINGLENGTH));
+
+// Adjust index
+IdxOffset := IdxOffset + INT_TO_UINT(SIS_6_0_Emulation.ATQ_DIMENSION_STRINGLENGTH);
+
+MEMCPY(destAddr := ADR(ATQ.Height), srcAddr := Data.pAdr + IdxOffset, n := INT_TO_UDINT(SIS_6_0_Emulation.ATQ_DIMENSION_STRINGLENGTH));
+
+// Adjust index
+IdxOffset := IdxOffset + INT_TO_UINT(SIS_6_0_Emulation.ATQ_DIMENSION_STRINGLENGTH);
+
+MEMCPY(destAddr := ADR(ATQ.LongSideLeading), srcAddr := Data.pAdr + IdxOffset, n := INT_TO_UDINT(SIS_6_0_Emulation.ATQ_LONGSIDELEADING_STRINGLENGTH));
+
+// Adjust index
+IdxOffset := IdxOffset + INT_TO_UINT(SIS_6_0_Emulation.ATQ_LONGSIDELEADING_STRINGLENGTH);
+
+MEMCPY(destAddr := ADR(ATQ.LabelPresent), srcAddr := Data.pAdr + IdxOffset, n := INT_TO_UDINT(SIS_6_0_Emulation.ATQ_LABEL_PRESENT_STRINGLENGTH));
+
+// Adjust index
+IdxOffset := IdxOffset + INT_TO_UINT(SIS_6_0_Emulation.ATQ_LABEL_PRESENT_STRINGLENGTH);
+
+MEMCPY(destAddr := ADR(ATQ.Label), srcAddr := Data.pAdr + IdxOffset, n := INT_TO_UDINT(SIS_6_0_Emulation.ATQ_LABEL_STRINGLENGTH));
+
+// Map generic ITC structure
+ATQ_ITC.Position := ATQ.Position;
+ATQ_ITC.Height := STRING_TO_INT(ATQ.Height);
+ATQ_ITC.Label := F_RemoveSign(ATQ.Label,' ');
+ATQ_ITC.LabelPresent := STRING_TO_INT(ATQ.LabelPresent);
+ATQ_ITC.Length := STRING_TO_INT(ATQ.Length);
+ATQ_ITC.Weight := STRING_TO_DINT(ATQ.Weight);
+ATQ_ITC.Width := STRING_TO_INT(ATQ.Width);
+ATQ_ITC.LongSideLeading := STRING_TO_INT(ATQ.LongSideLeading) = 1;
+
+fbITC_ManagerEmulation.M_AddData(
+	meChannelSrc := ChannelSrc,
+	mMsgType	 := E_ITC_MsgTypeConv.E_ADD_TU_REQUEST,
+	mpData		 := ADR(ATQ_ITC),
+	mLen		 := SIZEOF(ATQ_ITC));
+
+	]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="A_PutERQ" Id="{78e5d6ba-f249-4f14-990e-09f0972f46d5}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_PutERQ
+ * 	FUNCTION	Process ERQ
+ **************************************************************************************)
+ 
+ // Clear data structure 
+MEMSET(destAddr := ADR(ERQ), fillByte := 0, n := SIZEOF(ERQ));
+
+// Copy the ERQ data fields to the ERR data structure 
+IdxOffset := INT_TO_UINT(SIS_6_0.APP_DATA_OFFSET);
+
+// Copy
+MEMCPY(destAddr := ADR(ERQ.Position), srcAddr := Data.pAdr + IdxOffset, n := INT_TO_UDINT(SIS_6_0.POSITION_STRINGLENGTH));
+
+// Adjust index
+IdxOffset := IdxOffset + INT_TO_UINT(SIS_6_0.POSITION_STRINGLENGTH);
+
+MEMCPY(destAddr := ADR(ERQ.Code), srcAddr := Data.pAdr + IdxOffset, n := INT_TO_UDINT(SIS_6_0_Emulation.ERQ_CODE_STRINGLENGTH));
+
+// Adjust index
+IdxOffset := IdxOffset + INT_TO_UINT(SIS_6_0_Emulation.ERQ_CODE_STRINGLENGTH);
+
+MEMCPY(destAddr := ADR(ERQ.ErrorNumber), srcAddr := Data.pAdr + IdxOffset, n := INT_TO_UDINT(SIS_6_0_Emulation.ERQ_ERROR_NUMBER_STRINGLENGTH));
+
+// Map generic ITC structure
+ERQ_ITC.Position := ERQ.Position;
+ERQ_ITC.Code := STRING_TO_INT(ERQ.Code);
+ERQ_ITC.ErrorCode := STRING_TO_INT(ERQ.ErrorNumber);
+
+fbITC_ManagerEmulation.M_AddData(
+	meChannelSrc := ChannelSrc,
+	mMsgType	 := E_ITC_MsgTypeConv.E_ERROR_REQUEST,
+	mpData		 := ADR(ERQ_ITC),
+	mLen		 := SIZEOF(ERQ_ITC));
+
+
+
+]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="A_PutRTQ" Id="{62b80a41-cbf7-4af6-b650-da06f176b014}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_PutRTQ
+ * 	FUNCTION	Process RTQ
+ **************************************************************************************)
+ 
+  // Clear data structure 
+MEMSET(destAddr := ADR(RTQ), fillByte := 0, n := SIZEOF(RTQ));
+
+// Copy the RTQ data fields to the RTQ data structure 
+IdxOffset := INT_TO_UINT(SIS_6_0.APP_DATA_OFFSET);
+
+// Copy
+MEMCPY(destAddr := ADR(RTQ.Position), srcAddr := Data.pAdr + IdxOffset, n := INT_TO_UDINT(SIS_6_0.POSITION_STRINGLENGTH));
+
+// Map generic ITC struct
+RTQ_ITC.Position := RTQ.Position;
+
+fbITC_ManagerEmulation.M_AddData(
+	meChannelSrc := ChannelSrc,
+	mMsgType	 := E_ITC_MsgTypeConv.E_REMOVE_TU_REQUEST,
+	mpData		 := ADR(RTQ_ITC),
+	mLen		 := SIZEOF(RTQ_ITC));]]></ST>
+      </Implementation>
+    </Action>
+    <Method Name="M_ProcessData" Id="{60469e89-4f1e-424c-b13a-902677a9a0b9}">
+      <Declaration><![CDATA[METHOD M_ProcessData : BOOL
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 404529 $
+ *	Revision date	:	$Date: 2018-04-23 08:21:38 +0200 (Mo., 23 Apr 2018) $
+ *	Last changed by	:	$Author: b7bolm $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/trunk/01_Software/BCF/BCF/JumpStart/20_Product/11_Emu/11_Com/10_Lib/10_Conv/12_MFCS/11_SIS/FB_SIS_MsgManager_6_0_Emulation.TcPOU $
+ *
+ *	Purpose			:	Process emulation telegrams
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+VAR_INPUT
+	meChannelSrc	: E_MFCS_Channel; // MFCS Channel
+	mData			: ST_PointerSet; // Data
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+// Save source locally
+ChannelSrc		:= meChannelSrc;
+Data			:= mData;
+
+// Check length
+IF Data.Len >= 3 THEN
+	// Get the TYPE of telegram which was received 
+	MEMCPY(destAddr := ADR(TelegramType), srcAddr := Data.pAdr, n := 3);
+	
+	// Add TU request
+	IF TelegramType = 'ATQ' THEN
+		// Process
+		A_PutATQ();
+		
+	// Remove TU request
+	ELSIF TelegramType = 'RTQ' THEN
+		// Process
+		A_PutRTQ();
+	
+	// Set/reset error
+	ELSIF TelegramType = 'ERQ' THEN	
+		// Process
+		A_PutERQ();
+	END_IF
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <ObjectProperties>
+      <XmlArchive>
+        <Data>
+          <o xml:space="preserve" t="UMLStereoTypeContainerObject">
+            <v n="IsType" t="UMLType">BaseArea</v>
+            <v n="Stereotype">""</v>
+            <d n="Stereotypes" t="Hashtable" />
+          </o>
+        </Data>
+        <TypeList>
+          <Type n="Hashtable">System.Collections.Hashtable</Type>
+          <Type n="String">System.String</Type>
+          <Type n="UMLStereoTypeContainerObject">{30250973-b110-4e31-b562-c102e042dca4}</Type>
+          <Type n="UMLType">{0197b136-405a-42ee-bb27-fd08b621d0cf}</Type>
+        </TypeList>
+      </XmlArchive>
+    </ObjectProperties>
+    <LineIds Name="FB_SIS_MsgManager_6_0_Emulation">
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_SIS_MsgManager_6_0_Emulation.A_PutATQ">
+      <LineId Id="2" Count="64" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_SIS_MsgManager_6_0_Emulation.A_PutERQ">
+      <LineId Id="2" Count="36" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_SIS_MsgManager_6_0_Emulation.A_PutRTQ">
+      <LineId Id="2" Count="20" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_SIS_MsgManager_6_0_Emulation.M_ProcessData">
+      <LineId Id="3" Count="24" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

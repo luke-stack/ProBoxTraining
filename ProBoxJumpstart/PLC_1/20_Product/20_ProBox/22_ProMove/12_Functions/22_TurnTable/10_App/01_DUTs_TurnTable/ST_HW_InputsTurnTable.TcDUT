@@ -1,0 +1,37 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <DUT Name="ST_HW_InputsTurnTable" Id="{3e7e84ad-a0c9-4042-9587-636df92fcea6}">
+    <Declaration><![CDATA[TYPE ST_HW_InputsTurnTable :
+
+STRUCT
+	TT						: ST_HW_InputsTT; //Turning inputs	
+	//Drive/Transport control sensors
+	Sensor_Stop_12			: BOOL; // Sensor stop axis 1-2 forward
+	Sensor_Creep_12			: BOOL; // Sensor creep speed axis 1-2 forward	
+	Sensor_Stop_21			: BOOL; // Sensor stop axis 1-2 reverse	
+	Sensor_Creep_21			: BOOL; // Sensor creep speed axis 1-2 reverse
+	
+	Sensor_Overhang_12		: BOOL; // Sensor overhang axis 1-2 forward	
+	Sensor_Overhang_21		: BOOL; // Sensor overhang axis 2-1 reverse				
+END_STRUCT
+END_TYPE
+]]></Declaration>
+    <ObjectProperties>
+      <XmlArchive>
+        <Data>
+          <o xml:space="preserve" t="UMLStereoTypeContainerObject">
+            <v n="IsType" t="UMLType">BaseArea</v>
+            <v n="Stereotype">""</v>
+            <d n="Stereotypes" t="Hashtable" />
+          </o>
+        </Data>
+        <TypeList>
+          <Type n="Hashtable">System.Collections.Hashtable</Type>
+          <Type n="String">System.String</Type>
+          <Type n="UMLStereoTypeContainerObject">{30250973-b110-4e31-b562-c102e042dca4}</Type>
+          <Type n="UMLType">{0197b136-405a-42ee-bb27-fd08b621d0cf}</Type>
+        </TypeList>
+      </XmlArchive>
+    </ObjectProperties>
+  </DUT>
+</TcPlcObject>

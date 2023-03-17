@@ -1,0 +1,12 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <DUT Name="ST_CtrlOutMovableStop" Id="{7336ca7b-3259-43cc-82eb-dac5d5f1df52}">
+    <Declaration><![CDATA[TYPE ST_CtrlOutMovableStop :
+STRUCT
+	AlignmentDone			: BOOL;  //Alignment completed, or not started. ie not busy.
+	
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

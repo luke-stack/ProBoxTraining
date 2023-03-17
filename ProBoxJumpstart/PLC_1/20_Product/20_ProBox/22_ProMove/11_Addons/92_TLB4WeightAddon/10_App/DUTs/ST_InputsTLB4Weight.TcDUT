@@ -1,0 +1,50 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <DUT Name="ST_InputsTLB4Weight" Id="{fbb0e8cc-6a0d-4c1f-89de-d523cbe31fc4}">
+    <Declaration><![CDATA[TYPE ST_InputsTLB4Weight :
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 411985 $
+ *	Revision date	:	$Date: 2018-08-09 14:48:51 +0200 (tor, 09 aug 2018) $
+ *	Last changed by	:	$Author: p8fiscp $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/ProMove/02_Controls/ProBox/03_Implementation/01_DevelopmentProject/01_Software/ProBox_COE/ProBox_DevProj_v1.0/PLC_1/20_Product/10_App/12_E_Functions/11_ProBox/92_TLB4WeightAddon/10_App/DUTs/ST_Inpu $
+ *
+ *	Purpose			:	Inputs of the TLB4 Weighing module
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION 
+ *
+ **************************************************************************************)	
+STRUCT	
+	GrossWeight					: DWORD; // 0x0000 - 0x0003
+	NetWeight					: DWORD; // 0x0004 - 0x0007
+	SetPoint					: DWORD; // 0x0008 - 0x000B
+	StatusRegister				: WORD; // 0x000C - 0x000D
+	CellError					: BOOL; // StatusRegister bit 0
+	ADConverterMalfunction		: BOOL; // StatusRegister bit 1
+	MaxWeightExceeded			: BOOL; // Statusregister bit 2
+	GrossWeightToHigh			: BOOL; // Statusregister bit 3
+	GrossWeightOutsideRange		: BOOL; // StatusRegister bit 4
+	NetWeightOutsideRange		: BOOL; // STatusRegister bit 5
+	GrossWeightNegative			: BOOL; // StatusRegister bit 7
+	NetWeightNegative			: BOOL; // StatusRegister bit 8
+	PeakWeightNegative			: BOOL; // StatusRegister bit 9
+	NetDisplayMode				: BOOL; // StstusRegister bit 10
+	WeightStable				: BOOL; // StatusRegister bit 11
+	WeightWithinWindow			: BOOL; // StatusRegister bit 12
+	
+	DigitalInputsStatus			: WORD; // 0x000E - 0x000F
+	DigitalOutputsStatus		: WORD; // 0x0010 - 0x0011
+	
+	TransportData				: ST_TransportControlData; // Transport control data of corresponding zone
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

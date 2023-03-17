@@ -1,0 +1,15 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <DUT Name="ST_SemiDriveControl" Id="{5a63f841-6578-4765-9470-92803894d124}">
+    <Declaration><![CDATA[//Drive mover semi drive control
+TYPE ST_SemiDriveControl :
+STRUCT
+	SemiManualMode			: BOOL;	
+	SemiAutoMode			: BOOL;	
+	SemiAutoHalt			: BOOL; // Halt Absolute move command 
+	SemiTrigMoveAbs			: BOOL; // Enable motion and used togheter with "SemiAutoHalt" to apply other Absolute movments data
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

@@ -1,0 +1,262 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <POU Name="FB_LowLiftControl" Id="{a0501c61-cbef-419b-b071-78352dd53e70}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK FB_LowLiftControl
+VAR_INPUT
+	FunctionData			: ST_FunctionData; // Function data
+	Sensor_Pos_Down			: BOOL; // Sensor position lift down
+	Sensor_Creep_Down		: BOOL; // Sensor creep speed lift down
+	Sensor_EndLimit_Down	: BOOL; // Sensor end limit lift down	
+	Sensor_Pos_Up			: BOOL; // Sensor position lift up
+	Sensor_Creep_Up			: BOOL; // Sensor creep speed lift up	
+	Sensor_EndLimit_Up		: BOOL; // Sensor end limit lift up
+	Signal_HighTempLift		: BOOL; // Signal high temperature lift motor	
+	TimeoutValueLift		: TIME; // Timeout value for lifting
+	OrderPos				: E_Positions_LowLiftControl; // Order position lift	
+	HomePos					: E_Positions_LowLiftControl; // Home position lift
+END_VAR
+
+VAR_OUTPUT
+	Drive_Run_Up			: BOOL; // Drive run command lift up
+	Drive_Run_Down			: BOOL; // Drive run command lift down
+	Drive_Low_UpDown		: BOOL; // Drive low speed command lift
+	Drive_Creep_UpDown		: BOOL; // Drive creep speed command lift	
+	EnableTransport			: BOOL;	// Enable transport	
+END_VAR
+
+VAR_IN_OUT
+	ErrorData 				: ST_ErrorDataSet; // Error data
+END_VAR
+
+VAR
+	eState					: E_States_LowLiftControl;
+	eLastState				: E_States_LowLiftControl;
+	Timer_TimeoutLowlift	: TON;
+	fbTimeoutTimer			: FB_Timer;	
+END_VAR	]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[F_ResetError(
+	Reset 	  := FALSE,
+	ErrorData := ErrorData);
+
+// Initialise variables
+Drive_Run_Up := FALSE;		
+Drive_Run_Down := FALSE;		
+Drive_Low_UpDown := FALSE;	
+Drive_Creep_UpDown := FALSE;			
+EnableTransport := FALSE;	
+Timer_TimeoutLowlift.IN := FALSE;
+Timer_TimeoutLowlift.PT := TimeoutValueLift;			
+	
+CASE eState OF
+	(*************************************************************************
+	  Initialise
+	*************************************************************************)	
+	E_States_LowLiftControl.INIT:
+		Drive_Run_Up := FALSE;		
+		Drive_Run_Down := FALSE;		
+		Drive_Low_UpDown := FALSE;	
+		Drive_Creep_UpDown := FALSE;			
+		EnableTransport := FALSE;	
+		
+		eLastState := eState;
+		eState := E_States_LowLiftControl.IDLE;
+		
+	(*************************************************************************
+	  Error
+	*************************************************************************)	
+	E_States_LowLiftControl.Error:
+		// Acknowledge request error
+		IF ErrorData.ErrorType <> E_ErrorType.ERROR THEN	
+			eLastState := eState;
+			eState := E_States_LowLiftControl.Init;			
+		END_IF		
+		
+	(*************************************************************************
+	  Idle
+	*************************************************************************)		
+	E_States_LowLiftControl.IDLE:
+	
+		IF NOT Sensor_EndLimit_Up OR NOT Sensor_EndLimit_Down THEN
+			F_SetError(
+						ErrorType := E_ErrorType.ERROR, 
+						ErrorParam := 'End limit reached', 
+						ErrorMsg := E_ErrorConv.LIMIT_SWITCH_ACTIVE, 
+						ErrorData := ErrorData);
+						
+			eLastState := eState;
+			eState := E_States_LowLiftControl.Error;
+		ELSIF FunctionData.OperationState.eState = E_PositionState.STARTED AND
+		   FunctionData.ErrorData.Error.ErrorType <> E_ErrorType.ERROR AND NOT FunctionData.ErrorData.ZoneErrorPending THEN
+			IF OrderPos = E_Positions_LowLiftControl.DOWN THEN
+				// When lift is down
+				IF Sensor_Pos_Down THEN
+					EnableTransport := TRUE;
+				ELSE
+					EnableTransport := FALSE;
+					
+					eLastState := eState;
+					eState := E_States_LowLiftControl.LIFT_DOWN;
+				END_IF
+			ELSIF OrderPos = E_Positions_LowLiftControl.UP THEN
+				// When lift is up
+				IF Sensor_Pos_Up THEN
+					EnableTransport := TRUE;
+				ELSE
+					EnableTransport := FALSE;
+					
+					eLastState := eState;
+					eState := E_States_LowLiftControl.LIFT_UP;
+				END_IF
+			ELSE
+				EnableTransport := FALSE;
+				
+				IF HomePos = E_Positions_LowLiftControl.DOWN AND NOT Sensor_Pos_Down THEN																
+					eLastState := eState;
+					eState := E_States_LowLiftControl.LIFT_DOWN;									
+				ELSIF HomePos = E_Positions_LowLiftControl.UP AND NOT Sensor_Pos_Up THEN															
+					eLastState := eState;
+					eState := E_States_LowLiftControl.LIFT_UP;															
+				END_IF														
+			END_IF 
+		END_IF
+	
+	(*************************************************************************
+	  Lifting down
+	*************************************************************************)		
+	E_States_LowLiftControl.LIFT_DOWN:
+	
+		IF NOT Sensor_EndLimit_Up OR NOT Sensor_EndLimit_Down THEN
+			F_SetError(
+						ErrorType := E_ErrorType.ERROR, 
+						ErrorParam := 'End limit reached', 
+						ErrorMsg := E_ErrorConv.LIMIT_SWITCH_ACTIVE, 
+						ErrorData := ErrorData);
+						
+			eLastState := eState;
+			eState := E_States_LowLiftControl.Error;
+		// If function is started or stopping and no error
+		ELSIF (FunctionData.OperationState.eState = E_PositionState.STARTED OR FunctionData.OperationState.eState = E_PositionState.STOPPING) AND
+		  	FunctionData.ErrorData.Error.ErrorType <> E_ErrorType.ERROR AND NOT FunctionData.ErrorData.ZoneErrorPending THEN
+			
+			// When lift is down
+			IF Sensor_Pos_Down THEN
+				Drive_Run_Down := FALSE;
+				Drive_Creep_UpDown := FALSE;
+				
+				eLastState := eState;
+				eState := E_States_LowLiftControl.IDLE;
+			ELSE
+				Timer_TimeoutLowlift.IN := TRUE; // Start timer
+				
+				// If time is up
+				IF Timer_TimeoutLowlift.Q THEN
+					Drive_Run_Down := FALSE;
+					Drive_Creep_UpDown := FALSE;
+					F_SetError(
+						ErrorType := E_ErrorType.ERROR, 
+						ErrorParam := 'Timeout Lifting', 
+						ErrorMsg := E_ErrorConv.TIMEOUT_MOVEMENT, 
+						ErrorData := ErrorData);
+						
+					eLastState := eState;
+					eState := E_States_LowLiftControl.Error;
+				ELSE
+					Drive_Run_Down := TRUE;
+					
+					// When sensor creep speed is occupied
+					IF Sensor_Creep_Down THEN
+						Drive_Creep_UpDown := TRUE;
+					ELSE
+						Drive_Creep_UpDown := FALSE;
+					END_IF
+				END_IF
+			END_IF
+		END_IF
+		
+	(*************************************************************************
+	  Lifting up
+	*************************************************************************)		
+	E_States_LowLiftControl.LIFT_UP:
+		IF NOT Sensor_EndLimit_Up OR NOT Sensor_EndLimit_Down THEN
+			F_SetError(
+						ErrorType := E_ErrorType.ERROR, 
+						ErrorParam := 'End limit reached', 
+						ErrorMsg := E_ErrorConv.LIMIT_SWITCH_ACTIVE, 
+						ErrorData := ErrorData);
+						
+			eLastState := eState;
+			eState := E_States_LowLiftControl.Error;
+		// If function is started or stopping and no error
+		ELSIF (FunctionData.OperationState.eState = E_PositionState.STARTED OR FunctionData.OperationState.eState = E_PositionState.STOPPING) AND
+		    FunctionData.ErrorData.Error.ErrorType <> E_ErrorType.ERROR AND NOT FunctionData.ErrorData.ZoneErrorPending THEN
+			// When lift is up
+			IF Sensor_Pos_Up THEN
+				Drive_Run_Up := FALSE;
+				Drive_Creep_UpDown := FALSE;
+				
+				eLastState := eState;
+				eState := E_States_LowLiftControl.IDLE;
+			ELSE
+				Timer_TimeoutLowlift.IN := TRUE; // Start timer
+				// If time is up
+				IF Timer_TimeoutLowlift.Q THEN
+					Drive_Run_Up := FALSE;
+					Drive_Creep_UpDown := FALSE;
+					F_SetError(
+						ErrorType := E_ErrorType.ERROR, 
+						ErrorParam := 'Timeout Lifting', 
+						ErrorMsg := E_ErrorConv.TIMEOUT_MOVEMENT, 
+						ErrorData := ErrorData);
+						
+					eLastState := eState;
+					eState := E_States_LowLiftControl.Error;
+				ELSE
+					Drive_Run_Up := TRUE;
+				
+					// When sensor creep speed is occupied
+					IF Sensor_Creep_Up THEN
+						Drive_Creep_UpDown := TRUE;
+					ELSE
+						Drive_Creep_UpDown := FALSE;
+					END_IF
+				END_IF
+			END_IF
+		END_IF
+END_CASE
+
+// Call timer
+Timer_TimeoutLowlift();
+]]></ST>
+    </Implementation>
+    <LineIds Name="FB_LowLiftControl">
+      <LineId Id="3" Count="9" />
+      <LineId Id="233" Count="0" />
+      <LineId Id="232" Count="0" />
+      <LineId Id="13" Count="91" />
+      <LineId Id="216" Count="0" />
+      <LineId Id="105" Count="6" />
+      <LineId Id="195" Count="0" />
+      <LineId Id="209" Count="0" />
+      <LineId Id="199" Count="2" />
+      <LineId Id="210" Count="0" />
+      <LineId Id="202" Count="6" />
+      <LineId Id="197" Count="0" />
+      <LineId Id="212" Count="0" />
+      <LineId Id="112" Count="7" />
+      <LineId Id="213" Count="0" />
+      <LineId Id="120" Count="0" />
+      <LineId Id="122" Count="25" />
+      <LineId Id="217" Count="0" />
+      <LineId Id="219" Count="2" />
+      <LineId Id="226" Count="0" />
+      <LineId Id="222" Count="3" />
+      <LineId Id="218" Count="0" />
+      <LineId Id="227" Count="3" />
+      <LineId Id="148" Count="7" />
+      <LineId Id="231" Count="0" />
+      <LineId Id="156" Count="5" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

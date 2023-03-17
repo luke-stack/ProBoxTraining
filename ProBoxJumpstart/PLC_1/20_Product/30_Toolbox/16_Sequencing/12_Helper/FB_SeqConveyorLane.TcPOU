@@ -1,0 +1,707 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.12">
+  <POU Name="FB_SeqConveyorLane" Id="{f2a4e1b5-9c21-4a06-939c-75a8ae4a4ba3}" SpecialFunc="None">
+    <Declaration><![CDATA[// Object representing a conveyor lane consisting of multiple zones
+FUNCTION_BLOCK FB_SeqConveyorLane
+(************************************************************************************** 
+* 	Application 		: BoxControl Framework 
+* 	Revision 			: $Revision: 404877 $ 
+* 	Revision date 		: $Date: 2018-04-26 14:10:34 +0200 (Thu, 26 Apr 2018) $ 
+* 	Last changed by 	: $Author: b7ernsb $ 
+* 	URL 				: $URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/21_Projects/BCF_2.0/trunk/BCF/BCF/JumpStart/20_Product/10_App/12_E_Functions/10_Lib/10_Conv/FB_FunctionConv.TcPOU $ 
+* ------------------------------------------------------------------------------------ 
+* 	© Swisslog AG 
+* 	Swisslog is not liable for any usage of this source code that is not agreed 
+* 	on between Swisslog and the other party. The mandatory legal liability remains 
+* 	unaffected. 
+* ------------------------------------------------------------------------------------ 
+* 	Revision History: 
+* 
+* 	VERSION 		DATE 			INITIALS 			DESCRIPTION 
+* 	0.1 			06.05.2019 		ber 				Created.
+
+* 
+**************************************************************************************)
+VAR_INPUT
+	Positions						: ARRAY [1..MAX_LANE_SIZE] OF ST_PositionIdent; // Index 1: Outfeed position of the lane 
+END_VAR
+VAR
+	PositionCount					: DINT; // Amount of positions in the lane
+	OnlySequencingTU				: BOOL:= TRUE; // Only allow TU with sequencing data to enter the lane
+	Idx								: DINT;
+END_VAR
+
+VAR CONSTANT
+	MAX_LANE_SIZE					: DINT:=SequencingParameter.MAX_LANE_SIZE; // Maximal number of zones in a conveyor lane
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[PositionCount:= 0;	
+// Determine amount of positions in the lane
+FOR Idx:=1 TO MAX_LANE_SIZE DO
+	IF Positions[Idx].eFunctionNumber>0 THEN
+		PositionCount:= PositionCount+1;
+	END_IF
+END_FOR
+
+]]></ST>
+    </Implementation>
+    <Method Name="M_GetAllTU" Id="{4edfffa6-51a2-46d8-ac84-b8079484733f}">
+      <Declaration><![CDATA[/// Returns all TU indices currently present in the lane
+METHOD M_GetAllTU : BOOL // True = execution sucessfull, else false
+VAR_IN_OUT
+	mTU_Indices	: ARRAY [*] OF DINT; // List of all TU data indices in the lane
+END_VAR
+VAR
+	mIdx		: DINT;
+	mTU_Index	: DINT;
+	mCount		: DINT;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[MEMSET(ADR(mTU_Indices^), 0,  DINT_TO_UDINT((UPPER_BOUND(mTU_Indices,1)- LOWER_BOUND(mTU_Indices,1)+1)*SIZEOF(mTU_Indices^)));	
+mCount:= LOWER_BOUND(mTU_Indices,1);
+M_GetAllTU:= TRUE;	
+
+// Loop through lane
+FOR mIdx:=1 TO PositionCount DO	
+	
+	mTU_Index:= F_GetTU_DataIndex(Positions[mIdx].eFunctionNumber, Positions[mIdx].ZoneNumber);
+	
+	// If a TU index is present on the zone	
+	IF mTU_Index > 0 THEN
+
+		// Input array has enough space
+		IF mCount <= UPPER_BOUND( mTU_Indices,1) THEN
+			
+			mTU_Indices[mCount]:= mTU_Index;
+			mCount:= mCount+1;
+		
+		ELSE // Input array too small
+	
+			MEMSET(ADR(mTU_Indices^), 0, DINT_TO_UDINT((UPPER_BOUND(mTU_Indices,1)- LOWER_BOUND(mTU_Indices,1)+1)*SIZEOF(mTU_Indices^)));		
+			M_GetAllTU:= FALSE;	
+			EXIT;		
+		END_IF
+
+	END_IF
+END_FOR]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_GetFirstTU" Id="{c505bf31-6f37-438e-99f3-1e8a9cbfefff}">
+      <Declaration><![CDATA[// Get TU Index on first occupied position (nearest to the infeed)
+METHOD M_GetFirstTU : DINT // TU index
+VAR
+	mIdx				: DINT;
+END_VAR
+VAR_INST
+	TransportCtrlData	: ST_TransportControlData;	
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[M_GetFirstTU:=0;
+
+// Loop through lane from infeed to outfeed
+FOR mIdx:=0 TO PositionCount-1 DO	
+	
+	TransportCtrlData:= F_GetTransportControlData(Positions[PositionCount-mIdx].eFunctionNumber, Positions[PositionCount-mIdx].ZoneNumber);
+
+	// Finish search when a TU was found	
+	IF  TransportCtrlData.NumberOfPresentTUs > 0 THEN
+		M_GetFirstTU:=F_GetTU_DataIndex( Positions[PositionCount-mIdx].eFunctionNumber, Positions[PositionCount-mIdx].ZoneNumber);
+		EXIT;
+	END_IF
+	
+END_FOR
+
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_GetLastTU" Id="{cf7f95eb-3f52-4f7d-a335-f5ba9d2d567d}">
+      <Declaration><![CDATA[// Get TU Index on last occupied position (nearest to the outfeed)
+METHOD M_GetLastTU : DINT // TU index
+VAR
+	mIdx				: DINT;
+END_VAR
+VAR_INST
+	TransportCtrlData	: ST_TransportControlData;	
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[M_GetLastTU:=0;
+
+// Loop through lane from outfeed to infeed
+FOR mIdx:=1 TO PositionCount DO	
+	
+	TransportCtrlData:= F_GetTransportControlData(Positions[mIdx].eFunctionNumber, Positions[mIdx].ZoneNumber);
+	
+	// Finish search when a TU was found
+	IF  TransportCtrlData.NumberOfPresentTUs > 0 THEN
+		M_GetLastTU:= F_GetTU_DataIndex( Positions[mIdx].eFunctionNumber, Positions[mIdx].ZoneNumber);
+		EXIT;
+	END_IF
+	
+END_FOR
+
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_GetNrOfEmptyZones" Id="{cd2dbe80-4d77-402b-92ba-cdb13411e46b}">
+      <Declaration><![CDATA[// Returns number of empty zones in the lane
+METHOD M_GetNrOfEmptyZones : DINT 
+VAR
+	mIdx				: DINT;
+	mEmptyPosition_Count: DINT;
+END_VAR
+VAR_INST
+	TransportCtrlData	: ST_TransportControlData;	
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[// Loop through lane from outfeed to infeed
+FOR mIdx:=1 TO PositionCount DO	
+	
+	TransportCtrlData:= F_GetTransportControlData(Positions[mIdx].eFunctionNumber, Positions[mIdx].ZoneNumber);
+	
+	// Increase count when no TU is present on the zone
+	IF  TransportCtrlData.NumberOfPresentTUs = 0 THEN
+		mEmptyPosition_Count:=mEmptyPosition_Count+1;
+	END_IF
+	
+END_FOR
+
+M_GetNrOfEmptyZones:= mEmptyPosition_Count;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_GetNrOfOccupiedZones" Id="{d2b1253d-5519-46e7-8e98-82d18b0ec7cc}">
+      <Declaration><![CDATA[// Returns number of occupied zones in the lane
+METHOD M_GetNrOfOccupiedZones : DINT 
+VAR
+	mIdx				: DINT;
+	mTU_Count			: DINT;
+END_VAR
+VAR_INST
+	TransportCtrlData	: ST_TransportControlData;	
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[// Loop through lane from outfeed to infeed
+FOR mIdx:=1 TO PositionCount DO	
+	
+	TransportCtrlData:= F_GetTransportControlData(Positions[mIdx].eFunctionNumber, Positions[mIdx].ZoneNumber);
+
+	// Increase count when TU is present on the zone	
+	IF  TransportCtrlData.NumberOfPresentTUs > 0 THEN
+		mTU_Count:=mTU_Count+1;
+	END_IF
+	
+END_FOR
+
+M_GetNrOfOccupiedZones:= mTU_Count;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_GetTUs_AfterLastError" Id="{7e3b6f05-9b01-4036-a468-b61311b0f663}">
+      <Declaration><![CDATA[/// Returns all TU indices (which have sequencing data)  after the last sequence error (sequence error nearest to the lane outfeed)
+METHOD M_GetTUs_AfterLastError : BOOL; // True = execution successfull, else false
+VAR_IN_OUT
+	mTU_Indices					: ARRAY [*] OF DINT; // List of TU data indices after the error
+	mTU_Table					: ARRAY[0..Conveyor.NUMBER_OF_TU_DATA] OF ST_TU_Data; // TU Table
+END_VAR
+VAR 
+	mIdx						: DINT;
+	mTU_IdxTemp					: DINT;
+	mTU_IdxOutput				: DINT; 
+	mCount						: DINT;
+	mSequenceErrorFound			: BOOL;
+END_VAR
+VAR_INST
+	TransportCtrlDataOutput		: ST_TransportControlData; 
+	TransportCtrlDataTemp		: ST_TransportControlData; 
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[MEMSET(ADR(mTU_Indices^), 0, DINT_TO_UDINT((UPPER_BOUND(mTU_Indices,1)- LOWER_BOUND(mTU_Indices,1)+1)*SIZEOF(mTU_Indices^)));		
+M_GetTUs_AfterLastError:=TRUE;
+mCount:= LOWER_BOUND(mTU_Indices,1);
+
+// Loop through lane
+FOR mIdx:=1 TO PositionCount DO
+	
+	TransportCtrlDataTemp:= F_GetTransportControlData(Positions[mIdx].eFunctionNumber, Positions[mIdx].ZoneNumber);
+	mTU_IdxTemp:= F_GetTU_DataIndex(Positions[mIdx].eFunctionNumber, Positions[mIdx].ZoneNumber);
+
+	// Check if there is TU with sequencing information	
+	IF  TransportCtrlDataTemp.NumberOfPresentTUs > 0 AND mTU_Table[mTU_IdxTemp].DataSet.Sequence > 0 THEN
+		
+		// New TU  with sequencing data found		
+		IF mTU_IdxOutput = 0 THEN
+			
+			// Set TU as comparable
+			mTU_IdxOutput := mTU_IdxTemp;
+			TransportCtrlDataOutput:= TransportCtrlDataTemp;
+		
+		// Check if both TUs have the same destination ( belong to the same stream).	
+		ELSIF  mTU_Table[mTU_IdxOutput].Destination[1].eFunctionNumber <> mTU_Table[mTU_IdxTemp].Destination[1].eFunctionNumber OR
+				mTU_Table[mTU_IdxOutput].Destination[1].ZoneNumber <> mTU_Table[mTU_IdxTemp].Destination[1].ZoneNumber OR
+				mTU_Table[mTU_IdxOutput].DataSet.DestinationSlot <> mTU_Table[mTU_IdxTemp].DataSet.DestinationSlot THEN
+		
+			// TUs dont belong to the same stream!!
+			M_GetTUs_AfterLastError:=FALSE;
+			EXIT;	
+				
+		
+		ELSE // Compare with TU nearer to the output		
+		
+			// Check if TU which is nearer to the output is located higher in the stream	
+			IF	mTU_Table[mTU_IdxOutput].DataSet.Sequence >  mTU_Table[mTU_IdxTemp].DataSet.Sequence OR 
+				(mTU_Table[mTU_IdxOutput].DataSet.Sequence =  mTU_Table[mTU_IdxTemp].DataSet.Sequence AND
+				mTU_Table[mTU_IdxOutput].DataSet.SubSequence >  mTU_Table[mTU_IdxTemp].DataSet.SubSequence)THEN				
+				
+				// Sequence error detected
+				mSequenceErrorFound:= TRUE;
+				EXIT;
+				
+			ELSE // TUs are in correct sequencing order
+	
+				// Set TU as new comparable
+				mTU_IdxOutput := mTU_IdxTemp;
+				TransportCtrlDataOutput:= TransportCtrlDataTemp;			
+			END_IF	
+		END_IF
+		
+		// If input list is big enough, add the found index
+		IF  mCount <= UPPER_BOUND(mTU_Indices,1) THEN
+				
+			// Add index to list
+			mTU_Indices[mCount]:= mTU_IdxTemp;
+			mCount:= mCount+1;
+				
+		ELSE // Array too small
+			M_GetTUs_AfterLastError:=FALSE;
+			EXIT;
+		END_IF
+		
+	END_IF
+END_FOR
+
+
+IF NOT mSequenceErrorFound OR NOT M_GetTUs_AfterLastError THEN
+	MEMSET(ADR(mTU_Indices^), 0, DINT_TO_UDINT((UPPER_BOUND(mTU_Indices,1)- LOWER_BOUND(mTU_Indices,1)+1)*SIZEOF(mTU_Indices^)));		
+END_IF
+
+
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_HasSquenceError" Id="{aec6bc12-a8cd-4336-b869-3430446eb108}">
+      <Declaration><![CDATA[/// Checks if there is a sequence error pending  within the lane
+METHOD M_HasSquenceError : BOOL // True = sequence error pending, else false
+VAR_IN_OUT
+	mTU_Table					: ARRAY[0..Conveyor.NUMBER_OF_TU_DATA] OF ST_TU_Data; // TU Data Table
+END_VAR
+VAR 
+	mTU_IdxTemp					: DINT;
+	mTU_IdxOutput				: DINT; 
+	mIdx						: DINT;
+	mSequenceErrorFound			: BOOL;
+END_VAR
+VAR_INST
+	TransportCtrlDataOutput		: ST_TransportControlData; 
+	TransportCtrlDataTemp		: ST_TransportControlData;
+END_VAR
+
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[mSequenceErrorFound:=FALSE;
+
+// Loop through lane from outfeed to infeed
+FOR mIdx:=1 TO PositionCount DO
+	
+	TransportCtrlDataTemp:= F_GetTransportControlData(Positions[mIdx].eFunctionNumber, Positions[mIdx].ZoneNumber);
+	mTU_IdxTemp:= F_GetTU_DataIndex(Positions[mIdx].eFunctionNumber, Positions[mIdx].ZoneNumber);
+
+	// Check if there is TU with sequencing information	
+	IF  TransportCtrlDataTemp.NumberOfPresentTUs > 0 AND mTU_Table[mTU_IdxTemp].DataSet.Sequence > 0 THEN
+		
+		// New TU  with sequencing data found		
+		IF mTU_IdxOutput = 0 THEN
+			
+			// Set TU as comparable
+			mTU_IdxOutput := mTU_IdxTemp;
+			TransportCtrlDataOutput:= TransportCtrlDataTemp;
+		
+		// Check if both TUs have the same destination ( belong to the same stream).	
+		ELSIF  mTU_Table[mTU_IdxOutput].Destination[1].eFunctionNumber <> mTU_Table[mTU_IdxTemp].Destination[1].eFunctionNumber OR
+				mTU_Table[mTU_IdxOutput].Destination[1].ZoneNumber <> mTU_Table[mTU_IdxTemp].Destination[1].ZoneNumber OR
+				mTU_Table[mTU_IdxOutput].DataSet.DestinationSlot <> mTU_Table[mTU_IdxTemp].DataSet.DestinationSlot THEN
+		
+
+			mSequenceErrorFound:=TRUE;
+			EXIT;	
+				
+		
+		ELSE // Compare with TU nearer to the output		
+		
+			// Check if TU which is nearer to the output is located higher in the stream	
+			IF	mTU_Table[mTU_IdxOutput].DataSet.Sequence >  mTU_Table[mTU_IdxTemp].DataSet.Sequence OR 
+				(mTU_Table[mTU_IdxOutput].DataSet.Sequence =  mTU_Table[mTU_IdxTemp].DataSet.Sequence AND
+				mTU_Table[mTU_IdxOutput].DataSet.SubSequence >  mTU_Table[mTU_IdxTemp].DataSet.SubSequence)THEN				
+				
+
+				mSequenceErrorFound:= TRUE;
+				EXIT;
+				
+			ELSE // TUs are in correct sequencing order
+	
+				// Set TU as new comparable
+				mTU_IdxOutput := mTU_IdxTemp;
+				TransportCtrlDataOutput:= TransportCtrlDataTemp;
+			END_IF		
+		END_IF
+	END_IF
+END_FOR
+
+
+M_HasSquenceError:= mSequenceErrorFound;
+
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_IsEmpty" Id="{20b880e5-2790-4846-8580-8e6dcad7066e}">
+      <Declaration><![CDATA[METHOD M_IsEmpty : BOOL // True = lane is empty, otherwise false
+VAR
+	mIdx				: DINT;
+	mTransportCtrlData	: ST_TransportControlData;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[M_IsEmpty:= TRUE;
+
+// Loop through lane from outfeed to infeed
+FOR mIdx:=1 TO PositionCount DO	
+	
+	mTransportCtrlData:= F_GetTransportControlData(Positions[mIdx].eFunctionNumber, Positions[mIdx].ZoneNumber);
+
+	// Finish search when a TU was found		
+	IF mTransportCtrlData.NumberOfPresentTUs > 0 THEN
+		M_IsEmpty:= FALSE;
+		EXIT;
+	END_IF
+	
+END_FOR
+
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_IsFull" Id="{156c869b-1ea7-4296-a80c-3ab2c73798d9}">
+      <Declaration><![CDATA[METHOD M_IsFull : BOOL // True = lane is full, otherwise false
+VAR
+	mIdx				: DINT;
+	mTransportCtrlData	: ST_TransportControlData;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[M_IsFull:= TRUE;
+
+// Loop through lane from outfeed to infeed
+FOR mIdx:=1 TO PositionCount DO	
+	
+	mTransportCtrlData:= F_GetTransportControlData(Positions[mIdx].eFunctionNumber, Positions[mIdx].ZoneNumber);
+
+	// Finish search when a TU an empty zone was found	
+	IF mTransportCtrlData.NumberOfPresentTUs = 0 THEN
+		M_IsFull:= FALSE;
+		EXIT;
+	END_IF
+	
+END_FOR
+
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_RequestAccess" Id="{f082e898-bd08-4423-a208-bc73d77b425e}">
+      <Declaration><![CDATA[/// Check if TU may enter the lane, depening on  sequence information
+METHOD M_RequestAccess : BOOL // True = Access granted, else false
+VAR_INPUT
+	mTU_Index			: DINT; // TU data index of requesting TU
+END_VAR
+VAR_IN_OUT 
+	mTU_Table			: ARRAY[0..Conveyor.NUMBER_OF_TU_DATA] OF ST_TU_Data; // TU Table
+END_VAR
+VAR
+	mIdx				: DINT;
+	mTU_IndexLane		: DINT;
+END_VAR
+VAR_INST
+	TransportCtrlData	: ST_TransportControlData;	
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[M_RequestAccess:=FALSE;	
+
+IF M_IsEmpty() THEN
+
+	// Grant access if TU has sequencing data or non sequencing TU's are allowed by configuration
+	IF  mTU_Table[mTU_Index].DataSet.Sequence > 0 OR  NOT OnlySequencingTU THEN
+		M_RequestAccess:=TRUE;	
+	END_IF
+	
+ELSIF M_IsFull() THEN
+	; //  Deny access
+
+// Lane is partially full and requesting TU has no  sequencing data	
+ELSIF  mTU_Table[mTU_Index].DataSet.Sequence = 0  THEN
+		
+	IF  NOT OnlySequencingTU THEN
+		M_RequestAccess:= TRUE;
+	END_IF
+
+ELSE // Lane is partially full and requesting TU has data	
+	
+	// Search first TU after lane input with sequencing information
+	FOR mIdx:=0 TO PositionCount-1 DO	
+
+		TransportCtrlData:= F_GetTransportControlData(Positions[PositionCount-mIdx].eFunctionNumber, Positions[PositionCount-mIdx].ZoneNumber);
+		mTU_IndexLane:= F_GetTU_DataIndex(Positions[PositionCount-mIdx].eFunctionNumber, Positions[PositionCount-mIdx].ZoneNumber);
+	
+		// Only consider TUs with whose Sequencing is not on hold
+		IF TransportCtrlData.NumberOfPresentTUs > 0 AND 
+			NOT mTU_Table[mTU_IndexLane].DataSet.HaltSequencing THEN
+			
+			 // Check if requesting TU is located higher in the stream (lower priority) than the found TU  
+			IF  mTU_Table[mTU_Index].Destination[1].eFunctionNumber = mTU_Table[mTU_IndexLane].Destination[1].eFunctionNumber AND
+				mTU_Table[mTU_Index].Destination[1].ZoneNumber = mTU_Table[mTU_IndexLane].Destination[1].ZoneNumber AND
+				mTU_Table[mTU_Index].DataSet.DestinationSlot = mTU_Table[mTU_IndexLane].DataSet.DestinationSlot AND
+				mTU_Table[mTU_Index].DataSet.Sequence >  mTU_Table[mTU_IndexLane].DataSet.Sequence OR 
+				(mTU_Table[mTU_Index].DataSet.Sequence =  mTU_Table[mTU_IndexLane].DataSet.Sequence AND
+				mTU_Table[mTU_Index].DataSet.SubSequence >  mTU_Table[mTU_IndexLane].DataSet.SubSequence)THEN	
+								
+				M_RequestAccess:= TRUE;				
+			END_IF
+			
+			EXIT;	
+			
+		END_IF	
+	END_FOR
+END_IF
+]]></ST>
+      </Implementation>
+    </Method>
+    <Property Name="P_OnlySequencingTU" Id="{1a6dab28-d059-4c20-aff3-48c19d2ad02d}">
+      <Declaration><![CDATA[// Only allow TU's to enter the lane which have sequencing data 
+PROPERTY P_OnlySequencingTU : BOOL]]></Declaration>
+      <Get Name="Get" Id="{536eb5b1-8209-4925-b591-a34e9247ec93}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[P_OnlySequencingTU:= OnlySequencingTU;]]></ST>
+        </Implementation>
+      </Get>
+      <Set Name="Set" Id="{505afa7a-9461-47fc-848c-6727535d85e2}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[OnlySequencingTU:= P_OnlySequencingTU;]]></ST>
+        </Implementation>
+      </Set>
+    </Property>
+    <LineIds Name="FB_SeqConveyorLane">
+      <LineId Id="52" Count="0" />
+      <LineId Id="54" Count="0" />
+      <LineId Id="46" Count="0" />
+      <LineId Id="48" Count="0" />
+      <LineId Id="50" Count="1" />
+      <LineId Id="49" Count="0" />
+      <LineId Id="47" Count="0" />
+      <LineId Id="9" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_SeqConveyorLane.M_GetAllTU">
+      <LineId Id="70" Count="1" />
+      <LineId Id="96" Count="0" />
+      <LineId Id="99" Count="0" />
+      <LineId Id="65" Count="0" />
+      <LineId Id="13" Count="0" />
+      <LineId Id="42" Count="0" />
+      <LineId Id="15" Count="0" />
+      <LineId Id="43" Count="0" />
+      <LineId Id="97" Count="0" />
+      <LineId Id="40" Count="0" />
+      <LineId Id="98" Count="0" />
+      <LineId Id="56" Count="1" />
+      <LineId Id="85" Count="1" />
+      <LineId Id="80" Count="0" />
+      <LineId Id="63" Count="0" />
+      <LineId Id="60" Count="0" />
+      <LineId Id="76" Count="0" />
+      <LineId Id="82" Count="0" />
+      <LineId Id="77" Count="0" />
+      <LineId Id="74" Count="0" />
+      <LineId Id="59" Count="0" />
+      <LineId Id="41" Count="0" />
+      <LineId Id="39" Count="0" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_SeqConveyorLane.M_GetFirstTU">
+      <LineId Id="6" Count="0" />
+      <LineId Id="27" Count="0" />
+      <LineId Id="7" Count="3" />
+      <LineId Id="28" Count="0" />
+      <LineId Id="11" Count="7" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_SeqConveyorLane.M_GetLastTU">
+      <LineId Id="22" Count="0" />
+      <LineId Id="32" Count="0" />
+      <LineId Id="23" Count="0" />
+      <LineId Id="6" Count="3" />
+      <LineId Id="33" Count="0" />
+      <LineId Id="10" Count="6" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_SeqConveyorLane.M_GetNrOfEmptyZones">
+      <LineId Id="29" Count="0" />
+      <LineId Id="6" Count="3" />
+      <LineId Id="30" Count="0" />
+      <LineId Id="10" Count="4" />
+      <LineId Id="19" Count="0" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_SeqConveyorLane.M_GetNrOfOccupiedZones">
+      <LineId Id="32" Count="0" />
+      <LineId Id="6" Count="2" />
+      <LineId Id="31" Count="0" />
+      <LineId Id="9" Count="2" />
+      <LineId Id="13" Count="2" />
+      <LineId Id="21" Count="0" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_SeqConveyorLane.M_GetTUs_AfterLastError">
+      <LineId Id="290" Count="0" />
+      <LineId Id="110" Count="0" />
+      <LineId Id="206" Count="0" />
+      <LineId Id="273" Count="0" />
+      <LineId Id="207" Count="1" />
+      <LineId Id="211" Count="0" />
+      <LineId Id="214" Count="1" />
+      <LineId Id="272" Count="0" />
+      <LineId Id="216" Count="1" />
+      <LineId Id="213" Count="0" />
+      <LineId Id="220" Count="0" />
+      <LineId Id="224" Count="0" />
+      <LineId Id="274" Count="0" />
+      <LineId Id="228" Count="0" />
+      <LineId Id="225" Count="0" />
+      <LineId Id="227" Count="0" />
+      <LineId Id="263" Count="0" />
+      <LineId Id="265" Count="0" />
+      <LineId Id="267" Count="1" />
+      <LineId Id="264" Count="0" />
+      <LineId Id="226" Count="0" />
+      <LineId Id="269" Count="0" />
+      <LineId Id="282" Count="0" />
+      <LineId Id="271" Count="0" />
+      <LineId Id="270" Count="0" />
+      <LineId Id="232" Count="0" />
+      <LineId Id="230" Count="0" />
+      <LineId Id="233" Count="0" />
+      <LineId Id="261" Count="0" />
+      <LineId Id="239" Count="1" />
+      <LineId Id="235" Count="0" />
+      <LineId Id="234" Count="0" />
+      <LineId Id="262" Count="0" />
+      <LineId Id="244" Count="0" />
+      <LineId Id="246" Count="0" />
+      <LineId Id="251" Count="0" />
+      <LineId Id="247" Count="0" />
+      <LineId Id="275" Count="0" />
+      <LineId Id="250" Count="0" />
+      <LineId Id="248" Count="1" />
+      <LineId Id="229" Count="0" />
+      <LineId Id="286" Count="0" />
+      <LineId Id="291" Count="0" />
+      <LineId Id="302" Count="0" />
+      <LineId Id="294" Count="4" />
+      <LineId Id="330" Count="0" />
+      <LineId Id="299" Count="2" />
+      <LineId Id="293" Count="0" />
+      <LineId Id="292" Count="0" />
+      <LineId Id="221" Count="0" />
+      <LineId Id="212" Count="0" />
+      <LineId Id="260" Count="0" />
+      <LineId Id="308" Count="0" />
+      <LineId Id="284" Count="0" />
+      <LineId Id="258" Count="0" />
+      <LineId Id="256" Count="0" />
+      <LineId Id="145" Count="1" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_SeqConveyorLane.M_HasSquenceError">
+      <LineId Id="243" Count="0" />
+      <LineId Id="170" Count="43" />
+      <LineId Id="226" Count="2" />
+      <LineId Id="240" Count="1" />
+      <LineId Id="229" Count="1" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_SeqConveyorLane.M_IsEmpty">
+      <LineId Id="45" Count="0" />
+      <LineId Id="50" Count="0" />
+      <LineId Id="44" Count="0" />
+      <LineId Id="30" Count="2" />
+      <LineId Id="51" Count="0" />
+      <LineId Id="33" Count="7" />
+      <LineId Id="19" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_SeqConveyorLane.M_IsFull">
+      <LineId Id="20" Count="0" />
+      <LineId Id="27" Count="0" />
+      <LineId Id="21" Count="0" />
+      <LineId Id="9" Count="2" />
+      <LineId Id="26" Count="0" />
+      <LineId Id="12" Count="7" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_SeqConveyorLane.M_RequestAccess">
+      <LineId Id="23" Count="0" />
+      <LineId Id="126" Count="1" />
+      <LineId Id="195" Count="0" />
+      <LineId Id="131" Count="0" />
+      <LineId Id="176" Count="1" />
+      <LineId Id="128" Count="0" />
+      <LineId Id="150" Count="1" />
+      <LineId Id="155" Count="0" />
+      <LineId Id="178" Count="0" />
+      <LineId Id="160" Count="0" />
+      <LineId Id="156" Count="1" />
+      <LineId Id="159" Count="0" />
+      <LineId Id="158" Count="0" />
+      <LineId Id="154" Count="0" />
+      <LineId Id="133" Count="0" />
+      <LineId Id="132" Count="0" />
+      <LineId Id="147" Count="0" />
+      <LineId Id="92" Count="3" />
+      <LineId Id="173" Count="0" />
+      <LineId Id="109" Count="0" />
+      <LineId Id="175" Count="0" />
+      <LineId Id="97" Count="0" />
+      <LineId Id="174" Count="0" />
+      <LineId Id="110" Count="0" />
+      <LineId Id="164" Count="5" />
+      <LineId Id="162" Count="0" />
+      <LineId Id="170" Count="1" />
+      <LineId Id="100" Count="0" />
+      <LineId Id="196" Count="0" />
+      <LineId Id="194" Count="0" />
+      <LineId Id="197" Count="0" />
+      <LineId Id="123" Count="0" />
+      <LineId Id="102" Count="0" />
+      <LineId Id="130" Count="0" />
+      <LineId Id="91" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_SeqConveyorLane.P_OnlySequencingTU.Get">
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_SeqConveyorLane.P_OnlySequencingTU.Set">
+      <LineId Id="2" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

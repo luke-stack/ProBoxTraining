@@ -1,0 +1,274 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.6">
+  <POU Name="FB_Takeover" Id="{7b5e5149-e0b2-4c19-a9dc-1c417db928d2}" SpecialFunc="None">
+    <Declaration><![CDATA[/// Basic takeover implementation to satisfy interface
+FUNCTION_BLOCK FB_Takeover
+(**************************************************************************************
+* Application : BoxControl Framework 
+* Revision date : $Date: 2021-04-01 10:33:04 +0200 (tor, 01 apr 2021) $
+* Author : CDC
+* ------------------------------------------------------------------------------------ 
+* © Swisslog AG 
+* Swisslog is not liable for any usage of this source code that is not agreed 
+* on between Swisslog and the other party. The mandatory legal liability remains 
+* unaffected. 
+* ------------------------------------------------------------------------------------ 
+* Project revision history: 
+* 
+* VERSION 	DATE 		INITIALS 	DESCRIPTION 
+* 	VERSION 		DATE 			INITIALS 			DESCRIPTION 
+* 	0.1 			22.08.2018 		herzig 				First implementation
+*	0.2				05.10.2018		b7bolm				Review
+* 
+**************************************************************************************)
+
+VAR_INPUT
+	Enable						: BOOL; // Allow handover in general  
+	RequestTakeover				: BOOL; // Rising edge initiates a new transport
+	AbortTakeover				: BOOL; // Takeover must be aborted
+	PrevZonePresent 			: BOOL;	 // Previous zone is known
+	EncoderValue				: UDINT; // Encoder signal of movement
+	MaxEncoderValue 			: UDINT; // Maximum encoder signal
+	EncoderRate					: LREAL; // Rate from encoder to mm signal
+	DriveReady					: BOOL; // Drive is ready to be used
+	iListener 					: I_TakeoverListener; // Listener for any takeover events
+END_VAR
+VAR_OUTPUT
+	DriveRun					: BOOL; // Switch on drive
+	DriveRequest				: BOOL; // Request to get drive ready
+	eTakeOverState				: E_TakeOverState; // Takeover state
+	ePrevHandOverState			: E_HandOverState; // Handoverstate of previous zone
+	RequestPrevTransportData 	: BOOL; // Request previous transport data
+	DeletePrevTransportData 	: BOOL; // Delete previous transport dat
+	TakeoverOngoing				: BOOL; // A takeover is ongoing, statemachine in operation
+END_VAR
+VAR_IN_OUT
+	PrevTransportData			: ST_TransportData; // Next transport data
+	ErrorData					: ST_ErrorDataSet; // Error slot
+END_VAR
+VAR
+	TU_Index					: DINT; // TU index
+	fbDebugMsg					: FB_DebugMsg; // Debug instance
+	DebugMsg					: T_MAXSTRING; // Debug message
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[
+F_ResetError(Reset := FALSE, ErrorData := ErrorData);	
+
+(*************************************************************************
+  Undefined
+*************************************************************************)
+CASE eTakeOverState OF
+	// Undefined
+	E_TakeOverState.UNDEFINED:
+		TakeoverOngoing := FALSE;
+		eTakeOverState := E_TakeOverState.IDLE;
+
+
+(*************************************************************************
+  Idle
+*************************************************************************)
+	E_TakeOverState.IDLE:
+		TakeoverOngoing := FALSE;
+		DeletePrevTransportData := FALSE;
+		RequestPrevTransportData := NOT PrevZonePresent;
+		DriveRequest := FALSE;
+		DriveRun := FALSE;
+		
+		IF RequestTakeover THEN
+			// If the zone is internally ready for takeover
+			IF Enable  AND
+			   ErrorData.ErrorType <> E_ErrorType.ERROR THEN
+				  
+				// If prev zone or function is available
+				IF PrevZonePresent THEN
+					IF PrevTransportData.rTransportControlData.eHandOverState = E_HandOverState.READY THEN
+						DriveRequest := TRUE;
+						
+						IF DriveReady THEN
+							eTakeOverState := E_TakeOverState.READY;
+						END_IF
+					END_IF
+				END_IF
+			END_IF
+		END_IF
+
+
+(*************************************************************************
+  Ready
+*************************************************************************)
+	E_TakeOverState.READY:
+		TakeoverOngoing := FALSE;
+
+		IF NOT Enable OR NOT RequestTakeover OR
+		   ErrorData.ErrorType = E_ErrorType.ERROR OR
+           NOT PrevZonePresent OR
+           NOT DriveReady THEN  
+			eTakeOverState := E_TakeOverState.IDLE;
+
+		// Previous position is ready to handover
+		ELSIF PrevTransportData.rTransportControlData.eHandOverState = E_HandOverState.READY THEN
+			// Set drive on to create minimum TU gap
+			DriveRun := TRUE;
+			
+			IF iListener <> 0 THEN
+			   iListener.M_TakeoverStartEvent();
+		   	END_IF
+
+			// Move TU-data index from previous to own zone
+			TU_Index := F_MoveTU_DataIndex(
+								eFunctionNumber := PrevTransportData.eFunctionNumber,
+								mZoneNumber 	:= PrevTransportData.ZoneNumber);
+
+			IF iListener <> 0 THEN
+				iListener.M_TU_IndexMovedEvent(TU_Index);
+			END_IF
+
+			eTakeOverState := E_TakeOverState.ACTIVE;
+		END_IF
+
+
+(*************************************************************************
+  Active
+*************************************************************************)
+	E_TakeOverState.ACTIVE:
+		DriveRun := TRUE;
+		DriveRequest := FALSE;
+		
+		// Interrupt takeover if previous position stopped handover
+		IF PrevTransportData.rTransportControlData.eHandOverState = E_HandOverState.STOP THEN
+			DriveRun := FALSE;
+			eTakeOverState := E_TakeOverState.INTERRUPTED;
+
+		// Stop takeover from own cause
+		ELSIF NOT Enable OR NOT DriveReady OR ErrorData.ErrorType = E_ErrorType.ERROR THEN	  
+			DriveRun := FALSE;
+			eTakeOverState := E_TakeOverState.STOP;
+			
+			IF iListener <> 0 THEN
+			   iListener.M_TakeoverStopEvent();
+		   	END_IF
+
+		// Regular takeover complete if previous position completed handover
+		ELSIF PrevTransportData.rTransportControlData.eHandOverState = E_HandOverState.COMPLETE THEN
+			DriveRun := FALSE;
+			eTakeOverState := E_TakeOverState.COMPLETE;
+			
+			IF iListener <> 0 THEN
+			   iListener.M_TakeoveCompleteEvent();
+		   	END_IF
+
+		// End takeover and clear TU data index if abort is requested
+		ELSIF AbortTakeover THEN
+			DeletePrevTransportData := TRUE;
+			DriveRun := FALSE;
+			eTakeOverState := E_TakeOverState.COMPLETE;
+		END_IF
+
+	
+(*************************************************************************
+  Stop
+*************************************************************************)
+	E_TakeOverState.STOP:
+		TakeoverOngoing := TRUE;
+
+		// If the previous position aborted the handover or the link is broken, cancel the started takeover
+		IF PrevTransportData.rTransportControlData.eHandOverState = E_HandOverState.IDLE OR
+		   PrevTransportData.rTransportControlData.eHandOverState = E_HandOverState.UNDEFINED THEN
+
+		  	IF iListener <> 0 THEN
+				iListener.M_PrevUnlinkedEvent();
+		   	END_IF
+			
+			DeletePrevTransportData := TRUE;
+			eTakeOverState := E_TakeOverState.IDLE;
+			
+			// Send debug message
+			DebugMsg := 'STOP - Takeover canceled';
+			fbDebugMsg.M_SendInfoMsg(DebugMsg);				  
+					
+		// If the position is enabled
+		ELSIF Enable THEN
+			// No error is pending
+			IF ErrorData.ErrorType <> E_ErrorType.ERROR THEN
+				IF DriveReady THEN
+					DriveRun := TRUE;
+					DriveRequest := FALSE;
+					eTakeOverState := E_TakeOverState.ACTIVE;
+				ELSE
+					DriveRequest := TRUE;
+				END_IF
+			END_IF
+		END_IF
+
+
+(*************************************************************************
+  Interrupted
+*************************************************************************)
+	E_TakeOverState.INTERRUPTED:
+		TakeoverOngoing := TRUE;
+		// If the stop from the previous position is no longer required
+		IF PrevTransportData.rTransportControlData.eHandOverState <> E_HandOverState.STOP THEN
+			eTakeOverState := E_TakeOverState.ACTIVE;
+		END_IF
+
+
+(*************************************************************************
+  Complete
+*************************************************************************)
+	E_TakeOverState.COMPLETE:
+		TakeoverOngoing := FALSE;
+		DriveRun := FALSE;
+		// Transfer complete at prvious zone
+		IF PrevTransportData.rTransportControlData.eHandOverState <> E_HandOverState.COMPLETE THEN
+			DeletePrevTransportData := TRUE;
+			eTakeOverState := E_TakeOverState.IDLE;
+		END_IF
+
+
+(*************************************************************************
+  State error
+*************************************************************************)
+ELSE
+	// Set error
+	F_SetError(	
+		ErrorType	:= E_ErrorType.ERROR,
+		ErrorParam	:= INT_TO_STRING(eTakeOverState),
+		ErrorMsg	:= E_ErrorConv.SOFTWARE_ERROR,
+		ErrorData	:= ErrorData);
+END_CASE
+
+ePrevHandOverState := PrevTransportData.rTransportControlData.eHandOverState;
+
+
+				   ]]></ST>
+    </Implementation>
+    <Method Name="M_Init" Id="{625d2f6d-4ee9-4d33-8e30-321af30ac34b}">
+      <Declaration><![CDATA[/// Initialize module
+METHOD M_Init : BOOL // Returns true if successful, otherwise false
+VAR_INPUT
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[eTakeOverState := E_TakeOverState.IDLE;
+DeletePrevTransportData := FALSE;
+RequestPrevTransportData := FALSE;
+
+M_Init := TRUE;]]></ST>
+      </Implementation>
+    </Method>
+    <LineIds Name="FB_Takeover">
+      <LineId Id="891" Count="91" />
+      <LineId Id="1126" Count="0" />
+      <LineId Id="1128" Count="1" />
+      <LineId Id="1127" Count="0" />
+      <LineId Id="983" Count="92" />
+      <LineId Id="350" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_Takeover.M_Init">
+      <LineId Id="3" Count="3" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

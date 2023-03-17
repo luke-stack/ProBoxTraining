@@ -1,0 +1,42 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <POU Name="F_DebugCompositionCustomization" Id="{bdd2a976-368f-41f7-a5e3-f6d769339915}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION F_DebugCompositionCustomization : BOOL
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[
+
+(****************************************************************************************
+   Add custom code that shall be executed during debug here.
+*****************************************************************************************)
+;
+
+
+(****************************************************************************************
+   Example: Configure project when running Demo3D simulator
+*****************************************************************************************)
+IF(DEMO3D_SIM_ENABLED) THEN
+	;
+	(*
+	Groups.fbSG_001.HW_Inputs.AutoOnPB 						:= TRUE;
+	Groups.fbSG_001.HW_Inputs.EmergencyCircuitOK 			:= TRUE;
+	Groups.fbSG_001.HW_Inputs.ManAutoSW 					:= TRUE;
+	Groups.fbSG_001.HW_Inputs.ResetErrorPB 					:= ResetErrorSG1; 
+	Groups.fbSG_001.HW_Inputs.MainContactorOFF				:= TRUE; 
+	Groups.fbSG_001.HW_Inputs.FeedbackMainContactorOFF[1]	:= TRUE; 
+	Groups.fbSG_001.HW_Inputs.FeedbackMainContactorOFF[2]	:= TRUE; 
+	Groups.fbSG_001.HW_Inputs.FeedbackMainContactorOFF[3]	:= TRUE; 
+	Groups.fbSG_001.HW_Inputs.FeedbackMainContactorOFF[4]	:= TRUE; 
+	Groups.fbSG_001.HW_Inputs.FireAlarm						:= TRUE; 
+	*)
+END_IF
+
+
+]]></ST>
+    </Implementation>
+    <LineIds Name="F_DebugCompositionCustomization">
+      <LineId Id="3" Count="27" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

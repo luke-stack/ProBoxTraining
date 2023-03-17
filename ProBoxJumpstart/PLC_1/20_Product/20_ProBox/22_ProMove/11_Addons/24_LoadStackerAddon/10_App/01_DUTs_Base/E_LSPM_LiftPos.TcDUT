@@ -1,0 +1,16 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.4">
+  <DUT Name="E_LSPM_LiftPos" Id="{4bfe256a-3857-4b90-957d-04793c6f7436}">
+    <Declaration><![CDATA[{attribute 'qualified_only'}
+{attribute 'strict'}
+TYPE E_LSPM_LiftPos :
+(
+	E_UNDEFINED,
+	E_LOWER,		// Lift is in position to engage forks and lift bottom pallet up
+	E_MIDDLE,		// Lift is in position to encage forsks and lift second pallet up			
+	E_UPPER		// Lift has lifted second position up
+);
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

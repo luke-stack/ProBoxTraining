@@ -1,0 +1,80 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <GVL Name="Conveyor" Id="{0ab3fbec-799f-4f57-9d8c-5a052e98bb0c}">
+    <Declaration><![CDATA[(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 412414 $
+ *	Revision date	:	$Date: 2018-08-17 07:57:24 +0200 (Fr., 17 Aug 2018) $
+ *	Last changed by	:	$Author: d7herza $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/trunk/01_Software/BCF/BCF/JumpStart/20_Product/10_App/10_Base/10_Lib/10_Conv/00_GVLs/Conveyor.TcGVL $
+ *
+ *	Purpose			:	Global variables : Conveyor
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+VAR_GLOBAL
+	fbGroupManager						: FB_GroupManager; // Group manager
+	//fbITC_ManagerConveyor 				: FB_ITC_Conveyor;	Overloaded by ProBox fb_PB_ITC_ManagerConveyor
+	fbMFCS_SIS_AM						: FB_SIS_MsgManager_6_1; // SIS AM
+	fbMFCS_SIS_SPOC						: FB_SIS_MsgManager_6_1; // SIS SPOC
+	fbMFCS_LOG							: FB_SIS_MsgManager_6_1; // SIS LOG
+	fbMFCS_SIS_CM						: FB_SIS_MsgManager_6_1; // SIS CM
+	fbSTI_Channels						: ARRAY[E_FunctionNumber.F_BEGIN_EXTERN_FUNCTION .. E_FunctionNumber.F_END_EXTERN_FUNCTION] OF ST_STI_Channel;
+	ExternalDestinationTable			: ARRAY[E_FunctionNumber.F_BEGIN_VIRTUAL_FUNCTION ..E_FunctionNumber.F_END_VIRTUAL_FUNCTION , 1..Conveyor.NUMBER_OF_EXT_DESTINATIONS] OF ST_ExternalDestination;
+END_VAR
+
+VAR_GLOBAL CONSTANT
+	TU_ID_UNKNOWN						: STRING(TU_ID_STRINGLENGTH) := '999999999999999999'; // String for unkwnon TU-ID  
+	ASSIGNMENT_ID_UNKNOWN				: UDINT := 99999999; // String for unkwnon Assignment-ID  
+	NUMBER_OF_TU_DATA					: DINT := 5000; // Size of the TU-Data 
+	NUMBER_OF_ADDON_FUNCTIONS			: INT := 5; // Number of Addons per function
+	NUMBER_OF_ZONES_PER_FUNCTION		: INT := 4; // Max number of zones per element function
+	NUMBER_OF_FUNCTIONS_PER_ELEMENT		: INT := 8; // Possible element functions on a certain element
+	NUMBER_OF_ACTIONS					: INT := 10; // Number of input or output actions of a windows tracking. 	
+	NUMBER_OF_WINDOWS					: WORD := 1024; // Number of windows over the complete tracking length
+	NUMBER_OF_TRACKING_ZONES			: INT := 1024; // Number of zones over the complete tracking length
+	NUMBER_OF_EXT_DESTINATIONS			: INT := 10; // Number of external destinations per virtual destination
+	TU_ID_STRINGLENGTH					: INT := 18; // Number of characters for the TU-ID 
+	LABEL_LENGTH						: INT := 20; // Label length
+	NUMBER_OF_STI						: INT := 4; // Number of Subsystem transport interfaces
+	POSITION_STRINGLENGTH				: INT := 12; // PositionName MM-000-0000-000
+	ORIENTATION_STRINGLENGTH			: INT := 3; // String length	
+	TU_DATA_LIFETIME					: TIME := T#3D; // Delets the the TU-Data after this time 
+	NUMBER_OF_DESTINATIONS				: INT := 2; // Number of destinations in the TU-Data 
+	ASSIGNMENT_ID_STRINGLENGTH			: INT := 8; // Assignment ID string
+	NUMBER_OF_ERROR_SETS				: INT := 8; // Number of possible error sets per position
+	//NUMBERS_OF_ETHERCAT_SLAVE_DIAG		: INT := 50; // Number of EtherCAT Slaves
+    MAX_LOADING                  	  	: INT := 50; // maximum weight of a transport unit [kg] 
+	NUMBER_OF_COMMAND_ARGS				: INT := 99; // Maximum number of custom param counts 
+	ROBOT_COMMAND_LENGTH				: INT := 20000; // Lengt of a robot command
+	GATHERED_DATA_VALUE					: INT := 20;// 20 Character String;
+	KEY_STRINGLENGTH					: INT := 30; // key length
+END_VAR]]></Declaration>
+    <ObjectProperties>
+      <XmlArchive>
+        <Data>
+          <o xml:space="preserve" t="UMLStereoTypeContainerObject">
+            <v n="IsType" t="UMLType">BaseArea</v>
+            <v n="Stereotype">""</v>
+            <d n="Stereotypes" t="Hashtable" />
+          </o>
+        </Data>
+        <TypeList>
+          <Type n="Hashtable">System.Collections.Hashtable</Type>
+          <Type n="String">System.String</Type>
+          <Type n="UMLStereoTypeContainerObject">{30250973-b110-4e31-b562-c102e042dca4}</Type>
+          <Type n="UMLType">{0197b136-405a-42ee-bb27-fd08b621d0cf}</Type>
+        </TypeList>
+      </XmlArchive>
+    </ObjectProperties>
+  </GVL>
+</TcPlcObject>

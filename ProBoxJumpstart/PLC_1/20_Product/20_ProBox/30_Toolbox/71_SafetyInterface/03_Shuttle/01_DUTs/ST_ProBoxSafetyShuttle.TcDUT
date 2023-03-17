@@ -1,0 +1,12 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.4">
+  <DUT Name="ST_ProBoxSafetyShuttle" Id="{7c175d56-cda7-4f3f-a27c-39051b8f186d}">
+    <Declaration><![CDATA[TYPE ST_ProBoxSafetyShuttle :
+STRUCT
+	Inputs	AT %I* : ST_ProBoxSafetyInputsShuttle;
+	Outputs AT %Q* : ST_ProBoxSafetyOutputsShuttle;
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

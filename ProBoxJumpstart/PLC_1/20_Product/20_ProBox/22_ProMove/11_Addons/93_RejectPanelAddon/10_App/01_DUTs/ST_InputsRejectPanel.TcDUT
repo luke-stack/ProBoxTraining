@@ -1,0 +1,19 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.12">
+  <DUT Name="ST_InputsRejectPanel" Id="{9c699a40-4f31-44cd-bd5c-52175edf1ca8}">
+    <Declaration><![CDATA[TYPE ST_InputsRejectPanel :
+STRUCT
+	TransportData						: ST_TransportControlData; // Transport Control Data to get TU_Data 
+	DisableRejectPanel					: BOOL := FALSE;			// DisableRjectPanel screen when not needed      
+	OkToEnterPallet						: BOOL;						// Ok to enter pallet or not control form function customised FB
+	DestinationFunction 				: E_FunctionNumber;         // getting destination function for destination
+	DestinationZone						: INT;                       //getting destination Zone Number for destination
+	RejectBtnEnable						: BOOL;                  //  RejectBtnEnable Signal To change colour of button after touch on reject panel
+    ProfileBtnEnable					: BOOL;                  //  ProfileBtnEnable Signal To change colour of button after touch on reject panel
+	WrapperBtnEnable					: BOOL;  				 //  WrapperBtnEnable Signal To change colour of button after touch on reject panel
+	DepallatizerBtnEnable   			: BOOL; 				 //  DepallatizerBtnEnable Signal To change colour of button after touch on reject panel
+END_STRUCT 
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

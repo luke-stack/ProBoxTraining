@@ -1,0 +1,12 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.12">
+  <DUT Name="ST_CtrlInTT" Id="{c0ef117b-fbe4-4d0f-b76a-93607abeb4f2}">
+    <Declaration><![CDATA[TYPE ST_CtrlInTT :
+STRUCT
+	InvertTurnTakeover		: BOOL;	// Invert turning direction in order to change the leading edge.
+	InvertTurnHandover		: BOOL; // Invert turning direction in order to change the leading edge.
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

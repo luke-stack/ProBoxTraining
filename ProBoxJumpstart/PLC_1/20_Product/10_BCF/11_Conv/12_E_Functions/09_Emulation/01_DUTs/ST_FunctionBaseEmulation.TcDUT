@@ -1,0 +1,73 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.12">
+  <DUT Name="ST_FunctionBaseEmulation" Id="{6ab497f2-6976-48fa-a2f4-e3ef45ce727d}">
+    <Declaration><![CDATA[TYPE ST_FunctionBaseEmulation :
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 404529 $
+ *	Revision date	:	$Date: 2018-04-23 08:21:38 +0200 (Mo., 23 Apr 2018) $
+ *	Last changed by	:	$Author: b7bolm $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/trunk/01_Software/BCF/BCF/JumpStart/20_Product/11_Emu/12_E_Functions/10_Lib/10_Conv/01_DUTs/ST_FunctionBaseEmulation.TcDUT $
+ *
+ *	Purpose			:	Function interface - Contains data which is provided by the
+ *						function or is input from other objects.
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+STRUCT
+	rFunctionDataReal					: REFERENCE TO ST_FunctionData; // Function data
+	FunctionDataEmpty					: ST_FunctionData;
+	rFunctionInterfaceReal				: REFERENCE TO ST_FunctionInterface; // Function interface
+	FunctionInterfaceEmpty 				: ST_FunctionInterface;
+	rZoneDataReal						: REFERENCE TO ARRAY[1..NUMBER_OF_ZONES_PER_FUNCTION] OF ST_ZoneData;
+	ZoneDataEmpty						: ARRAY[1..NUMBER_OF_ZONES_PER_FUNCTION] OF ST_ZoneData;
+	rZoneInterfaceReal					: REFERENCE TO ARRAY[1..NUMBER_OF_ZONES_PER_FUNCTION] OF ST_ZoneInterface;
+	ZoneInterfaceEmpty					: ARRAY[1..NUMBER_OF_ZONES_PER_FUNCTION] OF ST_ZoneInterface;
+	rSettingsFunctionReal				: REFERENCE TO ST_CFG_Function; // Function settings 
+	SettingsEmpty						: ST_CFG_Function;
+	TransportControlParam				: ST_TransportControlParam;
+	TransportData						: ST_TransportDataEmulation;
+	TransportDataEmpty					: ST_TransportDataEmulation;
+	TransportControlDataEmpty			: ST_TransportControlData;
+	TransportControlDataEmptyEmulation	: ST_TransportControlDataEmulation;
+	ZoneSettingsEmpty					: ST_CFG_Zone;
+	PrevTransportData					: ST_TransportDataEmulation;
+	NextTransportData					: ST_TransportDataEmulation;
+	STI_Instance						: ITF_SubsystemTransportEmulation; // Instance to compare valid interfaces
+	eMsgType							: E_ITC_MsgTypeConv;
+	IndexToRemove                   	: ARRAY[1..NUMBER_OF_ZONES_PER_FUNCTION] OF DINT; // TU index TO remove
+	
+	Data								: ST_ITC_GeneralData;
+	ERQ									: ST_ITC_ERQ;
+	Position							: ST_PositionIdent;
+END_STRUCT
+END_TYPE
+]]></Declaration>
+    <ObjectProperties>
+      <XmlArchive>
+        <Data>
+          <o xml:space="preserve" t="UMLStereoTypeContainerObject">
+            <v n="IsType" t="UMLType">BaseArea</v>
+            <v n="Stereotype">""</v>
+            <d n="Stereotypes" t="Hashtable" />
+          </o>
+        </Data>
+        <TypeList>
+          <Type n="Hashtable">System.Collections.Hashtable</Type>
+          <Type n="String">System.String</Type>
+          <Type n="UMLStereoTypeContainerObject">{30250973-b110-4e31-b562-c102e042dca4}</Type>
+          <Type n="UMLType">{0197b136-405a-42ee-bb27-fd08b621d0cf}</Type>
+        </TypeList>
+      </XmlArchive>
+    </ObjectProperties>
+  </DUT>
+</TcPlcObject>

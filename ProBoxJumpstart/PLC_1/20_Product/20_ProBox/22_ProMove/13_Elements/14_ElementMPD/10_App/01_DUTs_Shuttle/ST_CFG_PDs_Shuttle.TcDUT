@@ -1,0 +1,12 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <DUT Name="ST_CFG_PDs_Shuttle" Id="{755bb07d-09d8-4b43-a9ce-9c594ce89451}">
+    <Declaration><![CDATA[//Configuration settings for Pickup and Deposit functions to the shuttle car / Vertical Conveyor
+TYPE ST_CFG_PDs_Shuttle EXTENDS ST_CFG_PDs:
+STRUCT
+	TiltSide 		: E_CFG_Tilt := E_CFG_Tilt.Undefined;
+
+END_STRUCT
+END_TYPE]]></Declaration>
+  </DUT>
+</TcPlcObject>

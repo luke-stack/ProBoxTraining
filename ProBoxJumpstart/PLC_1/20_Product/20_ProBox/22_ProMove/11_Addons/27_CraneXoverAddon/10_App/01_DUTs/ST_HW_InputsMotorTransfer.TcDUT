@@ -1,0 +1,14 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.4">
+  <DUT Name="ST_HW_InputsMotorTransfer" Id="{6b14139d-a12d-46b4-b7a4-eda2bd2d5392}">
+    <Declaration><![CDATA[// HW inputs used only when EnableMotorTransferTU is enabled
+TYPE ST_HW_InputsMotorTransfer :
+STRUCT
+	TakeoverSensorStop				: BOOL; // Stop sensor at takeover when transfering on conveyor chain. (Only valid when EnableMotorTransferTU is enabled)	
+	Sensor_Overhang					: BOOL; // Overhang sensor, TRUE = No overhang detected. (Only valid when EnableMotorTransferTU is enabled)
+	Sensor_SRM_Present				: BOOL; // Storage and Retrieval Machine present sensor. TRUE = SRM present in front of CV. (Only valid when EnableMotorTransferTU is enabled)
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

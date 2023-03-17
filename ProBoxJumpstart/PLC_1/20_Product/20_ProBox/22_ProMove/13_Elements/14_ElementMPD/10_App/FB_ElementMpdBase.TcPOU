@@ -1,0 +1,434 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <POU Name="FB_ElementMpdBase" Id="{eb368fbf-7c1e-47cc-8954-ae61c09f89b3}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK FB_ElementMpdBase EXTENDS FB_ProBoxElementBase
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision:  $
+ *	Revision date	:	$Date:  $
+ *	Last changed by	:	$Author:  $
+ *	URL				:	$URL: $
+ *
+ *	Purpose			:	Base class for MPD elements (Motion Pick and Deposit)
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ **************************************************************************************)
+VAR
+	fbMpdControl			: FB_MPD_Control;
+	MPD_Config				: ST_CFG_MotionPickupDeposit;
+	fbEntryRequestCtrl		: FB_EntryReqControl;				
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[]]></ST>
+    </Implementation>
+    <Method Name="_M_CheckMpdErrors" Id="{123bc5cc-4542-4ada-bae9-8e60dc7f43e6}">
+      <Declaration><![CDATA[METHOD PROTECTED _M_CheckMpdErrors : BOOL
+VAR_INPUT
+	EndLimit					: BOOL; //Endlimit switch, Normally high, Active low
+	HighTempResDrive			: BOOL; //High temp brake resistor drive. TRUE = Error
+END_VAR
+VAR_IN_OUT
+	SgGroupRef					: FB_ProBOXSG;	//Reference to Switching group
+	ErrorData					: ST_ErrorDataSet;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+
+IF(NOT __ISVALIDREF(SgGroupRef)) THEN
+	F_SetError(	
+			ErrorType	:= E_ErrorType.ERROR,
+			ErrorParam	:= 'Reference to SG not correct',
+			ErrorMsg	:= E_ErrorConv.CONFIGURATION_ERROR,
+			ErrorData	:= ErrorData);	
+END_IF	
+
+
+
+//IF(	NOT ElementData.Init OR ElementData.OperationState.eMode = E_PositionMode.MANUAL_MODE) THEN	
+//	RETURN; //Do not set error when in manual mode (PB-5562 SC & VC manual mode conveyor)	
+//END_IF
+
+// If EndLimit gets affected and AUTO_MODE is on then set an ERROR
+IF(NOT EndLimit)  THEN
+	
+	F_SetError(	
+			ErrorType	:= E_ErrorType.ERROR,
+			ErrorParam	:= 'EndLimit Sensor is Affected',
+			ErrorMsg	:= E_ErrorConv.LIMIT_SWITCH_ACTIVE,
+			ErrorData	:= ErrorData);	
+END_IF
+
+IF(HighTempResDrive)  THEN
+	
+	F_SetError(	
+			ErrorType	:= E_ErrorType.ERROR,
+			ErrorParam	:= 'Hi temp Sensor',
+			ErrorMsg	:= E_ErrorConv.DRIVE_WARNING,
+			ErrorData	:= ErrorData);	
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_DriveControl" Id="{c6b2739c-aa2b-4eb4-8e5d-2385ac29c187}">
+      <Declaration><![CDATA[METHOD PROTECTED _M_DriveControl : BOOL
+VAR_INPUT
+	MpdFunctionOrders	: REFERENCE TO ST_FunctionOrders;	
+END_VAR
+VAR_IN_OUT	
+	ElementData				: ST_ElementData;	
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+(**************************************************************************************************************
+ Handle VC function interface - Run Conveyor
+***************************************************************************************************************)
+_M_HandleMpdConveyorFunctions(MpdFunctionOrders, ElementData);
+
+//	//When in manual mode, we need to override the state so that it is possible to run element conveyors
+THIS^.P_OverrideManualDrive := ElementData.OperationState.eMode = E_PositionMode.MANUAL_MODE; 
+
+(**********************************************************************************************************
+  Conveyor Drive control
+***********************************************************************************************************)
+A_DriveControl();
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_HandleMpdConveyorFunctions" Id="{d0e83aa5-d9b4-4b6d-a140-dd15ec52cdf4}">
+      <Declaration><![CDATA[METHOD PROTECTED _M_HandleMpdConveyorFunctions 
+VAR_INPUT
+	MpdFunctionOrders	: REFERENCE TO ST_FunctionOrders;	
+END_VAR
+VAR_IN_OUT	
+	ElementData				: ST_ElementData;	
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+	// Handle functions
+	// Summarize function enables 
+		IF NOT MpdFunctionOrders.Enable THEN
+			ElementData.FunctionOrder.Enable := FALSE;
+		END_IF
+		
+		IF NOT MpdFunctionOrders.Enable_34 THEN
+			ElementData.FunctionOrder.Enable_34 := FALSE;
+		END_IF		
+	
+		// Summarize drive requests
+		ElementData.FunctionOrder.ReqDriveRun := ElementData.FunctionOrder.ReqDriveRun OR MpdFunctionOrders.ReqDriveRun;													
+		ElementData.FunctionOrder.ReqDriveRun_34 := ElementData.FunctionOrder.ReqDriveRun_34 OR MpdFunctionOrders.ReqDriveRun_34;	
+
+		// Summarize direction requests
+		ElementData.FunctionOrder.ReqDriveDirection := ElementData.FunctionOrder.ReqDriveDirection OR MpdFunctionOrders.ReqDriveDirection;													
+		ElementData.FunctionOrder.ReqDriveDirection_34 := ElementData.FunctionOrder.ReqDriveDirection_34 OR MpdFunctionOrders.ReqDriveDirection_34;											
+															  
+		// Calculate lowest possible speed
+		IF MpdFunctionOrders.ReqDriveRun THEN
+			IF ElementData.FunctionOrder.ReqSpeed = 0 OR
+			   ElementData.FunctionOrder.ReqSpeed > MpdFunctionOrders.ReqSpeed THEN
+			   // Update speed request
+			   ElementData.FunctionOrder.ReqSpeed := MpdFunctionOrders.ReqSpeed;   
+			END_IF
+		END_IF
+		
+		IF MpdFunctionOrders.ReqDriveRun_34 THEN
+			IF ElementData.FunctionOrder.ReqSpeed_34 = 0 OR
+			   ElementData.FunctionOrder.ReqSpeed_34 >MpdFunctionOrders.ReqSpeed_34 THEN
+			   // Update speed request
+			   ElementData.FunctionOrder.ReqSpeed_34 := MpdFunctionOrders.ReqSpeed_34;   
+			END_IF
+		END_IF		]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_PresetEncoder" Id="{001423d4-1de5-4809-971c-88644d90bc55}">
+      <Declaration><![CDATA[METHOD PROTECTED M_PresetEncoder : BOOL
+VAR_INPUT
+	EncoderHoming  	: REFERENCE TO ST_EncoderHoming;
+	PresetKeySwitch : BOOL; //TRUE = Key turned by operator to preset encoder	
+END_VAR
+VAR
+	PresetValue		: UDINT;
+	PresetValueValid:BOOL;
+END_VAR
+VAR_INST
+	fbPresetEncoder : FB_PB_PresetEncoder;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+IF(NOT __ISVALIDREF(EncoderHoming)) THEN RETURN; END_IF
+
+PresetValue		:= DINT_TO_UDINT(fbMpdControl.M_GetDesiredPosition(Encoderhoming.HomingFunctionNumber,GVL_MPD.CV_A (*always use cv A*),FALSE,FALSE,Valid=>PresetValueValid));
+fbPresetEncoder.EnableWrite	:=  PresetValueValid AND Encoderhoming.HomingEnable AND 
+								ElementData.OperationState.eMode = E_PositionMode.MANUAL_MODE AND 
+								ElementData.OperationState.eState = E_PositionState.STOPPED;
+
+fbPresetEncoder(
+		ElementNumber		:= SettingsElement.eElementNumber, 
+		NetId				:= EncoderHoming.NetId, 
+		SlaveAddr			:= EncoderHoming.SlaveAddr, 
+		Index				:= 16#6003, (* CoE Object Index *)
+        SubIndex       		:= 0, (* Subindex of CoE Object *)		
+		OpKeySwitch			:= PresetKeySwitch, 
+		PresetValue			:= PresetValue,		 
+		rfbDebugMsg			:= fbDebugMsg,
+		ErrorData			:= ElementData.ErrorData.ErrorDataSet[7]);]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_ProcessEntryRequest" Id="{beda54ec-54d2-499f-88de-e98269161e9f}">
+      <Declaration><![CDATA[METHOD PROTECTED M_ProcessEntryRequest : BOOL
+VAR_INPUT
+	//NumberOfApCabinets		: INT; //passed from Switching Group config	
+	AkEntryPosition			: DINT; //AK entry position [mm]
+END_VAR
+VAR_IN_OUT
+	SgGroupRef				: FB_ProBOXSG;	//Reference to Switching group
+	ApEntryPositions		: ARRAY[1..GVL_PB_SG.NUMBER_OF_AP_PANELS] OF DINT; // AP Entry position [mm]
+	//ErrorData				: ST_ErrorDataSet;
+END_VAR
+VAR
+	
+	j:INT;
+END_VAR
+
+VAR_INST
+	AllEntryPositions		: ARRAY[0..GVL_PB_SG.NUMBER_OF_AP_PANELS] OF DINT; //index 0 = AK cabinet, 1.. = AP cabinets
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+IF(NOT __ISVALIDREF(SgGroupRef)) THEN
+	RETURN; //error being set in check MPD errors
+END_IF
+
+
+IF(NOT ElementData.Init)THEN
+	
+	// init entry request control with the positins [mm] where to go when an entry request is called.	
+	MemCpy(ADR(AllEntryPositions[1]),ADR(ApEntryPositions), SIZEOF(ApEntryPositions)); //index 1.. = AP cabinets
+	AllEntryPositions[0] := AkEntryPosition; // index 0 = AK cabinet
+	fbEntryRequestCtrl(ElementData:=ElementData,EntryReqPositions := AllEntryPositions);
+
+
+ELSE
+	//Get entry request from inputs of AP's and AK by calling SgGroupRef.M_GetEntryRequests(...)
+	
+	//process entry requests
+	fbEntryRequestCtrl(MpdRequestDone:=fbMpdControl.CtrlOut.EntryRequestProcessed);
+	
+	//process entry requests for AK
+	fbEntryRequestCtrl.M_RegisterEntryRequest(
+							TriggEntryReq := NOT SgGroupRef.M_GetEntryRequests(0 (*index 0 = AK*)),// Entry request signal is NC, ie the HW signal is active low
+							CabinetIndex:=0);	
+	//Process entry request fo AP Entry's 
+	FOR j:=1 TO GVL_PB_SG.NUMBER_OF_AP_PANELS DO
+			fbEntryRequestCtrl.M_RegisterEntryRequest(
+								TriggEntryReq := NOT SgGroupRef.M_GetEntryRequests(j),// Entry request signal is NC, ie the HW signal is active low
+								CabinetIndex := j);			
+	END_FOR
+	
+	//Set entry request to MPD control
+	fbMpdControl.CtrlIn.RequestEntry	:= fbEntryRequestCtrl.EntryRequest;
+	fbMpdControl.CtrlIn.RequestEntryPos	:= fbEntryRequestCtrl.EntryPosition; 
+	
+	
+	//Entry Request to user interface
+	SgGroupRef.M_SetEntryReqLed(fbEntryRequestCtrl.ActiveCabinetIndex,fbEntryRequestCtrl.EntryRequest, fbEntryRequestCtrl.EntryRequestCompl);
+
+	
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_SetGroupReference" Id="{2b709532-2d45-433f-b74c-ef706bedddc6}">
+      <Declaration><![CDATA[METHOD PROTECTED M_SetGroupReference : BOOL
+VAR_INPUT
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+
+;//GroupRegistry[1].eGroupNumber]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_SetIgnoreDepositConditions" Id="{5d971d1c-da1b-4333-b9a2-393d2e18f1e5}">
+      <Declaration><![CDATA[//Set a deposit function to ignore normal conditions to be met.
+//the adjacent deposit function will omit the normal conditions that must be met for a deposit function to be considered valid
+METHOD PUBLIC M_SetIgnoreDepositConditions : BOOL
+VAR_INPUT
+	FunctionNumber	: E_FunctionNumber;  // the adjacent deposit function that shall omit the normal conditions that must be met for a deposit function to be valid 
+	DisableCheck	: BOOL;
+END_VAR
+VAR
+	i:INT;	
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[FOR i:=1 TO GVL_MPD.MAXPDs DO
+	IF(MPD_Config.ConvCFG[i].eFunctionNumber = FunctionNumber AND FunctionNumber <> E_FunctionNumber.F_BEGIN_FUNCTION) THEN	
+		fbMpdControl.IgnoreDepositCheck[i] := DisableCheck;
+	END_IF	
+END_FOR]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_SetOverhangSensor" Id="{87de135b-5104-41ad-92be-6bbb19510010}">
+      <Declaration><![CDATA[// Set Overhang sensor Value for adjacent functions
+METHOD M_SetOverhangSensor : BOOL 
+VAR_INPUT
+	eFunctionnumber	: E_FunctionNumber;
+	SensorValue		: BOOL;
+END_VAR
+
+VAR 		
+	idx				: INT;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+//Copy function number from Settings(F_ConfigPosition)
+FOR idx := 1 TO GVL_MPD.MAXPDs BY 1 DO	
+	IF  eFunctionnumber = MPD_Config.ConvCFG[idx].eFunctionNumber THEN
+		fbMpdControl.OverhangData[idx] := SensorValue;
+		M_SetOverhangSensor := TRUE;
+		EXIT;
+	END_IF
+END_FOR
+
+	
+
+IF idx > GVL_MPD.MAXPDs THEN
+	
+	F_SetError(ErrorType:= E_ErrorType.ERROR, 
+				ErrorParam:= CONCAT('FuncNumb not/doublet in Config: ',F_GetFunctionName(eFunctionnumber, 1)) , 
+				ErrorMsg:= E_ErrorConv.CONFIGURATION_ERROR, 
+				ErrorData:= ElementData.ErrorData.ErrorDataSet[6]);
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_SetOverridePickup" Id="{969bb4e0-bab0-477c-95fc-4419ffaba7e1}">
+      <Declaration><![CDATA[// Possible to override normal prioritization for an pickup/deposit adjacent function
+METHOD M_SetOverridePickup
+VAR_INPUT
+	FunctionNumber : E_FunctionNumber;  // the adjacent function that shall override the normal prioritization
+	Override		: BOOL;
+END_VAR
+
+VAR
+	i:INT;	
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+FOR i:=1 TO GVL_MPD.MAXPDs DO
+	IF(MPD_Config.ConvCFG[i].eFunctionNumber = FunctionNumber) THEN	
+		fbMpdControl.FunctionOverides[i] := Override;
+	END_IF	
+END_FOR
+
+
+
+]]></ST>
+      </Implementation>
+    </Method>
+    <LineIds Name="FB_ElementMpdBase">
+      <LineId Id="9" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ElementMpdBase._M_CheckMpdErrors">
+      <LineId Id="39" Count="0" />
+      <LineId Id="43" Count="0" />
+      <LineId Id="42" Count="0" />
+      <LineId Id="45" Count="3" />
+      <LineId Id="44" Count="0" />
+      <LineId Id="49" Count="0" />
+      <LineId Id="40" Count="1" />
+      <LineId Id="8" Count="11" />
+      <LineId Id="5" Count="0" />
+      <LineId Id="20" Count="0" />
+      <LineId Id="22" Count="7" />
+      <LineId Id="21" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ElementMpdBase._M_DriveControl">
+      <LineId Id="6" Count="4" />
+      <LineId Id="27" Count="0" />
+      <LineId Id="26" Count="0" />
+      <LineId Id="11" Count="5" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ElementMpdBase._M_HandleMpdConveyorFunctions">
+      <LineId Id="71" Count="33" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ElementMpdBase.M_PresetEncoder">
+      <LineId Id="20" Count="0" />
+      <LineId Id="19" Count="0" />
+      <LineId Id="29" Count="1" />
+      <LineId Id="35" Count="2" />
+      <LineId Id="9" Count="5" />
+      <LineId Id="26" Count="0" />
+      <LineId Id="15" Count="2" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ElementMpdBase.M_ProcessEntryRequest">
+      <LineId Id="64" Count="0" />
+      <LineId Id="62" Count="0" />
+      <LineId Id="65" Count="1" />
+      <LineId Id="63" Count="0" />
+      <LineId Id="17" Count="0" />
+      <LineId Id="6" Count="0" />
+      <LineId Id="20" Count="0" />
+      <LineId Id="22" Count="0" />
+      <LineId Id="59" Count="1" />
+      <LineId Id="24" Count="0" />
+      <LineId Id="58" Count="0" />
+      <LineId Id="46" Count="0" />
+      <LineId Id="21" Count="0" />
+      <LineId Id="40" Count="0" />
+      <LineId Id="71" Count="0" />
+      <LineId Id="69" Count="0" />
+      <LineId Id="8" Count="0" />
+      <LineId Id="72" Count="0" />
+      <LineId Id="9" Count="0" />
+      <LineId Id="42" Count="0" />
+      <LineId Id="57" Count="0" />
+      <LineId Id="56" Count="0" />
+      <LineId Id="44" Count="0" />
+      <LineId Id="10" Count="4" />
+      <LineId Id="90" Count="1" />
+      <LineId Id="15" Count="0" />
+      <LineId Id="5" Count="0" />
+      <LineId Id="109" Count="1" />
+      <LineId Id="113" Count="0" />
+      <LineId Id="115" Count="0" />
+      <LineId Id="112" Count="0" />
+      <LineId Id="111" Count="0" />
+      <LineId Id="23" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ElementMpdBase.M_SetGroupReference">
+      <LineId Id="6" Count="1" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ElementMpdBase.M_SetIgnoreDepositConditions">
+      <LineId Id="7" Count="3" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ElementMpdBase.M_SetOverhangSensor">
+      <LineId Id="54" Count="2" />
+      <LineId Id="58" Count="1" />
+      <LineId Id="93" Count="0" />
+      <LineId Id="60" Count="6" />
+      <LineId Id="83" Count="0" />
+      <LineId Id="67" Count="3" />
+      <LineId Id="37" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ElementMpdBase.M_SetOverridePickup">
+      <LineId Id="11" Count="1" />
+      <LineId Id="16" Count="0" />
+      <LineId Id="18" Count="0" />
+      <LineId Id="21" Count="0" />
+      <LineId Id="17" Count="0" />
+      <LineId Id="22" Count="0" />
+      <LineId Id="33" Count="0" />
+      <LineId Id="26" Count="0" />
+      <LineId Id="24" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

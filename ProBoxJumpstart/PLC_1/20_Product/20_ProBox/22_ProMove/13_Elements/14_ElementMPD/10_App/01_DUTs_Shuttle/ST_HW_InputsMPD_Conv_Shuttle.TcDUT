@@ -1,0 +1,15 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <DUT Name="ST_HW_InputsMPD_Conv_Shuttle" Id="{b5a83195-7701-47b4-a1db-3e7bbaf863aa}">
+    <Declaration><![CDATA[// Motion Pickup n Deposit conveyor HW inputs
+TYPE ST_HW_InputsMPD_Conv_Shuttle EXTENDS ST_HW_InputsMPD_Conv :
+
+STRUCT
+	TiltUp				: BOOL; 
+	TiltMiddle			: BOOL;
+	TiltDown			: BOOL;
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

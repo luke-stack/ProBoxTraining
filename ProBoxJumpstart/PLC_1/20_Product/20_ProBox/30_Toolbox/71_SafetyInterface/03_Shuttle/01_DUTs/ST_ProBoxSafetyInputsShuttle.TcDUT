@@ -1,0 +1,14 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.4">
+  <DUT Name="ST_ProBoxSafetyInputsShuttle" Id="{f9960028-3cff-47a3-b857-a57e8f13ee72}">
+    <Declaration><![CDATA[TYPE ST_ProBoxSafetyInputsShuttle :
+STRUCT
+	FBErr					: BOOL; //FBErr output from Safety
+	ComErr					: BOOL; //FBCom output from Safety
+	EsOk					: BOOL; //ES for cabinet is ok
+	
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

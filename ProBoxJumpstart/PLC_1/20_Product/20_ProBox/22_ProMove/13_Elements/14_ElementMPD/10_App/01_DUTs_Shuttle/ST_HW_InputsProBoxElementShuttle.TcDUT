@@ -1,0 +1,40 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <DUT Name="ST_HW_InputsProBoxElementShuttle" Id="{4a3b227e-c781-4d5b-83d8-d63a242fe6b3}">
+    <Declaration><![CDATA[TYPE ST_HW_InputsProBoxElementShuttle :
+	(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision:  $
+ *	Revision date	:	$Date: $
+ *	Last changed by	:	$Author:  $
+ *	URL				:	$URL: $
+ *
+ *	Purpose			:	ProBox element - Hardware inputs
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *
+ **************************************************************************************)
+STRUCT
+	Conv					: ARRAY[GVL_MPD.CV_A..GVL_MPD.CV_B] OF ST_HW_InputsMPD_Conv_Shuttle;	
+	                        
+	HighTempResDrive		: BOOL; //High temp brake resistor drive
+	EndLimit				: BOOL; 
+                            
+	//APShuttle				: ST_HW_InputsAP_ShuttleCar; //Inputs located on shuttle car AP cabinet
+	//APEntry					: ARRAY [1..GVL_Shuttle.NUMBER_OF_ENTRYCABINETS] OF ST_HW_InputsAP_ShuttleEntry;	//Inputs located on entry AP cabinet
+	                        
+	DriveInputs				: ST_PDO_DriveIn; //Shuttle car motion driver inputs	
+	HomeSwitch				: BOOL; // Switch to perform Hoiming Operation.
+	MotorUnitOK				: BOOL; // Motor unit is OK (Frequence inverter/motor protection, mainswitch)
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

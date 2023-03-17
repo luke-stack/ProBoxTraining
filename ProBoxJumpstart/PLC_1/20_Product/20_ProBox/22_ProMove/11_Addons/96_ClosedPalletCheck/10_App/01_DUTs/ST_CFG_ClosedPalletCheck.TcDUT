@@ -1,0 +1,16 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <DUT Name="ST_CFG_ClosedPalletCheck" Id="{8909f7ae-2404-4ab6-aa17-00f502529d9d}">
+    <Declaration><![CDATA[TYPE ST_CFG_ClosedPalletCheck :
+STRUCT
+	EnableExternalTrigger			: BOOL; // Enable an external trigger for customization.	
+	NumberOfFingersOk				: INT; //Number of fingers that should not be activated during transport.
+	HW_NumberOfFingers				: INT := 1; //How many fingers that exist
+	EnableMultipleTU_Types			: BOOL; //Enable an configurable CTRL In signal on how many fingers should be activated
+
+	
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

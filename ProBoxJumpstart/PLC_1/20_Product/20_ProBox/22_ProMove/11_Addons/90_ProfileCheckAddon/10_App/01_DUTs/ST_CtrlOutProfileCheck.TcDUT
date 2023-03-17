@@ -1,0 +1,20 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <DUT Name="ST_CtrlOutProfileCheck" Id="{3818c7ab-4f89-4cbd-aaa1-22ce6d7a84e5}">
+    <Declaration><![CDATA[TYPE ST_CtrlOutProfileCheck :
+STRUCT
+	ProfileGaugeBlocked					: BOOL;
+	
+	// Measurement results
+	Measurement_Height_Lower		: INT;		// Lower height grid
+	Measurement_Height_Upper		: INT;		// Upper height grid
+	Measurement_Width_Left			: INT;		// Left width
+	Measurement_Width_Right			: INT;		// Right width
+	Measurement_Length_Front		: INT;		// Left width
+	Measurement_Length_Rear			: INT;		// Right width
+	
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

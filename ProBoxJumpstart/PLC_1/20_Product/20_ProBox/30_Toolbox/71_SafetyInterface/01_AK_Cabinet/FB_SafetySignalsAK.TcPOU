@@ -1,0 +1,54 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <POU Name="FB_SafetySignalsAK" Id="{7d24fa79-6de6-4756-9d0e-a20d60c800e3}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK FB_SafetySignalsAK
+VAR_INPUT
+	SZPCo			: BOOL; //Safety Zone Pallet Conveyor 1	
+	//NrOfContactor 	: INT :=3;//Number of contactors in cabinet
+END_VAR
+VAR_OUTPUT
+END_VAR
+VAR_IN_OUT
+	SGref			: FB_ProBOXSG; //Reference to Switching group
+	AKSignals		: ST_ProBoxSafetyAK;
+END_VAR
+VAR
+	//fbBlink_1s	: FB_GeneratePulse := (Start := TRUE, PulseTimeOn := T#1S, PulseTimeOff := T#1S); // Blink 1s
+	i,iMax		: INT;
+	EmgStatus	: ST_EmgStatus;
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[//check if ResetSafetyNeeded
+EmgStatus.eExternal := SZPCo;
+EmgStatus.eInternal := AKSignals.Inputs.EsOk;
+EmgStatus.eInternError := (AKSignals.Inputs.ComErr OR AKSignals.Inputs.FBErr); 
+SGref.M_SetEmgStatus(EmgStatus);
+
+//Pass signals from input to output
+AKSignals.Outputs.ContactorOn 	:= SGref.CtrlOut.OpSummary.OpMcOn;
+AKSignals.Outputs.ContactorOff 	:= SGref.CtrlOut.OpSummary.OpMcOff;
+AKSignals.Outputs.ErrorAck 		:= SGref.CtrlOut.OpSummary.OpResetSafety;
+
+// Copy over all feedback signals from SG group to be transfered to Safety							   
+MEMCPY(ADR(AKSignals.Outputs.FeedBackContactor),ADR(SGref.HW_Inputs.Diag.FeedbackMainContactorOFF),SIZEOF(AKSignals.Outputs.FeedBackContactor));
+
+]]></ST>
+    </Implementation>
+    <LineIds Name="FB_SafetySignalsAK">
+      <LineId Id="92" Count="0" />
+      <LineId Id="89" Count="0" />
+      <LineId Id="94" Count="1" />
+      <LineId Id="33" Count="0" />
+      <LineId Id="25" Count="0" />
+      <LineId Id="28" Count="0" />
+      <LineId Id="34" Count="0" />
+      <LineId Id="51" Count="0" />
+      <LineId Id="31" Count="0" />
+      <LineId Id="65" Count="1" />
+      <LineId Id="96" Count="0" />
+      <LineId Id="98" Count="0" />
+      <LineId Id="97" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

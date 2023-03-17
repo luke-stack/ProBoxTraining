@@ -1,0 +1,18 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.4">
+  <DUT Name="ST_StackerLiftSensorInp" Id="{93bfff4f-613c-4333-a7a7-0288dff43bca}">
+    <Declaration><![CDATA[TYPE ST_StackerLiftSensorInp :
+STRUCT
+	SensorPosDownCS				: BOOL; // Sensor position lift down creep speed
+	SensorPosDown				: BOOL; // Sensor position lift down
+	SensorPosMiddleDown			: BOOL; // Sensor position lift middle Down position, used with Motorized Forks only
+	SensorPosMiddleUp			: BOOL; // Sensor position lift middle Up position, used with Motorized Forks only
+	SensorPosUp					: BOOL; // Sensor position lift up
+	
+	EncoderValue				: UDINT; //encoder input, replaces all sensor inputs		
+	 
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

@@ -1,0 +1,20 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.12">
+  <DUT Name="ST_HW_InputsTTConv" Id="{663a30e5-f80a-4e2b-aadb-1746ae739286}">
+    <Declaration><![CDATA[//HW inputs reltated to conveyor
+TYPE ST_HW_InputsTTConv :
+STRUCT
+	//Drive/Transport control sensors
+	Sensor_Stop_12			: BOOL; // Sensor stop axis 1-2 forward
+	Sensor_Creep_12			: BOOL; // Sensor creep speed axis 1-2 forward	
+	Sensor_Stop_21			: BOOL; // Sensor stop axis 1-2 reverse	
+	Sensor_Creep_21			: BOOL; // Sensor creep speed axis 1-2 reverse
+	Sensor_Stop_34			: BOOL; // Sensor stop axis 3-4 forward 
+	Sensor_Creep_34			: BOOL; // Sensor creep speed axis 3-4 forward 
+	Sensor_Stop_43			: BOOL; // Sensor stop axis 3-4 reverse
+	Sensor_Creep_43			: BOOL; // Sensor creep speed axis 3-4 reverse
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

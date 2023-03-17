@@ -1,0 +1,15 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <DUT Name="E_DoorPos" Id="{b69eac6c-aa4a-47b8-aa7d-61ea297d94a5}">
+    <Declaration><![CDATA[{attribute 'qualified_only'}
+{attribute 'strict'}
+TYPE E_DoorPos :
+(
+	UP,
+	DOWN,
+	UNDEFINED
+);
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

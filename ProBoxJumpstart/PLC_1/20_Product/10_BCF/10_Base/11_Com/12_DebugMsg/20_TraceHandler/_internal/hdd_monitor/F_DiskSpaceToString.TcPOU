@@ -1,0 +1,64 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.4">
+  <POU Name="F_DiskSpaceToString" Id="{9dc9ecd1-89b7-4c32-90f4-ff0e34cbc3f9}" SpecialFunc="None">
+    <Declaration><![CDATA[// converts a number of bytes into a readable text (eg. 240GB, 123MB, 21kB)
+FUNCTION PUBLIC F_DiskSpaceToString : STRING[31]
+(**************************************************************************************
+ *  Application     : BoxControl Framework
+ *  Revision        : $Revision: 404529 $
+ *  Revision date   : $Date: 2020-10-20 08:21:38 +0200 (Mo., 20 Oct 2020) $
+ *  Last changed by : $Author: b7lipim $
+ *  URL             : $URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/trunk/01_Software/BCF/BCF/JumpStart/20_Product/10_App/11_Com/10_Lib/FB_DebugMsg.TcPOU $
+ *
+ *  Purpose :	converts a number of bytes into a more readable format
+ *            eg: 32TB,  240GB, 987MB,  231kB, 1011Bytes
+ *
+ * ------------------------------------------------------------------------------------
+ *  Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ *  VERSION DATE         INITIALS     DESCRIPTION
+ *  0.0     DD.MM.YYYY   (name)       (explain customized modifications)
+ *
+ **************************************************************************************)
+
+(********************************************************************************************************************************)	
+VAR_INPUT
+  Bytes                 : ULINT 							             := 0;          // number of bytes
+END_VAR
+
+(********************************************************************************************************************************)	
+VAR
+  Value                 : ULINT                            := 0; 
+  (*----------------------------------------------------------------------------------------------------------------------------*)
+  Result                : STRING[31]                       := '';
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[
+(********************************************************************************************************************************)	
+(** convert appropriate *********************************************************************************************************)	
+IF    (Bytes >= 1_099_511_627_776)  (* = 1TB = 1024^4 *)  THEN  Value:= Bytes / 1_099_511_627_776;  Result:= CONCAT( ULINT_TO_STRING(Value), 'TB' );
+ELSIF (Bytes >=     1_073_741_824)  (* = 1GB = 1024^3 *)  THEN  Value:= Bytes / 1_073_741_824;      Result:= CONCAT( ULINT_TO_STRING(Value), 'GB' );
+ELSIF (Bytes >=         1_048_576)  (* = 1MB = 1024^2 *)  THEN  Value:= Bytes /     1_048_576;      Result:= CONCAT( ULINT_TO_STRING(Value), 'MB' );
+ELSIF (Bytes >=             1_024)  (* = 1kB = 1024^1 *)  THEN  Value:= Bytes /         1_024;      Result:= CONCAT( ULINT_TO_STRING(Value), 'kB' );
+ELSIF (Bytes >                  0)                        THEN  Value:= Bytes;                      Result:= CONCAT( ULINT_TO_STRING(Value), 'Bytes' );
+ELSE                                                            Value:= Bytes;                      Result:= '0Byte';
+END_IF
+
+
+
+
+(********************************************************************************************************************************)	
+(** done ************************************************************************************************************************)	
+F_DiskSpaceToString:= Result;]]></ST>
+    </Implementation>
+    <LineIds Name="F_DiskSpaceToString">
+      <LineId Id="53" Count="15" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

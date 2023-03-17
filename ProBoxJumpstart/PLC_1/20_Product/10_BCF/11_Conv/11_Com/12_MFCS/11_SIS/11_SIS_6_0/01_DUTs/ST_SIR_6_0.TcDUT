@@ -1,0 +1,40 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.12">
+  <DUT Name="ST_SIR_6_0" Id="{598cb293-f2d5-4976-8528-d3566b74aeee}">
+    <Declaration><![CDATA[TYPE ST_SIR_6_0 :
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 404529 $
+ *	Revision date	:	$Date: 2018-04-23 08:21:38 +0200 (Mo., 23 Apr 2018) $
+ *	Last changed by	:	$Author: b7bolm $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/trunk/01_Software/BCF/BCF/JumpStart/20_Product/10_App/11_Com/10_Lib/10_Conv/12_MFCS/11_SIS/01_DUTs/10_SIS_6_0/ST_SIR_6_0.TcDUT $
+ *
+ *	Purpose			:	SIR Structure
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+STRUCT
+	Position 		: STRING(SIS_6_0.POSITION_STRINGLENGTH); // 12 Digit SIS Location MM-GGG-EEEE-LLL 
+	Code			: STRING(SIS_6_0.SIR_CODE_STRINGLENGTH); // 1 Digit Code 
+	TU_ID			: STRING(SIS_6_0.TU_ID_STRINGLENGTH); // 18 Digit SSID 
+	Counter1		: STRING(SIS_6_0.SIR_COUNTER_STRINGLENGTH); // 6 Digit counter 1 
+	Counter2		: STRING(SIS_6_0.SIR_COUNTER_STRINGLENGTH); // 6 Digit counter 2 
+	Counter3		: STRING(SIS_6_0.SIR_COUNTER_STRINGLENGTH); // 6 Digit counter 3 
+	Counter4		: STRING(SIS_6_0.SIR_COUNTER_STRINGLENGTH); // 6 Digit counter 4 
+	Counter5		: STRING(SIS_6_0.SIR_COUNTER_STRINGLENGTH); // 6 Digit counter 5 
+	ReturnCode		: STRING(SIS_6_0.ERRORCODE_STRINGLENGTH); // 4 Digit Return Code 
+END_STRUCT
+END_TYPE
+
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

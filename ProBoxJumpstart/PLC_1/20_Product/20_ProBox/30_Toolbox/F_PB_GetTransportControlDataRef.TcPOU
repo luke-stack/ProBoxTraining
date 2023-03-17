@@ -1,0 +1,75 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.12">
+  <POU Name="F_PB_GetTransportControlDataRef" Id="{5740b59b-3ef0-4fe9-908b-47eb9cc809bd}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION F_PB_GetTransportControlDataRef : REFERENCE TO ST_TransportControlData
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision:  $
+ *	Revision date	:	$Date: $
+ *	Last changed by	:	$Author: q8sheds $
+ *	URL				:	$URL: $
+ *
+ *	Purpose			:	return Transport control data as reference
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+VAR_INPUT
+	eFunctionNumber		: E_FunctionNumber; // Function number
+	ZoneNumber			: INT; // Zone number
+END_VAR
+
+
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[//init
+F_PB_GetTransportControlDataRef REF= PBTransportCtrl.pbTransportControlDataEmpty;	//return ref to empty transportcontroller data to avoid reutrn of NULL
+
+// Check if function number is valid
+IF(  eFunctionNumber > E_FunctionNumber.F_BEGIN_FUNCTION AND eFunctionNumber < E_FunctionNumber.F_END_FUNCTION AND
+	 ZoneNumber > 0 AND ZoneNumber <= NUMBER_OF_ZONES_PER_FUNCTION) THEN
+	// Check reference is valid
+	IF __ISVALIDREF(FunctionRegistry[eFunctionNumber].Zone[ZoneNumber].refZoneData) THEN
+   		// Return transport control data   				
+		F_PB_GetTransportControlDataRef REF= FunctionRegistry[eFunctionNumber].Zone[ZoneNumber].refZoneData.TransportControlData;
+	END_IF
+END_IF
+
+]]></ST>
+    </Implementation>
+    <ObjectProperties>
+      <XmlArchive>
+        <Data>
+          <o xml:space="preserve" t="UMLStereoTypeContainerObject">
+            <v n="IsType" t="UMLType">BaseArea</v>
+            <v n="Stereotype">""</v>
+            <d n="Stereotypes" t="Hashtable" />
+          </o>
+        </Data>
+        <TypeList>
+          <Type n="Hashtable">System.Collections.Hashtable</Type>
+          <Type n="String">System.String</Type>
+          <Type n="UMLStereoTypeContainerObject">{30250973-b110-4e31-b562-c102e042dca4}</Type>
+          <Type n="UMLType">{0197b136-405a-42ee-bb27-fd08b621d0cf}</Type>
+        </TypeList>
+      </XmlArchive>
+    </ObjectProperties>
+    <LineIds Name="F_PB_GetTransportControlDataRef">
+      <LineId Id="47" Count="0" />
+      <LineId Id="46" Count="0" />
+      <LineId Id="3" Count="2" />
+      <LineId Id="48" Count="0" />
+      <LineId Id="9" Count="5" />
+      <LineId Id="45" Count="0" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

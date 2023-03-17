@@ -1,0 +1,89 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <DUT Name="ST_HW_InputsASi_1_15" Id="{d0292816-d2b5-4b94-9da4-2901f1d9dbef}">
+    <Declaration><![CDATA[TYPE ST_HW_InputsASi_1_15 :
+STRUCT
+	IN_1_1	: BIT;
+	IN_1_2	: BIT;
+	IN_1_3	: BIT;
+	IN_1_4 	: BIT;
+	
+	CONF_ERR		: BIT;
+	ASI_POWER_FAULT	: BIT;
+	NODE_ERROR		: BIT;
+	CONFIG_MODE		: BIT;
+
+	IN_3_1	: BIT;
+	IN_3_2	: BIT;
+	IN_3_3	: BIT;
+	IN_3_4 	: BIT;
+
+	IN_2_1	: BIT;
+	IN_2_2	: BIT;
+	IN_2_3	: BIT;
+	IN_2_4 	: BIT;
+
+	IN_5_1	: BIT;
+	IN_5_2	: BIT;
+	IN_5_3	: BIT;
+	IN_5_4 	: BIT;
+	
+	IN_4_1	: BIT;
+	IN_4_2	: BIT;
+	IN_4_3	: BIT;
+	IN_4_4 	: BIT;
+
+	IN_7_1	: BIT;
+	IN_7_2	: BIT;
+	IN_7_3	: BIT;
+	IN_7_4 	: BIT;
+
+	IN_6_1	: BIT;
+	IN_6_2	: BIT;
+	IN_6_3	: BIT;
+	IN_6_4 	: BIT;
+
+	IN_9_1	: BIT;
+	IN_9_2	: BIT;
+	IN_9_3	: BIT;
+	IN_9_4 	: BIT;
+
+	IN_8_1	: BIT;
+	IN_8_2	: BIT;
+	IN_8_3	: BIT;
+	IN_8_4 	: BIT;
+
+	IN_11_1	: BIT;
+	IN_11_2	: BIT;
+	IN_11_3	: BIT;
+	IN_11_4	: BIT;
+
+	IN_10_1	: BIT;
+	IN_10_2	: BIT;
+	IN_10_3	: BIT;
+	IN_10_4	: BIT;
+
+	IN_13_1	: BIT;
+	IN_13_2	: BIT;
+	IN_13_3	: BIT;
+	IN_13_4	: BIT;
+
+	IN_12_1	: BIT;
+	IN_12_2	: BIT;
+	IN_12_3	: BIT;
+	IN_12_4	: BIT;
+	
+	IN_15_1	: BIT;
+	IN_15_2	: BIT;
+	IN_15_3	: BIT;
+	IN_15_4	: BIT;
+
+	IN_14_1	: BIT;
+	IN_14_2	: BIT;
+	IN_14_3	: BIT;
+	IN_14_4	: BIT;
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

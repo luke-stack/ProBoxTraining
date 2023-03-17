@@ -1,0 +1,34 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4020.6">
+  <POU Name="F_Time_TO_SampleTime" Id="{a2e4a13e-4ed0-4bf5-ab70-0d6f05b04e6e}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION F_Time_TO_SampleTime : STRING
+VAR_INPUT
+	TIN: TIME;
+END_VAR
+VAR
+	TempOT		:OTSTRUCT;
+	TempHour	:STRING(2);
+	TempMinute	:STRING(2);
+	TempSecond	:STRING(2);
+	TempMillisecond	:STRING(3);	
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[	
+TempOT:= TIME_TO_OTSTRUCT(TIN:=TIN );
+
+TempHour 		:= F_StuffString(InputString:= WORD_TO_STRING(TempOT.wHour), StringLength	:= 2,StuffCharacter 	:= '0', LeftAligned := FALSE);
+TempMinute 		:= F_StuffString(InputString:= WORD_TO_STRING(TempOT.wMinute), StringLength	:= 2,StuffCharacter 	:= '0', LeftAligned := FALSE);
+TempSecond 		:= F_StuffString(InputString:= WORD_TO_STRING(TempOT.wSecond), StringLength	:= 2,StuffCharacter 	:= '0', LeftAligned := FALSE);
+TempMillisecond := F_StuffString(InputString:= WORD_TO_STRING(TempOT.wMilliseconds), StringLength	:= 3,StuffCharacter 	:= '0', LeftAligned := FALSE);
+
+F_Time_TO_SampleTime:= CONCAT(F_Time_TO_SampleTime,TempHour);
+F_Time_TO_SampleTime:= CONCAT(F_Time_TO_SampleTime,':');
+F_Time_TO_SampleTime:= CONCAT(F_Time_TO_SampleTime,TempMinute);
+F_Time_TO_SampleTime:= CONCAT(F_Time_TO_SampleTime,':');
+F_Time_TO_SampleTime:= CONCAT(F_Time_TO_SampleTime,TempSecond);
+F_Time_TO_SampleTime:= CONCAT(F_Time_TO_SampleTime,'.');
+F_Time_TO_SampleTime:= CONCAT(F_Time_TO_SampleTime,TempMillisecond);]]></ST>
+    </Implementation>
+  </POU>
+</TcPlcObject>

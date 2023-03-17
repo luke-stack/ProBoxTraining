@@ -1,0 +1,309 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.16">
+  <POU Name="FB_SeqLimitedStream" Id="{38e837e4-97c1-4d5c-9e2f-dfc1777e0c33}" SpecialFunc="None">
+    <Declaration><![CDATA[/// Functionblock to maintain a specialized sequence-stream. 
+FUNCTION_BLOCK FB_SeqLimitedStream
+VAR_OUTPUT
+	List: ARRAY[1..LIST_SIZE] OF DINT; // List of all TU indices
+	EntryCounter: INT; // Counter of  entries in table
+END_VAR
+VAR CONSTANT
+	LIST_SIZE: INT:= SequencingParameter.MAX_LIMITED_STREAM_LIST; // Size of limited stream
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[;]]></ST>
+    </Implementation>
+    <Method Name="M_Add" Id="{3cce0145-c043-4c8b-ac56-22becbd40aad}">
+      <Declaration><![CDATA[/// Add single TU index to list
+METHOD M_Add : BOOL // True = TU index added, otherwise false
+VAR_INPUT
+	mTU_Index	: DINT;
+END_VAR
+VAR_IN_OUT
+	mTU_Table	: ARRAY[0..Conveyor.NUMBER_OF_TU_DATA] OF ST_TU_Data; 	/// TU Table
+END_VAR
+VAR
+	mIdx		: INT;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[M_Add := FALSE;
+
+// Validate input
+IF mTU_Index> 0 AND mTU_Index< Conveyor.NUMBER_OF_TU_DATA THEN
+	FOR mIdx := 1 TO LIST_SIZE DO
+ 	// Ensure data slot is free 
+		IF List[mIdx] = 0  THEN
+			List[mIdx] := mTU_Index;
+			EntryCounter := EntryCounter + 1;
+			mTU_Table[mTU_Index].DataSet.HaltSequencing := TRUE; // Mark TU as "Special Sequencing"
+			M_Add := TRUE;
+			RETURN;
+			
+		// TU Idx already registered
+		ELSIF List[mIdx] = mTU_Index THEN
+			mTU_Table[mTU_Index].DataSet.HaltSequencing := TRUE; // Mark TU as "Special Sequencing"
+			M_Add := TRUE;
+			RETURN;
+			
+		END_IF
+	END_FOR
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_Remove" Id="{63ced7de-c72b-4555-bbf6-42374db9cd32}">
+      <Declaration><![CDATA[/// Removes a TU index from the list
+METHOD M_Remove : BOOL // True = TU index removed , otherwise false
+VAR_INPUT
+	mTU_Index		: DINT; // TU index to remove
+END_VAR
+VAR_IN_OUT
+	mTU_Table		: ARRAY[0..Conveyor.NUMBER_OF_TU_DATA] OF ST_TU_Data; // TU Table
+END_VAR
+VAR
+	mIdx			: INT;
+	mRemovedIdx		: INT;
+	mSizeOneSlot	: UDINT;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[M_Remove := TRUE;
+
+// Validate inputs
+IF mTU_Index <= 0 OR mTU_Index > Conveyor.NUMBER_OF_TU_DATA THEN
+	M_Remove := FALSE;
+	RETURN;
+END_IF
+
+// Search  object in table
+FOR mIdx := 1 TO EntryCounter DO
+	// Compare Element
+	IF List[mIdx] = mTU_Index THEN
+
+		// Unmark in TU table
+		mTU_Table[List[mIdx]].DataSet.HaltSequencing := FALSE;
+	
+		// Clear slot 
+		List[mIdx]:=0;	
+		mRemovedIdx := mIdx;	
+				
+		// Update list and close gaps 
+		// Shift subsequent entries
+		IF mRemovedIdx < EntryCounter THEN
+			mSizeOneSlot:= SIZEOF(List[1]);
+			MEMCPY(ADR(List[mRemovedIdx]), ADR(List[mRemovedIdx+1]), INT_TO_UDINT(EntryCounter - mRemovedIdx) * mSizeOneSlot);
+			List[EntryCounter]:=0;	
+		END_IF
+		
+		EntryCounter := EntryCounter - 1;
+	
+		// Check counter border
+		IF EntryCounter < 0 THEN
+			EntryCounter := 0;
+		END_IF
+		EXIT;
+	END_IF	
+END_FOR
+
+
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_Clear" Id="{8875a12b-deb9-4dba-b5ed-25d485b4b666}">
+      <Declaration><![CDATA[/// Deletes all list entries
+METHOD M_Clear : BOOL // True = All list entries deleted, otherwise false
+VAR_IN_OUT
+	mTU_Table	: ARRAY[0..Conveyor.NUMBER_OF_TU_DATA] OF ST_TU_Data; // TU Table
+END_VAR
+VAR
+	mIdx		: INT;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+FOR mIdx:= 1 TO EntryCounter DO
+	// Unmark in TU table
+	mTU_Table[mIdx].DataSet.HaltSequencing := FALSE;
+	
+END_FOR
+
+// Update counter
+EntryCounter := 0;
+
+// Clear internal list
+M_Clear := MEMSET(ADR(List), 0, SIZEOF(List)) > 0;
+
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_AddMultiple" Id="{8f180917-50d1-43da-aaf6-95eaeb96f91c}">
+      <Declaration><![CDATA[/// Add multiple TU indices to the list at once
+METHOD M_AddMultiple : BOOL // True =  All TU indeces added, otherwise false
+VAR_IN_OUT
+	mTU_Index		 : ARRAY [*] OF DINT; // Array of TU indices
+END_VAR
+VAR_IN_OUT
+	mTU_Table		: ARRAY[0..Conveyor.NUMBER_OF_TU_DATA] OF ST_TU_Data; 	// TU Table
+END_VAR
+VAR
+	mUpperBound		: DINT;
+	mLowerBound		: DINT;
+	mIdx			: DINT;
+	mTU_Added		: BOOL;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[// Assign lower and upper bound of input array
+mLowerBound:= LOWER_BOUND(mTU_Index, 1);
+mUpperBound:= UPPER_BOUND(mTU_Index, 1);
+mTU_Added:= FALSE;
+
+FOR mIdx:= mLowerBound TO mUpperBound DO
+	// Add index to list, when input index is valid
+	IF mTU_Index[mIdx]> 0 AND mTU_Index[mIdx]< Conveyor.NUMBER_OF_TU_DATA THEN
+		mTU_Added:= mTU_Added AND M_Add(mTU_Index[mIdx], mTU_Table);		
+	END_IF
+END_FOR
+
+M_AddMultiple:= mTU_Added;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_RequestRelease" Id="{b6b192f8-95e1-41f3-992d-7238ef92c7ea}">
+      <Declaration><![CDATA[/// Checks if the requesting TU is blocked by a TU registered in the table. 
+METHOD M_RequestRelease : BOOL // True =  Movement released, False = TU is beeing blocked
+VAR_INPUT
+	mTU_Index				: DINT; // Requesting TU Index
+	mBranch					: I_BranchCheckpoint; // Branch to check
+END_VAR
+VAR_IN_OUT
+	mTU_Table				: ARRAY[0..Conveyor.NUMBER_OF_TU_DATA] OF ST_TU_Data; // TU Table
+END_VAR
+VAR
+	mIdx					: DINT;
+	mLowestBlockingTU		: ST_TU_Data;
+	mFoundOnBranch			: BOOL; /// False = TU on a branch is possible next, TRUE = TU on a branch is excluded as possible next
+	mBranchExclusionMode	: BOOL := FALSE;
+	mBranchRecursive		: BOOL := TRUE; // Recursive branch search active (Default = True)
+	mRequestingTU_Present	: BOOL;
+	mRequestingTU_Data		: ST_TU_Data;
+	mListTU_Data			: ST_TU_Data;
+END_VAR
+VAR_OUTPUT
+	mError					: BOOL; // True when inputs are invalid
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[M_RequestRelease:=FALSE;
+
+// Validate input branch and TU index
+IF mBranch = 0 OR
+	 mTU_Index <= 0 OR mTU_Index > Conveyor.NUMBER_OF_TU_DATA THEN	
+	mError:= TRUE;
+	RETURN;
+END_IF
+
+// Get TU data from requesting index
+mRequestingTU_Data:= mTU_Table[mTU_Index];
+
+// 	Return when requesting TU is not in the list (not marked)
+IF 	mRequestingTU_Data.DataSet.HaltSequencing = FALSE THEN	
+	RETURN;
+END_IF
+
+
+// Find blocking TU on branch
+//****************************************************************************
+mLowestBlockingTU:= mRequestingTU_Data;
+
+
+FOR mIdx:= 1 TO EntryCounter DO
+	// Get TU data from list entry
+	mListTU_Data:= mTU_Table[List[mIdx]];	
+	
+	// Only consider TU's which have the same destination and destination slot as the requesting one
+	IF mRequestingTU_Data.Destination[1].eFunctionNumber = mListTU_Data.Destination[1].eFunctionNumber  AND
+		mRequestingTU_Data.Destination[1].ZoneNumber = mListTU_Data.Destination[1].ZoneNumber AND
+			mRequestingTU_Data.DataSet.DestinationSlot = mListTU_Data.DataSet.DestinationSlot THEN	
+	
+		// TU's can be ignored if...
+		// - Sequence is 0 and is therefore not part of a sequence
+		// - Sequence is equal to requesting, but subsequence is higher
+		// - Sequence is higher than an already found lower sequence
+		
+		IF  mListTU_Data.DataSet.Sequence = 0 OR
+		   (mListTU_Data.DataSet.Sequence = mLowestBlockingTU.DataSet.Sequence AND
+			mListTU_Data.DataSet.SubSequence > mLowestBlockingTU.DataSet.SubSequence) OR
+		   (mListTU_Data.DataSet.Sequence  > mLowestBlockingTU.DataSet.Sequence) THEN
+
+			;// Skip
+		
+		// Possible Blocking TU 
+		ELSE
+			
+			// When Sequence is the same the subsequence has to be checked additionally
+			IF mListTU_Data.DataSet.Sequence = mLowestBlockingTU.DataSet.Sequence THEN
+				
+				// Only lower sub sequences are checked for blocking
+				IF mListTU_Data.DataSet.SubSequence < mLowestBlockingTU.DataSet.SubSequence THEN
+			
+					mFoundOnBranch:= mBranch.M_IsOnBranches(mRecursive:= mBranchRecursive, mListTU_Data.DataSet.CheckpointID);
+					
+					IF ((mFoundOnBranch > 0 AND NOT mBranchExclusionMode) OR
+						(mFoundOnBranch = 0 AND mBranchExclusionMode)) THEN
+					
+						mLowestBlockingTU:= mListTU_Data;		
+					END_IF	
+				END_IF
+			
+			ELSE // Sequence number is lower than last found blocking sequence
+	
+					mFoundOnBranch:= mBranch.M_IsOnBranches(mRecursive:= mBranchRecursive, mListTU_Data.DataSet.CheckpointID);
+					
+					IF ((mFoundOnBranch > 0 AND NOT mBranchExclusionMode) OR
+						(mFoundOnBranch = 0 AND mBranchExclusionMode)) THEN
+					
+						mLowestBlockingTU:= mListTU_Data;		
+					END_IF	
+				
+			END_IF	
+		END_IF
+	END_IF
+END_FOR
+
+ // Dont release if blocking TU is found and its not the requesting TU
+IF mLowestBlockingTU.TU_ID.HashCode > 0 AND
+	 mLowestBlockingTU.TU_ID.HashCode <> mRequestingTU_Data.TU_ID.HashCode  THEN
+	 
+	 M_RequestRelease:=FALSE;
+	 
+ELSE 
+	 M_RequestRelease:=TRUE;
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <LineIds Name="FB_SeqLimitedStream">
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_SeqLimitedStream.M_Add">
+      <LineId Id="47" Count="20" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_SeqLimitedStream.M_Remove">
+      <LineId Id="100" Count="38" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_SeqLimitedStream.M_Clear">
+      <LineId Id="74" Count="12" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_SeqLimitedStream.M_AddMultiple">
+      <LineId Id="121" Count="11" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_SeqLimitedStream.M_RequestRelease">
+      <LineId Id="395" Count="84" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

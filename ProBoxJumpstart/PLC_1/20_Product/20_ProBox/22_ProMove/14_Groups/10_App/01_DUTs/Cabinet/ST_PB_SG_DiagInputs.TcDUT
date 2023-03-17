@@ -1,0 +1,19 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <DUT Name="ST_PB_SG_DiagInputs" Id="{cbf092f8-87fa-4dbd-8099-e3fe7592eded}">
+    <Declaration><![CDATA[TYPE ST_PB_SG_DiagInputs :
+STRUCT
+	// Signal states
+	//EmergencyCircuitOK			: BOOL; // HW Emergency Circuit OK
+	FeedbackMainContactorOFF	: ARRAY[1..GVL_PB_SG.NUMBER_OF_CONTACTORS] OF BOOL;	// HW Main contactor outage feedback
+	//CraneAuxRelayFeedback		: ARRAY[1..4] OF BOOL;	// HW Main contactor outage feedback
+	IPC_PowerStatus				: BOOL; // HW Check IPC Power Status
+	SupplyCircuitBreaker		: BOOL; // Monitoring Circuit Breakers
+	FireAlarm					: BOOL; // HW Fire Alarm (TRUE = no alarm)
+	ASI_BusConfigError			: BOOL; // HW Check ASI bus error Status
+	
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

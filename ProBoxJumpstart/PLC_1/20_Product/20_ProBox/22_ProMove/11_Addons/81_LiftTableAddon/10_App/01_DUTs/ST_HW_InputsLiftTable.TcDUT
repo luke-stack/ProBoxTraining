@@ -1,0 +1,12 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <DUT Name="ST_HW_InputsLiftTable" Id="{db540f42-a113-45a6-a9a4-6b2cf0fd9422}">
+    <Declaration><![CDATA[TYPE ST_HW_InputsLiftTable :
+STRUCT
+	Lift			: ST_LiftTable_Inp_LiftSensors; 	//Sensor inputs used for the lift function
+	OperatorPanel	: ST_LiftTable_Inp_OP;				//Buttons on operator panel
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

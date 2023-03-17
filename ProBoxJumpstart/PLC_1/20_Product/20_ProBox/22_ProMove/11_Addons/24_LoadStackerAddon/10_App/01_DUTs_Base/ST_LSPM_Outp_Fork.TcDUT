@@ -1,0 +1,15 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.4">
+  <DUT Name="ST_LSPM_Outp_Fork" Id="{ddb28e5e-3d0e-4c9d-b48d-7288a6bcfb7b}">
+    <Declaration><![CDATA[TYPE ST_LSPM_Outp_Fork :
+STRUCT
+		
+	MoveIn		: BOOL; // Move forks in (home)
+	MoveOut		: BOOL; // Move forks out to engage pallet in order to lift or lower a pallet
+	TorqueOut	: BOOL; // Move forks out with torque control enabled in freq. inverter
+	TorqueIn	: BOOL; // Move forks in with torque control enabled in freq. inverter
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

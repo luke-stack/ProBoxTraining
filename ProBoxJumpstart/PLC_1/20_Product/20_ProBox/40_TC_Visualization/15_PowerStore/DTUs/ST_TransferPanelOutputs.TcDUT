@@ -1,0 +1,15 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.4">
+  <DUT Name="ST_TransferPanelOutputs" Id="{21ebc85b-3c56-4977-ab19-98f5ed19266b}">
+    <Declaration><![CDATA[TYPE ST_TransferPanelOutputs :
+STRUCT
+	LED_MainContactorActivated :BOOL; // LED-lamp main contactor is activated
+	LED_AutoIsOn : BOOL; // LED-lamp automatic mode is activated
+	LED_VcStopped : BOOL; // LED-lamp vertical conveyor stopped
+	LED_EmergencyStop : BOOL; // LED-lamp emergency stop
+	LED_Error : BOOL; // LED-lamp error
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

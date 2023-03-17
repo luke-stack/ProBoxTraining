@@ -1,0 +1,34 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4020.6">
+  <DUT Name="E_ProBoxMotorSpeed" Id="{029eadc6-f29e-41b3-97fb-d15b931fcbd3}">
+    <Declaration><![CDATA[TYPE E_ProBoxMotorSpeed :
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 418851 $
+ *	Revision date	:	$Date: 2018-12-11 17:28:45 +0100 (Di., 11 Dez 2018) $
+ *	Last changed by	:	$Author: Q8OTTOC $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/ProMove/02_Controls/ProBox/03_Implementation/01_DevelopmentProject/01_Software/ProBox_COE/ProBox_DevProj_v1.0/PLC_1/20_Product/10_App/12_E_Functions/11_ProBox/01_DUTs/E_ProBoxMotorSpeed.TcDUT $
+ *
+ *	Purpose			:	Motor speed
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				13.04.2018		PkF					First version of motor speeds
+  *	0.2				29.11.2018		lca					Sorted from lowest to highest speed
+ *
+ **************************************************************************************)
+(
+	CREEP_SPEED,
+	LOW_SPEED,
+	NORMAL	
+);
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

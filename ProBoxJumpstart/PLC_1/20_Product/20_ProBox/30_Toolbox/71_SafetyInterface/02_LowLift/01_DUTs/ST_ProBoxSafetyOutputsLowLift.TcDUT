@@ -1,0 +1,17 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.4">
+  <DUT Name="ST_ProBoxSafetyOutputsLowLift" Id="{7304dca1-7a5b-4c4f-941d-44bfab5d7945}">
+    <Declaration><![CDATA[TYPE ST_ProBoxSafetyOutputsLowLift :
+STRUCT
+	FeedBackK1				: BOOL; // First feedback signal for LowLift 
+	FeedBackK2				: BOOL; // Second feedback signal for Lowlift 	
+	ContactorOn             : BOOL; //Send button to safety
+	ContactorOff            : BOOL; //Send button to safety
+	ResetSafetyNeeded       : BOOL; //Indication I/O output 
+	ErrorAck                : BOOL; //Error acknowledgement sent to safety
+	TransportActive			: bool;	//Transport active
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

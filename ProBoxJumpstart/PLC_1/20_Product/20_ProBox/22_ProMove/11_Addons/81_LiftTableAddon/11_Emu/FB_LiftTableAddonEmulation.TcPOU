@@ -1,0 +1,200 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <POU Name="FB_LiftTableAddonEmulation" Id="{26f4d748-bffa-4650-a762-ad9e18d42c9c}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK FB_LiftTableAddonEmulation EXTENDS FB_FunctionConvEmulation
+VAR_INPUT
+	Config							: ST_CFG_LowLiftUnitEmulation; // emulation config	
+END_VAR 
+
+VAR
+	pFunction						: POINTER TO FB_LiftTableAddon; // Address to function
+	rFunction						: REFERENCE TO FB_LiftTableAddon; // Reference to function
+	fbLiftTableControlEmu 			: FB_LowLiftControlEmulation; // Lift control emulation same as lowlift
+	fbMotorControlLift				: FB_MotorControlEmulation; // Motor control emulation
+	DebugOpUp						: BOOL;
+	DebugOpDown						: BOOL;
+	DebugOpStartTransp				: BOOL;
+END_VAR]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[(**************************************************************************************************************
+   Initialization
+***************************************************************************************************************)
+A_Init();
+
+(**************************************************************************************************************
+   Update reference
+***************************************************************************************************************)
+A_UpdateReference();
+
+(**************************************************************************************************************
+   Emulation
+***************************************************************************************************************)
+// If emulation function is initialized
+IF FunctionData.Init THEN
+
+	// Update data of real object
+	M_UpdateRealObjectData();
+	
+	// Handle external Subsystem-Subsystem interfaces
+	// not needed for Add On emulation
+	//A_ExternalSTI();
+	
+	// Call Lift control
+	fbLiftTableControlEmu(
+		Config := Config,
+		DriveRun_Lift := rFunction.HW_Outputs.LiftUp OR rFunction.HW_Outputs.LiftDown);	
+		
+	// Call motor control lift		
+	fbMotorControlLift(
+		Run_fw:= rFunction.HW_Outputs.LiftUp,  
+		Run_bw:= rFunction.HW_Outputs.LiftDown, 
+		CommandSpeed:= 100, 
+		SpeedRatio:= rFunction.ConfigFunction.Zone[1].SpeedRatio);
+					
+	// Overwrite inputs
+	A_OverWriteInputs();
+END_IF]]></ST>
+    </Implementation>
+    <Action Name="A_Init" Id="{8003b677-3af3-4b8c-9491-8cd446f14573}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_Init
+ * 	FUNCTION	Initialize emulated dummy function
+ **************************************************************************************)
+
+// If dummy function is not initialized
+IF NOT FunctionData.Init Then
+	// Check that linked dummy function number is valid
+	IF eFunctionNumber > E_FunctionNumber.F_BEGIN_FUNCTION AND
+	   eFunctionNumber < E_FunctionNumber.F_END_FUNCTION THEN   
+		
+		// Check if the real module is initialized
+		IF F_IsFunctionInitialized(eFunctionNumber := eFunctionNumber) THEN
+			// Module is initialized
+			FunctionData.Init:= TRUE;
+			
+			// Send debug message
+			DebugMsg := CONCAT('Initialization done. Element Function: ', FunctionRegistry[eFunctionNumber].FunctionName);
+			fbDebugMsg.M_SendInfoMsg(DebugMsg);
+			
+			// Initialize real module
+			F_InitializeFunction(eFunctionNumber := eFunctionNumber);
+		END_IF
+	END_IF
+END_IF
+]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="A_OverWriteInputs" Id="{5e16c116-a4b4-4750-afe9-35e1686ef29f}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_OverWriteInputs
+ * 	FUNCTION	Overwrite inputs for emulation
+ **************************************************************************************)
+
+rFunction.HW_Inputs.Lift.SensorPosDown := fbLiftTableControlEmu.Lift_Pos_Down;
+rFunction.HW_Inputs.Lift.SensorPosUp := fbLiftTableControlEmu.Lift_Pos_Up;
+rFunction.HW_Inputs.Lift.SignalMotorUnitOK := fbMotorControlLift.MotorUnitOK;
+
+rFunction.HW_Inputs.OperatorPanel.DriveDown := DebugOpDown;
+rFunction.HW_Inputs.OperatorPanel.DriveUp := DebugOpUp;
+rFunction.HW_Inputs.OperatorPanel.OPStartTransport := DebugOpStartTransp;
+
+//Overhang Senors emulation, set during transport
+
+F_OH_SensorControlEmu(
+		FunctionNumber := rFunction.ConfigFunction.FunctionLink.eFunctionNumber,
+		TakeoverActive:= F_PB_GetTransportControlDataRef(rFunction.ConfigFunction.FunctionLink.eFunctionNumber,1).eTakeOverState = E_TakeOverState.ACTIVE,
+		HandoverActive:= F_PB_GetTransportControlDataRef(rFunction.ConfigFunction.FunctionLink.eFunctionNumber,1).eHandOverState = E_HandOverState.ACTIVE,
+		OH_PositionSide:= 1,
+		OH_sensor=>rFunction.HW_Inputs.Lift.Sensor_overhang_12 );
+
+F_OH_SensorControlEmu(
+		FunctionNumber := rFunction.ConfigFunction.FunctionLink.eFunctionNumber,
+		TakeoverActive:= F_PB_GetTransportControlDataRef(rFunction.ConfigFunction.FunctionLink.eFunctionNumber,1).eTakeOverState = E_TakeOverState.ACTIVE,
+		HandoverActive:= F_PB_GetTransportControlDataRef(rFunction.ConfigFunction.FunctionLink.eFunctionNumber,1).eHandOverState = E_HandOverState.ACTIVE,
+		OH_PositionSide:= 2,
+		OH_sensor=> rFunction.HW_Inputs.Lift.Sensor_overhang_21);						
+
+
+
+]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="A_UpdateReference" Id="{a65961ce-2ec1-4584-a189-4f8297074b7d}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_UpdateReference
+ * 	FUNCTION	Update reference to real object
+ **************************************************************************************)
+
+// Check valid function number
+IF eFunctionNumber > E_FunctionNumber.F_BEGIN_FUNCTION AND
+   eFunctionNumber < E_FunctionNumber.F_END_FUNCTION THEN
+
+	// Is reference valid  
+	IF __ISVALIDREF(FunctionRegistry[eFunctionNumber].rFunction) THEN
+		// Build address to reference
+		pFunction := ADR(FunctionRegistry[eFunctionNumber].rFunction);
+
+		// If address is possible
+		IF pFunction <> 0 THEN
+			// Build reference to memory
+			rFunction REF= pFunction^;
+		ELSE
+			// Reinitialize module
+			FunctionData.Init:= FALSE;
+		END_IF
+	ELSE
+		// Reinitialize module
+		FunctionData.Init:= FALSE;
+	END_IF
+END_IF
+		]]></ST>
+      </Implementation>
+    </Action>
+    <LineIds Name="FB_LiftTableAddonEmulation">
+      <LineId Id="228" Count="19" />
+      <LineId Id="390" Count="0" />
+      <LineId Id="248" Count="0" />
+      <LineId Id="273" Count="3" />
+      <LineId Id="375" Count="0" />
+      <LineId Id="278" Count="9" />
+      <LineId Id="71" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_LiftTableAddonEmulation.A_Init">
+      <LineId Id="2" Count="24" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_LiftTableAddonEmulation.A_OverWriteInputs">
+      <LineId Id="30" Count="3" />
+      <LineId Id="47" Count="0" />
+      <LineId Id="49" Count="0" />
+      <LineId Id="51" Count="0" />
+      <LineId Id="55" Count="0" />
+      <LineId Id="57" Count="0" />
+      <LineId Id="56" Count="0" />
+      <LineId Id="59" Count="0" />
+      <LineId Id="58" Count="0" />
+      <LineId Id="63" Count="0" />
+      <LineId Id="62" Count="0" />
+      <LineId Id="75" Count="1" />
+      <LineId Id="96" Count="0" />
+      <LineId Id="84" Count="2" />
+      <LineId Id="82" Count="0" />
+      <LineId Id="87" Count="0" />
+      <LineId Id="94" Count="0" />
+      <LineId Id="97" Count="0" />
+      <LineId Id="95" Count="0" />
+      <LineId Id="90" Count="1" />
+      <LineId Id="77" Count="0" />
+      <LineId Id="74" Count="0" />
+      <LineId Id="66" Count="0" />
+      <LineId Id="68" Count="1" />
+    </LineIds>
+    <LineIds Name="FB_LiftTableAddonEmulation.A_UpdateReference">
+      <LineId Id="2" Count="26" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

@@ -1,0 +1,80 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.12">
+  <POU Name="FB_ScaleEncoder" Id="{b0b0aae9-7116-439f-9cf8-fd55486d1464}" SpecialFunc="None">
+    <Declaration><![CDATA[/// This function block scales an encoder increments to milimeter and aligns counting direction (EncoderFwDesc)
+FUNCTION_BLOCK FB_ScaleEncoder
+(************************************************************************************** 
+* 	Application 		: BoxControl Framework 
+* 	Revision 			: $Revision: 408723 $ 
+* 	Revision date 		: $Date: 2018-06-27 13:49:08 +0200 (Wed, 27 Jun 2018) $ 
+* 	Last changed by 	: $Author: b7bolm $ 
+* 	URL 				: $URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/21_Projects/BCF_2.0/trunk/BCF/BCF/JumpStart/20_Product/10_App/12_E_Functions/10_Lib/10_Conv/FB_FunctionList.TcPOU $ 
+* ------------------------------------------------------------------------------------ 
+* 	© Swisslog AG 
+* 	Swisslog is not liable for any usage of this source code that is not agreed 
+* 	on between Swisslog and the other party. The mandatory legal liability remains 
+* 	unaffected. 
+* ------------------------------------------------------------------------------------ 
+* 	Revision History: 
+* 
+* 	VERSION 		DATE 			INITIALS 			DESCRIPTION 
+* 	0.1 			25.09.2018 		mbo					First implementation
+* 
+**************************************************************************************)
+VAR_INPUT
+	EncoderValueInc			: UDINT; // Encoder value [increment]
+	MaxEncoderValueInc		: UDINT; // Max encoder value (Range is 0..MaxValue) [increment]
+	IncrementPerMM			: LREAL; // Increment per milimeter [inc/mm]
+END_VAR
+VAR_OUTPUT
+	ScaledEncoderValue		: UDINT; // Scaled encoder signal [mm] (Delta + = fwd)
+	ScaledMaxEncoderValue	: UDINT; // Scaled max encoder value [mm]
+	Error					: BOOL; // Input error 
+END_VAR
+VAR
+	ScaledEncoderValueReal 	: LREAL; // Scaled encoder value as real value
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[// Init
+ScaledEncoderValue := 0;
+
+// Validate inputs
+IF IncrementPerMM = 0 OR 
+   MaxEncoderValueInc = 0 THEN
+	Error := TRUE;
+	RETURN;
+END_IF
+
+Error := FALSE;
+
+// Update max scaled encoder value (Trunc is used to truncate decimal places and not do auto rounding)
+ScaledMaxEncoderValue := LREAL_TO_UDINT(LTRUNC(UDINT_TO_LREAL(MaxEncoderValueInc) / IncrementPerMM));
+
+// Convert pulses into pulses per mm
+ScaledEncoderValueReal := UDINT_TO_LREAL(EncoderValueInc) / IncrementPerMM;
+
+// truncate decimal places (e.g. 5,3 -> 5 ; -3,2  -> -3)
+ScaledEncoderValue := LREAL_TO_UDINT(LTRUNC(ScaledEncoderValueReal));
+
+]]></ST>
+    </Implementation>
+    <LineIds Name="FB_ScaleEncoder">
+      <LineId Id="172" Count="0" />
+      <LineId Id="188" Count="0" />
+      <LineId Id="194" Count="0" />
+      <LineId Id="175" Count="1" />
+      <LineId Id="195" Count="0" />
+      <LineId Id="186" Count="0" />
+      <LineId Id="177" Count="0" />
+      <LineId Id="3" Count="0" />
+      <LineId Id="5" Count="0" />
+      <LineId Id="156" Count="0" />
+      <LineId Id="165" Count="5" />
+      <LineId Id="99" Count="0" />
+      <LineId Id="182" Count="1" />
+      <LineId Id="14" Count="0" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

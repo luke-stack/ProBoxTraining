@@ -1,0 +1,22 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <DUT Name="ST_SickScannerBase" Id="{2fbbe5db-4c1b-4041-95cb-af462fde9417}">
+    <Declaration><![CDATA[TYPE ST_SickScannerBase :
+STRUCT
+	//ScannerTrigger		: BOOL;				// Command the scanner to start scanning label.
+	//EnableHandover	: BOOL;
+	//DataReceived 	: BOOL;
+	LabelData		: ST_ScannerLabelData;	
+	
+	Busy			: BOOL;				// Busy scanning
+	Ready			: BOOL;				// Ready for new scan. 
+	
+	State			: ST_SickScannerStates; //states container
+	
+	WriteData		: ST_ScannerWriteData;
+	
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

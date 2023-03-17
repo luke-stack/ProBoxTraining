@@ -1,0 +1,47 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.12">
+  <DUT Name="ST_MCQ_6_1" Id="{af1a4526-9935-4952-add2-8ab700d56610}">
+    <Declaration><![CDATA[TYPE ST_MCQ_6_1 :
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 404529 $
+ *	Revision date	:	$Date: 2018-04-23 08:21:38 +0200 (Mo., 23 Apr 2018) $
+ *	Last changed by	:	$Author: b7bolm $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/trunk/01_Software/BCF/BCF/JumpStart/20_Product/10_App/11_Com/10_Lib/10_Conv/12_MFCS/11_SIS/01_DUTs/11_SIS_6_1/ST_MCQ_6_1.TcDUT $
+ *
+ *	Purpose			:	MCR Structure
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+STRUCT
+	Position			: STRING(SIS_6_1.POSITION_STRINGLENGTH); // 12 Digit SIS Location MM-GGG-EEEE-FF-Z 
+	Code				: STRING(SIS_6_1.MCQ_CODE_STRINGLENGTH); // 1 Digit Code 
+	Speed				: STRING(SIS_6_1.MCQ_SPEED_STRINGLENGTH); // 1 Digit Speed
+	Axis1Fwd			: STRING(SIS_6_1.MCQ_AXIS_STRINGLENGTH); // 1 Digit Axis 1 Forward 
+	Axis1Rev			: STRING(SIS_6_1.MCQ_AXIS_STRINGLENGTH); // 1 Digit Axis 1 Backward 
+	Axis2Fwd			: STRING(SIS_6_1.MCQ_AXIS_STRINGLENGTH); // 1 Digit Axis 2 Forward 
+	Axis2Rev			: STRING(SIS_6_1.MCQ_AXIS_STRINGLENGTH); // 1 Digit Axis 2 Backward 
+	Axis3Fwd			: STRING(SIS_6_1.MCQ_AXIS_STRINGLENGTH); // 1 Digit Axis 3 Forward 
+	Axis3Rev			: STRING(SIS_6_1.MCQ_AXIS_STRINGLENGTH); // 1 Digit Axis 3 Backward 
+	Axis4Fwd			: STRING(SIS_6_1.MCQ_AXIS_STRINGLENGTH); // 1 Digit Axis 4 Forward 
+	Axis4Rev			: STRING(SIS_6_1.MCQ_AXIS_STRINGLENGTH); // 1 Digit Axis 4 Backward 
+	Axis5Fwd			: STRING(SIS_6_1.MCQ_AXIS_STRINGLENGTH); // 1 Digit Axis 5 Forward 
+	Axis5Rev			: STRING(SIS_6_1.MCQ_AXIS_STRINGLENGTH); // 1 Digit Axis 5 Backward 
+	Axis6Fwd			: STRING(SIS_6_1.MCQ_AXIS_STRINGLENGTH); // 1 Digit Axis 6 Forward 
+	Axis6Rev			: STRING(SIS_6_1.MCQ_AXIS_STRINGLENGTH); // 1 Digit Axis 6 Backward 
+	Button1				: STRING(SIS_6_1.MCQ_BUTTON_STRINGLENGTH); // Button
+	Button2				: STRING(SIS_6_1.MCQ_BUTTON_STRINGLENGTH); // Button 
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

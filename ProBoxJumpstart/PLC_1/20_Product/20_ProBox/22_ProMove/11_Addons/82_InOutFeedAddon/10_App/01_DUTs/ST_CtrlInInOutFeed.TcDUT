@@ -1,0 +1,15 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <DUT Name="ST_CtrlInInOutFeed" Id="{72e215b1-7099-469f-b7da-20c543184653}">
+    <Declaration><![CDATA[TYPE ST_CtrlInInOutFeed :
+STRUCT
+	DestinationFunction	: E_FunctionNumber := F_BEGIN_FUNCTION;
+	DestinationZone		: INT :=1;
+	TU_Type				: INT;
+	DisableInFeed		: BOOL := FALSE;  //Set true to do disable inFead functionality, no TU table image creation will occure 
+	DisableOutFeed		: BOOL := FALSE;  //Set true to disable outFeed functionality, TU table image will not be deleted.
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

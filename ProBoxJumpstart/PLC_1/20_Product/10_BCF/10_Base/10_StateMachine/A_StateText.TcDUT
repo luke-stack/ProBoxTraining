@@ -1,0 +1,10 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.4">
+  <DUT Name="A_StateText" Id="{102a4782-c208-4b33-ad3f-c509b67e0a38}">
+    <Declaration><![CDATA[// alias for a state text for FB_StateMachine
+TYPE
+  A_StateText    : STRING[31];
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

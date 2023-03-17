@@ -1,0 +1,27 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.4">
+  <POU Name="F_PB_IsLogicalOccupied" Id="{757800d9-2312-4648-93a0-64e370099057}" SpecialFunc="None">
+    <Declaration><![CDATA[//A zone is occupied until the TU is handed over completly, or when the takeover is fully completed
+FUNCTION F_PB_IsLogicalOccupied : BOOL
+VAR_INPUT
+	TransportControlData : REFERENCE TO ST_TransportControlData;
+END_VAR
+VAR
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[
+IF(NOT __ISVALIDREF(TransportControlData)) THEN RETURN; END_IF;
+
+F_PB_IsLogicalOccupied := TransportControlData.Occupied OR TransportControlData.eTransportState = E_TransportState.HANDOVER;
+]]></ST>
+    </Implementation>
+    <LineIds Name="F_PB_IsLogicalOccupied">
+      <LineId Id="23" Count="0" />
+      <LineId Id="22" Count="0" />
+      <LineId Id="18" Count="0" />
+      <LineId Id="7" Count="0" />
+      <LineId Id="16" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

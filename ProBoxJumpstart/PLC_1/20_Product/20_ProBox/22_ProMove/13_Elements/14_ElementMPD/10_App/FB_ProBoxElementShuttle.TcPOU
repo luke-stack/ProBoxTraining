@@ -1,0 +1,450 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <POU Name="FB_ProBoxElementShuttle" Id="{46349c3b-ff03-4280-9e18-847ec70ebed1}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK FB_ProBoxElementShuttle EXTENDS FB_ElementMpdBase
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision:  $
+ *	Revision date	:	$Date:  $
+ *	Last changed by	:	$Author:  $
+ *	URL				:	$URL: $
+ *
+ *	Purpose			:	ProBox element with 2 axis and 2 motor HW outputs (drive 1-2 / 3-4).
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	
+ *
+ **************************************************************************************)
+VAR_INPUT
+	Config					: ST_CFG_ProBoxElementShuttle; // Configuration 
+	HW_Inputs				: ST_HW_InputsProBoxElementShuttle; // HW-Inputs 
+END_VAR
+
+VAR_OUTPUT
+	HW_Outputs				: ST_HW_OutputsProBoxElementShuttle; // HW-Outputs 
+END_VAR
+VAR			
+	MPD_Drive_HW_Inputs			: ST_HW_InputsMPD;
+	MPD_Drive_HW_Outputs		: ST_HW_OutputsMPD;
+	j: INT;	
+	i: INT;
+	
+	fbTiltMotorControl			: ARRAY [1..2] OF FB_TiltControl; // Motor control	
+	
+END_VAR
+VAR_TEMP	
+	ShuttleFunctionInterface	: ST_FunctionInterface;
+END_VAR
+
+VAR PERSISTENT
+	Settings				: ST_CFG_ProBoxElementShuttle; // Settings - activated configuration 
+END_VAR
+
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[(**************************************************************************************************************
+   Input mapping
+***************************************************************************************************************)
+A_InputMapping();
+
+
+(**************************************************************************************************************
+   Initialization
+***************************************************************************************************************)
+A_Init();
+
+
+(**************************************************************************************************************
+   State control
+***************************************************************************************************************)
+_M_StateControl(AdditionalConditionInhibitStopping:=fbMpdControl.CtrlOut.MotionRunning OR fbTiltMotorControl[1].Drive_Run_Down OR 
+fbTiltMotorControl[1].Drive_Run_Up OR fbTiltMotorControl[2].Drive_Run_Down OR fbTiltMotorControl[2].Drive_Run_Up); //InhibitStopping is used to inhibit Element to set Stop state while shuttle car is moving
+
+
+(**************************************************************************************************************
+   Error handler
+***************************************************************************************************************)
+M_MonitorElementErrors();
+
+
+(**************************************************************************************************************
+   Manual control
+***************************************************************************************************************)
+A_ManualControl();
+
+
+(**************************************************************************************************************
+   Handle element functions
+***************************************************************************************************************)
+A_HandleFunctions();
+
+
+// Check for errors
+_M_CheckErrors();
+
+// Entry request control
+M_ProcessEntryRequest(
+				AkEntryPosition		:= Settings.AkEntryPosition,
+				ApEntryPositions 	:= Settings.ApEntryPositions,
+				SgGroupRef			:= Settings.SgGroupRef);
+
+(**************************************************************************************************************
+ Run shuttle controller
+***************************************************************************************************************)
+//Set conveyor brake data
+fbMpdControl.ConvBrake[1] := HW_Outputs.DriveCV[1].MotorBrake_12;
+fbMpdControl.ConvBrake[2] := HW_Outputs.DriveCV[2].MotorBrake_12;
+
+fbMpdControl(	MPD_Config			:=MPD_Config,
+				HW_Inputs			:=MPD_Drive_HW_Inputs,
+				ElementData			:=ElementData,			
+				HW_Outputs			=>MPD_Drive_HW_Outputs,
+				FunctionInterface 	=> ShuttleFunctionInterface); // ShuttleFunctionInterface will control element conveyour outputs
+
+
+(**********************************************************************************************************
+//Tilt functionality
+***********************************************************************************************************)	
+FOR i := 1 TO GVL_MPD.CV_B DO
+	IF Settings.TiltEnable[i] THEN 
+		_M_TiltControl(i);		
+	END_IF
+END_FOR
+
+
+(**********************************************************************************************************
+  Conveyor Drive control
+***********************************************************************************************************)
+_M_DriveControl(ShuttleFunctionInterface.Out.FunctionOrders, ElementData);
+
+
+(**************************************************************************************************************
+   Interface handler out
+***************************************************************************************************************)
+M_ITC_ProcessOut();
+
+
+(**************************************************************************************************************
+   Output mapping
+***************************************************************************************************************)
+A_OutputMapping();
+
+]]></ST>
+    </Implementation>
+    <Method Name="_M_CheckErrors" Id="{94de5f03-b84c-4f55-950b-16cf92e7c63d}">
+      <Declaration><![CDATA[METHOD PRIVATE _M_CheckErrors : BOOL
+VAR_INPUT
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+F_ResetError(FALSE, ElementData.ErrorData.ErrorDataSet[3]);
+
+SUPER^._M_CheckMpdErrors(HW_Inputs.EndLimit,HW_Inputs.HighTempResDrive, Settings.SgGroupRef, ElementData.ErrorData.ErrorDataSet[3]);]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_TiltControl" Id="{e166ce8b-b650-43dd-9ea6-ebfd56b3b7ce}">
+      <Declaration><![CDATA[METHOD PUBLIC _M_TiltControl : BOOL
+VAR_INPUT
+	CV_Index : INT;
+END_VAR
+
+VAR
+	i : INT;
+	TiltSideDeposit : E_CFG_Tilt; 
+END_VAR
+VAR_INST
+	OrderPos						: E_Positions_TiltControl; // Order position
+	HomePos							: E_Positions_TiltControl; // Home position
+
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[F_ResetError(FALSE, ElementData.ErrorData.ErrorDataSet[3]);
+			
+//If movement start when when tilt is not in center
+(*IF ElementData.OperationState.eMode = E_PositionMode.AUTO_MODE AND fbMpdControl.CtrlOut.MotionRunning AND
+	 fbTiltMotorControl.ActualPosition <> E_Positions_TiltControl.MIDDLE THEN
+		F_SetError(
+			ErrorType 	:= E_ErrorType.ERROR,
+			ErrorParam 	:= 'Handover conv error prevent Transfer movement',
+			ErrorMsg 	:= E_ErrorConv.TRANSFER_ERROR,
+			ErrorData 	:= ElementData.ErrorData.ErrorDataSet[3]); 	
+END_IF*)
+
+(**********************************************************************************************************
+   Sideshift control
+***********************************************************************************************************)
+// Initialize variables
+OrderPos := E_Positions_TiltControl.UNDEFINED; 
+HomePos := E_Positions_TiltControl.UNDEFINED; 
+
+FOR i := 1 TO GVL_MPD.MAXPDs DO 
+	IF 	fbMpdControl.P_GetMpdData.CV[CV_Index].DepositFuncNumber = Settings.ConvCFG[i].eFunctionNumber THEN 
+		TiltSideDeposit := Settings.ConvCFG[i].TiltSide;
+		EXIT;
+	END_IF
+END_FOR
+
+
+// When not depositing an pallet
+IF fbMpdControl.P_GetMpdData.CV[CV_Index].State <> E_MPD_CvStates.E_CV_DEPOSIT THEN
+	// If previous function is avaiable
+			//CCW = Left = Reverse = Side 1
+			OrderPos := E_Positions_TiltControl.MIDDLE;	
+		
+// When depositing an pallet
+ELSE 
+	IF NOT fbMpdControl.CtrlOut.MotionRunning AND TiltSideDeposit = E_CFG_Tilt.Left THEN	
+			OrderPos := E_Positions_TiltControl.DOWN;
+			
+	ELSIF NOT fbMpdControl.CtrlOut.MotionRunning AND TiltSideDeposit = E_CFG_Tilt.Right THEN
+ 		//CW = Right = Forward = Side 2				
+			OrderPos := E_Positions_TiltControl.UP;
+			
+	ELSIF NOT fbMpdControl.CtrlOut.MotionRunning AND TiltSideDeposit = E_CFG_Tilt.Undefined THEN
+ 		//CW = Right = Forward = Side 2				
+			OrderPos := E_Positions_TiltControl.MIDDLE;
+	END_IF 
+	
+END_IF
+	
+fbTiltMotorControl[CV_Index](
+	ElementData:= ElementData,	
+	Sensor_Pos_Up:= HW_Inputs.Conv[CV_Index].TiltUp, 
+	Sensor_Pos_Down:= HW_Inputs.Conv[CV_Index].TiltDown, 
+	Sensor_Pos_Middle:= HW_Inputs.Conv[CV_Index].TiltMiddle, 
+	TimeoutValueLift:= Settings.TiltLiftTime, 
+	OrderPos:= OrderPos, 
+	HomePos:= HomePos, 
+	Disable:= fbMpdControl.CtrlOut.MotionRunning, 
+	ErrorData:= ElementData.ErrorData.ErrorDataSet[3]);
+
+]]></ST>
+      </Implementation>
+    </Method>
+    <Action Name="A_Init" Id="{757cbf95-5168-4254-aa48-37a9eab447ef}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_Init
+ * 	FUNCTION	Initialize element
+ **************************************************************************************)
+ 
+ IF NOT ElementData.Init AND NOT ElementData.InitRunning THEN
+	// Load function specific configuration to settings
+	Settings := Config;
+	
+	
+	//Set MPD control configurations (Motion Pickup n Deposit)
+	//Since there are diffren types used us an for loop to copy data
+	FOR j := 1 TO  GVL_MPD.MAXPDs DO 
+		MEMCPY(ADR(MPD_Config.ConvCFG[j]),ADR(Settings.ConvCFG[j]),SIZEOF(ST_CFG_PDs));
+	END_FOR	
+	
+		
+	MPD_Config.CvCC					:= Settings.CvCC;
+	MPD_Config.DriveCFG				:= Settings.DriveCFG;
+	MPD_Config.EnableIdlePosition	:= Settings.EnableIdlePosition;
+	MPD_Config.EncoderHysterisis	:= Settings.EncoderHysterisis;	
+	MPD_Config.IdlePosition			:= Settings.IdlePosition;
+	MPD_Config.TimeOutMove			:= Settings.TimeOutMove;
+	MPD_Config.MPD_Type				:= E_MotionPD_Type.E_ShuttleCar;
+	
+	
+	//Set element configuration
+	SUPER^.BaseSettings.BrakeTime := Settings.BrakeTime;
+	SUPER^.BaseSettings.ElementSpeed := Settings.ElementSpeed;
+ END_IF
+ 
+SUPER^.A_Init();
+]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="A_InputMapping" Id="{03c419b3-1b78-4043-83e2-80d0a217077b}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_InputMapping
+ * 	FUNCTION	Input mapping
+ **************************************************************************************)
+ 
+ 
+(**************************************************************************************
+   Map HW Inputs
+***************************************************************************************)
+MPD_Drive_HW_Inputs.Conv[GVL_MPD.CV_A].SensorOverhangLeft 		:= HW_Inputs.Conv[GVL_MPD.CV_A].SensorOverhangLeft;
+MPD_Drive_HW_Inputs.Conv[GVL_MPD.CV_A].SensorOverhangRight 		:= HW_Inputs.Conv[GVL_MPD.CV_A].SensorOverhangRight;
+MPD_Drive_HW_Inputs.Conv[GVL_MPD.CV_B].SensorOverhangLeft 		:= HW_Inputs.Conv[GVL_MPD.CV_B].SensorOverhangLeft;
+MPD_Drive_HW_Inputs.Conv[GVL_MPD.CV_B].SensorOverhangRight 		:= HW_Inputs.Conv[GVL_MPD.CV_B].SensorOverhangRight;
+
+Inputs.MotorUnitOK 												:= HW_Inputs.MotorUnitOK;
+MPD_Drive_HW_Inputs.DriveInputs									:= HW_Inputs.DriveInputs;
+
+//Set manual control signals to MPD drive from Shuttle car AP.
+	
+IF(__ISVALIDREF(Settings.SgGroupRef)) THEN
+	// manual controls of the carriage only allowed if switch is in manual mode
+	MPD_Drive_HW_Inputs.ManualControl.Conv[GVL_MPD.CV_A].ConvFwd := Settings.SgGroupRef.CtrlOut.OpSummary.Conv[GVL_MPD.CV_A].OpDriveCvFwd;
+    MPD_Drive_HW_Inputs.ManualControl.Conv[GVL_MPD.CV_A].ConvRev := Settings.SgGroupRef.CtrlOut.OpSummary.Conv[GVL_MPD.CV_A].OpDriveCvRev;
+    MPD_Drive_HW_Inputs.ManualControl.Conv[GVL_MPD.CV_B].ConvFwd := Settings.SgGroupRef.CtrlOut.OpSummary.Conv[GVL_MPD.CV_B].OpDriveCvFwd;
+    MPD_Drive_HW_Inputs.ManualControl.Conv[GVL_MPD.CV_B].ConvRev := Settings.SgGroupRef.CtrlOut.OpSummary.Conv[GVL_MPD.CV_B].OpDriveCvRev;
+    MPD_Drive_HW_Inputs.ManualControl.DriveFwd := Settings.SgGroupRef.CtrlOut.OpSummary.Conv[GVL_MPD.CV_A].OpMovePos;
+    MPD_Drive_HW_Inputs.ManualControl.DriveRev := Settings.SgGroupRef.CtrlOut.OpSummary.Conv[GVL_MPD.CV_A].OpMoveNeg;
+    MPD_Drive_HW_Inputs.ManualControl.EmergencyDrive := Settings.SgGroupRef.CtrlOut.OpSummary.OpEmgDrive;
+	
+	fbTiltMotorControl[GVL_MPD.CV_A].OP_Up		:= Settings.SgGroupRef.CtrlOut.OpSummary.Conv[GVL_MPD.CV_A].OpMovePos; //manual drive tilt up (positive direction)
+	fbTiltMotorControl[GVL_MPD.CV_A].OP_Down	:= Settings.SgGroupRef.CtrlOut.OpSummary.Conv[GVL_MPD.CV_A].OpMoveNeg; //manual drive tilt down (nagative direction)
+	fbTiltMotorControl[GVL_MPD.CV_B].OP_Up		:= Settings.SgGroupRef.CtrlOut.OpSummary.Conv[GVL_MPD.CV_B].OpMovePos; //manual drive tilt up (positive direction)
+	fbTiltMotorControl[GVL_MPD.CV_B].OP_Down    := Settings.SgGroupRef.CtrlOut.OpSummary.Conv[GVL_MPD.CV_B].OpMoveNeg; //manual drive tilt down (nagative direction)
+ 
+ELSE
+	MEMSET(ADR(MPD_Drive_HW_Inputs.ManualControl), 0, SIZEOF(ST_HW_InputsManControl));
+END_IF
+
+// Run base element input mapping.
+SUPER^.A_InputMapping();
+
+
+
+]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="A_OutputMapping" Id="{4cf2da0e-185a-40b6-ae47-2f1a29947948}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_OutputMapping
+ * 	FUNCTION	Handles element specific outpus
+ **************************************************************************************)
+
+(**************************************************************************************
+   Map HW Outputs
+***************************************************************************************)
+HW_Outputs.DriveCV[GVL_MPD.CV_A].Drive_Run_12			:= fbProBoxMotorControl_12.Forward;
+HW_Outputs.DriveCV[GVL_MPD.CV_A].Drive_Run_21			:= fbProBoxMotorControl_12.Reverse;
+HW_Outputs.DriveCV[GVL_MPD.CV_A].Drive_Creep_12			:= fbProBoxMotorControl_12.CreepSpeed;
+HW_Outputs.DriveCV[GVL_MPD.CV_A].Drive_Low_12			:= fbProBoxMotorControl_12.LowSpeed;
+HW_Outputs.DriveCV[GVL_MPD.CV_A].MotorBrake_12			:= fbProBoxMotorControl_12.BrakeRelease;
+HW_Outputs.DriveCV[GVL_MPD.CV_A].TiltDown				:= fbTiltMotorControl[GVL_MPD.CV_A].Drive_Run_Down;
+HW_Outputs.DriveCV[GVL_MPD.CV_A].TiltUp					:= fbTiltMotorControl[GVL_MPD.CV_A].Drive_Run_Up;
+                                        				
+HW_Outputs.DriveCV[GVL_MPD.CV_B].Drive_Run_12			:= fbProBoxMotorControl_34.Forward;
+HW_Outputs.DriveCV[GVL_MPD.CV_B].Drive_Run_21			:= fbProBoxMotorControl_34.Reverse;
+HW_Outputs.DriveCV[GVL_MPD.CV_B].Drive_Creep_12			:= fbProBoxMotorControl_34.CreepSpeed;
+HW_Outputs.DriveCV[GVL_MPD.CV_B].Drive_Low_12			:= fbProBoxMotorControl_34.LowSpeed;
+HW_Outputs.DriveCV[GVL_MPD.CV_B].MotorBrake_12			:= fbProBoxMotorControl_34.BrakeRelease;
+HW_Outputs.DriveCV[GVL_MPD.CV_B].TiltDown				:= fbTiltMotorControl[GVL_MPD.CV_B].Drive_Run_Down;
+HW_Outputs.DriveCV[GVL_MPD.CV_B].TiltUp					:= fbTiltMotorControl[GVL_MPD.CV_B].Drive_Run_Up;
+
+HW_Outputs.ShuttleDrive.DriveOutputs					:= MPD_Drive_HW_Outputs.DriveOutputs;
+HW_Outputs.ShuttleDrive.EnableDrive						:= MPD_Drive_HW_Outputs.EnableDrive;
+HW_Outputs.ShuttleDrive.MotionOutputHigh				:= MPD_Drive_HW_Outputs.MotionOutputHigh;
+HW_Outputs.ShuttleDrive.MotionOutputLow					:= MPD_Drive_HW_Outputs.MotionOutputLow;
+
+
+
+(**************************************************************************************
+   Map element interface
+***************************************************************************************)
+
+ElementData.FunctionOrder.Enable := ElementData.FunctionOrder.Enable AND (fbTiltMotorControl[GVL_MPD.CV_A].EnableTransport OR NOT Settings.TiltEnable[GVL_MPD.CV_A]);
+ElementData.FunctionOrder.Enable_34 := ElementData.FunctionOrder.Enable_34 AND (fbTiltMotorControl[GVL_MPD.CV_B].EnableTransport OR NOT Settings.TiltEnable[GVL_MPD.CV_B]);
+
+// interface axis 1-2 / 3-4
+SUPER^.A_OutputMapping();
+]]></ST>
+      </Implementation>
+    </Action>
+    <LineIds Name="FB_ProBoxElementShuttle">
+      <LineId Id="744" Count="15" />
+      <LineId Id="881" Count="0" />
+      <LineId Id="760" Count="22" />
+      <LineId Id="943" Count="3" />
+      <LineId Id="940" Count="0" />
+      <LineId Id="793" Count="40" />
+      <LineId Id="101" Count="0" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ProBoxElementShuttle._M_CheckErrors">
+      <LineId Id="15" Count="1" />
+      <LineId Id="21" Count="0" />
+      <LineId Id="33" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ProBoxElementShuttle._M_TiltControl">
+      <LineId Id="80" Count="50" />
+      <LineId Id="133" Count="8" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ProBoxElementShuttle.A_Init">
+      <LineId Id="52" Count="3" />
+      <LineId Id="94" Count="1" />
+      <LineId Id="103" Count="0" />
+      <LineId Id="97" Count="0" />
+      <LineId Id="117" Count="0" />
+      <LineId Id="128" Count="0" />
+      <LineId Id="118" Count="0" />
+      <LineId Id="148" Count="0" />
+      <LineId Id="135" Count="0" />
+      <LineId Id="139" Count="6" />
+      <LineId Id="137" Count="0" />
+      <LineId Id="150" Count="0" />
+      <LineId Id="147" Count="0" />
+      <LineId Id="121" Count="1" />
+      <LineId Id="124" Count="0" />
+      <LineId Id="126" Count="0" />
+      <LineId Id="119" Count="0" />
+      <LineId Id="127" Count="0" />
+      <LineId Id="114" Count="0" />
+      <LineId Id="130" Count="0" />
+      <LineId Id="115" Count="1" />
+    </LineIds>
+    <LineIds Name="FB_ProBoxElementShuttle.A_InputMapping">
+      <LineId Id="2" Count="8" />
+      <LineId Id="109" Count="1" />
+      <LineId Id="112" Count="0" />
+      <LineId Id="111" Count="0" />
+      <LineId Id="108" Count="0" />
+      <LineId Id="12" Count="0" />
+      <LineId Id="14" Count="0" />
+      <LineId Id="82" Count="0" />
+      <LineId Id="68" Count="0" />
+      <LineId Id="95" Count="0" />
+      <LineId Id="114" Count="8" />
+      <LineId Id="127" Count="0" />
+      <LineId Id="130" Count="3" />
+      <LineId Id="129" Count="0" />
+      <LineId Id="123" Count="0" />
+      <LineId Id="125" Count="1" />
+      <LineId Id="62" Count="0" />
+      <LineId Id="61" Count="0" />
+      <LineId Id="1" Count="0" />
+      <LineId Id="50" Count="0" />
+      <LineId Id="57" Count="0" />
+      <LineId Id="51" Count="0" />
+      <LineId Id="49" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ProBoxElementShuttle.A_OutputMapping">
+      <LineId Id="127" Count="12" />
+      <LineId Id="199" Count="1" />
+      <LineId Id="140" Count="5" />
+      <LineId Id="203" Count="0" />
+      <LineId Id="202" Count="0" />
+      <LineId Id="201" Count="0" />
+      <LineId Id="146" Count="1" />
+      <LineId Id="149" Count="1" />
+      <LineId Id="209" Count="0" />
+      <LineId Id="208" Count="0" />
+      <LineId Id="165" Count="3" />
+      <LineId Id="205" Count="1" />
+      <LineId Id="169" Count="0" />
+      <LineId Id="207" Count="0" />
+      <LineId Id="170" Count="1" />
+      <LineId Id="60" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

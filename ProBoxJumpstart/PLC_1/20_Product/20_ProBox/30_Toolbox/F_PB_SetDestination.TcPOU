@@ -1,0 +1,106 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <POU Name="F_PB_SetDestination" Id="{74f566cf-e7c6-49df-8fb4-5166c5cbc59e}" SpecialFunc="None">
+    <Declaration><![CDATA[//Set destination to an already existing TU Table dataset
+FUNCTION F_PB_SetDestination : BOOL
+(**************************************************************************************
+ * 	Application		:	ProBox
+ *	Revision		:	$$
+ *	Revision date	:	$$
+ *	Last changed by	:	$$
+ *	URL				:	$$
+ *
+ *	Purpose			:	Set a destination to an existing TU Table dataset.
+ * 						Remark: as Tu_Table is persistant memory type, one should not repeatedly write to the TU_Table 
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.  
+ **************************************************************************************)
+VAR_INPUT
+	TuDataIndex			: DINT; // Existing TU data table index there the Destination shall be assigned to
+	Destination			: E_FunctionNumber; // Destination function
+	DestinationZone		: INT:=1; // Destination zone
+	ForceOverwrite		: BOOL:=FALSE; //Set to true in order to overwrite an existing valid destination and to be sure only writing once.
+	AssignTuType		: BOOL:=FALSE; //Set to true to assign TuType
+	TuType				: INT:=0;
+	InsertFunction		: E_FunctionNumber:= E_FunctionNumber.F_BEGIN_FUNCTION;	//Optional data that is written to TimeStamp 
+	InsertZone			: INT:=0;		
+END_VAR
+VAR
+	DataSetDestIndex	: INT:=1;
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[//Sanity check
+IF( TuDataIndex<=0 OR TuDataIndex>Conveyor.NUMBER_OF_TU_DATA OR
+	Destination<= E_FunctionNumber.F_BEGIN_FUNCTION OR Destination>= E_FunctionNumber.F_END_FUNCTION OR
+	DestinationZone <=0 OR DestinationZone > Conveyor.NUMBER_OF_ZONES_PER_FUNCTION) THEN
+	RETURN; //invalid arguments
+END_IF
+
+IF(ForceOverwrite = FALSE AND TU_DataTable[TuDataIndex].DataSet.JobPresent) THEN
+	RETURN; //JobPresent is active, so dont overwrite data again..
+END_IF 
+
+
+// Update TU Data set
+TU_DataTable[TuDataIndex].DataSet.DataPresent:= TRUE;
+TU_DataTable[TuDataIndex].DataSet.NumberOfDest	:= 1;				
+TU_DataTable[TuDataIndex].DataSet.JobPresent := Destination > E_FunctionNumber.F_BEGIN_FUNCTION AND Destination<>InsertFunction;
+TU_DataTable[TuDataIndex].Destination[DataSetDestIndex].eFunctionNumber := Destination;
+TU_DataTable[TuDataIndex].Destination[DataSetDestIndex].ZoneNumber := DestinationZone;
+TU_DataTable[TuDataIndex].Destination[DataSetDestIndex].PositionName := FunctionRegistry[Destination].FunctionName;
+
+//Update TimeStamp
+TU_DataTable[TuDataIndex].TimeStamp.eInsertFunctionNumber := InsertFunction;
+TU_DataTable[TuDataIndex].TimeStamp.InsertZoneNumber:=InsertZone;
+TU_DataTable[TuDataIndex].TimeStamp.InsertDateTime := System.fbSystemTime.TIMESTR;
+
+//Set TU_Type?
+IF(AssignTuType) THEN
+	TU_DataTable[TuDataIndex].DataSet.TU_Type := TuType;
+END_IF;
+
+
+F_PB_SetDestination := TRUE;
+
+ 
+
+]]></ST>
+    </Implementation>
+    <ObjectProperties>
+      <XmlArchive>
+        <Data>
+          <o xml:space="preserve" t="UMLStereoTypeContainerObject">
+            <v n="IsType" t="UMLType">BaseArea</v>
+            <v n="Stereotype">""</v>
+            <d n="Stereotypes" t="Hashtable" />
+          </o>
+        </Data>
+        <TypeList>
+          <Type n="Hashtable">System.Collections.Hashtable</Type>
+          <Type n="String">System.String</Type>
+          <Type n="UMLStereoTypeContainerObject">{30250973-b110-4e31-b562-c102e042dca4}</Type>
+          <Type n="UMLType">{0197b136-405a-42ee-bb27-fd08b621d0cf}</Type>
+        </TypeList>
+      </XmlArchive>
+    </ObjectProperties>
+    <LineIds Name="F_PB_SetDestination">
+      <LineId Id="145" Count="5" />
+      <LineId Id="152" Count="3" />
+      <LineId Id="183" Count="0" />
+      <LineId Id="156" Count="6" />
+      <LineId Id="173" Count="0" />
+      <LineId Id="194" Count="1" />
+      <LineId Id="188" Count="0" />
+      <LineId Id="203" Count="0" />
+      <LineId Id="180" Count="0" />
+      <LineId Id="174" Count="0" />
+      <LineId Id="205" Count="0" />
+      <LineId Id="163" Count="2" />
+      <LineId Id="171" Count="1" />
+      <LineId Id="166" Count="3" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

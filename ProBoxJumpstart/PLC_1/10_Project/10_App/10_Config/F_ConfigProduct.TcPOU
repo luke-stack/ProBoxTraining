@@ -1,0 +1,40 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <POU Name="F_ConfigProduct" Id="{b41ae37b-fbc9-4b90-99d9-99b1a44a74f3}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION F_ConfigProduct : BOOL
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[
+
+(****************************************************************************************
+   Message handler
+*****************************************************************************************)
+fbDebugMsgManager.EnableErrors              :=TRUE;
+fbDebugMsgManager.EnableInfos               :=TRUE;
+fbDebugMsgManager.EnableWarnings            :=TRUE;
+
+fbDebugMsgManager.FileHandler.MaxFileSizeKB :=4096;
+fbDebugMsgManager.FileHandler.Folder        :='C:\Temp\Traces';
+fbDebugMsgManager.FileHandler.Enable        :=FALSE;
+
+(****************************************************************************************
+   Configuration Product
+*****************************************************************************************)
+fbITC_Manager                               := fb_PB_ITC_ManagerConveyor;
+fb_PB_ITC_ManagerConveyor.Config.SDI_Limit  := 0; //Limit usage of SDI's
+
+(****************************************************************************************
+   Define MFCS channels (e.g.SIS channels)
+*****************************************************************************************)
+fbMFCS_Channel[E_MFCS_Channel.AM] 			:= fbMFCS_SIS_AM;
+fbMFCS_Channel[E_MFCS_Channel.SPOC]			:= fbMFCS_SIS_SPOC;
+fbMFCS_Channel[E_MFCS_Channel.LOGGING]		:= fbMFCS_LOG;
+
+]]></ST>
+    </Implementation>
+    <LineIds Name="F_ConfigProduct">
+      <LineId Id="3" Count="25" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

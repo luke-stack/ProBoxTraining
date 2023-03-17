@@ -1,0 +1,171 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <POU Name="FB_ProBoxElement2MotorEmulation" Id="{abdc8ccc-c4e8-4e11-9ac3-817670386e0a}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK FB_ProBoxElement2MotorEmulation EXTENDS FB_ElementConvEmulation
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision:  $
+ *	Revision date	:	$Date: $
+ *	Last changed by	:	$Author: $
+ *	URL				:	$URL: $
+ *
+ *	Purpose			:	Emulation of probox two motor element.
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *
+ **************************************************************************************)
+VAR
+	pElement						: POINTER TO FB_ProBoxElement2Motor; // Address to element
+	rElement						: REFERENCE TO FB_ProBoxElement2Motor; // Reference to element	
+END_VAR]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[(**************************************************************************************************************
+   Initialization
+***************************************************************************************************************)
+A_Init();
+
+(**************************************************************************************************************
+   Update reference
+***************************************************************************************************************)
+A_UpdateReference();
+
+(**************************************************************************************************************
+   Emulation
+***************************************************************************************************************)
+// If emulation element is initialized
+IF ElementData.Init THEN
+	
+	// Update real data
+	M_UpdateRealObjectData();	
+	
+	//Set emulation speed	
+	rElement.P_EmuSpeed	:= ProBoxSystem.EMULATION_SPEED;
+	
+	// Overwrite inputs
+	A_OverWriteInputs();
+
+END_IF]]></ST>
+    </Implementation>
+    <Action Name="A_Init" Id="{5f5349f0-9689-4f43-a097-6842aaaa6262}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_Init
+ * 	FUNCTION	Initialize emulated dummy element
+ **************************************************************************************)
+
+// If element is not initialized
+IF NOT ElementData.Init THEN
+
+	// Check that linked element number is valid
+	IF eElementNumber > E_ElementNumber.E_BEGIN_ELEMENT AND
+	   eElementNumber < E_ElementNumber.E_END_ELEMENT THEN
+		
+			// Check that the real module is initialized
+			IF F_IsElementInitialized(eElementNumber) THEN
+				// Module is initialized
+				ElementData.Init := TRUE;
+				
+				// Send debug message
+				DebugMsg := CONCAT('Initialization done. Element: ', ElementRegistry[eElementNumber].ElementName);
+				fbDebugMsg.M_SendInfoMsg(DebugMsg);
+				
+				// Initialize real module
+				F_InitializeElement(eElementNumber := eElementNumber);
+			END_IF
+	END_IF
+END_IF
+
+]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="A_OverWriteInputs" Id="{28f7f3fb-ffc6-40ff-ae14-7e9e6e4ba3a2}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+* 	NAME		A_OverWriteInputs
+* 	FUNCTION	Overwrite hardware inputs for emulation
+**************************************************************************************)
+
+rElement.HW_Inputs.MotorUnitOK := TRUE;
+]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="A_UpdateReference" Id="{0940c9e0-09b9-45ce-a4a5-ec89fcac8d33}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_UpdateReference
+ * 	FUNCTION	Update reference to real object
+ **************************************************************************************)
+
+// Check valid element number
+IF eElementNumber > E_ElementNumber.E_BEGIN_ELEMENT AND
+   eElementNumber < E_ElementNumber.E_END_ELEMENT THEN
+
+	// Is reference valid  
+	IF __ISVALIDREF(ElementRegistry[eElementNumber].rElement) THEN
+		// Build address to reference
+		pElement := ADR(ElementRegistry[eElementNumber].rElement);
+
+		// If address is possible
+		IF pElement <> 0 THEN
+			// Build reference to memory
+			rElement REF= pElement^;
+		ELSE
+			// Reinitialize module
+			ElementData.Init := FALSE;
+		END_IF
+	ELSE
+		// Reinitialize module
+		ElementData.Init := FALSE;
+	END_IF
+END_IF
+		]]></ST>
+      </Implementation>
+    </Action>
+    <ObjectProperties>
+      <XmlArchive>
+        <Data>
+          <o xml:space="preserve" t="UMLStereoTypeContainerObject">
+            <v n="IsType" t="UMLType">BaseArea</v>
+            <v n="Stereotype">""</v>
+            <d n="Stereotypes" t="Hashtable" />
+          </o>
+        </Data>
+        <TypeList>
+          <Type n="Hashtable">System.Collections.Hashtable</Type>
+          <Type n="String">System.String</Type>
+          <Type n="UMLStereoTypeContainerObject">{30250973-b110-4e31-b562-c102e042dca4}</Type>
+          <Type n="UMLType">{0197b136-405a-42ee-bb27-fd08b621d0cf}</Type>
+        </TypeList>
+      </XmlArchive>
+    </ObjectProperties>
+    <LineIds Name="FB_ProBoxElement2MotorEmulation">
+      <LineId Id="3" Count="17" />
+      <LineId Id="35" Count="0" />
+      <LineId Id="67" Count="0" />
+      <LineId Id="72" Count="0" />
+      <LineId Id="66" Count="0" />
+      <LineId Id="36" Count="2" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ProBoxElement2MotorEmulation.A_Init">
+      <LineId Id="2" Count="26" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ProBoxElement2MotorEmulation.A_OverWriteInputs">
+      <LineId Id="2" Count="4" />
+      <LineId Id="1" Count="0" />
+      <LineId Id="7" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ProBoxElement2MotorEmulation.A_UpdateReference">
+      <LineId Id="2" Count="26" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

@@ -1,0 +1,13 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.4">
+  <DUT Name="ST_CtrlOutSickScanner" Id="{bee7256d-7d7e-4a09-a102-6ba0310791b6}">
+    <Declaration><![CDATA[TYPE ST_CtrlOutSickScanner :
+STRUCT
+	Busy		: BOOL;		//Scanner busy with scanning barcode
+	Ready		: BOOL;		//Scanner ready and waiting for an trig to start scan
+	//Trig
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

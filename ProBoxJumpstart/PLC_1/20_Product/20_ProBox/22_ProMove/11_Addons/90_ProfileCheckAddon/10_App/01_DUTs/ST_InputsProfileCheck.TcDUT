@@ -1,0 +1,19 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <DUT Name="ST_InputsProfileCheck" Id="{aeb6807e-d499-4cce-b3e6-dab5ee439e58}">
+    <Declaration><![CDATA[TYPE ST_InputsProfileCheck :
+STRUCT
+	TransportData					: ST_TransportControlData;
+	
+	LBB_Height_Lower 	: UINT; //Lastbeam blocked
+	LBB_Height_Upper	: UINT; //Lastbeam blocked	
+	LBB_WidthLeft 		: UINT; //Lastbeam blocked		
+	LBB_WidthRight 		: UINT; //Lastbeam blocked	
+	LBB_Length 			: UINT; //Lastbeam blocked		
+	FBB_Length	 		: UINT; //Firsttbeam blocked	
+	
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

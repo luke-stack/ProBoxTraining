@@ -1,0 +1,727 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <POU Name="FB_LoadstackerAddon" Id="{44509f49-b451-4f09-b101-75b7b66df088}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK FB_LoadstackerAddon EXTENDS FB_LSPM_Base
+VAR_INPUT
+	Config						: ST_CFG_Loadstacker; 		// Configuration
+	HW_Inputs					: ST_HW_InputsLoadstacker; 	// Hardware inputs
+	CtrlIn						: ST_CtrlInLoadstacker;		// User function control inputs
+END_VAR
+VAR_OUTPUT
+	HW_Outputs					: ST_HW_OutputLoadStacker;	// Hardware outputs
+	CtrlOut						: ST_LSPM_CtrlOut;	// User function control outputs
+END_VAR
+VAR
+	Inputs						: ST_InputsLoadstacker; 	// Function specific inputs
+	Outputs						: ST_OutputsLoadstacker; 	// Function specific outputs
+END_VAR
+VAR PERSISTENT
+	Settings					: ST_CFG_Loadstacker; 		// Settings - activated configuration 
+END_VAR]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[(**************************************************************************************************************
+   Input mapping
+***************************************************************************************************************)
+A_InputMapping();
+
+(**************************************************************************************************************
+   Initialization
+***************************************************************************************************************)
+A_Init();
+
+
+(**************************************************************************************************************
+   BCF State control
+***************************************************************************************************************)
+A_StateControl();
+
+(**************************************************************************************************************
+   Error handler
+***************************************************************************************************************)
+A_ErrorHandler();
+fbAddOnErrHandler(AddOnSettingsFunction:= SettingsFunction, AddOnFunctionData:= FunctionData);
+
+(**************************************************************************************************************
+   BCF Process AddOns
+***************************************************************************************************************)
+M_ProcessAddOns();
+
+(**********************************************************************************************************
+   Loadstacker sequence
+***********************************************************************************************************)
+_M_LS_Ctrl();
+
+(**************************************************************************************************************
+   BCF Interface handler out
+***************************************************************************************************************)
+M_ITC_ProcessOut();
+
+(**************************************************************************************************************
+   Output mapping
+***************************************************************************************************************)
+A_OutputMapping();	]]></ST>
+    </Implementation>
+    <Method Name="_M_GapSensorCheck" Id="{e63ee525-2fde-4289-8198-18e71dadfda2}">
+      <Declaration><![CDATA[METHOD PROTECTED _M_GapSensorCheck : BOOL
+VAR_INPUT
+	EncoderValue				: UDINT;	//Encoder value from actual encoder HW in tenth's of mm resulution	
+	LoadStackerGapSensor_1		: BOOL;		//Sensor Side 1(rwd)on forks checking if pallet is not resting on forks. TRUE=Gap detected, False=Pallet detected
+	LoadStackerGapSensor_2		: BOOL;		//Sensor Side 2(fwd)on forks checking if pallet is not resting on forks. TRUE=Gap detected, False=Pallet detected
+	EndLimitSensors				: BOOL;		//Lower end and Upper endlimit sensor
+	SensorOccupied				: BOOL; 	//TU present hardware sensor occupied		
+	SettingsMachineType			: E_LSPM_MachineType;	//Loadstacker type, sanity check that type is configured as an Pallet stacker type
+END_VAR
+VAR_OUTPUT
+	EnableTransport				: BOOL;		// Enable State control to proceed	
+	
+END_VAR
+VAR_IN_OUT
+	SettingsLiftEncoder			: ST_LSPM_LiftEncPos;	
+END_VAR
+
+VAR_INST	
+	StabilityTimer				: TON :=(PT:=T#500MS); // settling time to ensure that the lift is stabelized before contiue		
+	DebugMsgSent				: BOOL;
+	LastCycleState				: E_LSPM_States;	
+END_VAR
+
+VAR	
+	CheckStablity				: BOOL;  //enable lift to stabilze before checking gap sensor		
+	FirstCycle					: BOOL; //TRUE when state has changed, only one cycle
+	DistanceToTo				: DINT;	
+END_VAR
+
+VAR CONSTANT	
+	PALLET_GAP_WINDOW			: DINT :=500; // Tenth's of mm , the size of the pallet gap in where forks must be when engaging forks into pallet
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+IF(NOT Settings.EnableForkGapSensor) THEN
+	EnableTransport:=TRUE;
+	RETURN;
+END_IF
+
+//monitor loadstacker state machine, if chaning state -> reset variables when changing states
+IF(LastCycleState<>BaseFunctionData.States.eState) THEN
+	FirstCycle:=TRUE;
+	DebugMsgSent:=FALSE;	
+	BaseFunctionData.OpRecover.OpControlRequired:=FALSE;
+END_IF
+
+
+CASE BaseFunctionData.States.eState OF
+		
+	//--------------------------------------------------------------------------------------------------------
+	// Check gap sensor
+	//--------------------------------------------------------------------------------------------------------
+	E_LSPM_States.STACKING_START:
+		IF(NOT SensorOccupied AND (NOT LoadStackerGapSensor_1 OR NOT LoadStackerGapSensor_2)) THEN
+			F_SetError(
+						ErrorType 	:= E_ErrorType.ERROR, 
+						ErrorParam 	:= 'Gap sensor detecting pallet',  // gap sensor is detecing a pallet, but there is no pallet present! 
+						ErrorMsg 	:= E_ErrorConv.INCORRECT_SENSOR_SIGNAL, 
+						ErrorData 	:= FunctionData.ErrorData.ErrorDataSet[1]);	
+		ELSE
+			EnableTransport:=TRUE;
+		END_IF
+	
+	//--------------------------------------------------------------------------------------------------------
+	// Lift in upper position, pallet is resting on fork, Check gap sensor
+	//--------------------------------------------------------------------------------------------------------				
+	E_LSPM_States.STACKING_LIFT_ACTIVE:
+		IF(BaseFunctionData.LiftReady AND NOT FirstCycle AND (LoadStackerGapSensor_1 OR LoadStackerGapSensor_2)) THEN
+			F_SetError(
+					ErrorType 	:= E_ErrorType.ERROR, 
+					ErrorParam 	:= 'Gap sensor not detecting pallet',  // gap sensor do not detect the pallet that is resting on the forks! 
+					ErrorMsg 	:= E_ErrorConv.INCORRECT_SENSOR_SIGNAL, 
+					ErrorData 	:= FunctionData.ErrorData.ErrorDataSet[1]);	
+		ELSE
+			EnableTransport:=TRUE;
+		END_IF	
+
+		
+	//--------------------------------------------------------------------------------------------------------
+	// Lift in middle position, Check gap sensor
+	//--------------------------------------------------------------------------------------------------------
+	E_LSPM_States.DESTACKING_ENGAGE_FORKS, E_LSPM_States.STACKING_MIDDLE_DONE:
+		DistanceToTo := UDINT_TO_DINT(EncoderValue - SettingsLiftEncoder.Middle);			
+		// Operator control requested -> wait for operator to correct the height and forks to correct state
+		// _M_StateControl will take care of moving to next state-> do not set EnableTransport=TRUE
+		IF(BaseFunctionData.OpRecover.OpControlRequired AND BaseFunctionData.OpRecover.OpControlCorrected) THEN
+			EnableTransport := TRUE;
+			//BaseFunctionData.OpRecover.OpControlRequired:=BaseFunctionData.OpRecover.OpControlCorrected :=FALSE;	
+		ELSIF(NOT EndLimitSensors) THEN
+			//error is raised in FB_LSP_Base
+			BaseFunctionData.OpRecover.OpControlRequired := TRUE;
+									
+		// when lowering with forks out (and a TU on forks) check that gap sensor is detecting pallet
+		// if gap sensor is not detecting pallet, and the remaining distance is > 80% of 100 mm, then we need to stop so that the bottom pallet will not be damaged.
+		// since forks are a little bit floating, we can use 80% of PALLET_GAP_SIZE
+		ELSIF(BaseFunctionData.States.eState = E_LSPM_States.STACKING_MIDDLE_DONE AND 
+			 (LoadStackerGapSensor_1 OR LoadStackerGapSensor_2) AND (DistanceToTo > PALLET_GAP_WINDOW)) THEN
+			F_SetError(
+					ErrorType 	:= E_ErrorType.ERROR, 
+					ErrorParam 	:= 'Fork gap error. Move Manually', //move manually lift up/down and press OP Reset sequence button
+					ErrorMsg 	:= E_ErrorConv.INCORRECT_SENSOR_SIGNAL, 
+					ErrorData 	:= FunctionData.ErrorData.ErrorDataSet[1]);		
+			BaseFunctionData.OpRecover.OpControlRequired := TRUE;
+					
+		//wait for lift to enter to the expected middle position 
+		ELSIF(BaseFunctionData.LiftReady AND NOT FirstCycle) THEN
+								
+			//Check gap sensor, should not detect pallet since this could indicate that the pallet is not resting on the bottom TU
+			IF(NOT LoadStackerGapSensor_1 OR NOT LoadStackerGapSensor_2) THEN
+				F_SetError(
+					ErrorType 	:= E_ErrorType.ERROR, 
+					ErrorParam 	:= 'Check gap sensor. Move Manually', //move manually lift up/down and press OP Reset sequence button
+					ErrorMsg 	:= E_ErrorConv.INCORRECT_SENSOR_SIGNAL, 
+					ErrorData 	:= FunctionData.ErrorData.ErrorDataSet[1]);
+				BaseFunctionData.OpRecover.OpControlRequired:=TRUE;					
+			ELSE 
+				CheckStablity:=TRUE;	//everything is fine					
+				EnableTransport := StabilityTimer.Q;
+			END_IF					
+		END_IF			
+
+	//--------------------------------------------------------------------------------------------------------
+	// Case else
+	//--------------------------------------------------------------------------------------------------------
+	ELSE
+		EnableTransport:=TRUE;
+		DebugMsgSent:=FALSE;
+		CheckStablity:=FALSE;
+	
+END_CASE
+	
+StabilityTimer(IN:=CheckStablity);
+LastCycleState:=BaseFunctionData.States.eState;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_LS_Ctrl" Id="{584a479d-a2b6-4822-9416-0afce5ae4b41}">
+      <Declaration><![CDATA[METHOD PRIVATE _M_LS_Ctrl : BOOL
+VAR_INPUT
+END_VAR
+VAR
+	LeftAndRightForkPos 	: E_LSPM_ForkPos;
+	LiftPos					: E_LSPM_LiftPos;
+	ForceLiftCreepSpeed		: BOOL;	//used for loadstacker, when lowering down a TU on top of another TU	
+	
+END_VAR
+VAR_INST
+	GapCheck_Enable			: BOOL;
+	PalletStackerCtrl_Enable: BOOL;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+//Reset errors on load stacker all datasets 1-8
+_M_ResetErrors();
+
+// Request to reset loadstacker state machine
+_M_ResetSequence(
+	ResetSequence	:= Inputs.HW.Manual.ResetSequence);
+	
+//check errors
+_M_CheckErrors(
+	HW_Lift_Input			:= Inputs.HW.Lift, 
+	HW_Manual_Input			:= Inputs.HW.Manual, 
+	HW_LS_Element			:= Inputs.HW.Element, 
+	SettingsLiftType		:= Settings.LiftType,
+	SettingsMachineType		:= Settings.LoadstackerType,
+	SettingsLiftEncoder		:= Settings.LiftEncoder.Positions, 
+	SettingsIdleStacking	:= Settings.IdleStacking, 
+	SequenceTimeout			:= Settings.TimeoutValueSeq); 
+	
+//pressetting encoder
+IF(Settings.LiftType = E_LSPM_LiftType.E_ENCODER) THEN 
+	_M_PresetEncoder(
+		NetId			:= Settings.LiftEncoder.Preset.NetId, 		//NetId of EtherCAT Master
+		SlaveAddr		:= Settings.LiftEncoder.Preset.SlaveAddr, 	//Port Number of EtherCAT Slave
+		Index			:= Settings.LiftEncoder.Preset.Index, 		//CoE Object Index
+		PresetValue		:= Settings.LiftEncoder.Preset.PresetValue,	//value to write to encoder preset parameter
+		OpKeySwitch		:= inputs.HW.Manual.PresetEncoder);			//operator key switch
+END_IF
+
+	                        
+//Fork control              
+_M_ForkControl(             
+	EnableDrive				:= BaseFunctionData.LiftReady,	 
+	HW_LeftFork_Input		:= Inputs.HW.LeftFork, 
+	HW_RightFork_Input		:= Inputs.HW.RightFork, 
+	HW_Manual_Input			:= Inputs.HW.Manual, 
+	TimeoutValueFork		:= Settings.TimeoutValueFork, 
+	TimeSafeTorque			:= Settings.TimeSafeTorque, 
+	Left_HW_Fork_Output		=> Outputs.HW.LeftFork, 
+	Right_HW_Fork_Output	=> Outputs.HW.RightFork, 
+	ForkPos					=> LeftAndRightForkPos,
+	ForksReady				=> BaseFunctionData.ForksReady);
+	
+//Lift control
+_M_LiftControl(
+	EnableDrive				:= BaseFunctionData.ForksReady, 
+	LiftEncoderType			:= (Settings.LiftType = E_LSPM_LiftType.E_ENCODER), 
+	HW_Lift_Input			:= Inputs.HW.Lift, 
+	HW_Manual_Input			:= Inputs.HW.Manual,	 
+	TimeoutLift				:= Settings.TimeoutValueLift, 
+	LiftEncoderPositions	:= Settings.LiftEncoder.Positions, 
+	HW_Lift_Output			=> Outputs.HW.Lift,	
+	LiftPos					=> LiftPos,
+	LiftReady				=> BaseFunctionData.LiftReady);
+	
+// Loadstacker state machine
+_M_StateControl(
+	LiftPos					:= LiftPos, 
+	ForkPos					:= LeftAndRightForkPos,
+	EnableTransport			:= GapCheck_Enable AND PalletStackerCtrl_Enable, 
+	UserMode				:= Inputs.CtrlIn.Mode,	
+	SensorOccupied			:= Inputs.HW.Element.SensorOccupied,
+	SensorMagazineFull		:= Inputs.HW.Element.SensorMagazineFull, 
+	LoadstackerAutomode		:= Inputs.HW.Manual.SwitchManualAuto,
+	SettingsMachineType		:= Settings.LoadstackerType,	 
+	SettingsIdleStacking	:= Settings.IdleStacking, 
+	SettingsIdleDeslacking	:= Settings.IdleStacking);
+
+// Pallet stacker only controls
+_M_PalletStackerControl(
+	EncoderValue			:= Inputs.HW.Lift.EncoderValue,
+	SettingsMachineType		:= Settings.LoadstackerType,  
+	EnableTransport			=> PalletStackerCtrl_Enable,
+	ForceLiftCreepSpeed		=> ForceLiftCreepSpeed,
+	SettingsLiftEncoder		:= Settings.LiftEncoder.Positions);
+	//Apply lift creep speed decistion made in _M_PalletStackerControl
+	Outputs.HW.Lift.LiftCS := Outputs.HW.Lift.LiftCS OR ForceLiftCreepSpeed;  
+	
+// Pallet stacker or Sub palletizer only controls
+_M_GapSensorCheck(
+	EncoderValue			:= Inputs.HW.Lift.EncoderValue, 
+	//OpResetSequence			:= Inputs.HW.Manual.ResetSequence, 
+	LoadStackerGapSensor_1	:= Inputs.HW.Lift.LoadStackerGapSensor_1,
+	LoadStackerGapSensor_2	:= Inputs.HW.Lift.LoadStackerGapSensor_2,
+	EndLimitSensors			:= Inputs.HW.Lift.SensorEndlimitDown,
+	SensorOccupied			:= Inputs.HW.Element.SensorOccupied,	 
+	SettingsMachineType		:= Settings.LoadstackerType,  
+	EnableTransport			=> GapCheck_Enable,
+	SettingsLiftEncoder		:= Settings.LiftEncoder.Positions);
+		
+// Set TU data on pallets
+_M_TU_Data_Control(
+	LoadstackerType			:= Settings.LoadstackerType, 
+	DestinationFunction		:= Inputs.CtrlIn.DestinationFunction,
+	DestinationZone			:= Inputs.CtrlIn.DestinationZone,
+	DeleteAssignmentData	:= Inputs.CtrlIn.DeleteAssignmentData,
+	TU_Type					:= Inputs.CtrlIn.TU_Type);]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_PalletStackerControl" Id="{a77d5421-29eb-4479-8ab3-d292a2c7be36}">
+      <Declaration><![CDATA[// Pallet stacker control method.
+// Adjust middle encoder position based on TU-data height
+METHOD PROTECTED _M_PalletStackerControl : BOOL
+VAR_INPUT
+	EncoderValue				: UDINT;	//Encoder value from actual encoder HW in tenth's of mm resulution			
+	SettingsMachineType			: E_LSPM_MachineType;	//Loadstacker type, sanity check that type is configured as an Pallet stacker type
+END_VAR
+VAR_OUTPUT
+	EnableTransport				: BOOL;		// Enable State control to proceed	
+	ForceLiftCreepSpeed			: BOOL;		// Palletstacker requires creep speed just for security
+END_VAR
+VAR_IN_OUT
+	SettingsLiftEncoder			: ST_LSPM_LiftEncPos;	
+END_VAR
+
+VAR_INST		
+	DebugMsgSent				: BOOL;
+	LastCycleState				: E_LSPM_States;
+END_VAR
+
+VAR
+	TU_DataIndex				: DINT;	
+	ZoneIx						: INT;
+	_ZoneData					: ST_ZoneData;
+	PrevFunction				: E_FunctionNumber;
+	FirstCycle					: BOOL; //TRUE when state has changed, only one cycle
+END_VAR
+
+VAR CONSTANT
+	UPPER_OFFSET				: UDINT := 1000; // Tenth's of mm, upper position offset in relation to the pallet height	
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[//initialize outputs
+ForceLiftCreepSpeed:=FALSE;
+
+IF(SettingsMachineType <> E_LSPM_MachineType.E_PALLET_STACKER) THEN
+	EnableTransport:=TRUE;
+	RETURN;
+END_IF
+
+//monitor loadstacker state machine, if chaning state -> reset variables when changing states
+IF(LastCycleState<>BaseFunctionData.States.eState) THEN
+	FirstCycle:=TRUE;
+	DebugMsgSent:=FALSE;
+END_IF
+
+
+CASE BaseFunctionData.States.eState OF
+		
+	//--------------------------------------------------------------------------------------------------------
+	// Idle stacking, just move lift up a little bit off the conveyor. 
+	//--------------------------------------------------------------------------------------------------------	
+	E_LSPM_States.IDLE_STACKING:
+		SettingsLiftEncoder.Middle := SettingsLiftEncoder.Lower + UPPER_OFFSET;						
+		SettingsLiftEncoder.Upper	:= SettingsLiftEncoder.Middle + UPPER_OFFSET;
+
+	
+	//--------------------------------------------------------------------------------------------------------	
+	// Stacking -> Get the new pallet height (waiting to be infeeded) and set the Middle position accordingly before lifting
+	//--------------------------------------------------------------------------------------------------------
+	E_LSPM_States.STACKING_ORDER_LIFT:
+		//Get the TU_DataIndex from the pallet that is waiting to be transfered into the palletstacker		
+		IF(__ISVALIDREF(FunctionRegistry[SettingsFunction.FunctionLink.eFunctionNumber].rFunctionInterface)) THEN	
+			PrevFunction := FunctionRegistry[SettingsFunction.FunctionLink.eFunctionNumber].rFunctionInterface.In.ePrevFunctionNumber;
+		END_IF
+		
+		//Get the zone index of the handover function
+		//If ZoneIx = 0 -> No previous function defined, or previous function has not set the next function pointing towards this function
+		IF(F_PB_GetAdjacentFunctionZoneIndex(PrevFunction, SettingsFunction.FunctionLink.eFunctionNumber,FALSE,FALSE,ZoneIx)) THEN			
+			TU_DataIndex := F_PB_GetTransportControlDataRef(PrevFunction, ZoneIx).TU_DataIndex;		
+			_ZoneData :=  F_GetZoneData(PrevFunction, zoneix);						
+		END_IF		
+				
+		
+		//When pallet is present on previous station, then check the height
+		//If TU_DataIndex =0 -> No pallet present yet
+		IF(TU_DataIndex>0) AND _ZoneData.AddOn.Orders.DataReady THEN
+			IF(TU_Table.TU_DataTable[TU_DataIndex].Profile.Height=0) THEN
+				F_SetError(
+						ErrorType 	:= E_ErrorType.ERROR, 
+						ErrorParam 	:= 'TU-Data height =0', 
+						ErrorMsg 	:= E_ErrorConv.WRONG_VALUE, 
+						ErrorData 	:= FunctionData.ErrorData.ErrorDataSet[1]);
+			ELSE
+				SettingsLiftEncoder.Middle := SettingsLiftEncoder.Lower + INT_TO_UDINT(TU_Table.TU_DataTable[TU_DataIndex].Profile.Height *10);						
+				SettingsLiftEncoder.Upper	:= SettingsLiftEncoder.Middle + UPPER_OFFSET (*tenths of mm*);
+				EnableTransport :=TRUE;
+				IF(NOT DebugMsgSent) THEN
+					DebugMsg := CONCAT('Loadstacker-Stacking. Lift Midle offset [mm]= ', DINT_TO_STRING(TU_Table.TU_DataTable[TU_DataIndex].Profile.Height));
+					fbDebugMsg.M_SendInfoMsg(DebugMsg);
+					DebugMsgSent:=TRUE;
+				END_IF
+			END_IF
+		END_IF 
+	
+
+	//--------------------------------------------------------------------------------------------------------
+	// States when Lift is about to be ordered to middle position, determine the middle position
+	//--------------------------------------------------------------------------------------------------------
+	 E_LSPM_States.DESTACKING_MOVE_MIDDLE, E_LSPM_States.STACKING_LOWER_STACK: 
+	 			
+		//Get the TU data index of the pallet. 
+		TU_DataIndex := F_PB_GetTransportControlDataRef(SettingsFunction.FunctionLink.eFunctionNumber, SettingsFunction.FunctionLink.ZoneNumber).TU_DataIndex;
+		 
+		IF(TU_DataIndex = 0) THEN
+			;//No need to set error if TU_DataIndex = 0, this is taken care of in _M_StateControl 
+				
+		ELSIF(TU_Table.TU_DataTable[TU_DataIndex].Profile.Height = 0) THEN
+			F_SetError(
+					ErrorType 	:= E_ErrorType.ERROR, 
+					ErrorParam 	:= 'Height = 0, move manually', 
+					ErrorMsg 	:= E_ErrorConv.WRONG_VALUE, 
+					ErrorData 	:= FunctionData.ErrorData.ErrorDataSet[1]);
+			//LS_BaseFunction.OpRecover.OpControlRequired := TRUE;
+		
+			
+		ELSE
+			SettingsLiftEncoder.Middle := SettingsLiftEncoder.Lower + INT_TO_UDINT(TU_Table.TU_DataTable[TU_DataIndex].Profile.Height*10);
+			SettingsLiftEncoder.Upper	:= SettingsLiftEncoder.Middle + UPPER_OFFSET (*tenths of mm*);
+			EnableTransport:=TRUE;//everything is fine			
+			IF(NOT DebugMsgSent) THEN
+				DebugMsg := CONCAT('Loadstacker-DeStucking. Lift Midle offset [mm]= ', DINT_TO_STRING(TU_Table.TU_DataTable[TU_DataIndex].Profile.Height));
+				fbDebugMsg.M_SendInfoMsg(DebugMsg);
+				DebugMsgSent:=TRUE;
+			END_IF
+		END_IF
+		
+			
+		
+	//--------------------------------------------------------------------------------------------------------
+	// Lift in middle position, Check gap sensor
+	//--------------------------------------------------------------------------------------------------------
+	E_LSPM_States.DESTACKING_ENGAGE_FORKS, E_LSPM_States.STACKING_MIDDLE_DONE:
+		
+		//Apply request to go down with reduced speed
+		ForceLiftCreepSpeed := (BaseFunctionData.States.eState= E_LSPM_States.STACKING_MIDDLE_DONE);
+		
+		// Operator control requested -> wait for operator to correct the height-> set the new middle height
+		IF(BaseFunctionData.OpRecover.OpControlRequired AND BaseFunctionData.OpRecover.OpControlCorrected) THEN				
+			SettingsLiftEncoder.Middle := EncoderValue;				
+			SettingsLiftEncoder.Upper	:= SettingsLiftEncoder.Middle + UPPER_OFFSET (*tenths of mm*);				
+			//TODO: Apply the new corrected height on TU data??							
+		END_IF
+		EnableTransport:=TRUE;
+
+	//--------------------------------------------------------------------------------------------------------
+	// Case else
+	//--------------------------------------------------------------------------------------------------------
+	ELSE
+		EnableTransport:=TRUE;
+		DebugMsgSent:=FALSE;		
+	
+END_CASE
+
+LastCycleState:=BaseFunctionData.States.eState;]]></ST>
+      </Implementation>
+    </Method>
+    <Action Name="A_Init" Id="{ff769c5f-7d13-4e80-8aae-86a5eb16495e}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_Init
+ * 	FUNCTION	Initialize function
+ **************************************************************************************)
+ 
+ IF NOT FunctionData.Init AND FunctionData.InitRunning  THEN
+	 // Load function specific configuration to settings
+	Settings := Config;	
+ END_IF
+ 
+SUPER^.A_Init();]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="A_InputMapping" Id="{0dc161ba-3257-413d-9fca-33d76231d6e6}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_InputMapping
+ * 	FUNCTION	Input mapping
+ **************************************************************************************)
+ 
+(**************************************************************************************
+   Hardware Inputs
+***************************************************************************************)
+Inputs.HW		:= Hw_Inputs;
+Inputs.CtrlIn	:= CtrlIn;
+
+//run base class inputmapping
+SUPER^.A_InputMapping();]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="A_OutputMapping" Id="{2abbc299-60c6-4cf6-b2a1-ef056d66f1d4}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_OutputMapping
+ * 	FUNCTION	Output mapping
+ **************************************************************************************)
+ 
+(**************************************************************************************
+   Hardware outputs
+***************************************************************************************)
+HW_Outputs.Lift													:= Outputs.HW.Lift;
+HW_Outputs.LeftFork												:= Outputs.HW.LeftFork;
+HW_Outputs.RightFork											:= Outputs.HW.RightFork;
+
+
+(**************************************************************************************
+   Order outputs (Commands to corresponding element)
+***************************************************************************************)
+                                                        	
+// Allow element to drive                               	
+FunctionInterface.Out.FunctionOrders.Enable 					:= TRUE;
+                                                        	
+IF Inputs.HW.Manual.SwitchManualAuto=FALSE (*manual mode*) THEN 
+	FunctionInterface.Out.FunctionOrders.Enable 			:= HW_Inputs.Manual.SwitchDriveFWD OR HW_Inputs.Manual.SwitchDriveREV;   
+	FunctionInterface.Out.FunctionOrders.ReqDriveRun 		:= HW_Inputs.Manual.SwitchDriveFWD OR HW_Inputs.Manual.SwitchDriveREV;
+	FunctionInterface.Out.FunctionOrders.ReqDriveDirection 	:= HW_Inputs.Manual.SwitchDriveFWD AND NOT HW_Inputs.Manual.SwitchDriveREV;
+	FunctionInterface.Out.FunctionOrders.ReqSpeed 			:= 100;
+	_M_OverideManualDrive(TRUE); // We need to overide enable signal to element inorder to drive element conveyor motor	
+ELSE
+	FunctionInterface.Out.FunctionOrders.Enable 			:= FunctionData.ErrorData.Error.ErrorType <> E_ErrorType.ERROR;
+	FunctionInterface.Out.FunctionOrders.ReqDriveRun 		:= FALSE;
+	FunctionInterface.Out.FunctionOrders.ReqDriveDirection 	:= FALSE;
+	FunctionInterface.Out.FunctionOrders.ReqSpeed 			:= 0;
+	_M_OverideManualDrive(FALSE);	
+END_IF
+
+(**************************************************************************************
+   AddOn outputs
+***************************************************************************************)
+FunctionInterface.Out.AddOnOrders.Enable 					:= FunctionData.ErrorData.Error.ErrorType <> E_ErrorType.ERROR;
+FunctionInterface.Out.AddOnOrders.EnableHandover 			:= BaseFunctionData.EnableHandover;
+FunctionInterface.Out.AddOnOrders.EnableTakeover 			:= BaseFunctionData.EnableTakeover;
+
+(**************************************************************************************
+   Status outputs
+***************************************************************************************)
+CtrlOut.StatusReady											:= BaseFunctionData.CtrlOut.StatusReady;
+CtrlOut.PalletLifted										:= BaseFunctionData.CtrlOut.PalletLifted;
+CtrlOut.MagazineFull										:= BaseFunctionData.CtrlOut.MagazineFull;
+CtrlOut.TransportEnabled											:= BaseFunctionData.States.eState = E_LSPM_States.DESTACKING_PALLET_OUT OR 
+															   BaseFunctionData.States.eState = E_LSPM_States.STACKING_PALLET_IN;
+
+
+
+//Inhibit stopping when lift or forks running
+THIS^.InhibitStopping :=  FunctionData.ErrorData.Error.ErrorType <> E_ErrorType.ERROR AND Inputs.HW.Manual.SwitchManualAuto=TRUE (*Auto mode*) AND
+							(NOT BaseFunctionData.ForksReady OR NOT BaseFunctionData.LiftReady);]]></ST>
+      </Implementation>
+    </Action>
+    <LineIds Name="FB_LoadstackerAddon">
+      <LineId Id="17" Count="9" />
+      <LineId Id="31" Count="19" />
+      <LineId Id="87" Count="0" />
+      <LineId Id="105" Count="0" />
+      <LineId Id="63" Count="7" />
+      <LineId Id="12" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_LoadstackerAddon._M_GapSensorCheck">
+      <LineId Id="8" Count="15" />
+      <LineId Id="30" Count="26" />
+      <LineId Id="128" Count="6" />
+      <LineId Id="139" Count="2" />
+      <LineId Id="220" Count="0" />
+      <LineId Id="144" Count="1" />
+      <LineId Id="223" Count="1" />
+      <LineId Id="222" Count="0" />
+      <LineId Id="147" Count="2" />
+      <LineId Id="151" Count="1" />
+      <LineId Id="154" Count="34" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_LoadstackerAddon._M_LS_Ctrl">
+      <LineId Id="215" Count="0" />
+      <LineId Id="118" Count="1" />
+      <LineId Id="214" Count="0" />
+      <LineId Id="120" Count="2" />
+      <LineId Id="213" Count="0" />
+      <LineId Id="123" Count="9" />
+      <LineId Id="239" Count="0" />
+      <LineId Id="252" Count="1" />
+      <LineId Id="241" Count="0" />
+      <LineId Id="246" Count="3" />
+      <LineId Id="251" Count="0" />
+      <LineId Id="133" Count="0" />
+      <LineId Id="255" Count="0" />
+      <LineId Id="254" Count="0" />
+      <LineId Id="134" Count="11" />
+      <LineId Id="227" Count="0" />
+      <LineId Id="146" Count="5" />
+      <LineId Id="153" Count="5" />
+      <LineId Id="212" Count="0" />
+      <LineId Id="159" Count="6" />
+      <LineId Id="168" Count="0" />
+      <LineId Id="308" Count="0" />
+      <LineId Id="169" Count="1" />
+      <LineId Id="211" Count="0" />
+      <LineId Id="171" Count="2" />
+      <LineId Id="177" Count="1" />
+      <LineId Id="267" Count="0" />
+      <LineId Id="179" Count="0" />
+      <LineId Id="271" Count="0" />
+      <LineId Id="270" Count="0" />
+      <LineId Id="282" Count="0" />
+      <LineId Id="285" Count="4" />
+      <LineId Id="321" Count="1" />
+      <LineId Id="290" Count="2" />
+      <LineId Id="294" Count="1" />
+      <LineId Id="210" Count="0" />
+      <LineId Id="183" Count="3" />
+      <LineId Id="335" Count="0" />
+      <LineId Id="60" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_LoadstackerAddon._M_PalletStackerControl">
+      <LineId Id="965" Count="1" />
+      <LineId Id="419" Count="4" />
+      <LineId Id="612" Count="0" />
+      <LineId Id="614" Count="1" />
+      <LineId Id="859" Count="0" />
+      <LineId Id="616" Count="0" />
+      <LineId Id="613" Count="0" />
+      <LineId Id="424" Count="3" />
+      <LineId Id="815" Count="1" />
+      <LineId Id="814" Count="0" />
+      <LineId Id="813" Count="0" />
+      <LineId Id="446" Count="0" />
+      <LineId Id="817" Count="0" />
+      <LineId Id="454" Count="6" />
+      <LineId Id="462" Count="4" />
+      <LineId Id="810" Count="0" />
+      <LineId Id="467" Count="0" />
+      <LineId Id="469" Count="0" />
+      <LineId Id="1050" Count="0" />
+      <LineId Id="488" Count="2" />
+      <LineId Id="809" Count="0" />
+      <LineId Id="811" Count="0" />
+      <LineId Id="791" Count="0" />
+      <LineId Id="793" Count="15" />
+      <LineId Id="790" Count="0" />
+      <LineId Id="491" Count="8" />
+      <LineId Id="501" Count="0" />
+      <LineId Id="503" Count="0" />
+      <LineId Id="772" Count="0" />
+      <LineId Id="784" Count="0" />
+      <LineId Id="770" Count="0" />
+      <LineId Id="511" Count="4" />
+      <LineId Id="606" Count="0" />
+      <LineId Id="635" Count="0" />
+      <LineId Id="634" Count="0" />
+      <LineId Id="623" Count="2" />
+      <LineId Id="630" Count="0" />
+      <LineId Id="525" Count="4" />
+      <LineId Id="631" Count="0" />
+      <LineId Id="771" Count="0" />
+      <LineId Id="530" Count="0" />
+      <LineId Id="650" Count="0" />
+      <LineId Id="574" Count="1" />
+      <LineId Id="573" Count="0" />
+      <LineId Id="548" Count="0" />
+      <LineId Id="1008" Count="2" />
+      <LineId Id="572" Count="0" />
+      <LineId Id="1012" Count="0" />
+      <LineId Id="1014" Count="2" />
+      <LineId Id="1018" Count="1" />
+      <LineId Id="1011" Count="0" />
+      <LineId Id="549" Count="8" />
+      <LineId Id="559" Count="0" />
+      <LineId Id="16" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_LoadstackerAddon.A_Init">
+      <LineId Id="231" Count="3" />
+      <LineId Id="225" Count="0" />
+      <LineId Id="235" Count="0" />
+      <LineId Id="226" Count="1" />
+      <LineId Id="229" Count="1" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_LoadstackerAddon.A_InputMapping">
+      <LineId Id="2" Count="7" />
+      <LineId Id="62" Count="0" />
+      <LineId Id="67" Count="0" />
+      <LineId Id="66" Count="0" />
+      <LineId Id="65" Count="0" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_LoadstackerAddon.A_OutputMapping">
+      <LineId Id="2" Count="8" />
+      <LineId Id="77" Count="0" />
+      <LineId Id="79" Count="0" />
+      <LineId Id="78" Count="0" />
+      <LineId Id="50" Count="0" />
+      <LineId Id="22" Count="2" />
+      <LineId Id="27" Count="3" />
+      <LineId Id="51" Count="0" />
+      <LineId Id="63" Count="0" />
+      <LineId Id="76" Count="0" />
+      <LineId Id="66" Count="1" />
+      <LineId Id="90" Count="0" />
+      <LineId Id="56" Count="0" />
+      <LineId Id="58" Count="0" />
+      <LineId Id="60" Count="2" />
+      <LineId Id="89" Count="0" />
+      <LineId Id="53" Count="0" />
+      <LineId Id="36" Count="10" />
+      <LineId Id="85" Count="2" />
+      <LineId Id="91" Count="0" />
+      <LineId Id="93" Count="0" />
+      <LineId Id="92" Count="0" />
+      <LineId Id="81" Count="2" />
+      <LineId Id="80" Count="0" />
+      <LineId Id="88" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

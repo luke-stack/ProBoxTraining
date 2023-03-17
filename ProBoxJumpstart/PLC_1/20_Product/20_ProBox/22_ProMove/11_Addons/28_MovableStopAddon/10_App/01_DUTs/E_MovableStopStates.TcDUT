@@ -1,0 +1,20 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <DUT Name="E_MovableStopStates" Id="{3e3d3538-ea57-4272-8065-bc070949b5d0}">
+    <Declaration><![CDATA[{attribute 'qualified_only'}
+{attribute 'strict'}
+TYPE E_MovableStopStates :
+(
+// Generall states
+	INIT, 	//0
+	IDLE,	//1
+	READY,	//2
+	LIFT_UP, //3	
+	ALIGN, //4
+	MOVE_OUT, //5
+	ERROR 	//6	
+);
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

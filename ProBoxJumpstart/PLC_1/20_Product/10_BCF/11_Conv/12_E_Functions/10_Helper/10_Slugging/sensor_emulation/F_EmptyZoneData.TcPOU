@@ -1,0 +1,37 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.4">
+  <POU Name="F_EmptyZoneData" Id="{3b2ad1a4-d136-454c-91a9-7c71010ca84e}" SpecialFunc="None">
+    <Declaration><![CDATA[/// Returns empty zonedata.
+FUNCTION F_EmptyZoneData : ST_ZoneData
+(**************************************************************************************
+ *  Application     :   BoxControl Framework
+ *  Revision date   :   $Date: 2021-04-09 08:29:02 +0200 (fre, 09 apr 2021) $
+ *  Author          :   CDC
+ * ------------------------------------------------------------------------------------
+ *  © Swisslog AG
+ *  Swisslog is not liable for any usage of this source code that is not agreed 
+ *  on between Swisslog and the other party. The mandatory legal liability remains 
+ *  unaffected.
+ * ------------------------------------------------------------------------------------
+ *  Revision History: 
+ *
+ *  VERSION DATE         INITIALS     DESCRIPTION
+ *  0.0     DD.MM.YYYY   (name)       (explain customized modifications)
+ *
+ **************************************************************************************)
+VAR_INPUT
+END_VAR
+VAR
+    EmptyZoneData : ST_ZoneData;
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[MEMSET(ADR(EmptyZoneData),0,SIZEOF(EmptyZoneData));
+F_EmptyZoneData := EmptyZoneData;]]></ST>
+    </Implementation>
+    <LineIds Name="F_EmptyZoneData">
+      <LineId Id="3" Count="0" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

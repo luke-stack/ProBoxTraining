@@ -1,0 +1,55 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <POU Name="FB_LiftControlEmulation" Id="{122dee98-82f6-4eb7-ad42-4d8d8f66a756}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK FB_LiftControlEmulation
+VAR_INPUT	
+	Config					: ST_CFG_TransferUnitEmulation; // emulation config	
+	DriveRun_Lift			: BOOL;
+END_VAR
+
+VAR_OUTPUT
+	Lift_Pos_Down			: BOOL;
+	Lift_Pos_Up				: BOOL;
+END_VAR
+
+VAR
+	ActualPosition			: INT;
+	CountPositive			: BOOL;
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[
+// When lift is moving
+IF DriveRun_Lift THEN
+	IF CountPositive THEN
+		IF ActualPosition < Config.Position_Max_Up THEN
+			ActualPosition := ActualPosition + 1;
+		ELSE
+			CountPositive := FALSE;
+		END_IF;	
+	ELSE
+		IF ActualPosition > Config.Position_Max_Down THEN
+			ActualPosition := ActualPosition - 1;
+		ELSE
+			CountPositive := TRUE;
+		END_IF;					
+	END_IF
+END_IF
+
+// Update positions
+IF ActualPosition = Config.Position_Down AND NOT CountPositive THEN
+	 Lift_Pos_Down := TRUE;
+ELSIF ActualPosition = Config.Position_Up AND CountPositive THEN
+	 Lift_Pos_Up := TRUE;
+ELSE
+	Lift_Pos_Down := FALSE;
+	Lift_Pos_Up := FALSE;
+END_IF
+]]></ST>
+    </Implementation>
+    <LineIds Name="FB_LiftControlEmulation">
+      <LineId Id="3" Count="26" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

@@ -1,0 +1,31 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <POU Name="F_DebugUseEmuVizu" Id="{0a08792c-e8df-4790-87ef-4d0a9438c00d}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION F_DebugUseEmuVizu : BOOL
+VAR_IN_OUT
+	SGref			: FB_ProBOXSG; //Reference to Switching group
+	SG_Emuref		: FB_ProBOXSG_Emulation; //Reference to emulation switching group
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[//usage
+// F_DebugUseEmuVizu(Groups.fbSG_001,GroupsEmulation.fbSG_001_Emulation)
+
+
+SGref.HW_Inputs.AK.OpResetError		:= SGref.HW_Inputs.AK.OpResetError 	OR SG_Emuref.DebugResetButton;
+SGref.HW_Inputs.AK.OpAutoOn			:= SGref.HW_Inputs.AK.OpAutoOn 		OR SG_Emuref.DebugStartButton;
+SGref.HW_Inputs.AK.OpMcOn			:= SGref.HW_Inputs.AK.OpMcOn 		OR SG_Emuref.DebugMcOnButton;
+SGref.HW_Inputs.AK.OpResetSafety	:= SGref.HW_Inputs.AK.OpResetSafety	OR SG_Emuref.DebugResetEmgButton;
+SGref.HW_Inputs.AK.OpManAuto		:= SGref.HW_Inputs.AK.OpManAuto	AND NOT SG_Emuref.DebugManualModeSw;
+	]]></ST>
+    </Implementation>
+    <LineIds Name="F_DebugUseEmuVizu">
+      <LineId Id="16" Count="0" />
+      <LineId Id="18" Count="0" />
+      <LineId Id="17" Count="0" />
+      <LineId Id="11" Count="2" />
+      <LineId Id="20" Count="2" />
+      <LineId Id="7" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

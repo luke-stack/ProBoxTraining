@@ -1,0 +1,103 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.12">
+  <DUT Name="E_ITC_MsgTypeConv" Id="{092f802f-bd3c-4e02-a68a-8a0aa867efe0}">
+    <Declaration><![CDATA[TYPE E_ITC_MsgTypeConv :
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 404529 $
+ *	Revision date	:	$Date: 2018-04-23 08:21:38 +0200 (Mo., 23 Apr 2018) $
+ *	Last changed by	:	$Author: b7bolm $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/trunk/01_Software/BCF/BCF/JumpStart/20_Product/10_App/11_Com/10_Lib/10_Conv/11_ITC/01_DUTs/E_ITC_MsgTypeConv.TcDUT $
+ *
+ *	Purpose			:	ITC message types.
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+(
+	NO_MESSAGE_TYPE,
+	ADD_TU_DATA,
+	DIGITAL_INPUT_REQUEST,
+	ELEMENT_CONTROL_REQUEST,
+	ELEMENT_CONTROL_REPLY,
+	ELEMENT_STATUS_REQUEST,
+	ELEMENT_STATUS_REPORT,
+	FUNCTION_CONTROL_REQUEST,
+	FUNCTION_CONTROL_REPLY,
+	FUNCTION_STATUS_REQUEST,
+	FUNCTION_STATUS_REPORT,
+	GROUP_CONTROL_REQUEST,
+	GROUP_CONTROL_REPLY,
+	GROUP_STATUS_REQUEST,
+	GROUP_STATUS_REPORT,
+	GLOBAL_VARIABLE_REQUEST,
+	GLOBAL_VARIABLE_REPORT,
+	IDENTIFICATION_REPORT,
+	I_O_STATUS_REQUEST,
+	I_O_STATUS_REPORT,
+	MANUAL_CONTROL_REQUEST,
+	MANUAL_CONTROL_REPORT,
+	POSITION_OCCUPIED_REPORT,
+	SUBSYSTEM_CONTROL_REQUEST,
+	SUBSYSTEM_CONTROL_REPLY,
+	SET_DIGITAL_OUTPUT,
+	SEND_DIGITAL_INPUT,
+	SCANNER_INFORMATION_REQUEST,
+	SCANNER_INFORMATION_REPORT,
+	SCANNER_NO_READ_REPORT,
+	SUBSYSTEM_STATUS_REQUEST,
+	SUBSYSTEM_STATUS_REPORT,
+	TASK_DELETE_REQUEST,
+	TASK_DELETE_REPORT,
+	TRANSPORT_TASK_ASSIGNMENT,
+	TRANSPORT_TASK_COMPLETE,
+	TRANSPORT_TASK_REQUEST,
+	TRANSPORT_UNIT_REQUEST,
+	TRANSPORT_UNIT_REPORT,
+	DATA_ACQUISITION_REQUEST,
+	DATA_ACQUISITION_REPORT,
+	GATHERED_DATA_REQUEST,
+	GATHERED_DATA_REPORT,
+	DATA_MESSAGE,
+	E_ADD_TU_REPORT,
+	E_ADD_TU_REQUEST,
+	E_ERROR_REPORT,
+	E_ERROR_REQUEST,
+	E_REMOVE_TU_REPORT,
+	E_REMOVE_TU_REQUEST,
+	ROBOT_ACTION_ASSIGNMENT,
+	ROBOT_ACTION_COMPLETE,
+	ROBOT_ACTION_REQUEST,
+	ROBOT_DELETE_REQUEST,
+	ROBOT_DELETE_REPORT,
+	VISUALIZATION_INFORMATION_REPORT,
+	VISUALIZATION_INFORMATION_REQUEST
+);
+END_TYPE]]></Declaration>
+    <ObjectProperties>
+      <XmlArchive>
+        <Data>
+          <o xml:space="preserve" t="UMLStereoTypeContainerObject">
+            <v n="IsType" t="UMLType">BaseArea</v>
+            <v n="Stereotype">""</v>
+            <d n="Stereotypes" t="Hashtable" />
+          </o>
+        </Data>
+        <TypeList>
+          <Type n="Hashtable">System.Collections.Hashtable</Type>
+          <Type n="String">System.String</Type>
+          <Type n="UMLStereoTypeContainerObject">{30250973-b110-4e31-b562-c102e042dca4}</Type>
+          <Type n="UMLType">{0197b136-405a-42ee-bb27-fd08b621d0cf}</Type>
+        </TypeList>
+      </XmlArchive>
+    </ObjectProperties>
+  </DUT>
+</TcPlcObject>

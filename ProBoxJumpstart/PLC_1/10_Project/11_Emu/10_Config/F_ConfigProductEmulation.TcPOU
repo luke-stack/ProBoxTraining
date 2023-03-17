@@ -1,0 +1,29 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <POU Name="F_ConfigProductEmulation" Id="{78a5abef-5591-409e-8e5b-a51d28769325}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION F_ConfigProductEmulation : BOOL
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[
+
+(****************************************************************************************
+   Configuration Product
+*****************************************************************************************)
+fbITC_ManagerEmulation := fbITC_ConveyorEmulation;
+
+(****************************************************************************************
+   Define MFCS channels (e.g.SIS channels)
+*****************************************************************************************)
+fbMFCS_ChannelEmulation[E_MFCS_Channel.AM] 		:= fbMFCS_SIS_AM_Emulation;
+fbMFCS_ChannelEmulation[E_MFCS_Channel.SPOC]	:= fbMFCS_SIS_SPOC_Emulation;
+fbMFCS_ChannelEmulation[E_MFCS_Channel.LOGGING] := fbMFCS_SIS_LOG_Emulation;
+
+
+]]></ST>
+    </Implementation>
+    <LineIds Name="F_ConfigProductEmulation">
+      <LineId Id="3" Count="14" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

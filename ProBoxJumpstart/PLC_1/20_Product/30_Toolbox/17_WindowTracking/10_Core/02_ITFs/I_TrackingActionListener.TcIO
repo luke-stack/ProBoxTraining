@@ -1,0 +1,26 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4020.6">
+  <Itf Name="I_TrackingActionListener" Id="{31080e27-a665-4d70-b9e5-39da84d7c529}">
+    <Declaration><![CDATA[/// Window Tracking action
+INTERFACE I_TrackingActionListener EXTENDS __System.IQueryInterface 
+]]></Declaration>
+    <Method Name="M_ActionZoneChangedEvent" Id="{d74eaf57-8370-4154-aced-4b78d6a5e4fe}">
+      <Declaration><![CDATA[METHOD M_ActionZoneChangedEvent
+VAR_INPUT
+	mZoneIndex	: UINT; // Deleted zone index
+	mZoneData	: ST_WindowTrackingZone; // Data of deleted zone
+END_VAR
+
+]]></Declaration>
+    </Method>
+    <Method Name="M_ActionZoneDeletedEvent" Id="218015ec-b14b-41e1-a1b6-70282250ba4d">
+      <Declaration><![CDATA[/// Zone deleted
+METHOD M_ActionZoneDeletedEvent
+VAR_INPUT
+	mZoneIndex	: UINT; // Deleted zone index
+	mZoneData	: ST_WindowTrackingZone; // Data of deleted zone
+END_VAR
+]]></Declaration>
+    </Method>
+  </Itf>
+</TcPlcObject>

@@ -1,0 +1,171 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.12">
+  <POU Name="FB_SpeedControlRamp" Id="{4e2984ee-c63b-4613-b79b-6f9a99bc76e6}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK FB_SpeedControlRamp
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 404529 $
+ *	Revision date	:	$Date: 2018-04-23 08:21:38 +0200 (Mo., 23 Apr 2018) $
+ *	Last changed by	:	$Author: b7bolm $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/trunk/01_Software/BCF/BCF/JumpStart/20_Product/10_App/12_E_Functions/10_Lib/10_Conv/10_Functions/FB_SpeedControl.TcPOU $
+ *
+ *	Purpose			:	Speed control with acceleration/deceleration ramps
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+VAR_INPUT
+	DriveRun 				: BOOL; // Drive run
+	TU_InBrakingZone 		: BOOL; // TU is within the braking zone 
+	SetSpeed 				: REAL; // Set speed of the zone [m/s]
+	SpeedSlow 				: INT; // Speed slow [%]
+	SpeedFast 				: INT; // Speed fast [%]
+	Acceleration   	 		: INT; // Accelaration [mm/s^2]
+	Deceleration   	 		: INT; // Deceleration [mm/s^2]
+	TransportControlData 	: ST_TransportControlData;
+	SpeedPrevZone			: INT; // Speed from previous zone
+	MinimumSpeed			: INT; // Minimum speed [mm/s]
+END_VAR
+VAR
+	MasterSpeed				: INT; // Master speed [%]
+	fbGetCurTaskIdx  		: GETCURTASKINDEX;
+	CycleTime       		: REAL; // System cycletime [s]
+	DesiredSpeed 			: INT; // Desired speed [mm/s]
+	State 					: E_SpeedControlState; // Speed control state
+	SpeedDelta				: INT; // Speed delta [mm/s]
+END_VAR
+VAR_OUTPUT
+	CommandSpeed 			: INT; // Command speed [mm/s]
+END_VAR]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[// Get current cycle time
+fbGetCurTaskIdx();
+CycleTime := UDINT_TO_REAL(_TaskInfo[fbGetCurTaskIdx.index].CycleTime) / 10000000;
+
+// Get Master speed from subsystem
+IF __ISVALIDREF(SubsystemRegistry.rSubsystemInterface) THEN
+	MasterSpeed := SubsystemRegistry.rSubsystemInterface.Out.MasterSpeed;
+ELSE
+	MasterSpeed := 100;
+END_IF
+
+
+(**********************************************************************************************************
+   Calculate desired speed
+***********************************************************************************************************)
+// When TakeOver starts sync CommandSpeed with previous zone
+IF TransportControlData.eTakeOverState = E_TakeOverState.READY AND
+   TransportControlData.eTransportState <> E_TransportState.MULTI_TU THEN
+	CommandSpeed := SpeedPrevZone;
+	
+// In TakeOver sync desired speed with previous zone
+ELSIF TransportControlData.eTransportState = E_TransportState.TAKEOVER AND NOT TU_InBrakingZone THEN
+	DesiredSpeed := SpeedPrevZone;
+
+// Check if fast speed is active then run at fast speed	
+ELSIF TransportControlData.FastSpeedActive THEN
+	DesiredSpeed := REAL_TO_INT(SetSpeed * 1000 * SpeedFast / 100 * MasterSpeed / 100);
+	
+// When not in braking zone run at low speed
+ELSIF NOT TU_InBrakingZone THEN
+	DesiredSpeed := REAL_TO_INT(SetSpeed * 1000 * SpeedSlow / 100 * MasterSpeed / 100);
+	
+// If not in TakeOver, Fast speed and TU is in braking zone request for minimum speed
+ELSE
+	DesiredSpeed := MinimumSpeed;
+END_IF
+
+// Limit the desired speed between system MinimumSpeed and the zone SetSpeed
+IF DriveRun THEN
+	DesiredSpeed := LIMIT(MinimumSpeed, DesiredSpeed, REAL_TO_INT(SetSpeed * 1000.0));	
+END_IF
+
+
+(**********************************************************************************************************
+   Speed control state
+***********************************************************************************************************)
+CASE State OF
+	
+// STOPPED
+	E_SpeedControlState.STOPPED:
+		DesiredSpeed := 0;
+		CommandSpeed := 0;
+		// Wait for run command  
+		IF DriveRun THEN
+			State := E_SpeedControlState.Accelerate;
+		END_IF
+		
+// ACCELERATE
+	E_SpeedControlState.ACCELERATE:
+		IF NOT DriveRun THEN
+			State := E_SpeedControlState.Stopped;
+			
+		ELSIF CommandSpeed >= DesiredSpeed THEN
+		 	State := E_SpeedControlState.Running;
+		ELSE
+			// Cyclic delta in speed [mm/s / cycle]
+			SpeedDelta := REAL_TO_INT(Acceleration * CycleTime);
+			CommandSpeed := LIMIT(MinimumSpeed, CommandSpeed + SpeedDelta, REAL_TO_INT(SetSpeed * 1000.0));
+		END_IF
+		
+// RUNNING	
+	E_SpeedControlState.RUNNING:
+		IF NOT DriveRun THEN
+			State := E_SpeedControlState.Stopped;
+			
+		ELSIF CommandSpeed > DesiredSpeed THEN
+			State := E_SpeedControlState.Decelerate;
+			
+		ELSIF CommandSpeed < DesiredSpeed THEN
+			State := E_SpeedControlState.Accelerate;
+		END_IF
+	
+// DECELERATE	
+	E_SpeedControlState.DECELERATE:
+		IF NOT DriveRun THEN
+			State := E_SpeedControlState.Stopped;
+			
+		ELSIF CommandSpeed < DesiredSpeed THEN
+			State := E_SpeedControlState.Accelerate;		
+		ELSE
+			// Cyclic delta in speed [mm/s / cycle]
+			SpeedDelta := REAL_TO_INT(Deceleration * CycleTime);
+			CommandSpeed := LIMIT(MinimumSpeed, CommandSpeed - SpeedDelta, REAL_TO_INT(SetSpeed * 1000.0));
+		END_IF
+	
+ELSE
+	State := E_SpeedControlState.STOPPED;
+END_CASE
+]]></ST>
+    </Implementation>
+    <ObjectProperties>
+      <XmlArchive>
+        <Data>
+          <o xml:space="preserve" t="UMLStereoTypeContainerObject">
+            <v n="IsType" t="UMLType">BaseArea</v>
+            <v n="Stereotype">""</v>
+            <d n="Stereotypes" t="Hashtable" />
+          </o>
+        </Data>
+        <TypeList>
+          <Type n="Hashtable">System.Collections.Hashtable</Type>
+          <Type n="String">System.String</Type>
+          <Type n="UMLStereoTypeContainerObject">{30250973-b110-4e31-b562-c102e042dca4}</Type>
+          <Type n="UMLType">{0197b136-405a-42ee-bb27-fd08b621d0cf}</Type>
+        </TypeList>
+      </XmlArchive>
+    </ObjectProperties>
+    <LineIds Name="FB_SpeedControlRamp">
+      <LineId Id="3" Count="97" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

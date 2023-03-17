@@ -1,0 +1,41 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.4">
+  <DUT Name="ST_InputsProBoxStraightTransport" Id="{494ee3f9-bb25-47f2-9246-6284ff58c3a6}">
+    <Declaration><![CDATA[TYPE ST_InputsProBoxStraightTransport :
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 411985 $
+ *	Revision date	:	$Date: 2018-08-09 14:48:51 +0200 (tor, 09 aug 2018) $
+ *	Last changed by	:	$Author: p8fiscp $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/ProMove/02_Controls/ProBox/03_Implementation/01_DevelopmentProject/01_Software/ProBox_COE/ProBox_DevProj_v1.0/PLC_1/20_Product/10_App/12_E_Functions/11_ProBox/11_StraightTransport/10_App/01_DUTs/ST $
+ *
+ *	Purpose			:	Inputs for conveyor ProBox straigt transport - Hardware inputs
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				18.04.2018		PkF					First version of inputs for a motor on a function with one or several zones
+ *  0.2				13.07.2018		lca					Changed names according to elemnt description 
+ *
+ **************************************************************************************)
+STRUCT
+	Sensor_Stop_12			: BOOL; // Sensor stop first axis 1-2 forward
+	Sensor_First_12			: BOOL;	// Sensor first sensor when slugging axis 1-2 forward
+	Sensor_Slow_12			: BOOL; // Sensor slow speed axis 1-2 forward
+	Sensor_Creep_12			: BOOL; // Sensor creep speed axis 1-2 forward
+	Sensor_Stop_21			: BOOL; // Sensor stop first axis 1-2 reverse
+	Sensor_First_21			: BOOL;	// Sensor first sensor when slugging axis 1-2 reverse
+	Sensor_Slow_21			: BOOL; // Sensor slow speed axis 1-2 reverse
+	Sensor_Creep_21			: BOOL; // Sensor creep speed axis 1-2 reverse
+	Sensor_StopExtRun		: BOOL; // sensor storp when extended run activated.	
+	//Sensor_StopBack			: BOOL; // Sensor stop when backing a pallet to a prevoius zone
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

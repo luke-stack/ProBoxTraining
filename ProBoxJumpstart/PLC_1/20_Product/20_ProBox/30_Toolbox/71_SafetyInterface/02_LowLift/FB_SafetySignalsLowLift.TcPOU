@@ -1,0 +1,67 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.4">
+  <POU Name="FB_SafetySignalsLowLift" Id="{85fac85f-b129-486a-829d-e92ba9b3657a}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK FB_SafetySignalsLowLift
+VAR_INPUT
+	SZPCo			:BOOL; //Safety Zone Pallet Conveyor 1
+END_VAR
+VAR_OUTPUT
+END_VAR
+VAR_IN_OUT
+	LowLiftSignals	:	ST_ProBoxSafetyLowLift;
+END_VAR
+VAR
+	fbBlink_1s	: FB_GeneratePulse := (Start := TRUE, PulseTimeOn := T#1S, PulseTimeOff := T#1S); // Blink 1s
+	i			: INT;
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[fbBlink_1s();
+
+//Indicate that an error exit with blinking blue lamp on cabinet. 
+IF fbBlink_1s.Pulse AND (LowLiftSignals.Inputs.ComErr OR LowLiftSignals.Inputs.FBErr) OR NOT LowLiftSignals.Inputs.EsOk OR NOT LowLiftSignals.Inputs.LightGridOk THEN
+	LowLiftSignals.Outputs.ResetSafetyNeeded := TRUE;
+ELSE 
+	LowLiftSignals.Outputs.ResetSafetyNeeded := FALSE;
+END_IF
+
+//Indicate that lowlift have been reseted but main contactors not pulled
+IF NOT LowLiftSignals.Outputs.ResetSafetyNeeded AND  LowLiftSignals.Inputs.FeedBackK1 AND LowLiftSignals.Inputs.FeedBackK2 THEN
+	LowLiftSignals.Outputs.ResetSafetyNeeded := fbBlink_1s.Pulse;	
+END_IF
+//Pass signals from input to output
+LowLiftSignals.Outputs.ContactorOn := LowLiftSignals.Inputs.ContactorOn;
+LowLiftSignals.Outputs.ContactorOff := LowLiftSignals.Inputs.ContactorOff;
+LowLiftSignals.Outputs.FeedBackK1 := LowLiftSignals.Inputs.FeedBackK1;
+LowLiftSignals.Outputs.FeedBackK2 := LowLiftSignals.Inputs.FeedBackK2;
+
+//Pass on pushbutton and pass on to Safety
+LowLiftSignals.Outputs.ErrorAck := LowLiftSignals.Inputs.ResetSafety;
+
+]]></ST>
+    </Implementation>
+    <LineIds Name="FB_SafetySignalsLowLift">
+      <LineId Id="19" Count="0" />
+      <LineId Id="53" Count="0" />
+      <LineId Id="20" Count="0" />
+      <LineId Id="9" Count="0" />
+      <LineId Id="14" Count="0" />
+      <LineId Id="16" Count="1" />
+      <LineId Id="15" Count="0" />
+      <LineId Id="106" Count="0" />
+      <LineId Id="103" Count="0" />
+      <LineId Id="33" Count="0" />
+      <LineId Id="104" Count="1" />
+      <LineId Id="28" Count="0" />
+      <LineId Id="34" Count="0" />
+      <LineId Id="51" Count="0" />
+      <LineId Id="89" Count="0" />
+      <LineId Id="88" Count="0" />
+      <LineId Id="52" Count="0" />
+      <LineId Id="32" Count="0" />
+      <LineId Id="31" Count="0" />
+      <LineId Id="64" Count="0" />
+      <LineId Id="63" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

@@ -1,0 +1,52 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <POU Name="FB_MergingService" Id="{fbebd16c-cf7c-4a6f-bd60-540179b118c3}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK FB_MergingService
+VAR_INPUT
+	///Calling function number
+	eFunctionNumber: E_FunctionNumber;
+END_VAR
+VAR
+	///Debug message service
+	fbDebugMsg: FB_DebugMsg;
+	///Debug message
+	DebugMsg: T_MAXSTRING;
+	///Merging service routines for group 1
+	fbMergingService_001: FB_MergingService_001;
+END_VAR
+VAR_OUTPUT
+	///Result previous function number
+	ePrevFunctionNumber: E_FunctionNumber;
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[
+// Example 
+// Initialize variable
+ePrevFunctionNumber := F_BEGIN_FUNCTION;
+
+CASE eFunctionNumber OF
+	
+	E_FunctionNumber.F_10_001_0200_01_0 .. E_FunctionNumber.F_10_001_0233_01_0:
+		fbMergingService_001(
+			eFunctionNumber := eFunctionNumber,
+			ePrevFunctionNumber => ePrevFunctionNumber);
+			
+//	E_FunctionNumber.F_10_002_1250_01_0 .. E_FunctionNumber.F_10_002_1250_02_0:
+//		fbMergingService_002(
+//			eFunctionNumber := eFunctionNumber,
+//			ePrevFunctionNumber => ePrevFunctionNumber);
+	
+ELSE
+	DebugMsg := CONCAT('Merging area not defined. FunctionNumber: ', INT_TO_STRING(eFunctionNumber));
+	fbDebugMsg.M_SendInfoMsg(DebugMsg);
+END_CASE
+
+]]></ST>
+    </Implementation>
+    <LineIds Name="FB_MergingService">
+      <LineId Id="3" Count="21" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

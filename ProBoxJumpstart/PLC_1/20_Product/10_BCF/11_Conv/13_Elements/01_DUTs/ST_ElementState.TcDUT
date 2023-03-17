@@ -1,0 +1,62 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.4">
+  <DUT Name="ST_ElementState" Id="{dfb19c8e-677b-43b9-abdd-a9722d58825a}">
+    <Declaration><![CDATA[/// External element status - e.g. Master/Slave or function info, E.g. drive is running, element is in error state
+TYPE ST_ElementState :
+(**************************************************************************************
+ *  Application     :   BoxControl Framework
+ *  Revision date   :   $Date: 2013-09-23 11:26:06 +0200 (Wed, 23 Sep 2015) $
+ *  Author          :   CDC
+ * ------------------------------------------------------------------------------------
+ *  © Swisslog AG
+ *  Swisslog is not liable for any usage of this source code that is not agreed 
+ *  on between Swisslog and the other party. The mandatory legal liability remains 
+ *  unaffected.
+ * ------------------------------------------------------------------------------------
+ *  Revision History: 
+ *
+ *  VERSION DATE         INITIALS     DESCRIPTION
+ *  0.0     DD.MM.YYYY   (name)       (explain customized modifications)
+ *
+ **************************************************************************************)
+//Comment changed according to BCFD-6292 - ST_FunctionOrders, Comments not correct	
+STRUCT
+    //General
+	Error			    : BOOL; // Element in error state
+    
+    //Axis 1 <-> 2
+	DriveRunning	: BOOL; // Element drive is running
+	DriveReady		: BOOL; // Drive is ready to start
+    DriveDirection	: BOOL;	// Element drive direction TRUE = 1->2, False 2->1
+	Speed			: INT; // Element uses this speed
+	EncoderValue	: UINT; // Element encoder value
+	
+    //Axis 3 <-> 4
+	DriveReady_34		: BOOL; // Drive is ready to start
+	DriveRunning_34		: BOOL; // Element drive is running
+    DriveDirection_34	: BOOL; // Element drive direction TRUE = 1->2, False 2->1
+	Speed_34			: INT; // Element uses this speed		
+    EncoderValue_34     : UINT; // Element encoder value
+	
+END_STRUCT
+END_TYPE
+]]></Declaration>
+    <ObjectProperties>
+      <XmlArchive>
+        <Data>
+          <o xml:space="preserve" t="UMLStereoTypeContainerObject">
+            <v n="IsType" t="UMLType">BaseArea</v>
+            <v n="Stereotype">""</v>
+            <d n="Stereotypes" t="Hashtable" />
+          </o>
+        </Data>
+        <TypeList>
+          <Type n="Hashtable">System.Collections.Hashtable</Type>
+          <Type n="String">System.String</Type>
+          <Type n="UMLStereoTypeContainerObject">{30250973-b110-4e31-b562-c102e042dca4}</Type>
+          <Type n="UMLType">{0197b136-405a-42ee-bb27-fd08b621d0cf}</Type>
+        </TypeList>
+      </XmlArchive>
+    </ObjectProperties>
+  </DUT>
+</TcPlcObject>

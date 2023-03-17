@@ -1,0 +1,396 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.12">
+  <POU Name="FB_STI_SendReceiveTU_Data_6_0" Id="{48b8d805-aa38-43a1-83ed-af72652ec7e5}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK FB_STI_SendReceiveTU_Data_6_0
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 404529 $
+ *	Revision date	:	$Date: 2018-04-23 08:21:38 +0200 (Mo., 23 Apr 2018) $
+ *	Last changed by	:	$Author: b7bolm $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/trunk/01_Software/BCF/BCF/JumpStart/20_Product/10_App/11_Com/10_Lib/10_Conv/13_Sub-Sub/FB_STI_SendReceiveTU_Data_6_0.TcPOU $
+ *
+ *	Purpose			:	Sends and Receive TU-data to/from other SubSystem via TTA
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+VAR_INPUT
+	PositionSubSystem		: STRING(SIS_6_0.POSITION_STRINGLENGTH); // SIS-Position of SubSystem
+	ConfigSIS_MsgManager	: ST_CFG_SIS_MsgManager_6_0; // Configuration
+END_VAR
+VAR
+	Init					: BOOL := FALSE; // Instance is initialized
+	fbMFCS_SIS_Sub			: FB_SIS_MsgManager_6_0; // Instance of SIS-driver
+	TTA						: ST_TTA_6_0; // TTA structure
+	SendTelegram			: ARRAY [1..MAX_STREAM_LENGTH] OF BYTE; // Send telegram
+END_VAR
+VAR CONSTANT
+	MAX_STREAM_LENGTH		: UDINT := 30000; // Number of bytes of one message
+END_VAR]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[(**************************************************************************************************************
+   Initialization
+***************************************************************************************************************)
+A_Init();
+
+
+(**************************************************************************************************************
+   Call SIS-driver
+***************************************************************************************************************)
+fbMFCS_SIS_Sub.M_CallCommunicationService();
+]]></ST>
+    </Implementation>
+    <Action Name="A_Init" Id="{5972bd19-0ae5-4a13-ac0c-a3d2c1c671db}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_Init
+ * 	FUNCTION	Initialize FB
+ **************************************************************************************)
+// If instance is not initialized or init is forced
+IF NOT Init THEN
+	
+	// Activate configuration
+	fbMFCS_SIS_Sub.Config := ConfigSIS_MsgManager;
+	
+	// Init done
+    Init := TRUE;
+END_IF
+]]></ST>
+      </Implementation>
+    </Action>
+    <Method Name="M_SendTTA" Id="{4d385b7c-9e3b-4d40-aadd-673e14dde60d}">
+      <Declaration><![CDATA[METHOD M_SendTTA : BOOL
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 404529 $
+ *	Revision date	:	$Date: 2018-04-23 08:21:38 +0200 (Mo., 23 Apr 2018) $
+ *	Last changed by	:	$Author: b7bolm $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/trunk/01_Software/BCF/BCF/JumpStart/20_Product/10_App/11_Com/10_Lib/10_Conv/13_Sub-Sub/FB_STI_SendReceiveTU_Data_6_0.TcPOU $
+ *
+ *	Purpose			:	Send TTA
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+VAR_INPUT
+ 	mTU_DataIndex		: DINT;
+END_VAR
+VAR
+	mIdx				: INT;
+	mWritePointer		: UDINT;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************************************
+ 	Formatting data
+***************************************************************************************************************)
+TTA.Position := F_StuffString(
+					InputString 	:= PositionSubSystem, 
+					StringLength	:= SIS_6_0.POSITION_STRINGLENGTH, 
+					StuffCharacter 	:= '0',
+					LeftAligned		:= FALSE);
+					
+TTA.TU_DataIndex := F_StuffString(
+					InputString 	:= '0', 
+					StringLength	:= SIS_6_0.TU_DATAINDEX_STRINGLENGTH, 
+					StuffCharacter 	:= '0',
+					LeftAligned		:= FALSE);
+					
+TTA.MsgSequence := F_StuffString(
+					InputString 	:= '0', 
+					StringLength	:= SIS_6_0.MSG_SEQUENCE_STRINGLENGTH, 
+					StuffCharacter 	:= '0',
+					LeftAligned		:= FALSE);
+
+TTA.TU_ID := F_StuffString(
+					InputString 	:= TU_DataTable[mTU_DataIndex].TU_ID.ASCII, 
+					StringLength	:= SIS_6_0.TU_ID_STRINGLENGTH, 
+					StuffCharacter 	:= ' ',
+					LeftAligned		:= FALSE);
+					
+TTA.TU_Type := F_StuffString(
+					InputString 	:= INT_TO_STRING(TU_DataTable[mTU_DataIndex].DataSet.TU_Type), 
+					StringLength	:= SIS_6_0.TU_TYPE_STRINGLENGTH, 
+					StuffCharacter 	:= '0',
+					LeftAligned		:= FALSE);
+					
+TTA.AssignmentID := F_StuffString(
+					InputString 	:= UDINT_TO_STRING(TU_DataTable[mTU_DataIndex].AssignmentID), 
+					StringLength	:= SIS_6_0.ASSIGNMENT_ID_STRINGLENGTH, 
+					StuffCharacter 	:= '0',
+					LeftAligned		:= FALSE);
+					
+TTA.Length := F_StuffString(
+					InputString 	:= INT_TO_STRING(TU_DataTable[mTU_DataIndex].DataSet.Dimension.Length), 
+					StringLength	:= SIS_6_0.DIMENSIONS, 
+					StuffCharacter 	:= '0',
+					LeftAligned		:= FALSE);
+					
+TTA.Width := F_StuffString(
+					InputString 	:= INT_TO_STRING(TU_DataTable[mTU_DataIndex].DataSet.Dimension.Width), 
+					StringLength	:= SIS_6_0.DIMENSIONS, 
+					StuffCharacter 	:= '0',
+					LeftAligned		:= FALSE);
+					
+TTA.Height := F_StuffString(
+					InputString 	:= INT_TO_STRING(TU_DataTable[mTU_DataIndex].DataSet.Dimension.Height), 
+					StringLength	:= SIS_6_0.DIMENSIONS, 
+					StuffCharacter 	:= '0',
+					LeftAligned		:= FALSE);
+					
+TTA.Weight := F_StuffString(
+					InputString 	:= DINT_TO_STRING(TU_DataTable[mTU_DataIndex].DataSet.Dimension.Weight), 
+					StringLength	:= SIS_6_0.TTA_WEIGHT, 
+					StuffCharacter 	:= '0',
+					LeftAligned		:= FALSE);
+					
+TTA.Orientation := F_StuffString(
+					InputString 	:= TU_DataTable[mTU_DataIndex].DataSet.Orientation, 
+					StringLength	:= SIS_6_0.TTA_ORIENTATION, 
+					StuffCharacter 	:= '0',
+					LeftAligned		:= FALSE);
+
+TTA.TU_Parameter := F_StuffString(
+					InputString 	:= INT_TO_STRING(TU_DataTable[mTU_DataIndex].DataSet.TU_Parameter), 
+					StringLength	:= SIS_6_0.TTA_TU_PARAMETER, 
+					StuffCharacter 	:= '0',
+					LeftAligned		:= FALSE);
+					
+TTA.IO_Data := F_StuffString(
+					InputString 	:= INT_TO_STRING(TU_DataTable[mTU_DataIndex].DataSet.IO_Data), 
+					StringLength	:= SIS_6_0.TTA_IO_DATA_STRINGLENGTH, 
+					StuffCharacter 	:= '0',
+					LeftAligned		:= FALSE);
+					
+TTA.LowerLimit := F_StuffString(
+					InputString 	:= DINT_TO_STRING(TU_DataTable[mTU_DataIndex].DataSet.LowerLimit), 
+					StringLength	:= SIS_6_0.TTA_LOWER_LIMIT_STRINGLENGTH, 
+					StuffCharacter 	:= '0',
+					LeftAligned		:= FALSE);
+					
+TTA.UpperLimit := F_StuffString(
+					InputString 	:= DINT_TO_STRING(TU_DataTable[mTU_DataIndex].DataSet.UpperLimit), 
+					StringLength	:= SIS_6_0.TTA_UPPER_LIMIT_STRINGLENGTH, 
+					StuffCharacter 	:= '0',
+					LeftAligned		:= FALSE);
+					
+TTA.GroupInfo := F_StuffString(
+					InputString 	:= ULINT_TO_STRING(TU_DataTable[mTU_DataIndex].DataSet.GroupID), 
+					StringLength	:= SIS_6_0.TTA_GROUPINFO_STRINGLENGTH, 
+					StuffCharacter 	:= '0',
+					LeftAligned		:= FALSE);
+					
+TTA.Sequence := F_StuffString(
+					InputString 	:= ULINT_TO_STRING(TU_DataTable[mTU_DataIndex].DataSet.Sequence), 
+					StringLength	:= SIS_6_0.TTA_SEQUENCE_STRINGLENGTH, 
+					StuffCharacter 	:= '0',
+					LeftAligned		:= FALSE);
+					
+TTA.NumberInSequence := F_StuffString(
+					InputString 	:= DINT_TO_STRING(TU_DataTable[mTU_DataIndex].DataSet.SubSequence), 
+					StringLength	:= SIS_6_0.TTA_NO_IN_SEQUENCE_STRINGLENGTH, 
+					StuffCharacter 	:= '0',
+					LeftAligned		:= FALSE);
+					
+TTA.NumberOfDestinations := F_StuffString(
+					InputString 	:= INT_TO_STRING(TU_DataTable[mTU_DataIndex].DataSet.NumberOfDest), 
+					StringLength	:= SIS_6_0.TTA_NO_OF_DESTINATIONS_STRINGLENGTH, 
+					StuffCharacter 	:= '0',
+					LeftAligned		:= FALSE);
+					
+FOR mIdx := 1 TO TU_DataTable[mTU_DataIndex].DataSet.NumberOfDest DO
+	TTA.Destination[mIdx] := F_StuffString(
+					InputString 	:= TU_DataTable[mTU_DataIndex].Destination[mIdx].PositionName, 
+					StringLength	:= SIS_6_0.POSITION_STRINGLENGTH, 
+					StuffCharacter 	:= '0',
+					LeftAligned		:= FALSE);
+END_FOR
+					
+					
+(**************************************************************************************************************
+ 	Build string and add to Base Driver
+***************************************************************************************************************)
+MEMSET(destAddr := ADR(SendTelegram), 0, SIZEOF(SendTelegram));
+mWritePointer := 0;
+
+F_AssembleByteStream(
+	pSrc 			:= ADR('TTA'), 
+	SrcLen 			:= 3, 
+	pDest 			:= ADR(SendTelegram), 
+	DestLen 		:= SIZEOF(SendTelegram), 
+	WritePointer	:= mWritePointer);
+	
+F_AssembleByteStream(
+	pSrc 			:= ADR(TTA.Position), 
+	SrcLen 			:= INT_TO_UDINT(LEN(TTA.Position)), 
+	pDest 			:= ADR(SendTelegram), 
+	DestLen 		:= SIZEOF(SendTelegram), 
+	WritePointer	:= mWritePointer);
+	
+F_AssembleByteStream(
+	pSrc 			:= ADR(TTA.TU_DataIndex), 
+	SrcLen 			:= INT_TO_UDINT(LEN(TTA.TU_DataIndex)), 
+	pDest 			:= ADR(SendTelegram), 
+	DestLen 		:= SIZEOF(SendTelegram), 
+	WritePointer	:= mWritePointer);
+	
+F_AssembleByteStream(
+	pSrc 			:= ADR(TTA.MsgSequence), 
+	SrcLen 			:= INT_TO_UDINT(LEN(TTA.MsgSequence)), 
+	pDest 			:= ADR(SendTelegram), 
+	DestLen 		:= SIZEOF(SendTelegram), 
+	WritePointer	:= mWritePointer);
+	
+F_AssembleByteStream(
+	pSrc 			:= ADR(TTA.TU_ID), 
+	SrcLen 			:= INT_TO_UDINT(LEN(TTA.TU_ID)), 
+	pDest 			:= ADR(SendTelegram), 
+	DestLen 		:= SIZEOF(SendTelegram), 
+	WritePointer	:= mWritePointer);
+	
+F_AssembleByteStream(
+	pSrc 			:= ADR(TTA.TU_Type), 
+	SrcLen 			:= INT_TO_UDINT(LEN(TTA.TU_Type)), 
+	pDest 			:= ADR(SendTelegram), 
+	DestLen 		:= SIZEOF(SendTelegram), 
+	WritePointer	:= mWritePointer);	
+	
+F_AssembleByteStream(
+	pSrc 			:= ADR(TTA.AssignmentID), 
+	SrcLen 			:= INT_TO_UDINT(LEN(TTA.AssignmentID)), 
+	pDest 			:= ADR(SendTelegram), 
+	DestLen 		:= SIZEOF(SendTelegram), 
+	WritePointer	:= mWritePointer);		
+	
+F_AssembleByteStream(
+	pSrc 			:= ADR(TTA.Length), 
+	SrcLen 			:= INT_TO_UDINT(LEN(TTA.Length)), 
+	pDest 			:= ADR(SendTelegram), 
+	DestLen 		:= SIZEOF(SendTelegram), 
+	WritePointer	:= mWritePointer);
+
+F_AssembleByteStream(
+	pSrc 			:= ADR(TTA.Width), 
+	SrcLen 			:= INT_TO_UDINT(LEN(TTA.Width)), 
+	pDest 			:= ADR(SendTelegram), 
+	DestLen 		:= SIZEOF(SendTelegram), 
+	WritePointer	:= mWritePointer);
+	
+F_AssembleByteStream(
+	pSrc 			:= ADR(TTA.Height), 
+	SrcLen 			:= INT_TO_UDINT(LEN(TTA.Height)), 
+	pDest 			:= ADR(SendTelegram), 
+	DestLen 		:= SIZEOF(SendTelegram), 
+	WritePointer	:= mWritePointer);
+	
+F_AssembleByteStream(
+	pSrc 			:= ADR(TTA.Weight), 
+	SrcLen 			:= INT_TO_UDINT(LEN(TTA.Weight)), 
+	pDest 			:= ADR(SendTelegram), 
+	DestLen 		:= SIZEOF(SendTelegram), 
+	WritePointer	:= mWritePointer);
+		
+F_AssembleByteStream(
+	pSrc 			:= ADR(TTA.Orientation), 
+	SrcLen 			:= INT_TO_UDINT(LEN(TTA.Orientation)), 
+	pDest 			:= ADR(SendTelegram), 
+	DestLen 		:= SIZEOF(SendTelegram), 
+	WritePointer	:= mWritePointer);
+	
+F_AssembleByteStream(
+	pSrc 			:= ADR(TTA.TU_Parameter), 
+	SrcLen 			:= INT_TO_UDINT(LEN(TTA.TU_Parameter)), 
+	pDest 			:= ADR(SendTelegram), 
+	DestLen 		:= SIZEOF(SendTelegram), 
+	WritePointer	:= mWritePointer);	
+	
+F_AssembleByteStream(
+	pSrc 			:= ADR(TTA.IO_Data), 
+	SrcLen 			:= INT_TO_UDINT(LEN(TTA.IO_Data)), 
+	pDest 			:= ADR(SendTelegram), 
+	DestLen 		:= SIZEOF(SendTelegram), 
+	WritePointer	:= mWritePointer);
+	
+F_AssembleByteStream(
+	pSrc 			:= ADR(TTA.LowerLimit), 
+	SrcLen 			:= INT_TO_UDINT(LEN(TTA.LowerLimit)), 
+	pDest 			:= ADR(SendTelegram), 
+	DestLen 		:= SIZEOF(SendTelegram), 
+	WritePointer	:= mWritePointer);
+	
+F_AssembleByteStream(
+	pSrc 			:= ADR(TTA.UpperLimit), 
+	SrcLen 			:= INT_TO_UDINT(LEN(TTA.UpperLimit)), 
+	pDest 			:= ADR(SendTelegram), 
+	DestLen 		:= SIZEOF(SendTelegram), 
+	WritePointer	:= mWritePointer);
+	
+F_AssembleByteStream(
+	pSrc 			:= ADR(TTA.GroupInfo), 
+	SrcLen 			:= INT_TO_UDINT(LEN(TTA.GroupInfo)), 
+	pDest 			:= ADR(SendTelegram), 
+	DestLen 		:= SIZEOF(SendTelegram), 
+	WritePointer	:= mWritePointer);
+	
+F_AssembleByteStream(
+	pSrc 			:= ADR(TTA.Sequence), 
+	SrcLen 			:= INT_TO_UDINT(LEN(TTA.Sequence)), 
+	pDest 			:= ADR(SendTelegram), 
+	DestLen 		:= SIZEOF(SendTelegram), 
+	WritePointer	:= mWritePointer);
+	
+F_AssembleByteStream(
+	pSrc 			:= ADR(TTA.NumberInSequence), 
+	SrcLen 			:= INT_TO_UDINT(LEN(TTA.NumberInSequence)), 
+	pDest 			:= ADR(SendTelegram), 
+	DestLen 		:= SIZEOF(SendTelegram), 
+	WritePointer	:= mWritePointer);	
+
+F_AssembleByteStream(
+	pSrc 			:= ADR(TTA.NumberOfDestinations), 
+	SrcLen 			:= INT_TO_UDINT(LEN(TTA.NumberOfDestinations)), 
+	pDest 			:= ADR(SendTelegram), 
+	DestLen 		:= SIZEOF(SendTelegram), 
+	WritePointer	:= mWritePointer);	
+
+FOR mIdx := 1 TO TU_DataTable[mTU_DataIndex].DataSet.NumberOfDest DO
+	F_AssembleByteStream(
+		pSrc 			:= ADR(TTA.Destination[mIdx]), 
+		SrcLen 			:= INT_TO_UDINT(LEN(TTA.Destination[mIdx])), 
+		pDest 			:= ADR(SendTelegram), 
+		DestLen 		:= SIZEOF(SendTelegram), 
+		WritePointer	:= mWritePointer);	
+END_FOR	
+
+M_SendTTA := fbMFCS_SIS_Sub.M_SendAppData(pData := ADR(SendTelegram), DataLen := mWritePointer);]]></ST>
+      </Implementation>
+    </Method>
+    <LineIds Name="FB_STI_SendReceiveTU_Data_6_0">
+      <LineId Id="3" Count="9" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_STI_SendReceiveTU_Data_6_0.A_Init">
+      <LineId Id="2" Count="12" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_STI_SendReceiveTU_Data_6_0.M_SendTTA">
+      <LineId Id="3" Count="280" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

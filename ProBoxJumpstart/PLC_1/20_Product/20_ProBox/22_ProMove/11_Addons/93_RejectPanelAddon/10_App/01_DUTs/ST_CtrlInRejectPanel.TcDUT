@@ -1,0 +1,14 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <DUT Name="ST_CtrlInRejectPanel" Id="{8ffa5cc3-9b39-4900-a17c-b5b55e5052a7}">
+    <Declaration><![CDATA[TYPE ST_CtrlInRejectPanel :
+STRUCT
+	DestinationFunction 				: E_FunctionNumber;         // getting destination function for destination
+	DestinationZone						: INT := 1;                       //getting destination Zone Number for destination
+	DisableRejectPanel					: BOOL := FALSE;			// DisableRjectPanel screen when not needed      
+	OkToEnterPallet						: BOOL;
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

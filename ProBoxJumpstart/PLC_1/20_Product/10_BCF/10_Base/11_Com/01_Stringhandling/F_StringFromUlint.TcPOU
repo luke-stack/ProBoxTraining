@@ -1,0 +1,107 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.4">
+  <POU Name="F_StringFromUlint" Id="{10bcf35e-fabe-4540-a935-d5e39ff66ef7}" SpecialFunc="None">
+    <Declaration><![CDATA[// converts word to string with specific length (adds zeros)
+FUNCTION PUBLIC F_StringFromUlint : POINTER TO BYTE
+
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		  :	$Revision: 461868 $
+ *	Revision date	:	$Date: 1979-01-09 14:35:13 +0200 (Di., 09 Jan 1979) $
+ *	Last changed by	:	$Author: b7lipim $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/branches/R1.x/01_Software/BCF/BCF/JumpStart/20_Product/10_BCF/10_Base/11_Com/12_DebugMsg/00_GVLs/DebugTextBlocks.TcGVL $
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * VERSION DATE         INITIALS     DESCRIPTION
+ * 0.0     DD.MM.YYYY   (name)       (explain customized modifications)
+ *
+ **************************************************************************************)
+
+(********************************************************************************************************************************)
+VAR_INPUT
+  DestStart             : POINTER TO BYTE                  := 0;     // = ADR(MyString)                    -> start position to concat
+  DestEnd               : POINTER TO BYTE                  := 0;     // = ADR(MyString) + SIZEOF(MyString) -> buffer/string end
+  (*----------------------------------------------------------------------------------------------------------------------------*)
+  Value                 : ULINT                            := 0;     // value to convert
+  Length                : BYTE                             := 0;     // minimum string length (may be left stuffed with zeros)
+END_VAR
+
+(********************************************************************************************************************************)
+VAR
+  DestWork              : POINTER TO BYTE                  := 0;
+  (*----------------------------------------------------------------------------------------------------------------------------*)
+  Result                : STRING[63]                       := '';
+  Size                  : WORD                             := 0;
+  Stuff                 : WORD                             := 0;
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[
+(********************************************************************************************************************************)
+(** check inputs ****************************************************************************************************************)
+IF   (DestStart = 0)         THEN  F_StringFromUlint:= 0;          RETURN;
+ELSIF(DestEnd   = 0)         THEN  F_StringFromUlint:= DestStart;  RETURN;
+ELSIF(DestStart >= DestEnd)  THEN  F_StringFromUlint:= DestStart;  RETURN;
+END_IF
+
+DestWork:= DestStart;
+
+
+
+
+(********************************************************************************************************************************)
+(** convert *********************************************************************************************************************)
+Result:= ULINT_TO_STRING(Value);
+Size  := INT_TO_WORD( LEN(Result) );
+
+
+
+
+(********************************************************************************************************************************)
+(** stuff? **********************************************************************************************************************)
+IF (Size < Length)
+THEN
+  Stuff:= Length - Size;
+  (*-----------------------------------------------------------------*)
+  WHILE(Stuff > 0)
+  DO
+    Stuff:= Stuff - 1;
+    (*-------------------------------------------*)
+    IF (DestWork >= DestEnd)
+    THEN
+      DestWork := DestEnd - SIZEOF(DestWork^); // _DestWork^ hier benutzen
+      DestWork^:= 16#00;
+      DestWork := DestEnd;
+      EXIT;
+    END_IF
+    (*-- add '0' --------------------------------*)
+    DestWork^:= 16#30;
+    DestWork := DestWork + SIZEOF(DestWork^);
+  END_WHILE
+END_IF
+
+
+
+
+(********************************************************************************************************************************)
+(** copy characters *************************************************************************************************************)
+DestWork:= F_StringCopy( DestStart:= DestWork,
+                         DestEnd  := DestEnd,
+                         Source   := ADR(Result)  );
+
+
+
+
+(********************************************************************************************************************************)
+(** done ************************************************************************************************************************)
+F_StringFromUlint:= DestWork;
+]]></ST>
+    </Implementation>
+  </POU>
+</TcPlcObject>

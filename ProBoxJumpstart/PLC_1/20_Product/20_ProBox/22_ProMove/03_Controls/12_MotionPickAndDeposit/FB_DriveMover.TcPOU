@@ -1,0 +1,925 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <POU Name="FB_DriveMover" Id="{daa5c5c5-4b72-4203-a584-7497a6a230f5}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK FB_DriveMover
+VAR_INPUT	 
+	ErrorPending				 : BOOL; //Error active from element
+	DisableEnableDrive			 : BOOL; // Request to turn off EnableDrive signal to Motion Freq. inveter when positioning finished.
+	ElementOperationState		 : ST_PositionState; //Which state the element is in
+	DriveCFG					 : ST_CFG_MPD_Drive; //Parameters to set up motion behaviour
+	ManualControl				 : ST_MoviDriveManual; //Inputs located on shuttle
+	EmgStopAxisTrig				 : BOOL; //Request to stop movment with emergency ramp settings.			
+	DriveInputs					 : REFERENCE TO ST_PDO_DriveIn; //Inputs from frequency inverter 
+	SemiDriveControl			: ST_SemiDriveControl;
+	
+END_VAR
+VAR_OUTPUT
+	DriveOutputs				: ST_PDO_DriveOut;	//Outputs to frequency inverter		
+	AxisMotionOutputHigh		: BYTE; //Outputs sent to motion
+	AxisMotionOutputLow			: BYTE; //Outputs sent to motion
+	EnableDrive					: BOOL := FALSE; // Send to I/O module to enable the frequency inverter
+	ActPos						: LREAL; //Indication where the machine really is
+	Ready						: BOOL; //Indication that the mover is ready for an new assignment
+	Busy						: BOOL; //Indication that the mover has an assignment (Movement may be finialized but will still regulate position)
+ 	Done						: BOOL; //Indication that the mover has completed it's assignment
+	Aborted						: BOOL; //Indication that the mover was aborted during positioning and that the position may not be valid
+END_VAR
+
+VAR_IN_OUT
+	ErrorData					: ST_ErrorDataSet; //Send an error to the overlaying element
+END_VAR
+
+VAR
+ fbDelayEnable					: TOF;	
+ CommissioningMode				: BOOL; //Activated to enable to run locally on motion
+ Counter						: INT; //Counter to toggle an live flag to motion
+ TrigMotionCmd					: BOOL; //Trig flag for applying new motion settings.
+ StopAxis						: BOOL; //An request to stop the Axis
+ StartPositioningAbsolute 		: BOOL; //Request to positioning absolute
+ PositionToGo					: DINT; //Where the absolute positioning should go
+ OverrideSpeed					: INT; //Choose how many % of the speed to move in
+ Velocity						: INT; //How many mm/s to move in max speed
+ Acceleration					: INT; //How many mm/s2 to accelerate in
+ Deceleration					: INT; //How many mm/s2 to deccalerate in
+ Jerk							: LREAL; //The jerk sent to motion.	
+ MC_PowerRequest				: BOOL; //Internal request to turn on MC_Power
+ PTP_ErrorCode					: UDINT; //Point-to-point error code sent from motion
+ fbReleaseBrake					: TON :=(PT:=T#1S); //Timer for releasing the brake
+ fbDisableEnableDrive			: TON :=(PT:=T#3S); //Delay for turning off EnableDrive signal.
+ PositioningState				: E_PositioningState; //Enum state machine for the mover
+ Axis 							: AXIS_REF; //Motion axis
+ fbMC_MoveAbsolute1				: MC_MoveAbsolute; //TwinCat motion fb
+ fbMC_MoveAbsolute2				: MC_MoveAbsolute; //TwinCat motion fb
+ fbMC_SemiDriveHalt				: MC_Halt;  //TwinCat motion fb
+ fbMC_Power						: MC_Power; //TwinCat motion fb
+ fbMC_ReadParam					: MC_ReadParameter; //TwinCat motion fb
+ fbMC_StopAxis					: MC_Stop; //TwinCat motion fb
+ fbMC_Reset						: MC_Reset; //TwinCat motion fb
+ fbMC_Jog						: MC_Jog; //TwinCat motion fb
+ fbMC_WriteBoolParameter		: MC_WriteBoolParameter; //TwinCat motion fb
+ DriveError						: BOOL;	//Input from ABB or SEW Motion Driver
+ DriveResetError				: BOOL; //Output to ABB or SEW Motion Driver
+ DriveReady						: BOOL; //Input from ABB or SEW Motion Driver
+ R_TrigHalt						: R_Trig();
+
+END_VAR
+VAR_TEMP
+	ManualModeReq				: BOOL; //manual mode request	
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[// Call axis
+Axis();
+Axis.ReadStatus();
+fbMC_Reset(Axis := Axis);
+fbMC_StopAxis(Axis := Axis);
+fbMC_MoveAbsolute1(Axis := Axis);
+fbMC_MoveAbsolute2(Axis := Axis);
+fbMC_SemiDriveHalt(Axis := Axis);
+fbMC_Jog(Axis := Axis);
+fbMC_WriteBoolParameter(Axis := Axis);
+
+
+ 
+fbMC_Power(
+	Enable			:=  DriveReady AND MC_PowerRequest,
+	Enable_Positive := TRUE,
+	Enable_Negative := TRUE,
+	Override		:= OverrideSpeed,
+	Axis			:= Axis);
+	
+//set Stop axis when executing fbMC_MoveAbsolute, or inhibit start new operation
+IF(EmgStopAxisTrig OR ( PositioningState = E_PositioningState.POSITIONING_ABSOLUTE AND (ElementOperationState.eMode <> E_PositionMode.AUTO_MODE OR ElementOperationState.eState = E_PositionState.STOPPED))) THEN
+	StopAxis := TRUE;
+END_IF
+
+//check and reset errors
+_M_ErrorHandler(ErrorData);
+
+//Timer for releasing brake
+fbReleaseBrake(IN:=DriveReady AND fbDelayEnable.Q , PT:=DriveCFG.TimeReleaseBrake , Q=> , ET=> );
+//By default reset Disable enable drive timer
+fbDisableEnableDrive.IN:=FALSE;
+
+//Manual mode request
+IF(ElementOperationState.eMode = E_PositionMode.MANUAL_MODE) THEN
+	ManualModeReq:=TRUE;
+ELSIF(SemiDriveControl.SemiManualMode AND ElementOperationState.eMode = E_PositionMode.AUTO_MODE  AND ElementOperationState.eState = E_PositionState.STARTED) THEN				 
+	ManualModeReq:=TRUE;	
+ELSE
+	ManualModeReq:=FALSE;
+END_IF				 
+
+ManualModeReq := (ElementOperationState.eMode = E_PositionMode.MANUAL_MODE) OR
+				 (SemiDriveControl.SemiManualMode AND ElementOperationState.eMode = E_PositionMode.AUTO_MODE  AND ElementOperationState.eState = E_PositionState.STARTED);
+
+
+R_TrigHalt(CLK:= SemiDriveControl.SemiAutoMode AND SemiDriveControl.SemiAutoHalt); //Semi Auto drive mode halted
+	
+ 			 
+
+CASE PositioningState OF
+	
+(******************************************************************************
+INIT
+********************************************************************************)	
+	E_PositioningState.INIT:
+		EnableDrive := FALSE;
+		StopAxis := FALSE;
+		MC_PowerRequest := TRUE;
+		Aborted:=TRUE;
+		TrigMotionCmd:=FALSE;
+		M_DisableSoftLimit(Disable := FALSE); 			
+		// Drive is ready
+		IF fbMC_Power.Status THEN
+			fbMC_MoveAbsolute1(Execute := FALSE,Axis := Axis);
+			fbMC_MoveAbsolute2(Execute := FALSE,Axis := Axis);
+			fbMC_SemiDriveHalt(Execute := FALSE,Axis := Axis);
+			fbMC_StopAxis(Execute := FALSE,Axis := Axis);
+				
+			EnableDrive := FALSE;				
+			PositioningState := E_PositioningState.STANDBY;
+
+		ELSE
+			Ready := FALSE;
+		END_IF
+
+(******************************************************************************
+COMMISSIONING MODE
+********************************************************************************)
+	E_PositioningState.COMMISSIONING:
+		IF CommissioningMode THEN 
+			MC_PowerRequest:=TRUE;
+			EnableDrive := TRUE;
+		ELSE
+			PositioningState := E_PositioningState.INIT;
+		END_IF	
+(******************************************************************************
+STANDBY
+********************************************************************************)	
+	E_PositioningState.STANDBY:
+		//EnableDrive := FALSE;
+		TrigMotionCmd:=FALSE;
+		M_DisableSoftLimit(Disable := FALSE); 		
+		MC_PowerRequest := TRUE;	
+		// Drive is ready
+		IF CommissioningMode THEN
+			PositioningState := E_PositioningState.COMMISSIONING;
+		
+		ELSIF ElementOperationState.eMode = E_PositionMode.AUTO_MODE AND NOT ManualModeReq AND NOT ErrorPending AND NOT StopAxis AND DriveReady THEN
+			Ready := TRUE;
+			fbDisableEnableDrive.IN:=TRUE;
+			IF(fbDisableEnableDrive.Q) THEN				
+				EnableDrive := FALSE;
+			END_IF
+			IF  (*NOT Busy AND*) Ready AND fbMC_Power.Status (*PowerOnRequest*) AND StartPositioningAbsolute THEN					
+					PositioningState := E_PositioningState.POSITIONING_ABSOLUTE;
+					TrigMotionCmd:=TRUE;
+					StartPositioningAbsolute:=FALSE;
+			END_IF
+			
+		ELSIF ManualModeReq THEN
+			EnableDrive := FALSE;	
+			Ready := FALSE;
+			PositioningState := E_PositioningState.MANUAL_MODE;
+	
+		ELSE
+			EnableDrive := FALSE;
+			Ready := FALSE;			
+			IF ErrorPending THEN
+				PositioningState := E_PositioningState.ERROR;
+			ELSIF(StopAxis) THEN
+				F_SetError( ErrorType:= E_ErrorType.ERROR, 	
+							ErrorParam:= 'Motion aborted (1)',  
+							ErrorMsg:= E_ErrorConv.DRIVE_WARNING, 
+							ErrorData:= ErrorData);
+				PositioningState := E_PositioningState.ERROR;
+			END_IF
+		END_IF
+		
+(******************************************************************************
+POSITIONING_ABSOLUTE
+********************************************************************************)	
+	// Positioning
+	E_PositioningState.POSITIONING_ABSOLUTE:
+		
+		// Call absolute positioning
+ 		IF(TrigMotionCmd AND fbReleaseBrake.Q)THEN
+			TrigMotionCmd:=FALSE;
+			IF(NOT fbMC_MoveAbsolute1.Busy) THEN 							
+				fbMC_MoveAbsolute1(
+					Execute := TRUE,
+					Position := PositionToGo,
+					Velocity := Velocity,
+					Acceleration := Acceleration,
+					Deceleration := Deceleration,
+					Jerk := Jerk,
+					BufferMode := MC_Aborting,
+					Axis := Axis);		
+			ELSE
+				fbMC_MoveAbsolute2(
+					Execute := TRUE,
+					Position := PositionToGo,
+					Velocity := Velocity,
+					Acceleration := Acceleration,
+					Deceleration := Deceleration,
+					Jerk := Jerk,
+					BufferMode := MC_Aborting,
+					Axis := Axis);
+			END_IF						
+		END_IF		
+		fbMC_MoveAbsolute1.Execute:=FALSE;
+		fbMC_MoveAbsolute2.Execute:=FALSE;	
+		EnableDrive := TRUE;           
+		Busy := TRUE;					
+		
+		// Axis has an error (alternative Check Axis.Error)
+		IF fbMC_MoveAbsolute1.Error OR fbMC_MoveAbsolute2.Error OR fbMC_SemiDriveHalt.Error THEN							
+			Ready := FALSE;
+			IF(fbMC_MoveAbsolute1.Error) THEN PTP_ErrorCode := fbMC_MoveAbsolute1.ErrorID;END_IF
+			IF(fbMC_MoveAbsolute2.Error) THEN PTP_ErrorCode := fbMC_MoveAbsolute2.ErrorID;END_IF
+			IF(fbMC_SemiDriveHalt.Error) THEN PTP_ErrorCode := fbMC_SemiDriveHalt.ErrorID;END_IF
+			PositioningState := E_PositioningState.ERROR;
+				
+		// Axis has to be stopped abrupt		
+		ELSIF StopAxis OR ErrorPending THEN							
+			fbMC_StopAxis(
+				Execute 		:= TRUE,
+				Deceleration	:= DriveCFG.MaxDriveParamAuto.Deceleration,
+				Jerk			:= DriveCFG.MaxDriveParamAuto.Jerk,
+				Axis 			:= Axis,
+				ErrorID			=> PTP_ErrorCode);
+				
+			Ready := FALSE;
+			PositioningState := E_PositioningState.STOPPING;
+		END_IF
+			
+		//Halt movement (only possible in semi autoMode) (Stay in POSITIONING_ABSOLUTE state) and possible to apply new data to fbMC_MoveAbsolute		
+		fbMC_SemiDriveHalt.Execute := FALSE;
+		IF(R_TrigHalt.Q)THEN
+			IF(NOT SemiDriveControl.SemiTrigMoveAbs) THEN				
+				fbMC_SemiDriveHalt(
+					Execute := TRUE,				
+					Deceleration := Deceleration,
+					Jerk := Jerk,				
+					Axis := Axis);	
+			ELSE
+				TrigMotionCmd :=TRUE;	// ->trig fbMC_MoveAbsolute 
+			END_IF				
+			Ready := FALSE;
+			Aborted:=TRUE;		
+							
+		END_IF
+		
+		
+		// Positioning finished
+		IF (fbMC_MoveAbsolute1.Done OR fbMC_MoveAbsolute2.Done OR fbMC_SemiDriveHalt.Done) AND Axis.Status.NotMoving AND NOT Axis.Status.HasJob THEN			
+			Done := fbMC_MoveAbsolute1.Done OR fbMC_MoveAbsolute2.Done;
+			PositioningState := E_PositioningState.POSITIONING_FINISHED;
+		END_IF
+		
+		//Finishing up things when leaving state
+		IF(PositioningState <> E_PositioningState.POSITIONING_ABSOLUTE) THEN
+			fbMC_MoveAbsolute1(Execute := FALSE,Axis := Axis);
+			fbMC_MoveAbsolute2(Execute := FALSE,Axis := Axis);
+			TrigMotionCmd:=FALSE;
+		END_IF
+		
+
+(******************************************************************************
+POSITIONING_FINISHED
+********************************************************************************)	
+	E_PositioningState.POSITIONING_FINISHED:
+	
+		IF ErrorPending THEN
+			PositioningState := E_PositioningState.ERROR;
+					
+		ELSIF NOT Done THEN
+			Busy := FALSE;
+			PositioningState := E_PositioningState.STANDBY;
+		
+		ELSIF PositionToGo <> Axis.NcToPlc.SetPos THEN
+			Busy := FALSE;			
+			Done := FALSE;			
+			PositioningState := E_PositioningState.STANDBY;
+			
+		ELSIF ManualModeReq THEN
+			Done := FALSE;
+			Busy := FALSE;
+			PositioningState := E_PositioningState.STANDBY;
+			
+		ELSIF DisableEnableDrive THEN
+			fbDisableEnableDrive.IN:=TRUE;
+			IF(fbDisableEnableDrive.Q) THEN				
+				EnableDrive := FALSE;				
+				MC_PowerRequest := FALSE;
+				Busy := FALSE;
+				Aborted:=TRUE;				
+			END_IF
+		ELSE
+			//Aborted shall be set if the state is not POSITIONING_FINISHED or not POSITIONING_ABSOLUTE or not STANDBY
+			//Aborted shall be cleared once the position is guarantied
+			Aborted:=FALSE;	
+		END_IF
+		
+		
+(******************************************************************************
+STOPPING
+********************************************************************************)
+	E_PositioningState.STOPPING:
+		fbMC_StopAxis(Execute := FALSE,Axis := Axis);
+		Aborted:=TRUE;
+		//TrigMotionCmd:=FALSE;
+		
+		//Wait for MC_Stop to finalize
+		IF NOT fbMC_StopAxis.Busy OR fbMC_StopAxis.Error THEN
+			
+			// Remove enable flag on an error (especially after emergency stop) this allows the inverter to engage immediately the brake
+			EnableDrive := FALSE; 			
+			//DriveOutputs.FCB_Instance := 1; // Disable final stage			
+			IF(StopAxis AND NOT ErrorPending) THEN
+				StopAxis := FALSE;
+				F_SetError( ErrorType:= E_ErrorType.ERROR, 	
+							ErrorParam:= 'Motion aborted (2)',  
+							ErrorMsg:= E_ErrorConv.DRIVE_WARNING, 
+							ErrorData:= ErrorData);
+			END_IF
+			Busy := FALSE;
+			PositioningState := E_PositioningState.STANDBY;
+		END_IF
+
+(******************************************************************************
+HALTING
+********************************************************************************)
+	E_PositioningState.HALTING:
+		PositioningState := E_PositioningState.STANDBY;		
+		
+		
+(******************************************************************************
+ERROR
+********************************************************************************)
+	
+	// Drive or PTP is in error state
+	E_PositioningState.ERROR:
+		fbMC_StopAxis(
+					Execute := FALSE,
+					Axis := Axis);
+		// Update SetPointPosition to avoid LagDistanceError
+		Axis.PlcToNc.ExtSetPos := Axis.NcToPlc.ActPos;
+		MC_PowerRequest := FALSE;
+		Busy := FALSE;
+		StopAxis := FALSE;
+		EnableDrive := FALSE;
+		Aborted:=TRUE;
+		IF ManualModeReq THEN 
+			PositioningState := E_PositioningState.MANUAL_MODE;
+		ELSIF NOT ErrorPending THEN
+			PositioningState := E_PositioningState.STANDBY;
+		END_IF
+		
+(******************************************************************************
+Manual Mode
+********************************************************************************)
+	E_PositioningState.MANUAL_MODE:
+	
+		fbMC_Jog.Acceleration 	:= DriveCFG.MaxDriveParamMan.Acceleration;
+		fbMC_Jog.Deceleration 	:= DriveCFG.MaxDriveParamMan.Deceleration;
+		fbMC_Jog.Jerk 		   	:= DriveCFG.MaxDriveParamMan.Jerk;	
+		fbMC_Jog.Velocity	   	:= DriveCFG.MaxDriveParamMan.Velocity;
+		fbMC_Jog.Mode			:= MC_JOGMODE_CONTINOUS;		
+		Aborted:=TRUE;
+		
+		
+		//Disable soft limits in motion
+		IF ManualControl.EmergencyDrive THEN
+			M_DisableSoftLimit(Disable := TRUE); 
+		ELSIF NOT ManualControl.EmergencyDrive THEN
+			M_DisableSoftLimit(Disable := FALSE); 			
+		END_IF
+		
+		IF ((ManualControl.DriveFwd OR ManualControl.DriveRev) AND (ManualControl.DriveRev <> ManualControl.DriveFwd))  THEN
+			MC_PowerRequest := TRUE;
+			EnableDrive := TRUE;
+			IF fbReleaseBrake.Q THEN				
+				fbMC_Jog.JogForward := ManualControl.DriveFwd;
+				fbMC_Jog.JogBackwards := ManualControl.DriveRev;
+			END_IF		
+					
+		ELSIF NOT fbMC_Jog.Busy THEN
+			EnableDrive := FALSE;
+			MC_PowerRequest := FALSE;
+			fbMC_Jog.JogForward := FALSE;
+			fbMC_Jog.JogBackwards := FALSE;	
+	
+		ELSE
+			fbMC_Jog.JogForward := FALSE;
+			fbMC_Jog.JogBackwards := FALSE;				
+		END_IF
+		
+		
+		IF NOT ManualModeReq THEN
+			EnableDrive := FALSE;			
+			StopAxis := FALSE;
+			fbMC_Jog.JogForward := FALSE;
+			fbMC_Jog.JogBackwards := FALSE;			
+			PositioningState := E_PositioningState.STANDBY;
+		END_IF		
+
+		// Set an error if lag distance gets to big or speed to high
+		IF ElementOperationState.eState <> E_PositionState.STARTED THEN // Do not log lag and overspeed when Estop SS1 is active (i.e. FALSE)
+			IF ABS(Axis.NcToPlc.PosDiff) > 200 AND (PTP_ErrorCode <> 998 AND PTP_ErrorCode <> 999) THEN
+				 EnableDrive := FALSE;
+				 PTP_ErrorCode := 998;
+			ELSIF ABS(Axis.NcToPlc.SetVelo) > (DriveCFG.MaxDriveParamMan.Velocity + 10) AND (PTP_ErrorCode <> 998 AND PTP_ErrorCode <> 999) THEN
+
+				 EnableDrive := FALSE;
+				 PTP_ErrorCode := 999; 
+			END_IF
+		END_IF
+END_CASE
+
+fbDelayEnable(PT:= T#500MS, IN := EnableDrive);
+fbDisableEnableDrive();
+M_OutputMapping();                     
+]]></ST>
+    </Implementation>
+    <Method Name="_M_ABB_ACS880" Id="{a9c7327c-962b-470a-9b14-d0cce53186d1}">
+      <Declaration><![CDATA[METHOD PRIVATE _M_ABB_ACS880 : BOOL
+VAR_INPUT
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[//InputMapping
+DriveError := DriveInputs.ABB_ACS880_StatusWord.Fault;
+DriveReady := (DriveInputs.ABB_ACS880_StatusWord.ReadyToOperate OR DriveInputs.ABB_ACS880_StatusWord.ReadyToSwitchOn) AND 
+			   DriveInputs.ABB_ACS880_StatusWord.RemoteCtrl;
+
+//OutputMapping
+DriveOutputs.ABB_ACS880_ControlWord.Reset := DriveResetError;
+DriveOutputs.ABB_ACS880_ControlWord.Off_1 := fbDelayEnable.Q;
+DriveOutputs.ABB_ACS880_ControlWord.Run := EnableDrive;//fbDelayEnable.Q; //By disabling this delay, the brake was locked earlier
+
+
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_ErrorHandler" Id="{ce1e8e06-9300-402f-8190-25cd68e3e934}">
+      <Declaration><![CDATA[METHOD PRIVATE _M_ErrorHandler : BOOL
+VAR_IN_OUT
+	ErrorData						: ST_ErrorDataSet; //Send an error to the overlaying element
+END_VAR
+VAR_INST
+	PrevCycleErrorPending 			: BOOL;
+END_VAR
+VAR
+	 AcknowledgeError				: BOOL;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+IF(PrevCycleErrorPending = TRUE AND ErrorPending = FALSE) THEN
+	AcknowledgeError:=TRUE;
+END_IF
+
+
+//check configuration.
+IF DriveCFG.InverterType = E_DriveMoverInverterType.ABB_ACS880 THEN 
+	_M_ABB_ACS880();
+ELSIF DriveCFG.InverterType = E_DriveMoverInverterType.SEW_MovidriveB THEN 
+	_M_SEW_MoviDriveB();
+ELSE 
+	F_SetError( ErrorType:= E_ErrorType.ERROR, 	
+				ErrorParam:=('No inverter type selected in cfg'),  
+				ErrorMsg:= E_ErrorConv.CONFIGURATION_ERROR, 
+				ErrorData:= ErrorData);	
+END_IF
+
+
+
+//Input error from laser/encoder
+IF (Axis.NcToPlc.ActPos <= 0) AND Axis.Status.Homed AND NOT ManualControl.EmergencyDrive THEN
+	F_SetError( ErrorType:= E_ErrorType.ERROR, 	
+				ErrorParam:=('Actual position not valid'),  
+				ErrorMsg:= E_ErrorConv.INCORRECT_ENCODER_VALUE, 
+				ErrorData:= ErrorData);	
+END_IF
+	
+
+// PTP Error Handling
+IF (Axis.Status.Error OR PTP_ErrorCode <> 0) AND NOT fbMC_Reset.Busy THEN
+	IF  AcknowledgeError(*NOT ErrorPending*) OR PositioningState = E_PositioningState.MANUAL_MODE THEN
+		fbMC_Reset(
+			Execute := TRUE,
+			Axis := Axis);
+		PTP_ErrorCode := 0;
+		
+	ELSE
+		IF Axis.Status.Error THEN
+			F_SetError( ErrorType:= E_ErrorType.ERROR, 	
+						ErrorParam:= CONCAT('PTP error: ' , UDINT_TO_STRING(Axis.Status.ErrorID)),  
+						ErrorMsg:= E_ErrorConv.DRIVE_ERROR, 
+						ErrorData:= ErrorData);
+		ELSE
+			F_SetError( ErrorType:= E_ErrorType.ERROR, 	
+						ErrorParam:= CONCAT('PTP error: ' , UDINT_TO_STRING(PTP_ErrorCode)),  
+						ErrorMsg:= E_ErrorConv.DRIVE_ERROR, 
+						ErrorData:= ErrorData);
+		END_IF
+	 
+	END_IF
+ELSIF(fbMC_Reset.Done) THEN
+	fbMC_Reset(
+		Execute := FALSE,
+		Axis := Axis);
+END_IF
+
+
+//Drive error handling
+IF NOT ErrorPending THEN
+	IF DriveError AND NOT DriveResetError THEN
+	// If reset requested, true to reset drive, do not set error this clockcycle	
+		DriveResetError := TRUE;
+	ELSIF DriveError AND DriveResetError THEN 
+			F_SetError( ErrorType:= E_ErrorType.ERROR, 	
+						ErrorParam:= 'Error on inverter' , 
+						ErrorMsg:= E_ErrorConv.DRIVE_ERROR, 
+						ErrorData:= ErrorData);
+	END_IF
+ELSE 
+	DriveResetError := FALSE;
+END_IF
+
+
+//Check remote control on ABB drive
+IF DriveCFG.InverterType = E_DriveMoverInverterType.ABB_ACS880 THEN 
+	IF NOT DriveInputs.ABB_ACS880_StatusWord.RemoteCtrl THEN 
+			F_SetError( ErrorType:= E_ErrorType.ERROR, 	
+						ErrorParam:= 'ABB in local control' , 
+						ErrorMsg:= E_ErrorConv.DRIVE_ERROR, 
+						ErrorData:= ErrorData);
+	END_IF
+END_IF
+
+//store current ErrorPending signal
+PrevCycleErrorPending := ErrorPending;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_SEW_MoviDriveB" Id="{a4648bb3-8ff0-4c6c-b850-f78e244333a6}">
+      <Declaration><![CDATA[METHOD PRIVATE _M_SEW_MoviDriveB : BOOL
+VAR_INPUT
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[//InputMapping
+DriveError := DriveInputs.SEW_MoviDriveStatusWord.InverterError;
+DriveReady := DriveInputs.SEW_MoviDriveStatusWord.InverterReadyForOperation;
+//OutputMapping
+DriveOutputs.SEW_MovidriveControlWord.ResetError := DriveResetError;
+DriveOutputs.SEW_MovidriveControlWord.EnableAndQuickStop := fbDelayEnable.Q;
+DriveOutputs.SEW_MovidriveControlWord.EnableAndStop := fbDelayEnable.Q;
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_DisableSoftLimit" Id="{3bdf33b8-22e8-44e4-b012-bc668af2674d}">
+      <Declaration><![CDATA[METHOD M_DisableSoftLimit : BOOL
+VAR_INPUT
+		Disable		: BOOL;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+// Disable MinSoftPosLimit
+fbMC_WriteBoolParameter(
+	Execute := TRUE,
+	ParameterNumber := AxisEnMinSoftPosLimit,
+	Value := NOT Disable,
+	Axis := Axis);
+// Disable MaxSoftPosLimit
+fbMC_WriteBoolParameter(
+	Execute := TRUE,
+	ParameterNumber := AxisEnMaxSoftPosLimit,
+	Value := NOT Disable,
+	Axis := Axis);
+	
+IF fbMC_WriteBoolParameter.Done THEN
+	fbMC_WriteBoolParameter.Execute := FALSE;
+	M_DisableSoftLimit := TRUE;
+ELSE
+	M_DisableSoftLimit := FALSE;
+END_IF
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_Init" Id="{017eb114-9d24-4a2f-9946-57825df310d4}">
+      <Declaration><![CDATA[METHOD M_Init : BOOL
+VAR_INPUT
+END_VAR
+VAR 
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+	OverrideSpeed := 100;
+	StartPositioningAbsolute := FALSE;
+	EnableDrive := FALSE;
+	Busy := FALSE;
+	Done := FALSE;
+	
+	// Jog configuration
+	fbMC_Jog.Acceleration := DriveCFG.MaxDriveParamMan.Acceleration;
+	fbMC_Jog.Deceleration := DriveCFG.MaxDriveParamMan.Deceleration;
+	fbMC_Jog.Jerk 		   := DriveCFG.MaxDriveParamMan.Jerk;
+	
+	fbMC_StopAxis(
+		Execute 		:= TRUE,
+		Deceleration	:= 400000,
+		Jerk			:= 400000,
+		Axis 			:= Axis);
+		
+	PositioningState := E_PositioningState.INIT;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_MoveAbsolute" Id="{ea899877-7c81-4a6e-866e-dfa818bb2670}">
+      <Declaration><![CDATA[METHOD M_MoveAbsolute : BOOL
+(**************************************************************************************
+ * 	AUTHOR		Swisslog
+ * 	LIBRARY		Mover
+ * 	PURPOSE		Trigger the axis to move to the specified position.
+ *	RELEASE		1.0.0
+ * ------------------------------------------------------------------------------------
+ * 	Revision History: 
+ *
+ * 	VERSION		DATE		INITIALS	DESCRIPTION
+ *	0.1			18.06.2013	ahe			initial version
+ **************************************************************************************)
+VAR_INPUT
+	mPosition		: DINT;
+	mVelocity		: INT;
+	mAcceleration	: INT;
+	mDeceleration	: INT;
+	mJerk			: LREAL;	
+
+END_VAR
+VAR_IN_OUT
+	ErrorData		: ST_ErrorDataSet;
+END_VAR
+VAR
+	IsValid_PositionToGo	: BOOL;	
+    IsValid_Velocity		: BOOL;
+    IsValid_Acceleration	: BOOL;
+    IsValid_Deceleration	: BOOL;
+    IsValid_Jerk			: BOOL;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+
+IsValid_PositionToGo 	:= FALSE;
+IsValid_Velocity		:= FALSE;
+IsValid_Acceleration	:= FALSE;
+IsValid_Deceleration	:= FALSE;
+IsValid_Jerk			:= FALSE;
+
+// Check if position is inside the limits
+IF mPosition > DriveCFG.MaximumPosition THEN
+			F_SetError( ErrorType:= E_ErrorType.ERROR, 	
+						ErrorParam:= 'Requested position over config max pos' , 
+						ErrorMsg:= E_ErrorConv.DRIVE_ERROR, 
+						ErrorData:= ErrorData);	
+						
+ELSIF mPosition < DriveCFG.MinimumPosition THEN
+			F_SetError( ErrorType:= E_ErrorType.ERROR, 	
+						ErrorParam:= 'Requested position under config min pos' , 
+						ErrorMsg:= E_ErrorConv.DRIVE_ERROR, 
+						ErrorData:= ErrorData);		
+ELSE
+	IsValid_PositionToGo := TRUE; 
+	PositionToGo := mPosition;
+END_IF
+
+// Check if velocity is inside the limit
+IF mVelocity > DriveCFG.MaxDriveParamAuto.Velocity THEN
+			F_SetError( ErrorType:= E_ErrorType.ERROR, 	
+						ErrorParam:= 'Requested velocity over max' , 
+						ErrorMsg:= E_ErrorConv.DRIVE_ERROR, 
+						ErrorData:= ErrorData);		
+ELSE 
+	IsValid_Velocity := TRUE;
+	Velocity := mVelocity;	
+END_IF
+
+// Check if acceleration is inside the limit
+IF mAcceleration > DriveCFG.MaxDriveParamAuto.Acceleration THEN
+			F_SetError( ErrorType:= E_ErrorType.ERROR, 	
+						ErrorParam:= 'Requested accelration over max' , 
+						ErrorMsg:= E_ErrorConv.DRIVE_ERROR, 
+						ErrorData:= ErrorData);	
+ELSE
+	IsValid_Acceleration := TRUE;
+	Acceleration := mAcceleration;						
+END_IF
+
+// Check if deceleration is inside the limit
+IF mDeceleration > DriveCFG.MaxDriveParamAuto.Deceleration THEN
+			F_SetError( ErrorType:= E_ErrorType.ERROR, 	
+						ErrorParam:= 'Requested deceleration over max' , 
+						ErrorMsg:= E_ErrorConv.DRIVE_ERROR, 
+						ErrorData:= ErrorData);	
+ELSE
+	IsValid_Deceleration := TRUE;
+	Deceleration := mDeceleration;						
+END_IF
+
+// Check if jerk is inside the limit
+IF mJerk > DriveCFG.MaxDriveParamAuto.Jerk THEN
+			F_SetError( ErrorType:= E_ErrorType.ERROR, 	
+						ErrorParam:= 'Requested jerk over max' , 
+						ErrorMsg:= E_ErrorConv.DRIVE_ERROR, 
+						ErrorData:= ErrorData);	
+ELSE
+	IsValid_Jerk := TRUE;
+	Jerk := mJerk;						
+END_IF
+
+// Drive is ready to start
+IF (NOT Busy AND Ready AND PositioningState = E_PositioningState.STANDBY AND NOT StopAxis AND
+	 ElementOperationState.eMode = E_PositionMode.AUTO_MODE  AND ElementOperationState.eState = E_PositionState.STARTED AND
+	IsValid_PositionToGo AND IsValid_Velocity AND IsValid_Acceleration AND IsValid_Deceleration AND IsValid_Jerk) THEN
+	M_MoveAbsolute := TRUE;
+	StartPositioningAbsolute := TRUE;	
+ELSE
+	M_MoveAbsolute := FALSE;
+	StartPositioningAbsolute := FALSE;	
+END_IF
+
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_OutputMapping" Id="{a0d88a0a-2e63-4955-829a-f2f287fcc560}">
+      <Declaration><![CDATA[METHOD M_OutputMapping : BOOL
+VAR
+
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+
+(****************************************************************************************************
+					Hardware
+*****************************************************************************************************)
+//Mapping of drive are done in method for the drive
+
+ActPos											:= Axis.NcToPlc.ActPos;
+
+(****************************************************************************************************
+					Motion
+*****************************************************************************************************)
+Counter:=Counter+1;
+AxisMotionOutputLow.0 := 1; // Bit 0 : Ready to switch on
+AxisMotionOutputLow.1 := 1; // Bit 1 : Switched on
+AxisMotionOutputLow.2 := 1; // Bit 2 : Operation enabled
+AxisMotionOutputLow.3 := 0; // Bit 3 : Fault
+AxisMotionOutputLow.4 := 0; // Bit 4 : reserved
+AxisMotionOutputLow.5 := 1; // Bit 5 : reserved
+AxisMotionOutputLow.6 := 0; // Bit 6 : Switch on disabled
+AxisMotionOutputLow.7 := 0; // // Bit 7 : Warning
+AxisMotionOutputHigh.0 := 0; // Bit 8 : reserved
+AxisMotionOutputHigh.1 := 0; // Bit 9 : reserved
+AxisMotionOutputHigh.2 := Counter.6; // Bit 10 : TxPDOToggle
+AxisMotionOutputHigh.3 := 0; // Bit 11 : Internal limit active
+AxisMotionOutputHigh.4 := 1; // Bit 12 : Drive follows the command value  (note since TC_MC2 version 3.3.39 this bit has to be set on order for the Driver to set enable signal)
+AxisMotionOutputHigh.5 := 0; // Bit 13 : Input cycle counter
+AxisMotionOutputHigh.6 := 0; // Bit 14 - 15 : reserved
+AxisMotionOutputHigh.7 := 0; // Bit 14 - 15 : reserved
+]]></ST>
+      </Implementation>
+    </Method>
+    <LineIds Name="FB_DriveMover">
+      <LineId Id="9703" Count="159" />
+      <LineId Id="9864" Count="0" />
+      <LineId Id="10077" Count="0" />
+      <LineId Id="9866" Count="5" />
+      <LineId Id="10078" Count="1" />
+      <LineId Id="10081" Count="0" />
+      <LineId Id="9872" Count="0" />
+      <LineId Id="10080" Count="0" />
+      <LineId Id="9874" Count="21" />
+      <LineId Id="9897" Count="177" />
+      <LineId Id="8058" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_DriveMover._M_ABB_ACS880">
+      <LineId Id="8" Count="0" />
+      <LineId Id="5" Count="1" />
+      <LineId Id="14" Count="0" />
+      <LineId Id="10" Count="0" />
+      <LineId Id="9" Count="0" />
+      <LineId Id="7" Count="0" />
+      <LineId Id="12" Count="1" />
+      <LineId Id="19" Count="0" />
+      <LineId Id="18" Count="0" />
+      <LineId Id="11" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_DriveMover._M_ErrorHandler">
+      <LineId Id="71" Count="14" />
+      <LineId Id="68" Count="1" />
+      <LineId Id="87" Count="0" />
+      <LineId Id="86" Count="0" />
+      <LineId Id="70" Count="0" />
+      <LineId Id="6" Count="7" />
+      <LineId Id="88" Count="0" />
+      <LineId Id="14" Count="26" />
+      <LineId Id="98" Count="1" />
+      <LineId Id="59" Count="0" />
+      <LineId Id="101" Count="7" />
+      <LineId Id="100" Count="0" />
+      <LineId Id="109" Count="2" />
+      <LineId Id="41" Count="0" />
+      <LineId Id="112" Count="1" />
+      <LineId Id="42" Count="0" />
+      <LineId Id="115" Count="0" />
+      <LineId Id="118" Count="4" />
+      <LineId Id="116" Count="0" />
+      <LineId Id="123" Count="0" />
+      <LineId Id="43" Count="2" />
+    </LineIds>
+    <LineIds Name="FB_DriveMover._M_SEW_MoviDriveB">
+      <LineId Id="6" Count="1" />
+      <LineId Id="10" Count="4" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_DriveMover.M_DisableSoftLimit">
+      <LineId Id="6" Count="6" />
+      <LineId Id="15" Count="5" />
+      <LineId Id="25" Count="6" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_DriveMover.M_Init">
+      <LineId Id="6" Count="1" />
+      <LineId Id="9" Count="0" />
+      <LineId Id="34" Count="0" />
+      <LineId Id="14" Count="1" />
+      <LineId Id="17" Count="11" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_DriveMover.M_MoveAbsolute">
+      <LineId Id="378" Count="1" />
+      <LineId Id="376" Count="0" />
+      <LineId Id="380" Count="0" />
+      <LineId Id="382" Count="2" />
+      <LineId Id="377" Count="0" />
+      <LineId Id="96" Count="1" />
+      <LineId Id="240" Count="2" />
+      <LineId Id="239" Count="0" />
+      <LineId Id="243" Count="0" />
+      <LineId Id="99" Count="0" />
+      <LineId Id="245" Count="2" />
+      <LineId Id="244" Count="0" />
+      <LineId Id="288" Count="0" />
+      <LineId Id="399" Count="0" />
+      <LineId Id="289" Count="0" />
+      <LineId Id="103" Count="3" />
+      <LineId Id="248" Count="2" />
+      <LineId Id="109" Count="0" />
+      <LineId Id="290" Count="0" />
+      <LineId Id="398" Count="0" />
+      <LineId Id="291" Count="0" />
+      <LineId Id="110" Count="3" />
+      <LineId Id="251" Count="2" />
+      <LineId Id="116" Count="0" />
+      <LineId Id="293" Count="0" />
+      <LineId Id="397" Count="0" />
+      <LineId Id="292" Count="0" />
+      <LineId Id="117" Count="3" />
+      <LineId Id="254" Count="2" />
+      <LineId Id="123" Count="0" />
+      <LineId Id="295" Count="0" />
+      <LineId Id="396" Count="0" />
+      <LineId Id="294" Count="0" />
+      <LineId Id="124" Count="3" />
+      <LineId Id="257" Count="2" />
+      <LineId Id="130" Count="0" />
+      <LineId Id="297" Count="0" />
+      <LineId Id="395" Count="0" />
+      <LineId Id="296" Count="0" />
+      <LineId Id="131" Count="3" />
+      <LineId Id="351" Count="0" />
+      <LineId Id="394" Count="0" />
+      <LineId Id="211" Count="0" />
+      <LineId Id="325" Count="0" />
+      <LineId Id="138" Count="0" />
+      <LineId Id="153" Count="0" />
+      <LineId Id="326" Count="0" />
+      <LineId Id="154" Count="0" />
+      <LineId Id="393" Count="0" />
+      <LineId Id="155" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_DriveMover.M_OutputMapping">
+      <LineId Id="20" Count="4" />
+      <LineId Id="6" Count="0" />
+      <LineId Id="56" Count="0" />
+      <LineId Id="50" Count="0" />
+      <LineId Id="26" Count="2" />
+      <LineId Id="25" Count="0" />
+      <LineId Id="30" Count="16" />
+      <LineId Id="29" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

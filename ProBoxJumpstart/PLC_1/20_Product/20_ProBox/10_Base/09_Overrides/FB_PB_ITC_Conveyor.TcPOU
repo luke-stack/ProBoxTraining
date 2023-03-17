@@ -1,0 +1,195 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.4">
+  <POU Name="FB_PB_ITC_Conveyor" Id="{dd5ff5c0-ed52-40d5-a8dc-18f1aa612f31}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK FB_PB_ITC_Conveyor EXTENDS FB_ITC_Conveyor IMPLEMENTS ITF_ITC 
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 417092 $
+ *	Revision date	:	$Date: 2018-11-14 12:58:58 +0100 (Mi., 14 Nov 2018) $
+ *	Last changed by	:	$Author: q8aberh $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/ProMove/02_Controls/ProBox/03_Implementation/01_DevelopmentProject/01_Software/ProBox_COE/ProBox_DevProj_v1.0/PLC_1/20_Product/10_App/11_Com/10_Lib/10_Conv/11_ITC/FB_ITC_Conveyor.TcPOU $
+ *
+ *	Purpose			:	ITC - Message Manager.
+ *						Represents the interface between the application and the 
+ *						communication. Serves as abstract layer to ensure application
+ *						independency.
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+VAR_INPUT
+	
+END_VAR
+
+VAR
+	
+END_VAR
+
+VAR PERSISTENT
+	
+END_VAR]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[(**************************************************************************************************************
+   Body never called!
+***************************************************************************************************************)
+;]]></ST>
+    </Implementation>
+    <Method Name="M_ProcessTDQ" Id="{351649c5-90e7-4220-a559-17de72a297cf}">
+      <Declaration><![CDATA[METHOD PROTECTED M_ProcessTDQ : BOOL
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision:  $
+ *	Revision date	:	$Date: $
+ *	Last changed by	:	$Author: q8hedls $
+ *	URL				:	$URL: $
+ *
+ *	Purpose			:	Override BCF process for processing a received Task Delet Request telegram.
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+VAR_INPUT
+	meChannelSrc		: E_MFCS_Channel; // Source communicaton channel
+	mpTDQ				: POINTER TO ST_ITC_TDQ; // Pointer to TDQ
+	mLen				: UDINT; // Data length
+END_VAR
+
+VAR
+	mPosition 			: ST_PositionIdent ; // Position
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+// Get position from telegram
+mPosition := F_SearchFunctionPosition( Position := mpTDQ^.Position);
+IF(mPosition.eFunctionNumber>E_FunctionNumber.F_BEGIN_FUNCTION AND mPosition.ZoneNumber>0) THEN
+	F_ResetOccupied(mPosition.eFunctionNumber, mPosition.ZoneNumber);				
+END_IF
+
+//proceed with TDQ command
+M_ProcessTDQ:= SUPER^.M_ProcessTDQ(meChannelSrc,mpTDQ,mLen);
+
+//Re-initialize the function
+IF(mPosition.eFunctionNumber>E_FunctionNumber.F_BEGIN_FUNCTION AND mPosition.ZoneNumber>0) THEN
+	F_InitializeFunction(mPosition.eFunctionNumber);
+END_IF
+	
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_ProcessTTA" Id="{8928531c-6f8f-43d9-b43f-45958ba0b294}">
+      <Declaration><![CDATA[METHOD PROTECTED M_ProcessTTA : BOOL
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision:  $
+ *	Revision date	:	$Date: $
+ *	Last changed by	:	$Author: q8hedls $
+ *	URL				:	$URL: $
+ *
+ *	Purpose			:	Override BCF process for processing a received Transport Task Assignment telegram.
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+VAR_INPUT
+	meChannelSrc		: E_MFCS_Channel; // Source communicaton channel
+	mpTTA				: POINTER TO ST_ITC_TTA; // Pointer to TTA
+	mLen				: UDINT;
+END_VAR
+
+VAR	
+	mSensorOccupiedMem	: BOOL; //keep the actual value, to be able to set it back after the call to TTA cmd
+	mRestore			: BOOL; //do a restore of SensorOccupied	
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+// Search position in registry
+Position := F_SearchFunctionPosition(Position := mpTTA^.Position);
+IF(__ISVALIDREF(F_PB_GetTransportControlDataRef(Position.eFunctionNumber, Position.ZoneNumber))) THEN
+	mSensorOccupiedMem := F_PB_GetTransportControlDataRef(Position.eFunctionNumber, Position.ZoneNumber).SensorOccupied;
+	mRestore := TRUE;
+	IF(F_PB_GetTransportControlDataRef(Position.eFunctionNumber, Position.ZoneNumber).eTakeOverState <> E_TakeOverState.ACTIVE AND
+	   F_PB_GetTransportControlDataRef(Position.eFunctionNumber, Position.ZoneNumber).eHandOverState <> E_HandOverState.ACTIVE) THEN
+		//For Probox we want to be able to receive TTA despite there are not TU pressent, so we override the SensorOccupied value	   	
+		F_PB_GetTransportControlDataRef(Position.eFunctionNumber, Position.ZoneNumber).SensorOccupied := TRUE;
+	ELSE
+		//force a TTC -> POSITION_NOT_CORRECT_OCCUPIED during an active transport.		
+		F_PB_GetTransportControlDataRef(Position.eFunctionNumber, Position.ZoneNumber).SensorOccupied := FALSE;
+	END_IF
+END_IF
+//proceed with TDQ command
+M_ProcessTTA:= SUPER^.M_ProcessTTA(meChannelSrc,mpTTA,mLen);
+
+//restore value
+IF(mRestore) THEN
+	F_PB_GetTransportControlDataRef(Position.eFunctionNumber, Position.ZoneNumber).SensorOccupied := mSensorOccupiedMem;
+END_IF
+]]></ST>
+      </Implementation>
+    </Method>
+    <LineIds Name="FB_PB_ITC_Conveyor">
+      <LineId Id="3" Count="2" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_PB_ITC_Conveyor.M_ProcessTDQ">
+      <LineId Id="121" Count="0" />
+      <LineId Id="74" Count="2" />
+      <LineId Id="83" Count="0" />
+      <LineId Id="72" Count="1" />
+      <LineId Id="37" Count="0" />
+      <LineId Id="36" Count="0" />
+      <LineId Id="123" Count="0" />
+      <LineId Id="54" Count="0" />
+      <LineId Id="117" Count="2" />
+      <LineId Id="60" Count="0" />
+      <LineId Id="58" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_PB_ITC_Conveyor.M_ProcessTTA">
+      <LineId Id="539" Count="1" />
+      <LineId Id="531" Count="0" />
+      <LineId Id="554" Count="0" />
+      <LineId Id="536" Count="0" />
+      <LineId Id="596" Count="0" />
+      <LineId Id="544" Count="0" />
+      <LineId Id="588" Count="0" />
+      <LineId Id="597" Count="0" />
+      <LineId Id="542" Count="0" />
+      <LineId Id="591" Count="0" />
+      <LineId Id="593" Count="0" />
+      <LineId Id="592" Count="0" />
+      <LineId Id="590" Count="0" />
+      <LineId Id="538" Count="0" />
+      <LineId Id="530" Count="0" />
+      <LineId Id="528" Count="0" />
+      <LineId Id="555" Count="0" />
+      <LineId Id="545" Count="0" />
+      <LineId Id="556" Count="0" />
+      <LineId Id="2" Count="0" />
+      <LineId Id="557" Count="0" />
+      <LineId Id="553" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

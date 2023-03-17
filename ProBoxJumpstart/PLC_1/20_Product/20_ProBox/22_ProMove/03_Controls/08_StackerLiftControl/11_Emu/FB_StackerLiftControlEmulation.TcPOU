@@ -1,0 +1,89 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.4">
+  <POU Name="FB_StackerLiftControlEmulation" Id="{b663f7d0-3b59-4b3f-b821-258af8369c1f}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK FB_StackerLiftControlEmulation
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: q8hedls $
+ *	Revision date	:	$Date: $
+ *	Last changed by	:	$Author:  $
+ *	URL				:	$URL:  $
+ *
+ *	Purpose			:	Emulation low lift control emulation NOTE NOT FINISHED...
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				26.04.2019		SHE					LowLiftUnitEmulation
+ *
+ **************************************************************************************)
+
+VAR_INPUT	
+	LiftRange			: INT; //the maximum stroke in cycle ticks		
+	DriveRunUpLift			: BOOL;  // lift is moving Up
+	DriveRunDownLift		: BOOL;  // lift is moving Down	
+END_VAR
+
+VAR_OUTPUT
+	LiftPosDown				: BOOL;
+	LiftPosDownCS			: BOOL;	
+	LiftPosMiddleBelow		: BOOL;	// Used when Motorized forks magazine has been selected	
+	LiftPosMiddleAbove		: BOOL; // Used when Motorized forks magazine has been selected
+	LiftPosUp				: BOOL;	
+	EncoderOffset			: INT;
+END_VAR
+
+VAR
+	ActualPosition				: INT := 0;
+	ResetPosition				: BOOL;
+END_VAR
+
+VAR PERSISTENT
+	Settings					: ST_CFG_PalletMagazine; // Settings - activated configuration 
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[
+// When lift is moving
+IF DriveRunUpLift THEN
+	IF ActualPosition < LiftRange-1 THEN
+		ActualPosition := ActualPosition + 1;
+	END_IF;
+		
+ELSIF DriveRunDownLift THEN
+	IF ActualPosition > 0 THEN
+		ActualPosition := ActualPosition - 1;
+	END_IF					
+END_IF
+
+// Update positions
+IF ActualPosition <= 0 THEN
+	 LiftPosDown := TRUE;
+	 LiftPosDownCS := TRUE;	 
+ELSIF ActualPosition >= LiftRange-1 THEN
+	 LiftPosUp := TRUE;
+ELSIF ActualPosition <= (LiftRange/2)+2 AND
+		ActualPosition >= (LiftRange/2)-2 THEN
+		LiftPosMiddleBelow := TRUE;
+		LiftPosMiddleAbove := TRUE;
+ELSE
+	LiftPosDown := FALSE;
+	LiftPosDownCS := FALSE;	
+	LiftPosUp := FALSE;	
+	LiftPosMiddleBelow := FALSE;
+	LiftPosMiddleAbove := FALSE;
+END_IF
+
+EncoderOffset := ActualPosition;]]></ST>
+    </Implementation>
+    <LineIds Name="FB_StackerLiftControlEmulation">
+      <LineId Id="980" Count="30" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

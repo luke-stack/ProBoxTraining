@@ -1,0 +1,25 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <Itf Name="ITF_PB_ElementForkInterface" Id="{cc3ab31f-5546-4754-983a-8a869ddc0bef}">
+    <Declaration><![CDATA[INTERFACE ITF_PB_ElementForkInterface EXTENDS __SYSTEM.IQueryInterface 
+]]></Declaration>
+    <Property Name="P_ForkRequest" Id="{4c8d415b-2164-490a-849f-4df8f18e310f}">
+      <Declaration><![CDATA[PROPERTY P_ForkRequest : ST_ForkRequest]]></Declaration>
+      <Get Name="Get" Id="{840c9064-60db-491a-b334-bee3a49e5093}">
+        <Declaration><![CDATA[]]></Declaration>
+      </Get>
+      <Set Name="Set" Id="{75bdb712-4350-4547-a74d-ae0e99859ce7}">
+        <Declaration><![CDATA[]]></Declaration>
+      </Set>
+    </Property>
+    <Property Name="P_ForkStatus" Id="{1d492fcf-d32a-4d9c-9f3e-bfdea4449d43}">
+      <Declaration><![CDATA[PROPERTY P_ForkStatus : ST_ForkState]]></Declaration>
+      <Get Name="Get" Id="{fd730e6a-2a63-4b85-814a-74f1bbaee4e9}">
+        <Declaration><![CDATA[]]></Declaration>
+      </Get>
+      <Set Name="Set" Id="{5be38dfe-e684-4b23-9f2b-b5f7a81886d0}">
+        <Declaration><![CDATA[]]></Declaration>
+      </Set>
+    </Property>
+  </Itf>
+</TcPlcObject>

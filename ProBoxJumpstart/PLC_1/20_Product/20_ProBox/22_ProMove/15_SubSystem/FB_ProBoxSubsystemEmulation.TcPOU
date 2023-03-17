@@ -1,0 +1,120 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.12">
+  <POU Name="FB_ProBoxSubsystemEmulation" Id="{f91dc830-db84-410e-a7ce-5570ea37d1f5}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK FB_ProBoxSubsystemEmulation EXTENDS FB_SubsystemConvEmulation
+VAR
+	pSubsystem							: POINTER TO FB_ProBoxSubsystem; // Address to Subsystem
+	rSubsystem						: REFERENCE TO FB_ProBoxSubsystem; // Reference to Group
+END_VAR
+
+
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[
+(**************************************************************************************************************
+   Initialization
+***************************************************************************************************************)
+A_Init();
+
+
+(**************************************************************************************************************
+   Update reference
+***************************************************************************************************************)
+A_UpdateReference();
+
+
+(**************************************************************************************************************
+   Emulation
+***************************************************************************************************************)
+// If emulation Subsystem is initialized
+IF SubsystemData.Init THEN
+	// Update real data
+	M_UpdateRealObjectData();	
+
+	// Overwrite inputs
+	A_OverWriteInputs();
+END_IF
+]]></ST>
+    </Implementation>
+    <Action Name="A_Init" Id="{310e7e33-d381-41ad-b514-0502d799b322}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_Init
+ * 	FUNCTION	Initialize emulated Subsystem
+ **************************************************************************************)
+ 
+ // If module is not initialized
+ IF NOT SubsystemData.Init THEN
+	
+	IF F_IsSubsystemInitialized() THEN
+	
+		// Module is initialized
+		SubsystemData.Init := TRUE;
+	
+		// Send debug message
+		DebugMsg := CONCAT('Initialization done. Subsystem: ', SubsystemRegistry.SubsystemName);
+		fbDebugMsg.M_SendInfoMsg(DebugMsg);		
+	
+		// Initialize real module
+		F_InitializeSubsystem();
+	END_IF
+END_IF
+	]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="A_OverWriteInputs" Id="{456d35b8-b022-4fee-a8fb-381a8cc71bb2}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_OverWriteInputs
+ * 	FUNCTION	Overwrite HW-Inputs
+ **************************************************************************************)
+ 
+;]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="A_UpdateReference" Id="{1798adf9-d67e-45f7-8daf-283427d560c9}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_UpdateReference
+ * 	FUNCTION	Update reference to real object
+ **************************************************************************************)
+
+// Is reference valid  
+IF __ISVALIDREF(SubsystemRegistry.rSubsystem) THEN
+	// Build address to reference
+	pSubsystem := ADR(SubsystemRegistry.rSubsystem);
+
+	// If address is possible
+	IF pSubsystem <> 0 THEN
+		// Build reference to memory
+		rSubsystem REF= pSubsystem^;
+	ELSE
+		// Reinitialize module
+		SubsystemData.Init := FALSE;
+	END_IF
+ELSE
+	// Reinitialize module
+	SubsystemData.Init := FALSE;
+END_IF
+
+		]]></ST>
+      </Implementation>
+    </Action>
+    <LineIds Name="FB_ProBoxSubsystemEmulation">
+      <LineId Id="15" Count="23" />
+      <LineId Id="9" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ProBoxSubsystemEmulation.A_Init">
+      <LineId Id="2" Count="20" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ProBoxSubsystemEmulation.A_OverWriteInputs">
+      <LineId Id="2" Count="4" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_ProBoxSubsystemEmulation.A_UpdateReference">
+      <LineId Id="2" Count="22" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

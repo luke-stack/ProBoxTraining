@@ -1,0 +1,13 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <DUT Name="ST_FunctionForkManualCtrl" Id="{d0df621e-b02c-43ff-a4f3-4b875ad4fde4}">
+    <Declaration><![CDATA[TYPE ST_FunctionForkManualCtrl :
+STRUCT
+	Op_Fork_Left	: BOOL;		// Negative fork drive direction
+	Op_Fork_Right	: BOOL;		// Positive fork drive direction
+	OP_EmergencyDrive	: BOOL;
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

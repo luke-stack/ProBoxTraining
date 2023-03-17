@@ -1,0 +1,79 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.12">
+  <DUT Name="ST_SendTelegrams_6_0" Id="{78c70b7e-164d-4e30-93c0-973a42f5d73e}">
+    <Declaration><![CDATA[TYPE ST_SendTelegrams_6_0 :
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 404529 $
+ *	Revision date	:	$Date: 2018-04-23 08:21:38 +0200 (Mo., 23 Apr 2018) $
+ *	Last changed by	:	$Author: b7bolm $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/trunk/01_Software/BCF/BCF/JumpStart/20_Product/10_App/11_Com/10_Lib/10_Conv/12_MFCS/11_SIS/01_DUTs/10_SIS_6_0/ST_SendTelegrams_6_0.TcDUT $
+ *
+ *	Purpose			:	Send telegrams
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+STRUCT
+	SendRAA		: BOOL; // Forwards RAA-telegram
+	SendRAC		: BOOL; // Forwards RAC-telegram
+	SendRDQ		: BOOL; // Forwards RDQ-telegram
+	SendRDR		: BOOL; // Forwards RDR-telegram
+	SendVIR		: BOOL; // Forwards VIR-telegram 
+	SendECR		: BOOL; // Forwards ECR-telegram 
+	SendESR		: BOOL; // Forwards ESR-telegram 
+	SendGCR		: BOOL; // Forwards GCR-telegram 
+	SendGSR		: BOOL; // Forwards GSR-telegram 
+	SendGVR		: BOOL; // Forwards GVR-telegram 
+	SendIPR		: BOOL; // Forwards IPR-telegram 
+	SendMSG		: BOOL; // Forwards MSG-telegram 
+	SendPOR		: BOOL; // Forwards POR-telegram 
+	SendSCR		: BOOL; // Forwards SCR-telegram 
+	SendISR		: BOOL; // Forwards ISR-telegram
+	SendMCR		: BOOL; // Forwards MCR-telegram
+	SendFSR		: BOOL; // Forwards FSR-telegram
+	SendFCR		: BOOL; // Forwards FCR-telegram
+	SendATR		: BOOL; // Forwards ATR-telegram
+	SendRTR		: BOOL; // Forwards RTR-telegram
+	SendERR		: BOOL; // Forwards ERR-telegram
+	SendSDI		: BOOL; // Forwards SDI telegram 
+	SendSIR		: BOOL; // Forwards SIR telegram 
+	SendSNR		: BOOL; // Forwards SNR-telegram 
+	SendSSR		: BOOL; // Forwards SSR-telegram 
+	SendTDR		: BOOL; // Forwards TDR-telegram 
+	SendTTC		: BOOL; // Forwards TTC-telegram 
+	SendTTQ		: BOOL; // Forwards TTQ-telegram 
+	SendTUR		: BOOL; // Forwards TUR-telegram 
+	SendDAR		: BOOL; // Forwards DAR-telegram 
+	SendGDR		: BOOL; // Forwards GDR-telegram 
+	
+END_STRUCT
+END_TYPE
+]]></Declaration>
+    <ObjectProperties>
+      <XmlArchive>
+        <Data>
+          <o xml:space="preserve" t="UMLStereoTypeContainerObject">
+            <v n="IsType" t="UMLType">BaseArea</v>
+            <v n="Stereotype">""</v>
+            <d n="Stereotypes" t="Hashtable" />
+          </o>
+        </Data>
+        <TypeList>
+          <Type n="Hashtable">System.Collections.Hashtable</Type>
+          <Type n="String">System.String</Type>
+          <Type n="UMLStereoTypeContainerObject">{30250973-b110-4e31-b562-c102e042dca4}</Type>
+          <Type n="UMLType">{0197b136-405a-42ee-bb27-fd08b621d0cf}</Type>
+        </TypeList>
+      </XmlArchive>
+    </ObjectProperties>
+  </DUT>
+</TcPlcObject>

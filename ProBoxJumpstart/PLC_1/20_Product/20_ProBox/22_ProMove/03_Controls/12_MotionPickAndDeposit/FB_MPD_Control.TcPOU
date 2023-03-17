@@ -1,0 +1,2219 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <POU Name="FB_MPD_Control" Id="{4034cfaf-8c64-49e1-9efe-4e1399b612da}" SpecialFunc="None">
+    <Declaration><![CDATA[//FB Motion Pickup n Deposit control
+FUNCTION_BLOCK FB_MPD_Control
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision:  $
+ *	Revision date	:	$Date: $
+ *	Last changed by	:	$Author: $
+ *	URL				:	$URL: $
+ *
+ *	Purpose			:	Motion Pickup and Deposit (MPD) Functionality with one or two conveyors (A&B).
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *
+ **************************************************************************************)
+VAR_INPUT
+	MPD_Config				: ST_CFG_MotionPickupDeposit; 
+	HW_Inputs		 		: ST_HW_InputsMPD; // Hardware inputs
+	HW_Inputs_ManControl	: ST_HW_InputsManControl; // Hardware inputs manual control
+	CtrlIn					: ST_CtrlInMPD_Control;
+	ElementData				: REFERENCE TO ST_ElementData;
+	FunctionOverides		: ARRAY[1..GVL_MPD.MAXPDs] OF BOOL; // internal data for function overrides, set by M_OverrridePickup
+	IgnoreDepositCheck		: ARRAY[1..GVL_MPD.MAXPDs] OF BOOL; // internal data for disable conditions met for deposit functions, set by M_SetIgnoreDepositConditions
+	OverhangData			: ARRAY[1..GVL_MPD.MAXPDs] OF BOOL; // internal data for function overrides, set by M_SetOverhangSensor
+	ConvBrake				: ARRAY [1..2] OF BOOL; //Brake for conveyor A..B applied
+	EmergencyStop			: BOOL; //Stop movment with emergency ramp profile.	
+END_VAR                     	
+                            	
+VAR_OUTPUT
+	HW_Outputs				: ST_HW_OutputsMPD;
+	CtrlOut					: ST_CtrlOutMPD_Control;
+	FunctionInterface		: ST_FunctionInterface;	// MPD conveyor drive request to element
+	//MotionRunning			: BOOL; //True if motion is active and shuttle car / Lift is moving
+END_VAR                     	
+                            	
+VAR		
+	fbMPDPriority			: FB_MPD_PriorityControl;	//controls the prioirty and check conditions for pickup and deposit
+	fbMPDMover				: FB_DriveMover; 		//Handlings moving of the shuttle
+		
+	//Private globals	
+	_MPD					: ST_MPD;	// MPD data container.
+	_MPDlInitDone			: BOOL;		// MPD (Motion Pickup and Deposit) control initializ complete.
+	_EntryReqActive			: BOOL;		// Entry mode pending, request was activated by operator
+	_EntryModeActive		: BOOL; 	// Entry door open mode active, request is finished	
+	_AutoAdjustVcHeight		: ST_AutoAdjustVcHeight; //structure for auto height compensation used only for VC type
+	_DebugPrint				: BOOL;
+END_VAR
+
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[
+
+(**************************************************************************************************************
+   Initialization
+***************************************************************************************************************)
+A_Init();
+
+
+
+(**************************************************************************************************************
+   Reset Error
+***************************************************************************************************************)
+
+F_ResetError(Reset 	  := FALSE,	ErrorData := ElementData.ErrorData.ErrorDataSet[3]); //Used for EndLimit 	
+F_ResetError(Reset 	  := FALSE,	ErrorData := ElementData.ErrorData.ErrorDataSet[4]); //Used in Mover control	
+F_ResetError(Reset 	  := FALSE,	ErrorData := ElementData.ErrorData.ErrorDataSet[5]); //Used in Motion and drive
+F_ResetError(Reset 	  := FALSE,	ErrorData := ElementData.ErrorData.ErrorDataSet[6]); //used for overhang sensor check and EndLimit
+F_ResetError(Reset 	  := FALSE,	ErrorData := ElementData.ErrorData.ErrorDataSet[7]); //Used in shuttle state control
+F_ResetError(Reset 	  := FALSE,	ErrorData := ElementData.ErrorData.ErrorDataSet[8]); //Used in init
+
+
+IF(_MPDlInitDone) THEN 
+	(**************************************************************************************************************
+		Run the priority controller always
+	***************************************************************************************************************)
+	fbMPDPriority(	ConfigPDs:=MPD_Config.ConvCFG,
+					CvAFunctionNumber:= _MPD.CV[1].CvFuncNumber, 
+					CvBFunctionNumber:= _MPD.CV[2].CvFuncNumber, 
+					OverrideFunctions:= FunctionOverides,
+					IgnoreDepositCheck:=IgnoreDepositCheck,
+					MPD_Type         := MPD_Config.MPD_Type);
+	
+	(**************************************************************************************************************
+	   Check overhang senors on Shuttle car and on adjacent functions
+	***************************************************************************************************************)
+	_M_CheckOverhangSensors();	
+	
+		
+	(**************************************************************************************************************
+	   Handle shuttle/VC conveyors
+	***************************************************************************************************************)
+	_M_SemiDriveControl();
+	_M_MPD_Mover();
+	_M_MPD_States();
+	_M_MPD_CvStates(GVL_MPD.CV_A);
+	_M_MPD_CvStates(GVL_MPD.CV_B);
+	
+			
+	(**************************************************************************************************************
+	   Output mapping
+	***************************************************************************************************************)
+	A_OutputMapping();	
+	
+	IF(ProBoxSystem.EMULATION_ENABLED) THEN
+		_M_Emulation(MotionRunning:=CtrlOut.MotionRunning);	 
+	END_IF
+END_IF]]></ST>
+    </Implementation>
+    <Method Name="_M_AutoAdjustVCHeight" Id="{7f81139a-1b6c-49e0-adce-7a1477561d67}">
+      <Declaration><![CDATA[//When picking/deposit pallets on the vertical conveyor and heavy loaded pallets moves in or moves out to/from VC the lifting unit will move up/down.
+//This will apply stress is to the vc lifting unit and should be avoided by move UP a few mm when takeover pallet, and move DOWN a few mm when handover a pallet.
+METHOD PRIVATE _M_AutoAdjustVCHeight : DINT
+VAR_INPUT
+	PickupActive	: BOOL;
+	DepositActive	: BOOL;
+	ResetAdjustment	: BOOL;
+	ReturnAdjustedValue : BOOL;
+END_VAR
+
+
+VAR_INST
+	HeightAdjusted		:BOOL;
+	HeightAdjustedValue	: DINT;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+//set default return value
+_M_AutoAdjustVCHeight:=0;
+
+//Auto Adjust height is only valid for Vertical conveyor type
+IF(MPD_Config.MPD_Type	<> E_MotionPD_Type.E_VerticalCv) THEN
+	RETURN;  
+END_IF
+
+IF(ResetAdjustment) THEN
+	HeightAdjusted:=FALSE;	
+	HeightAdjustedValue :=0;
+	RETURN;	
+END_IF
+
+
+IF(ReturnAdjustedValue) THEN
+	_M_AutoAdjustVCHeight:=HeightAdjustedValue;
+	RETURN;
+END_IF
+
+IF(HeightAdjusted) THEN
+	RETURN;
+END_IF
+
+
+
+// check occupied sensors on VC conveyor A and B
+
+//When VC Taking over pallet...
+IF(	PickupActive AND NOT DepositActive (*AND NOT F_PB_GetTransportControlDataRef(_MPD.CV[1].CvFuncNumber,1).Occupied*)) THEN
+	IF( _AutoAdjustVcHeight.PickupCondition) THEN		
+		_M_AutoAdjustVCHeight := _AutoAdjustVcHeight.PickupAdjustment;
+		HeightAdjustedValue	:= _M_AutoAdjustVCHeight;
+		HeightAdjusted:=TRUE;
+	END_IF 
+ END_IF
+
+//When VC handing over pallet...
+ IF( DepositActive AND NOT PickupActive (*AND F_PB_GetTransportControlDataRef(_MPD.CV[1].CvFuncNumber,1).Occupied*)) THEN	 
+	 IF(_AutoAdjustVcHeight.DepositCondition) THEN
+		_M_AutoAdjustVCHeight := _AutoAdjustVcHeight.DepositAdjustment;
+		HeightAdjustedValue	:= _M_AutoAdjustVCHeight;
+		HeightAdjusted:=TRUE;
+	END_IF
+ END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_CheckOverhangSensors" Id="{303a3932-d155-48e1-857e-2e83cb694364}">
+      <Declaration><![CDATA[METHOD PRIVATE _M_CheckOverhangSensors
+VAR
+	i,j:INT;
+	//OH_SensorVal 	: ARRAY [GVL_MPD.CV_A..GVL_MPD.CV_B] OF BOOL;
+	TransferingTU	: ARRAY [GVL_MPD.CV_A..GVL_MPD.CV_B] OF BOOL; // internal variable used to determine if an pickup or deposit is currently ongoing
+END_VAR
+
+VAR_INST
+	OH_SensorSide	: ARRAY [GVL_MPD.CV_A..GVL_MPD.CV_B] OF E_PickupDepositSide;
+	AdjacentFunction: ARRAY [GVL_MPD.CV_A..GVL_MPD.CV_B] OF E_FunctionNumber;	
+	OH_TestStart : ARRAY [GVL_MPD.CV_A..GVL_MPD.CV_B] OF BOOL;
+	OH_TestEnd : ARRAY [GVL_MPD.CV_A..GVL_MPD.CV_B] OF BOOL;
+	OH_TestCarOk : ARRAY [GVL_MPD.CV_A..GVL_MPD.CV_B] OF BOOL;
+	OH_TestAdjacentSideOk : ARRAY [GVL_MPD.CV_A..GVL_MPD.CV_B] OF BOOL;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[// Check overhang sensors
+// 1. Check overhang sensors on Shuttle car / Vertical Conveyor
+// 2. Check overhang sensors on conveyours connected to shuttle car Shuttle car / Vertical Conveytor
+// 3. Check that overhang sensors is blocked during transport, just to make sure propper connection/setup etc
+
+
+IF(	NOT _MPDlInitDone OR	ElementData.OperationState.eMode = E_PositionMode.MANUAL_MODE OR ElementData.OperationState.eState = E_PositionState.STOPPED) THEN	
+	RETURN; //No not set over hang sensor error
+END_IF
+
+// Determine if an transfer is currently ongoing.
+FOR i := GVL_MPD.CV_A TO GVL_MPD.CV_B BY 1 DO
+	IF( _MPD.CV[i].State = E_MPD_CvStates.E_CV_PICKUP OR _MPD.CV[i].State = E_MPD_CvStates.E_CV_DEPOSIT) THEN
+		TransferingTU[i]:=TRUE; //Transfer of TU is pending
+	END_IF
+END_FOR
+
+
+// --------------------------------------------------------------------------------------
+// 1.
+// Check overhang sensors on shuttle car, but during transfer, the OH sensor on the transfering side shall not be considered.
+// Get the side where the trasnfer is 
+// Allow overhang sensor on the side where the transfer to toggle during transport. the other overhang sensor is to be used as "second" stop sensor just in case...
+FOR i := GVL_MPD.CV_A TO GVL_MPD.CV_B BY 1 DO
+	IF(_MPD.CV[i].State = E_MPD_CvStates.E_CV_PICKUP) THEN
+		OH_SensorSide[i] := M_GetConveyorDirection(_MPD.CV[i].PickupFuncNumber); //Get the Pickup  side -> ignore overhang sensor on that side	
+	ELSIF(_MPD.CV[i].State = E_MPD_CvStates.E_CV_DEPOSIT) THEN
+		OH_SensorSide[i] := M_GetConveyorDirection(_MPD.CV[i].DepositFuncNumber); //Get the Pickup  side -> ignore overhang sensor on that side
+	END_IF
+END_FOR
+	 
+//Perform actual check
+FOR i := GVL_MPD.CV_A TO GVL_MPD.CV_B BY 1 DO
+	IF( _MPD.CV[i].Enabled AND 
+		((HW_Inputs.Conv[i].SensorOverhangLeft = FALSE AND (OH_SensorSide[i] = E_PickupDepositSide.RightSide OR NOT TransferingTU[i])) OR   
+		  (HW_Inputs.Conv[i].SensorOverhangRight = FALSE AND (OH_SensorSide[i] = E_PickupDepositSide.LeftSide OR NOT TransferingTU[i]))))THEN
+		F_SetError( ErrorType:= E_ErrorType.ERROR, 	
+					ErrorParam:= CONCAT('OverHangSensor: ',F_GetFunctionName(_MPD.CV[i].CvFuncNumber, 1(*zone one*))) , 
+					ErrorMsg:= E_ErrorConv.INCORRECT_SENSOR_SIGNAL, ErrorData:= ElementData.ErrorData.ErrorDataSet[6]);
+	END_IF
+END_FOR
+
+
+
+// --------------------------------------------------------------------------------------
+// 2.
+// Check overhang sensor on adjacent functions (ie pickup or deposit functions)
+// This is ONLY needed while moving the car
+IF( NOT TransferingTU[GVL_MPD.CV_A] AND NOT TransferingTU[GVL_MPD.CV_B]) THEN
+	FOR i := 1 TO GVL_MPD.MAXPDs BY 1 DO	
+		IF(MPD_Config.ConvCFG[i].eFunctionNumber <> E_FunctionNumber.F_BEGIN_FUNCTION AND NOT OverhangData[i])	THEN		
+			F_SetError( ErrorType:= E_ErrorType.ERROR, 	
+						ErrorParam:= CONCAT('OverHangSensor: ', F_GetFunctionName(MPD_Config.ConvCFG[i].eFunctionNumber, 0(*we dont know what zone it is, so we set the error to the funciton*))) , 
+						ErrorMsg:= E_ErrorConv.INCORRECT_SENSOR_SIGNAL, ErrorData:= ElementData.ErrorData.ErrorDataSet[6]);										
+		END_IF
+	END_FOR
+END_IF
+
+
+
+// --------------------------------------------------------------------------------------
+// 3.
+// Check that overhang sensors are blocked during transport for conveyor A and B
+
+FOR i := GVL_MPD.CV_A TO GVL_MPD.CV_B BY 1 DO
+	IF(_MPD.CV[i].State = E_MPD_CvStates.E_CV_PICKUP) THEN 
+		AdjacentFunction[i] := _MPD.CV[i].PickupFuncNumber;
+	ELSIF(_MPD.CV[i].State = E_MPD_CvStates.E_CV_DEPOSIT) THEN 
+		AdjacentFunction[i] := _MPD.CV[i].DepositFuncNumber;
+	END_IF
+END_FOR
+
+
+// Start trig test. If CV is in correct state and drive is running (note, even if multiple zones, TransportActive reflects all zones) 
+FOR i := GVL_MPD.CV_A TO GVL_MPD.CV_B BY 1 DO
+	OH_TestStart[i] :=  OH_TestStart[i] OR (TransferingTU[i] AND F_PB_GetTransportControlDataRef(_MPD.CV[i].CvFuncNumber,i).TransportActive);		
+END_FOR
+
+//Montor sensors on shuttle car/Vertical conveyor, and register if it once where blocked
+FOR i := GVL_MPD.CV_A TO GVL_MPD.CV_B BY 1 DO
+	IF(OH_TestStart[i]) THEN
+		OH_TestCarOk[i] := OH_TestCarOk[i] OR 
+						  ((HW_Inputs.Conv[i].SensorOverhangLeft = FALSE AND (OH_SensorSide[i] = E_PickupDepositSide.LeftSide)) OR
+						   (HW_Inputs.Conv[i].SensorOverhangRight = FALSE AND (OH_SensorSide[i] = E_PickupDepositSide.RightSide)));
+	END_IF	
+END_FOR
+
+//Monitor sensor on the adjacent side function
+FOR i := GVL_MPD.CV_A TO GVL_MPD.CV_B BY 1 DO
+	IF(OH_TestStart[i]) THEN			
+		FOR j := 1 TO GVL_MPD.MAXPDs BY 1 DO	
+			IF(MPD_Config.ConvCFG[j].eFunctionNumber =AdjacentFunction[i] AND AdjacentFunction[i]<>E_FunctionNumber.F_BEGIN_FUNCTION)	THEN		
+				OH_TestAdjacentSideOk[i] := OH_TestAdjacentSideOk[i] OR NOT OverhangData[j];											
+			END_IF
+		END_FOR
+	END_IF
+END_FOR
+
+	   
+//Check if transfer is finished.
+FOR i := GVL_MPD.CV_A TO GVL_MPD.CV_B BY 1 DO
+	OH_TestEnd[i] := OH_TestEnd[i] OR
+					(OH_TestStart[i] AND  (_MPD.CV[i].State = E_MPD_CvStates.E_CV_OCCUPIED OR _MPD.CV[i].State = E_MPD_CvStates.E_CV_DONE));
+END_FOR
+
+FOR i := GVL_MPD.CV_A TO GVL_MPD.CV_B BY 1 DO
+	IF(OH_TestEnd[i] AND NOT OH_TestCarOk[i]) THEN
+		F_SetError( ErrorType:= E_ErrorType.ERROR, 	
+					ErrorParam:= CONCAT('OverHang sensor was not blocked during transport: ',F_GetFunctionName(_MPD.CV[i].CvFuncNumber, 1(*zone one*))) , 
+					ErrorMsg:= E_ErrorConv.INCORRECT_SENSOR_SIGNAL, ErrorData:= ElementData.ErrorData.ErrorDataSet[6]);
+	END_IF
+	
+	IF(OH_TestEnd[i] AND NOT OH_TestAdjacentSideOk[i]) THEN
+		F_SetError( ErrorType:= E_ErrorType.ERROR, 	
+					ErrorParam:= CONCAT('Adjacent function OverHang sensor was not blocked during transport: ',F_GetFunctionName(AdjacentFunction[i], 0)) , 
+					ErrorMsg:= E_ErrorConv.INCORRECT_SENSOR_SIGNAL, ErrorData:= ElementData.ErrorData.ErrorDataSet[6]);
+	END_IF
+END_FOR
+
+	
+ //Reset test flags (regardless if there was an error, since an error should only be trigged once and possible to acknowledge)
+ FOR i := GVL_MPD.CV_A TO GVL_MPD.CV_B BY 1 DO
+	IF(OH_TestEnd[i]) THEN 	
+		OH_TestCarOk[i]:=OH_TestAdjacentSideOk[i]:=OH_TestStart[i]:=OH_TestEnd[i]:=FALSE;	
+		AdjacentFunction[i]:=E_FunctionNumber.F_BEGIN_FUNCTION;			
+	END_IF
+END_FOR
+ 
+
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_CheckTransportComplete" Id="{c1cf8084-34a3-449c-8f09-f5e292a54324}">
+      <Declaration><![CDATA[//Checks if a transport is complted. either handover or takeover is complete
+METHOD PRIVATE _M_CheckTransportComplete : BOOL
+VAR_INPUT
+	CvState						: E_MPD_CvStates;
+	CvIndex						: INT;		
+END_VAR
+VAR
+	NumberOfZones				: INT:=1; // number of zones configured.
+	i							: INT;
+	IsOccupied					: BOOL;	
+	isFree						: BOOL;
+END_VAR
+VAR_INST
+	StabilityTimer				: ARRAY[GVL_MPD.CV_A..GVL_MPD.CV_B] OF TON();
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+
+//sanity checks
+IF(NumberOfZones>conveyor.NUMBER_OF_ZONES_PER_FUNCTION) THEN RETURN;END_IF //error?
+
+
+//Get number of zones configured.
+IF(__ISVALIDREF(FunctionRegistry[_MPD.CV[CvIndex].CvFuncNumber].rSettingsFunction)) THEN
+	NumberOfZones := FunctionRegistry[_MPD.CV[CvIndex].CvFuncNumber].rSettingsFunction.NumberOfZones;
+END_IF
+
+
+StabilityTimer[CvIndex].PT := SEL(NumberOfZones=1,T#1S,T#100MS);
+
+CASE CvState OF
+	
+	//Pickup
+	E_MPD_CvStates.E_CV_PICKUP:
+	
+	FOR i:=1 TO NumberOfZones DO
+		IF( F_PB_GetTransportControlDataRef(_MPD.CV[CvIndex].CvFuncNumber,i).Occupied AND
+			F_PB_GetTransportControlDataRef(_MPD.CV[CvIndex].CvFuncNumber,i).eTakeOverState <> E_TakeOverState.INTERRUPTED AND 
+			F_PB_GetTransportControlDataRef(_MPD.CV[CvIndex].CvFuncNumber,i).eTakeOverState <> E_TakeOverState.STOP AND  
+			(F_PB_GetTransportControlDataRef(_MPD.CV[CvIndex].CvFuncNumber,i).eTransportState = E_TransportState.OCCUPIED OR 
+			 F_PB_GetTransportControlDataRef(_MPD.CV[CvIndex].CvFuncNumber,i).eTransportState = E_TransportState.SIMULTANEOUS_OCCUPIED)) THEN
+			IsOccupied := TRUE;
+		END_IF
+	END_FOR
+	
+	StabilityTimer[CvIndex](IN:=IsOccupied); //needed when multiple zones configured
+	
+	//transport finished and brake are applied (not released)	
+	_M_CheckTransportComplete:=StabilityTimer[CvIndex].Q AND IsOccupied AND NOT ConvBrake[CvIndex];
+	
+//Deposit -> Handover
+	E_MPD_CvStates.E_CV_DEPOSIT:
+		FOR i:=1 TO NumberOfZones DO
+			IF( NOT F_PB_GetTransportControlDataRef(_MPD.CV[CvIndex].CvFuncNumber,i).Occupied AND
+					F_PB_GetTransportControlDataRef(_MPD.CV[CvIndex].CvFuncNumber,i).eHandOverState <> E_HandOverState.INTERRUPTED AND
+					F_PB_GetTransportControlDataRef(_MPD.CV[CvIndex].CvFuncNumber,i).eHandOverState <> E_HandOverState.STOP AND
+					F_PB_GetTransportControlDataRef(_MPD.CV[CvIndex].CvFuncNumber,i).eTransportState <> E_TransportState.HANDOVER) THEN
+				isFree:=TRUE;
+			ELSE
+				isFree:=FALSE;
+				EXIT;
+			END_IF
+		END_FOR
+			
+		StabilityTimer[CvIndex](IN:=isFree); //needed when multiple zones configured
+	
+		//transport finished and brake are applied (not released)	
+		_M_CheckTransportComplete:=StabilityTimer[CvIndex].Q AND isFree AND NOT ConvBrake[CvIndex];
+		
+	ELSE
+		StabilityTimer[CvIndex](IN:=FALSE);
+		
+END_CASE]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_DebugPrint" Id="{cc1faf6e-aead-4605-a96a-7eb24b41ba2c}">
+      <Declaration><![CDATA[METHOD PRIVATE _M_DebugPrint : BOOL
+VAR_INPUT
+	CvIndex	: INT; // 1=CV A, 2=CV B, 0=MPD Mover
+	DbgMsg 	: STRING(System.DEBUGMESSAGELENGTH);
+END_VAR
+
+VAR_INST
+	fbDebugMsg		: FB_DebugMsg; // Debug instance
+	//DebugMsg		: T_MAXSTRING; // Debug msg
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+IF(CvIndex=0) THEN
+	fbDebugMsg.M_SendInfoMsg(CONCAT('MPD: ', DbgMsg));
+ELSIF(CvIndex<=GVL_MPD.CV_B) THEN
+	fbDebugMsg.M_SendInfoMsg(CONCAT(CONCAT('MPD CV: ', GVL_MPD.CV_IxNAME[CvIndex]),CONCAT(': ', DbgMsg)));
+ELSE
+	fbDebugMsg.M_SendInfoMsg(DbgMsg);
+END_IF
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_Emulation" Id="{e6128ba1-9ea1-4b74-8e85-4921b893b0cb}">
+      <Declaration><![CDATA[METHOD PRIVATE _M_Emulation : BOOL
+VAR_IN_OUT
+	MotionRunning : BOOL;
+END_VAR
+VAR
+	LastCyclePos : DINT;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+IF(NOT ProBoxSystem.EMULATION_ENABLED) THEN
+	RETURN;
+END_IF
+
+LastCyclePos := _MPD.ActualPosValue;
+
+//emulate moving...
+//consider speed?? MPD_Config.DriveCFG.DriveParameter[_MPD.DriveParameterIndex].Velocity/(1000/10(*10 ms CycleTime*))
+IF(_MPD.RequestMove AND _M_IsErrorActive() = FALSE) THEN		
+	IF( _MPD.ActualPosValue < _MPD.RequestPosValue) THEN _MPD.ActualPosValue := _MPD.ActualPosValue+4;	END_IF
+	IF( _MPD.ActualPosValue > _MPD.RequestPosValue) THEN _MPD.ActualPosValue := _MPD.ActualPosValue-4;	END_IF		
+					
+	//check if desired position is within limits
+	_MPD.Locked := M_CheckDesiredPosition(_MPD.RequestPosValue);
+	
+END_IF	
+
+IF _EntryReqActive and _MPD.State = E_MPD_States.E_IDLE THEN 
+	IF( _MPD.ActualPosValue < CtrlIn.RequestEntryPos) THEN _MPD.ActualPosValue := _MPD.ActualPosValue+4;	END_IF
+	IF( _MPD.ActualPosValue > CtrlIn.RequestEntryPos) THEN _MPD.ActualPosValue := _MPD.ActualPosValue-4;	END_IF
+	//check if desired position is within limits
+	_MPD.Locked := M_CheckDesiredPosition(CtrlIn.RequestEntryPos);		
+END_IF
+
+MotionRunning := (_MPD.ActualPosValue <> LastCyclePos);
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_GetPickupDepositFunctions" Id="{799a16be-7b64-47fb-bdd6-b6d11097e9a0}">
+      <Declaration><![CDATA[//Get the pickup and deposit function from ShuttlePriority control FB_ShuttlePriorityControl
+METHOD PRIVATE _M_GetPickupDepositFunctions: BOOL
+VAR_INPUT
+	CvIndex					: INT; // 1=A, 2=B	
+	Verify					: BOOL; // set to true to check if actual pickup and deposit function still is the same
+END_VAR
+VAR
+	rPrioFunctions			:REFERENCE TO ST_PrioFunctions;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+IF(CvIndex = GVL_MPD.CV_A) THEN
+	rPrioFunctions REF= fbMPDPriority.CV_A;
+ELSIF(CvIndex = GVL_MPD.CV_B) THEN
+	rPrioFunctions REF= fbMPDPriority.CV_B;
+END_IF
+
+
+//Sanity check
+IF(NOT  __ISVALIDREF(rPrioFunctions)) THEN
+	F_SetError(E_ErrorType.ERROR,'_M_GetPickupDepositFunctions bad reference',E_ErrorConv.SOFTWARE_ERROR,ElementData.ErrorData.ErrorDataSet[7]);
+	RETURN;
+END_IF
+
+
+IF(Verify) THEN
+	// check any position, as the priority may have been changed.
+	_M_GetPickupDepositFunctions := (_MPD.CV[CvIndex].PickupFuncNumber = fbMPDPriority.CV_A.PickupFunctionNumber AND _MPD.CV[CvIndex].DepositFuncNumber = fbMPDPriority.CV_A.DepositFunctionNumber) OR
+									(_MPD.CV[CvIndex].PickupFuncNumber = fbMPDPriority.CV_B.PickupFunctionNumber AND _MPD.CV[CvIndex].DepositFuncNumber = fbMPDPriority.CV_B.DepositFunctionNumber);
+	RETURN;	
+ELSIF( _MPD.CV[CvIndex].Enabled) THEN
+	//revover...	
+	IF( F_PB_GetTransportControlDataRef(_MPD.CV[CvIndex].CvFuncNumber,1).Occupied OR
+		F_PB_GetTransportControlDataRef(_MPD.CV[CvIndex].CvFuncNumber,2).Occupied) THEN
+		//recover after init etc..
+		_MPD.CV[CvIndex].DepositFuncNumber := fbMPDPriority.M_GetDepositFunction(_MPD.CV[CvIndex].CvFuncNumber, 1, TRUE); 
+		IF(_MPD.CV[CvIndex].DepositFuncNumber = E_FunctionNumber.F_BEGIN_FUNCTION) THEN
+			_MPD.CV[CvIndex].DepositFuncNumber := fbMPDPriority.M_GetDepositFunction(_MPD.CV[CvIndex].CvFuncNumber, 2, TRUE);			
+		END_IF 
+		//IF(_MPD.CV[CvIndex].DepositFuncNumber = E_FunctionNumber.F_BEGIN_FUNCTION) //	-> no valid destination found
+  
+		//If valid destination found
+		IF(_MPD.CV[CvIndex].DepositFuncNumber <> E_FunctionNumber.F_BEGIN_FUNCTION) THEN
+			_MPD.CV[CvIndex].HighestPriority := TRUE;
+			_MPD.CV[CvIndex].State := E_MPD_CvStates.E_CV_OCCUPIED;
+			IF(_DebugPrint) THEN _M_DebugPrint(0,'Recover->E_CV_OCCUPIED'); END_IF
+			_M_GetPickupDepositFunctions := TRUE;
+		END_IF
+	ELSE	    
+		//Normal functionality, get prioritized data  	
+		_MPD.CV[CvIndex].PickupFuncNumber 	:= rPrioFunctions.PickupFunctionNumber;
+		_MPD.CV[CvIndex].DepositFuncNumber 	:= rPrioFunctions.DepositFunctionNumber;
+		_MPD.CV[CvIndex].HighestPriority 	:= rPrioFunctions.HighestPriority;
+		_M_GetPickupDepositFunctions := TRUE;
+	END_IF
+ELSE
+	_MPD.CV[CvIndex].PickupFuncNumber 	:= E_FunctionNumber.F_BEGIN_FUNCTION; 
+	_MPD.CV[CvIndex].DepositFuncNumber 	:= E_FunctionNumber.F_BEGIN_FUNCTION;
+	_MPD.CV[CvIndex].HighestPriority 	:= FALSE;
+END_IF
+
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_IsErrorActive" Id="{b2a7186f-4d5b-4380-9ccd-95aafce262e2}">
+      <Declaration><![CDATA[METHOD PRIVATE _M_IsErrorActive : BOOL
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+_M_IsErrorActive :=ElementData.ErrorData.FunctionErrorPending OR ElementData.ErrorData.ErrorState = E_ErrorState.ERROR;
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_IsErrorActiveOnPD" Id="{9d46819d-de39-4938-aee2-a38e487d091e}">
+      <Declaration><![CDATA[//check if Pickup or Deposit function is in error during takover or handover or if element is stoped
+METHOD PRIVATE _M_IsErrorActiveOnPD : BOOL
+VAR_INPUT
+END_VAR
+VAR
+	i:INT;
+	myElementNumber		: E_ElementNumber;
+	myFunctionNumbers	: ARRAY [1..4] OF E_FunctionNumber;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+//only check if an transport is activated
+IF(_MPD.CV[GVL_MPD.CV_A].State = E_MPD_CvStates.E_CV_PICKUP) THEN
+	myFunctionNumbers[1] := _MPD.CV[GVL_MPD.CV_A].PickupFuncNumber;
+END_IF
+IF(_MPD.CV[GVL_MPD.CV_A].State = E_MPD_CvStates.E_CV_DEPOSIT) THEN
+	myFunctionNumbers[2] := _MPD.CV[GVL_MPD.CV_A].DepositFuncNumber;	
+END_IF
+IF(_MPD.CV[GVL_MPD.CV_B].State = E_MPD_CvStates.E_CV_PICKUP) THEN
+	myFunctionNumbers[3] := _MPD.CV[GVL_MPD.CV_B].PickupFuncNumber;
+END_IF
+IF(_MPD.CV[GVL_MPD.CV_B].State = E_MPD_CvStates.E_CV_DEPOSIT) THEN
+	myFunctionNumbers[4] := _MPD.CV[GVL_MPD.CV_B].DepositFuncNumber;
+END_IF
+
+(**************************************************************************************************************
+//check that the deposit element, function or zone is in error	
+**************************************************************************************************************)
+FOR i:=1 TO 4 DO	
+	IF(__ISVALIDREF(FunctionRegistry[myFunctionNumbers[i]].rSettingsFunction)) THEN
+		myElementNumber := FunctionRegistry[myFunctionNumbers[i]].rSettingsFunction.eElementLink;
+		IF(__ISVALIDREF(ElementRegistry[myElementNumber].rElementData))THEN
+			IF(	ElementRegistry[myElementNumber].rElementData.ErrorData.FunctionErrorPending OR
+				ElementRegistry[myElementNumber].rElementData.ErrorData.ErrorState = E_ErrorState.ERROR OR
+				ElementRegistry[myElementNumber].rElementData.OperationState.eState = E_PositionState.STOPPED) THEN
+				_M_IsErrorActiveOnPD := TRUE; //an error occured during and active TU transport (handover or takeover)
+				EXIT; // no need to loock further
+			END_IF		
+		END_IF		
+	END_IF
+END_FOR]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_MPD_CvStates" Id="{08220240-3974-40ed-8030-4823caa07354}">
+      <Declaration><![CDATA[METHOD PRIVATE _M_MPD_CvStates : BOOL
+VAR_INPUT
+	CvIndex 	: INT;  // 1=A, 2=B
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+CASE _MPD.CV[CvIndex].State OF
+	
+	E_MPD_CvStates.E_CV_INIT:		
+		_MPD.CV[CvIndex].PickupFuncNumber := _MPD.CV[CvIndex].DepositFuncNumber := E_FunctionNumber.F_BEGIN_FUNCTION;
+		_MPD.CV[CvIndex].HighestPriority := FALSE;		
+		_MPD.CV[CvIndex].State := E_MPD_CvStates.E_CV_IDLE;
+		IF(_DebugPrint) THEN _M_DebugPrint(CvIndex,'Idle');END_IF
+		
+	
+	// idle, cv waiting for job assignment.
+	E_MPD_CvStates.E_CV_IDLE:		
+		
+		IF _EntryReqActive OR _EntryModeActive OR ElementData.OperationState.eMode <> E_PositionMode.AUTO_MODE OR ElementData.OperationState.eState <> E_PositionState.STARTED THEN
+			;//Do Nothing
+		ELSIF (_MPD.CV[CvIndex].PickupFuncNumber <> E_FunctionNumber.F_BEGIN_FUNCTION AND _MPD.CV[CvIndex].DepositFuncNumber <> E_FunctionNumber.F_BEGIN_FUNCTION) THEN
+				_MPD.CV[CvIndex].State := E_MPD_CvStates.E_CV_JOBASSIGNED;		
+		ELSE
+			//Get prioritized pickup and deposit function
+			_M_GetPickupDepositFunctions(CvIndex, FALSE);			
+		END_IF
+		
+		
+	//Shuttle Conveyor has a job assigned, wait for shuttle to get into correct position
+	E_MPD_CvStates.E_CV_JOBASSIGNED:
+		//check that pickup position still is valid
+		IF(NOT  _M_GetPickupDepositFunctions(CvIndex,TRUE(*Verify*))) THEN
+			_MPD.CV[CvIndex].State := E_MPD_CvStates.E_CV_INIT;
+		ELSIF( _MPD.CV[CvIndex].PosPickupReached) THEN			
+			//ElementRegistry[E_ElementNumber.E_11_002_0206_00_0].rElement.fbDebugMsg.M_SendInfoMsg(CONCAT(CONCAT('Shuttle: ', GVL_MPD.CV_IxNAME[CvIndex]),CONCAT('. Pickup adjacent function: ', F_GetFunctionName(_SC.CV[CvIndex].PickupFuncNumber,0))));			
+			_MPD.CV[CvIndex].State := E_MPD_CvStates.E_CV_PICKUP;			
+		END_IF
+	
+	//Wait for pickup to be complete. ie transfer TU from pickup function on to the shuttle conveyor
+	E_MPD_CvStates.E_CV_PICKUP:
+		//Set links for  pickup adjacent function, to point towards correct Shuttle conveyor (CV A or CV B)
+		_M_SetLinks(CvIndex,TRUE,FALSE,FALSE,ElementData.ErrorData.ErrorDataSet[7]);		
+		IF(NOT CtrlIn.HoldPosition AND _M_CheckTransportComplete(_MPD.CV[CvIndex].State, CvIndex)) THEN 
+			_MPD.CV[CvIndex].State := E_MPD_CvStates.E_CV_OCCUPIED;
+			IF(_DebugPrint) THEN _M_DebugPrint(CvIndex,'->E_CV_OCCUPIED');END_IF
+		END_IF
+	
+	// pickup complete, and shuttle conveyor occupied, wait for deposit function is reached
+	E_MPD_CvStates.E_CV_OCCUPIED:
+		//incase of recovery from abnormal shutdown or Semi Auto Mode
+		IF(NOT _MPD.RequestMove OR _MPD.State = E_MPD_States.E_SEMI_MODE) THEN
+			;//Wait 
+		ELSIF( _MPD.CV[CvIndex].PosDepositReached) THEN
+			//restore Pickup adjacent function to default
+			_M_SetLinks(CvIndex,TRUE,FALSE,TRUE,ElementData.ErrorData.ErrorDataSet[7]);		
+			IF(_DebugPrint) THEN _M_DebugPrint(CvIndex,CONCAT('->E_CV_DEPOSIT to function: ', F_GetFunctionName(_MPD.CV[CvIndex].DepositFuncNumber,0))); END_IF				
+			_MPD.CV[CvIndex].State := E_MPD_CvStates.E_CV_DEPOSIT;
+		END_IF
+	
+	E_MPD_CvStates.E_CV_DEPOSIT:	
+		//incase of recovery from abnormal shutdown or Semi Auto Mode
+		IF(NOT _MPD.RequestMove OR _MPD.State = E_MPD_States.E_SEMI_MODE) THEN
+			_MPD.CV[CvIndex].State := E_MPD_CvStates.E_CV_OCCUPIED;
+			IF(_DebugPrint) THEN _M_DebugPrint(CvIndex,'->E_CV_OCCUPIED'); END_IF
+		END_IF
+		//Set links for the deposit adjacent function, to point towards correct Shuttle conveyor (CV A or CV B)
+		_M_SetLinks(CvIndex,FALSE,TRUE,FALSE,ElementData.ErrorData.ErrorDataSet[7]);		
+		IF(NOT CtrlIn.HoldPosition AND _M_CheckTransportComplete(_MPD.CV[CvIndex].State, CvIndex)) THEN
+			//restore deposit adjacent function to default
+			_M_SetLinks(CvIndex,FALSE,TRUE,TRUE,ElementData.ErrorData.ErrorDataSet[7]);
+			IF(_DebugPrint) THEN _M_DebugPrint(CvIndex,'->E_CV_DONE'); END_IF
+			_MPD.CV[CvIndex].State := E_MPD_CvStates.E_CV_DONE;
+		END_IF
+	
+	E_MPD_CvStates.E_CV_DONE:		
+		IF(_MPD.State = E_MPD_States.E_CYCLE_COMPLETE) THEN						
+			_MPD.CV[CvIndex].State := E_MPD_CvStates.E_CV_INIT;
+		END_IF
+	
+	ELSE
+		F_SetError( ErrorType:= E_ErrorType.ERROR, 	ErrorParam:= '_M_ShuttleCvStates sequence error' , ErrorMsg:= E_ErrorConv.SOFTWARE_ERROR, ErrorData:= ElementData.ErrorData.ErrorDataSet[7]);
+	
+END_CASE]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_MPD_Init" Id="{87f36a17-7131-4ba4-b118-b56d06e0fa50}">
+      <Declaration><![CDATA[METHOD PRIVATE _M_MPD_Init : BOOL
+VAR
+	EmptyShuttleConv 	: ST_MPD_CV;
+	i,j 				: INT;
+	InitSuccess 		: BOOL :=TRUE;
+END_VAR
+
+VAR_INST
+	InitDelay : TON; // Startup delay for the function(s) connected to the element to initialize 
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[// Init function, performed once at init
+_MPD.CV[GVL_MPD.CV_A] := EmptyShuttleConv;
+_MPD.CV[GVL_MPD.CV_B] := EmptyShuttleConv;
+_MPD.State := 0;
+
+//_SC.ShuttleFuncNumber					:= ElementData ConfigFunction.eFunctionNumber;
+_MPD.CV[GVL_MPD.CV_A].CvFuncNumber	:= ElementData.MemberList.FunctionList[1].eFunctionNumber;
+_MPD.CV[GVL_MPD.CV_B].CvFuncNumber	:= ElementData.MemberList.FunctionList[2].eFunctionNumber;
+
+_MPD.CV[GVL_MPD.CV_A].Enabled		:= _MPD.CV[GVL_MPD.CV_A].CvFuncNumber <> E_FunctionNumber.F_BEGIN_FUNCTION;
+_MPD.CV[GVL_MPD.CV_B].Enabled		:= _MPD.CV[GVL_MPD.CV_B].CvFuncNumber <> E_FunctionNumber.F_BEGIN_FUNCTION;
+// Check if there is a Pick Desposit
+IF(MPD_Config.MPD_Type = E_MotionPD_Type.E_Unknown) THEN
+	F_SetError(ErrorType:= E_ErrorType.ERROR, 
+				ErrorParam:= 'Motion PD type not defined', 
+				ErrorMsg:= E_ErrorConv.CONFIGURATION_ERROR, 
+				ErrorData:= ElementData.ErrorData.ErrorDataSet[NUMBER_OF_ERROR_SETS]); 
+	InitSuccess:=FALSE;
+END_IF
+// -Check correct assignment in. Element has at least has a shuttle function + minimum one additional function
+InitDelay(IN:=TRUE,PT:=T#10S);
+IF(_MPD.CV[GVL_MPD.CV_A].CvFuncNumber = E_FunctionNumber.F_BEGIN_FUNCTION AND _MPD.CV[GVL_MPD.CV_B].CvFuncNumber = E_FunctionNumber.F_BEGIN_FUNCTION) THEN
+	IF(InitDelay.Q) THEN
+		F_SetError(ErrorType:= E_ErrorType.ERROR, 
+					ErrorParam:= 'Element has not assigned CvA to an function', 
+					ErrorMsg:= E_ErrorConv.CONFIGURATION_ERROR, 
+					ErrorData:= ElementData.ErrorData.ErrorDataSet[NUMBER_OF_ERROR_SETS]); 
+		InitDelay(IN:=FALSE);
+	END_IF
+	InitSuccess:=FALSE;
+	RETURN;
+END_IF
+// Check configuration
+// -Check that not the same function is assigned more than once
+FOR i := 1 TO GVL_MPD.MAXPDs - 1 BY 1 DO 
+	FOR j := i + 1 TO GVL_MPD.MAXPDs BY 1 DO
+		IF (MPD_Config.ConvCFG[i].eFunctionNumber = MPD_Config.ConvCFG[j].eFunctionNumber  AND MPD_Config.ConvCFG[i].eFunctionNumber<>E_FunctionNumber.F_BEGIN_FUNCTION) THEN
+			F_SetError(ErrorType:= E_ErrorType.ERROR, 
+				ErrorParam:= CONCAT('Doublets configured in Config.ConvCFG index: ', INT_TO_STRING(i)) , 
+				ErrorMsg:= E_ErrorConv.CONFIGURATION_ERROR, 
+				ErrorData:= ElementData.ErrorData.ErrorDataSet[NUMBER_OF_ERROR_SETS]); 
+				InitSuccess := FALSE;
+		END_IF
+	END_FOR
+END_FOR
+// Check configuration
+// -check at least one of the EnableConv parameters are set
+FOR i := 1 TO GVL_MPD.MAXPDs - 1 BY 1 DO	
+	IF (MPD_Config.ConvCFG[i].eFunctionNumber <> E_FunctionNumber.F_BEGIN_FUNCTION AND
+		(MPD_Config.ConvCFG[i].EnableConv[1]=FALSE AND  MPD_Config.ConvCFG[i].EnableConv[2]=FALSE)) THEN
+			F_SetError(ErrorType:= E_ErrorType.ERROR, 
+				ErrorParam:= CONCAT('Both EnableConv[x] in Config.ConvCFG index: ', INT_TO_STRING(i)) , 
+				ErrorMsg:= E_ErrorConv.CONFIGURATION_ERROR, 
+				ErrorData:= ElementData.ErrorData.ErrorDataSet[NUMBER_OF_ERROR_SETS]); 
+				InitSuccess := FALSE;
+	END_IF	
+END_FOR	
+// Check configuration
+// -check that position is set within the valid range
+FOR i := 1 TO GVL_MPD.MAXPDs - 1 BY 1 DO 
+	FOR j:=GVL_MPD.CV_A TO GVL_MPD.CV_B DO
+		IF (MPD_Config.ConvCFG[i].eFunctionNumber <> E_FunctionNumber.F_BEGIN_FUNCTION AND
+			(MPD_Config.ConvCFG[i].EnableConv[j] AND (MPD_Config.ConvCFG[i].PositionConv < MPD_Config.DriveCFG.MinimumPosition OR MPD_Config.ConvCFG[i].PositionConv>MPD_Config.DriveCFG.MaximumPosition))) THEN
+				F_SetError(ErrorType:= E_ErrorType.ERROR, 
+					ErrorParam:= CONCAT('PositionConv in Config.ConvCFG index: ', INT_TO_STRING(i)), 
+					ErrorMsg:= E_ErrorConv.CONFIGURATION_ERROR, 
+					ErrorData:= ElementData.ErrorData.ErrorDataSet[NUMBER_OF_ERROR_SETS]); 
+					InitSuccess := FALSE;
+		END_IF
+	END_FOR	
+END_FOR
+// Check the for invalid homing function should not be F_BegainFunction or set an error
+IF MPD_Config.EncoderHoming.HomingFunctionNumber = E_FunctionNumber.F_BEGIN_FUNCTION AND MPD_Config.EncoderHoming.HomingEnable THEN
+	F_SetError(ErrorType:= E_ErrorType.ERROR, 
+					ErrorParam:= 'Invalid Homing Function number', 
+					ErrorMsg:= E_ErrorConv.CONFIGURATION_ERROR, 
+					ErrorData:= ElementData.ErrorData.ErrorDataSet[NUMBER_OF_ERROR_SETS]); 
+					InitSuccess := FALSE;
+END_IF	
+// Check configuration
+// Check pickup position offset
+FOR i := 1 TO GVL_MPD.MAXPDs - 1 BY 1 DO 
+	FOR j:=GVL_MPD.CV_A TO GVL_MPD.CV_B DO
+		IF (MPD_Config.ConvCFG[i].eFunctionNumber <> E_FunctionNumber.F_BEGIN_FUNCTION AND MPD_Config.ConvCFG[i].EnableConv[j]) THEN
+			
+			IF(MPD_Config.MPD_Type = E_MotionPD_Type.E_ShuttleCar) THEN
+				//PickupPositionOffset must be zero for shuttle cars
+				IF(MPD_Config.MPD_Type = E_MotionPD_Type.E_ShuttleCar AND MPD_Config.ConvCFG[i].PickupPositionOffset<>0) THEN
+					 F_SetError(ErrorType:= E_ErrorType.ERROR, 
+						ErrorParam:= CONCAT('PickupPositionOffset<>0 . Config.ConvCFG index: ', INT_TO_STRING(i)), 
+						ErrorMsg:= E_ErrorConv.CONFIGURATION_ERROR, 
+						ErrorData:= ElementData.ErrorData.ErrorDataSet[NUMBER_OF_ERROR_SETS]); 
+						InitSuccess := FALSE;
+				END_IF
+				//DepsitPositionOffset must be zero for shuttle cars
+				 IF(MPD_Config.MPD_Type = E_MotionPD_Type.E_ShuttleCar AND MPD_Config.ConvCFG[i].DepsitPositionOffset<>0) THEN
+					 F_SetError(ErrorType:= E_ErrorType.ERROR, 
+						ErrorParam:= CONCAT('DepsitPositionOffset<>0 . Config.ConvCFG index: ', INT_TO_STRING(i)), 
+						ErrorMsg:= E_ErrorConv.CONFIGURATION_ERROR, 
+						ErrorData:= ElementData.ErrorData.ErrorDataSet[NUMBER_OF_ERROR_SETS]); 
+						InitSuccess := FALSE;
+				END_IF
+			END_IF
+			
+			IF(MPD_Config.MPD_Type = E_MotionPD_Type.E_VerticalCv) THEN
+				//PickupPositionOffset must be sane. ie between -200 and + 200
+				IF(MPD_Config.ConvCFG[i].PickupPositionOffset > 200 AND MPD_Config.ConvCFG[i].PickupPositionOffset <-200) THEN
+					F_SetError(ErrorType:= E_ErrorType.ERROR, 
+						ErrorParam:= CONCAT('PickupPositionOffset +-200 in Config.ConvCFG index: ', INT_TO_STRING(i)), 
+						ErrorMsg:= E_ErrorConv.CONFIGURATION_ERROR, 
+						ErrorData:= ElementData.ErrorData.ErrorDataSet[NUMBER_OF_ERROR_SETS]); 
+						InitSuccess := FALSE;
+				END_IF
+			END_IF
+		END_IF
+	END_FOR	
+END_FOR
+// Check CVCC, must be 0 for VC type
+IF(MPD_Config.MPD_Type = E_MotionPD_Type.E_VerticalCv AND MPD_Config.CvCC <> 0) THEN
+	F_SetError(ErrorType:= E_ErrorType.ERROR, 
+				ErrorParam:= 'MPD_Config.CvCC must be set to 0', 
+				ErrorMsg:= E_ErrorConv.CONFIGURATION_ERROR, 
+				ErrorData:= ElementData.ErrorData.ErrorDataSet[NUMBER_OF_ERROR_SETS]); 
+	InitSuccess:=FALSE;
+END_IF
+
+_M_MPD_Init := InitSuccess;
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_MPD_Mover" Id="{5885b909-8da5-4f60-9bc3-3b30ac020b54}">
+      <Declaration><![CDATA[METHOD PROTECTED _M_MPD_Mover : BOOL
+VAR_INPUT
+END_VAR
+VAR
+	i					: INT;
+	DesiredPos			: DINT;	
+	MoviDriveManual		: ST_MoviDriveManual;
+END_VAR
+
+VAR_INST
+	CVInPosTimeout		: TON;//if position is not correct stop, set an error	
+	ScMoveTimeout		: TON := (PT:=T#30S);	//Shuttle Car Move Timeout
+	EntryReqState		: INT;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+CASE EntryReqState OF
+	0:	//Trig an entry request..
+		IF(CtrlIn.RequestEntry) THEN 
+			_EntryReqActive :=TRUE;
+			EntryReqState := EntryReqState+1;
+		END_IF
+	1: // wait for position is reached
+		IF(_MPD.EntryPosReached) THEN
+			_EntryModeActive :=TRUE;
+			_EntryReqActive :=FALSE;
+			EntryReqState := EntryReqState+1;
+		END_IF
+	2: // Entry pos is reched, wait for operator to turn off key
+		IF(NOT CtrlIn.RequestEntry) THEN
+			_EntryModeActive :=FALSE;
+			EntryReqState := EntryReqState+1;
+		END_IF
+	ELSE
+		EntryReqState := 0;	
+END_CASE
+
+
+// Call Shuttle car mover...
+// Manual Control
+IF(_MPD.State = E_MPD_States.E_SEMI_MODE AND CtrlIn.SemiDriveCtrl.SemiManualMode) THEN 
+	//Semi manual control
+	MoviDriveManual.DriveFwd := CtrlIn.SemiDriveCtrl.SemiControlFWD;
+	MoviDriveManual.DriveRev := CtrlIn.SemiDriveCtrl.SemiControlREV;
+	MoviDriveManual.EmergencyDrive := FALSE;
+ELSE
+	//Normal Manual control
+	MoviDriveManual.DriveFwd := HW_Inputs.ManualControl.DriveFwd;
+	MoviDriveManual.DriveRev := HW_Inputs.ManualControl.DriveRev;
+	MoviDriveManual.EmergencyDrive := HW_Inputs.ManualControl.EmergencyDrive;
+END_IF
+
+
+
+IF( NOT ProBoxSystem.EMULATION_ENABLED) THEN	
+		
+	//Request to move Normal operation
+	IF _MPD.RequestMove AND NOT _EntryModeActive THEN 
+		fbMPDMover.M_MoveAbsolute(
+			mPosition		:= _MPD.RequestPosValue, 
+			mVelocity		:= MPD_Config.DriveCFG.DriveParameter[_MPD.DriveParameterIndex].Velocity, 
+			mAcceleration	:= MPD_Config.DriveCFG.DriveParameter[_MPD.DriveParameterIndex].Acceleration, 
+			mDeceleration	:= MPD_Config.DriveCFG.DriveParameter[_MPD.DriveParameterIndex].Deceleration, 
+			mJerk			:= MPD_Config.DriveCFG.DriveParameter[_MPD.DriveParameterIndex].Jerk,
+			ErrorData 		:= ElementData.ErrorData.ErrorDataSet[5]);
+	
+	//Request move to entry
+	ELSIF _EntryReqActive AND NOT _MPD.RequestMove AND _MPD.State = E_MPD_States.E_IDLE THEN 
+		fbMPDMover.M_MoveAbsolute(
+			mPosition		:= CtrlIn.RequestEntryPos, //EntryPosition, 
+			mVelocity		:= MPD_Config.DriveCFG.DriveParameter[_MPD.DriveParameterIndex].Velocity, 
+			mAcceleration	:= MPD_Config.DriveCFG.DriveParameter[_MPD.DriveParameterIndex].Acceleration, 
+			mDeceleration	:= MPD_Config.DriveCFG.DriveParameter[_MPD.DriveParameterIndex].Deceleration, 
+			mJerk			:= MPD_Config.DriveCFG.DriveParameter[_MPD.DriveParameterIndex].Jerk,
+			ErrorData 		:= ElementData.ErrorData.ErrorDataSet[5]);
+	END_IF
+	
+	fbMPDMover(
+		ErrorPending			:= _M_IsErrorActive(), 
+		ElementOperationState	:= ElementData.OperationState,
+		DisableEnableDrive 		:= (NOT _MPD.RequestMove AND NOT _EntryReqActive) OR _M_IsErrorActiveOnPD(), 
+		DriveCFG				:= MPD_Config.DriveCFG,
+		ManualControl			:= MoviDriveManual,		  
+		DriveInputs				:= HW_Inputs.DriveInputs,		
+		EmgStopAxisTrig 		:= EmergencyStop,
+		Done 					=> _MPD.Locked, 
+		Aborted 				=> _MPD.MotionAborted,
+		ErrorData 				:= ElementData.ErrorData.ErrorDataSet[5]);
+	
+	
+	
+	_MPD.ActualPosValue := LREAL_TO_DINT( fbMPDMover.ActPos);
+END_IF	
+	
+
+//-----------------------------------------------------------------------------
+// Set interface variables used in ShuttleState and ShuttleCVStates
+//-----------------------------------------------------------------------------
+FOR i:=GVL_MPD.CV_A TO GVL_MPD.CV_B DO
+			
+	//Pickup position reached?
+	DesiredPos := M_GetDesiredPosition(_MPD.CV[i].PickupFuncNumber, i, TRUE,FALSE);
+	_MPD.CV[i].PosPickupReached := M_CheckDesiredPosition(DesiredPos) AND _MPD.Locked AND _MPD.RequestMove AND _MPD.CV[i].PickupFuncNumber > E_FunctionNumber.F_BEGIN_FUNCTION;
+	
+	//Deposit position reached?
+	DesiredPos := M_GetDesiredPosition(_MPD.CV[i].DepositFuncNumber, i, FALSE, TRUE);	
+	_MPD.CV[i].PosDepositReached := M_CheckDesiredPosition(DesiredPos) AND _MPD.Locked AND _MPD.RequestMove AND _MPD.CV[i].DepositFuncNumber > E_FunctionNumber.F_BEGIN_FUNCTION;
+END_FOR
+
+	//Idle Position reached?
+	_MPD.IdlePosReached := M_CheckDesiredPosition(MPD_Config.IdlePosition) AND _MPD.Locked AND MPD_Config.EnableIdlePosition;
+
+	//Entry Position reached?
+	_MPD.EntryPosReached := M_CheckDesiredPosition(CtrlIn.RequestEntryPos) AND _MPD.Locked;
+
+//-----------------------------------------------------------------------------	
+// Error handling: Check car movement is performed within acceptable time 
+//-----------------------------------------------------------------------------	
+	
+//Check shuttle Car movement Timeout
+ScMoveTimeout(IN:=_MPD.RequestMove AND NOT _MPD.Locked AND (ElementData.OperationState.eState = E_PositionState.STARTED OR ElementData.OperationState.eState = E_PositionState.STOPPING), 
+				PT:= MPD_Config.TimeOutMove);
+IF(ScMoveTimeout.Q) THEN
+	F_SetError( ErrorType:= E_ErrorType.ERROR, 	ErrorParam:= 'Movement Timeout' , (* Could not get to the destination with in expected time*) 
+				ErrorMsg:= E_ErrorConv.TIMEOUT, ErrorData:= ElementData.ErrorData.ErrorDataSet[4]);
+	ScMoveTimeout(IN:=FALSE);
+END_IF
+
+
+//-----------------------------------------------------------------------------	
+// Error handling: Timeout during takeover or handover. Note: the Shuttle car servo shall stop immediately
+// If element is not in error and not adjacent function, then it is somthiing else that makes the transport not possible to finalize (could be that the deposit function is disabled..)
+//-----------------------------------------------------------------------------
+CVInPosTimeout(	IN:= NOT _M_IsErrorActive() AND NOT _M_IsErrorActiveOnPD() AND _MPD.RequestMove AND ( _MPD.State = E_MPD_States.E_PICKINGUP OR _MPD.State = E_MPD_States.E_DEPOSITING),
+				PT:= MPD_Config.TimeOutMove); 
+IF(CVInPosTimeout.Q) THEN		 
+	F_SetError(E_ErrorType.ERROR,'Timeout during Pickup or deposit',E_ErrorConv.TIMEOUT,ElementData.ErrorData.ErrorDataSet[4]);
+END_IF 
+
+	
+//-----------------------------------------------------------------------------
+//Emulation shuttle car posioning
+//-----------------------------------------------------------------------------
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_MPD_States" Id="{ec915b7f-f2db-43ec-b8aa-aef80eb90419}">
+      <Declaration><![CDATA[METHOD PRIVATE _M_MPD_States : BOOL
+VAR_INPUT
+END_VAR
+
+
+VAR	
+	i		: INT;
+	OtherCv	: ARRAY[1..2] OF INT := [GVL_MPD.CV_B,GVL_MPD.CV_A];	
+END_VAR
+
+VAR_INST
+	EnterIdlePosTmr		: TON := (PT:= T#2S); //delay before entering Idle position	
+END_VAR
+
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[EnterIdlePosTmr();
+
+
+CASE _MPD.State OF
+	
+	//---------------------------------------------------------------------------------------------------
+	E_MPD_States.E_INIT:
+		_MPD.RequestMove := FALSE;
+		_MPD.State:=E_MPD_States.E_IDLE;
+		
+	
+		
+	//---------------------------------------------------------------------------------------------------
+	// Waiting for job to do	
+	E_MPD_States.E_IDLE: 
+		EnterIdlePosTmr.IN:=FALSE;
+		_M_AutoAdjustVCHeight(FALSE,FALSE,TRUE (*Reset*), FALSE);
+				
+		//Check if we can proceed...
+		IF(ElementData.OperationState.eState <> E_PositionState.STARTED OR ElementData.OperationState.eMode <> E_PositionMode.AUTO_MODE OR
+		   _EntryReqActive OR _EntryModeActive)  THEN
+			//do nothing, but wait
+ 			_MPD.RequestMove	:= FALSE;	
+		
+		//Semi automatic or semi manual mode
+		ELSIF(CtrlIn.SemiDriveCtrl.SemiAutoMode OR CtrlIn.SemiDriveCtrl.SemiManualMode) THEN			
+			_MPD.State := E_MPD_States.E_SEMI_MODE;			
+			IF(_DebugPrint) THEN _M_DebugPrint(0,CONCAT('->E_SEMI_MODE : ', TO_STRING(_MPD.RequestPosValue))); END_IF
+	
+		//Normal operation, picking up
+		ELSIF( _MPD.CV[GVL_MPD.CV_A].State = E_MPD_CvStates.E_CV_PICKUP OR _MPD.CV[GVL_MPD.CV_B].State = E_MPD_CvStates.E_CV_PICKUP) THEN 
+			_MPD.State := E_MPD_States.E_PICKINGUP;
+			
+		//Normal operation, Depositing
+		ELSIF( _MPD.CV[GVL_MPD.CV_A].State = E_MPD_CvStates.E_CV_DEPOSIT OR _MPD.CV[GVL_MPD.CV_B].State = E_MPD_CvStates.E_CV_DEPOSIT) THEN 
+			_MPD.State := E_MPD_States.E_DEPOSITING;
+			
+		//Normal operation, check if an job is assigned to CV A or CV B
+		ELSIF( _MPD.CV[GVL_MPD.CV_A].State = E_MPD_CvStates.E_CV_JOBASSIGNED OR _MPD.CV[GVL_MPD.CV_B].State = E_MPD_CvStates.E_CV_JOBASSIGNED) THEN		
+			// Element has no error pending and wheres a job to do	
+			_MPD.State := E_MPD_States.E_START_PICKUP;						
+		
+		//check if CV A or CV B is occupied
+		ELSIF( _MPD.CV[GVL_MPD.CV_A].State = E_MPD_CvStates.E_CV_OCCUPIED OR _MPD.CV[GVL_MPD.CV_B].State = E_MPD_CvStates.E_CV_OCCUPIED) THEN	 
+			_MPD.State := E_MPD_States.E_START_DEPOSIT;		
+			
+		//If no active jobs move to idle position	
+		ELSIF (MPD_Config.EnableIdlePosition) THEN
+			EnterIdlePosTmr.IN := NOT _MPD.IdlePosReached AND NOT _EntryReqActive AND NOT _M_IsErrorActive();
+			IF(EnterIdlePosTmr.Q) THEN			
+					// Set desired Shuttle car position
+					_MPD.RequestPosValue := MPD_Config.IdlePosition;
+					// Release shuttle car brake
+					_MPD.RequestMove := TRUE;
+			ELSE
+				_MPD.RequestMove := FALSE;
+			END_IF
+		END_IF
+	
+	
+	
+		//---------------------------------------------------------------------------------------------------
+		// Semi automatic mode	
+		E_MPD_States.E_SEMI_MODE:
+			IF ((NOT CtrlIn.SemiDriveCtrl.SemiAutoMode AND NOT CtrlIn.SemiDriveCtrl.SemiManualMode)OR
+				(ElementData.OperationState.eMode <> E_PositionMode.AUTO_MODE)) THEN
+				_MPD.RequestMove := FALSE;
+				_MPD.State := E_MPD_States.E_IDLE;
+				IF(_DebugPrint) THEN _M_DebugPrint(0,CONCAT('->E_IDLE : ', TO_STRING(_MPD.RequestPosValue))); END_IF		
+			END_IF		
+		
+		
+		
+		
+	//---------------------------------------------------------------------------------------------------
+	// Decide prioirty for A and B	
+	E_MPD_States.E_START_PICKUP:
+				
+		FOR i:=GVL_MPD.CV_A TO GVL_MPD.CV_B DO			
+			IF( _M_IsErrorActive()=FALSE ) THEN  //element has no error pending
+				IF(_MPD.CV[i].State = E_MPD_CvStates.E_CV_JOBASSIGNED AND (_MPD.CV[i].HighestPriority  OR _MPD.CV[OtherCv[i]].State = E_MPD_CvStates.E_CV_OCCUPIED))THEN
+					// Set desired Shuttle car position
+					_MPD.RequestPosValue := M_GetDesiredPosition(_MPD.CV[i].PickupFuncNumber, i, TRUE,FALSE);
+					// Release shuttle car brake
+					_MPD.RequestMove := TRUE;
+					//move to next state
+					_MPD.State := E_MPD_States.E_MOVE_TO_PICKUP;					
+					IF(_DebugPrint) THEN _M_DebugPrint(0,CONCAT('->E_MOVE_TO_PICKUP : ', TO_STRING(_MPD.RequestPosValue))); END_IF
+					EXIT;					
+				END_IF	
+			END_IF				
+		END_FOR
+		
+
+	
+	//---------------------------------------------------------------------------------------------------	
+	E_MPD_States.E_MOVE_TO_PICKUP:
+		
+		IF(_MPD.CV[GVL_MPD.CV_A].State <> E_MPD_CvStates.E_CV_JOBASSIGNED AND _MPD.CV[GVL_MPD.CV_B].State <> E_MPD_CvStates.E_CV_JOBASSIGNED) THEN
+			_MPD.State:=E_MPD_States.E_IDLE; //start over, Shuttle CV states may not be fulfiled anymore.  
+		ELSE			
+			//Check if shuttle car is in position
+			FOR i:=GVL_MPD.CV_A TO GVL_MPD.CV_B DO
+				IF(_MPD.CV[i].PosPickupReached ) THEN				
+					//position reached				
+					_MPD.State := E_MPD_States.E_PICKUP_POSITION_REACHED;				
+					IF(_DebugPrint) THEN _M_DebugPrint(0,'->E_PICKUP_POSITION_REACHED'); END_IF	
+					EXIT;			
+				END_IF								
+			END_FOR
+		END_IF
+			
+		
+		
+	//---------------------------------------------------------------------------------------------------	
+	E_MPD_States.E_PICKUP_POSITION_REACHED:
+		//At this point only check that MPD locked the position, as the acutal position may change if AutoAdjustVCHeight is used.
+		IF(_MPD.Locked AND NOT _MPD.MotionAborted) THEN
+			_MPD.State := E_MPD_States.E_PICKINGUP;
+		END_IF
+
+	//---------------------------------------------------------------------------------------------------		
+	E_MPD_States.E_PICKINGUP:
+	
+		//Adjust VC height
+		_MPD.RequestPosValue := _MPD.RequestPosValue + _M_AutoAdjustVCHeight(TRUE,FALSE,FALSE,FALSE);
+		//wait for pickup is complete
+		//there can be a situation where we have a parallell transport of CvA and CvB, so wait till conveyors finishing transport
+		IF (_MPD.CV[GVL_MPD.CV_A].State <> E_MPD_CvStates.E_CV_PICKUP AND _MPD.CV[GVL_MPD.CV_B].State <> E_MPD_CvStates.E_CV_PICKUP) THEN						
+			_MPD.State:=E_MPD_States.E_IDLE; //start over, and see the other shuttle CV (CV_A or CV_B) should be picked up						
+			IF(_DebugPrint) THEN _M_DebugPrint(0,'E_PICKINGUP->E_IDLE'); END_IF						
+		END_IF
+		
+		//in case motion was aborted/interupted. it may be so that SC/VC position is changed, check position is maintained. 
+		IF(_MPD.MotionAborted) THEN
+			_MPD.State:=E_MPD_States.E_PICKUP_POSITION_REACHED;
+			IF(_DebugPrint) THEN _M_DebugPrint(0,'E_PICKINGUP->E_PICKUP_POSITION_REACHED'); END_IF
+		END_IF
+		
+	//---------------------------------------------------------------------------------------------------		
+	E_MPD_States.E_START_DEPOSIT: 
+			
+		FOR i:=GVL_MPD.CV_A TO GVL_MPD.CV_B DO
+			IF(_M_IsErrorActive()=FALSE AND _MPD.CV[i].State = E_MPD_CvStates.E_CV_OCCUPIED AND (_MPD.CV[i].HighestPriority OR _MPD.CV[OtherCv[i]].State = E_MPD_CvStates.E_CV_DONE))THEN				
+				// reqest shuttle car position
+				_MPD.RequestPosValue := M_GetDesiredPosition(_MPD.CV[i].DepositFuncNumber, i, FALSE,TRUE);
+				// Release shuttle car brake
+				_MPD.RequestMove := TRUE;
+				_MPD.State := E_MPD_States.E_MOVE_TO_DEPOSIT;
+				IF(_DebugPrint) THEN _M_DebugPrint(0,CONCAT('E_START_DEPOSIT->E_MOVE_TO_DEPOSIT : ',  TO_STRING(_MPD.RequestPosValue))); END_IF
+				EXIT;
+			END_IF				
+		END_FOR
+	
+	
+	//---------------------------------------------------------------------------------------------------
+	//Check if shuttle car is in position for depositing		
+	E_MPD_States.E_MOVE_TO_DEPOSIT:
+		//Check if shuttle car is in position
+		FOR i:=GVL_MPD.CV_A TO GVL_MPD.CV_B DO
+			IF(_MPD.CV[i].PosDepositReached AND _MPD.CV[i].State = E_MPD_CvStates.E_CV_DEPOSIT) THEN //if deposit position is reached, and CV_A or CV_B has reacted				
+				//position reached				
+				_MPD.State := E_MPD_States.E_DEPOSIT_POSITION_REACHED;
+				IF(_DebugPrint) THEN _M_DebugPrint(0,CONCAT('E_MOVE_TO_DEPOSIT->E_DEPOSIT_POSITION_REACHED: ', GVL_MPD.CV_IxNAME[i])); END_IF
+				EXIT; //break for loop				
+			END_IF			
+		END_FOR
+	
+			
+	//---------------------------------------------------------------------------------------------------		
+	E_MPD_States.E_DEPOSIT_POSITION_REACHED:
+	//At this point only check that MPD locked the position, as the acutal position may change if AutoAdjustVCHeight is used.
+		IF(_MPD.Locked AND NOT _MPD.MotionAborted) THEN
+			_MPD.State:=E_MPD_States.E_DEPOSITING;	
+		END_IF
+	
+	//---------------------------------------------------------------------------------------------------	
+	E_MPD_States.E_DEPOSITING:
+		//incase of recovery from abnormal shutdown or Semi Auto Mode	
+		IF(NOT _MPD.RequestMove) THEN
+			_MPD.State := E_MPD_States.E_START_DEPOSIT;
+		END_IF
+	
+		//Adjust VC height
+		_MPD.RequestPosValue := _MPD.RequestPosValue + _M_AutoAdjustVCHeight(FALSE,TRUE,FALSE,FALSE);
+		
+		//wait for depositing is complete		
+		FOR i:=GVL_MPD.CV_A TO GVL_MPD.CV_B DO
+			IF ((_MPD.CV[i].State = E_MPD_CvStates.E_CV_PICKUP OR _MPD.CV[OtherCv[i]].State = E_MPD_CvStates.E_CV_PICKUP) OR 
+				(_MPD.CV[i].State = E_MPD_CvStates.E_CV_DEPOSIT OR _MPD.CV[OtherCv[i]].State = E_MPD_CvStates.E_CV_DEPOSIT))THEN
+				// in the case we do an pickup in parallell with deposit (shuttle with 2 conveyors)
+				;// do nothing but wait.							
+			ElSIF (_MPD.CV[i].State = E_MPD_CvStates.E_CV_DONE AND _MPD.CV[OtherCv[i]].State = E_MPD_CvStates.E_CV_OCCUPIED) THEN
+				// Go back and set the next deposit position for the shuttle car
+				_MPD.State:=E_MPD_States.E_START_DEPOSIT;  	
+				IF(_DebugPrint) THEN _M_DebugPrint(0,'E_DEPOSITING->E_START_DEPOSIT'); END_IF 	
+			ELSIF( (_MPD.CV[i].State = E_MPD_CvStates.E_CV_DONE AND _MPD.CV[otherCv[i]].State <= E_MPD_CvStates.E_CV_IDLE) OR
+				   (_MPD.CV[i].State = E_MPD_CvStates.E_CV_DONE AND _MPD.CV[otherCv[i]].State = E_MPD_CvStates.E_CV_DONE)) THEN	
+					//proceed to next step			
+					_MPD.State:=E_MPD_States.E_CYCLE_COMPLETE;
+					IF(_DebugPrint) THEN _M_DebugPrint(0,'E_DEPOSITING->E_CYCLE_COMPLETE'); END_IF
+			END_IF
+		END_FOR
+		
+		//in case motion was aborted/interupted. it may be so that SC/VC position is changed, check position is maintained. 
+		IF(_MPD.MotionAborted) THEN
+			_MPD.State:=E_MPD_States.E_DEPOSIT_POSITION_REACHED;
+		END_IF
+		
+		
+	//---------------------------------------------------------------------------------------------------
+	E_MPD_States.E_CYCLE_COMPLETE:
+				
+		_MPD.State:=E_MPD_States.E_INIT;
+		
+	ELSE
+		F_SetError( ErrorType:= E_ErrorType.ERROR, 	ErrorParam:= '_M_ShuttleStates sequence error' , ErrorMsg:= E_ErrorConv.SOFTWARE_ERROR, ErrorData:= ElementData.ErrorData.ErrorDataSet[7]);
+	
+END_CASE]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_SemiDriveControl" Id="{ab4f27f8-bb88-4199-9ee6-a962aa3c1195}">
+      <Declaration><![CDATA[METHOD PROTECTED _M_SemiDriveControl : BOOL
+VAR_INPUT
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+IF(_MPD.State <> E_MPD_States.E_SEMI_MODE) THEN
+	MemSet(ADR(fbMPDMover.SemiDriveControl),0, SIZEOF(fbMPDMover.SemiDriveControl));
+ELSE
+	fbMPDMover.SemiDriveControl.SemiAutoMode			:= CtrlIn.SemiDriveCtrl.SemiAutoMode AND NOT CtrlIn.SemiDriveCtrl.SemiManualMode;
+	fbMPDMover.SemiDriveControl.SemiManualMode 			:= CtrlIn.SemiDriveCtrl.SemiManualMode AND NOT CtrlIn.SemiDriveCtrl.SemiAutoMode;
+	fbMPDMover.SemiDriveControl.SemiTrigMoveAbs		 	:= CtrlIn.SemiDriveCtrl.SemiAutoEnableDrive;
+	fbMPDMover.SemiDriveControl.SemiAutoHalt 			:= CtrlIn.SemiDriveCtrl.SemiAutoHalt;	
+	//set request move
+	IF(fbMPDMover.SemiDriveControl.SemiAutoMode) THEN
+		//Semi auto mode
+		_MPD.RequestMove := CtrlIn.SemiDriveCtrl.SemiAutoEnableDrive;
+		_MPD.RequestPosValue := CtrlIn.SemiDriveCtrl.SemiAutoPositionToGo;					
+	ELSE
+		//Semi Man mode
+		_MPD.RequestMove := FALSE;
+	END_IF
+	
+	//Reset input variables in case user did'nt...
+	CtrlIn.SemiDriveCtrl.SemiAutoHalt 					:= FALSE;
+	IF(fbMPDMover.PositioningState = E_PositioningState.POSITIONING_ABSOLUTE) THEN	
+		CtrlIn.SemiDriveCtrl.SemiAutoEnableDrive			:= FALSE;	
+	END_IF
+END_IF
+
+
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_SetAdjacentFunction" Id="{5937496e-82e0-4119-bed8-c0dcd4f783df}">
+      <Declaration><![CDATA[// Replace the deposit or pickup position adjacent functionnumber to point toward CVA or CVB
+METHOD PRIVATE _M_SetAdjacentFunction : BOOL
+VAR_INPUT
+	ScCvFunction		: E_FunctionNumber; //the shuttle car conveyor function
+	AdjacentFunction	: E_FunctionNumber; //the pickup or deposit function to change
+	SearchFunctions		: ARRAY[1..3] OF E_FunctionNumber;
+	RestoreToDefault	: BOOL;
+END_VAR
+
+VAR
+	rFuncSettings  	: REFERENCE TO ST_CFG_Function;		//the pickup or deposit function where to replace the adjacent side
+	rConfigSettings	: REFERENCE TO ST_CFG_Function;
+	i:INT;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+//
+
+rFuncSettings REF= FunctionRegistry[AdjacentFunction].rSettingsFunction;
+rConfigSettings REF= FunctionRegistry[AdjacentFunction].rFunction.ConfigFunction; 
+
+//Replace the adjacent side of the deposit function to point towards the Shuttle conveyor A
+IF(__ISVALIDREF(rFuncSettings) AND __ISVALIDREF(rConfigSettings)) THEN
+	IF(NOT RestoreToDefault) THEN
+		FOR i:= 1 TO 4 DO
+			IF(	rFuncSettings.eAdjacentFunctionNumberSide[i] <> E_FunctionNumber.F_BEGIN_FUNCTION AND
+				(rFuncSettings.eAdjacentFunctionNumberSide[i] = SearchFunctions[1] OR
+				 rFuncSettings.eAdjacentFunctionNumberSide[i] = SearchFunctions[2] OR
+				 rFuncSettings.eAdjacentFunctionNumberSide[i] = SearchFunctions[3] )) THEN
+				 
+					rFuncSettings.eAdjacentFunctionNumberSide[i] := ScCvFunction;
+					_M_SetAdjacentFunction :=TRUE;
+					//EXIT;
+			END_IF			
+		END_FOR
+	// restore to default
+	ELSE 
+		rFuncSettings.eAdjacentFunctionNumberSide := rConfigSettings.eAdjacentFunctionNumberSide;				
+	END_IF	
+	
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_SetLinks" Id="{34b4c74a-466d-4012-b03b-53907e91c0c0}">
+      <Declaration><![CDATA[// Setup links, adjacent sides on shuttle car towards the pickup and deposition funciton
+METHOD PRIVATE _M_SetLinks : BOOL
+VAR_INPUT
+	//CvAFuncNumb		: E_FunctionNumber;
+	SC_CV_Index 		: INT; // 1 = A, 2 = B  
+	SetPickupLinks		: BOOL; 
+	SetDepositLinks		: BOOL; 
+	RestorToDefault		: BOOL;
+END_VAR
+VAR_IN_OUT
+	ErrorData 				: ST_ErrorDataSet; // Error data
+END_VAR
+VAR
+	ReplaceFunctions	: ARRAY[1..3] OF E_FunctionNumber;	
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[	ReplaceFunctions[1] := _MPD.CV[GVL_MPD.CV_A].CvFuncNumber;	//the Shuttle Car Conveyor A functionNumber
+	ReplaceFunctions[2] := _MPD.CV[GVL_MPD.CV_B].CvFuncNumber;	//the Shuttle Car Conveyor B functionNumber
+	ReplaceFunctions[3] := E_FunctionNumber.F_BEGIN_FUNCTION;	//Spare, to remove?
+	
+	
+	//Sanity check
+	IF( NOT __ISVALIDREF(FunctionRegistry[_MPD.CV[SC_CV_Index].CvFuncNumber].rSettingsFunction)) THEN
+		F_SetError(	ErrorType := E_ErrorType.ERROR,	ErrorParam := 'Setup Pickup transport link',ErrorMsg := E_ErrorConv.INCORRECT_POSITION, ErrorData := ErrorData);
+		_M_SetLinks:= FALSE;
+		RETURN;
+	END_IF
+		
+	IF(NOT RestorToDefault AND SetPickupLinks) THEN		
+		//Setup SettingsFunctions parameters for shuttle car conveyor		
+		FunctionRegistry[_MPD.CV[SC_CV_Index].CvFuncNumber].rSettingsFunction.ePrevFunctionNumber := _MPD.CV[SC_CV_Index].PickupFuncNumber;
+		FunctionRegistry[_MPD.CV[SC_CV_Index].CvFuncNumber].rSettingsFunction.eNextFunctionNumber := E_FunctionNumber.F_BEGIN_FUNCTION;
+		
+		//Set adjacent sides on shuttle conveyor	
+		IF( M_GetConveyorDirection(_MPD.CV[SC_CV_Index].PickupFuncNumber) = E_PickupDepositSide.LeftSide) THEN
+			//Pickup on left side -> drive Forward 
+			FunctionRegistry[_MPD.CV[SC_CV_Index].CvFuncNumber].rSettingsFunction.eAdjacentFunctionNumberSide[1] := _MPD.CV[SC_CV_Index].PickupFuncNumber;
+			FunctionRegistry[_MPD.CV[SC_CV_Index].CvFuncNumber].rSettingsFunction.eAdjacentFunctionNumberSide[2] := E_FunctionNumber.F_BEGIN_FUNCTION;	
+		ELSE                 
+			//Pickup on right side -> drive Reverse
+			FunctionRegistry[_MPD.CV[SC_CV_Index].CvFuncNumber].rSettingsFunction.eAdjacentFunctionNumberSide[1] := E_FunctionNumber.F_BEGIN_FUNCTION;
+			FunctionRegistry[_MPD.CV[SC_CV_Index].CvFuncNumber].rSettingsFunction.eAdjacentFunctionNumberSide[2] := _MPD.CV[SC_CV_Index].PickupFuncNumber;					
+		END_IF		
+	END_IF
+	
+	IF(NOT RestorToDefault AND SetDepositLinks) THEN
+		//Setup SettingsFunctions parameters for shuttle car conveyor
+		FunctionRegistry[_MPD.CV[SC_CV_Index].CvFuncNumber].rSettingsFunction.ePrevFunctionNumber := E_FunctionNumber.F_BEGIN_FUNCTION;		
+		FunctionRegistry[_MPD.CV[SC_CV_Index].CvFuncNumber].rSettingsFunction.eNextFunctionNumber := _MPD.CV[SC_CV_Index].DepositFuncNumber;
+		//Set adjacent sides on shuttle conveyor
+		IF( M_GetConveyorDirection(_MPD.CV[SC_CV_Index].DepositFuncNumber) = E_PickupDepositSide.RightSide) THEN
+			//Deposit on left side -> drive Forward		
+			FunctionRegistry[_MPD.CV[SC_CV_Index].CvFuncNumber].rSettingsFunction.eAdjacentFunctionNumberSide[1] := E_FunctionNumber.F_BEGIN_FUNCTION;
+			FunctionRegistry[_MPD.CV[SC_CV_Index].CvFuncNumber].rSettingsFunction.eAdjacentFunctionNumberSide[2] := _MPD.CV[SC_CV_Index].DepositFuncNumber;	
+		ELSE
+			//Deposit on Right side -> drive reverse                 
+			FunctionRegistry[_MPD.CV[SC_CV_Index].CvFuncNumber].rSettingsFunction.eAdjacentFunctionNumberSide[1] := _MPD.CV[SC_CV_Index].DepositFuncNumber;
+			FunctionRegistry[_MPD.CV[SC_CV_Index].CvFuncNumber].rSettingsFunction.eAdjacentFunctionNumberSide[2] := E_FunctionNumber.F_BEGIN_FUNCTION;					
+		END_IF		
+	END_IF
+	 
+	
+	
+	// change the adjacent function number for the pickup function, to point to the correct shuttle conveyor A or B
+	IF(NOT RestorToDefault AND SetPickupLinks) THEN
+		IF( NOT _M_SetAdjacentFunction(_MPD.CV[SC_CV_Index].CvFuncNumber,_MPD.CV[SC_CV_Index].PickupFuncNumber,ReplaceFunctions,FALSE) OR
+			NOT _M_SetTransportlink(_MPD.CV[SC_CV_Index].PickupFuncNumber,_MPD.CV[SC_CV_Index].CvFuncNumber,0,FALSE,FALSE)) THEN				
+				F_SetError(	ErrorType := E_ErrorType.ERROR,	ErrorParam := 'Setup Pickup transport link',ErrorMsg := E_ErrorConv.INCORRECT_POSITION, ErrorData := ErrorData);
+				_M_SetLinks:= FALSE;		
+				RETURN;
+		END_IF
+	END_IF
+
+	// change the adjacent function number for the deposit function	
+	IF(NOT RestorToDefault AND SetDepositLinks) THEN		
+		IF( NOT _M_SetAdjacentFunction(_MPD.CV[SC_CV_Index].CvFuncNumber,_MPD.CV[SC_CV_Index].DepositFuncNumber,ReplaceFunctions, FALSE)OR 
+			NOT _M_SetTransportlink(_MPD.CV[SC_CV_Index].DepositFuncNumber,0,_MPD.CV[SC_CV_Index].CvFuncNumber,FALSE,FALSE)) THEN
+				F_SetError(	ErrorType := E_ErrorType.ERROR,	ErrorParam := 'Setup Deposit transport link',ErrorMsg := E_ErrorConv.INCORRECT_POSITION, ErrorData := ErrorData);
+				_M_SetLinks:= FALSE;
+				RETURN;
+		END_IF
+	END_IF
+	
+	//----------------------------------------------------------------------------------------------------------------------------
+	//restore to default
+	IF(RestorToDefault AND SetPickupLinks ) THEN
+		_M_SetAdjacentFunction(0,_MPD.CV[SC_CV_Index].PickupFuncNumber,ReplaceFunctions, TRUE);
+		_M_SetTransportlink(_MPD.CV[SC_CV_Index].PickupFuncNumber,0,0,FALSE,TRUE);
+		//and for the shuttle conveyor it self
+		_M_SetTransportlink(_MPD.CV[SC_CV_Index].CvFuncNumber,0,0,TRUE,FALSE);		
+	END_IF
+	IF(RestorToDefault AND SetDepositLinks) THEN
+		_M_SetAdjacentFunction(0,_MPD.CV[SC_CV_Index].DepositFuncNumber,ReplaceFunctions, TRUE);
+		_M_SetTransportlink(_MPD.CV[SC_CV_Index].DepositFuncNumber,0,0,TRUE,FALSE);
+		//and for the shuttle conveyor it self
+		_M_SetTransportlink(_MPD.CV[SC_CV_Index].CvFuncNumber,0,0,TRUE,TRUE);
+	END_IF
+
+	
+	_M_SetLinks:= TRUE;  //method run successfully, without any error]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_SetTransportlink" Id="{ec171fdf-0ac2-4208-a4a0-31bc9422ca02}">
+      <Declaration><![CDATA[//Set function interface, Previous and Next function, for adjacent functions to point to wards the Shuttle conveyor
+//This is needed when shuttle car is configured with two shuttle conveyors (A and B)
+METHOD PRIVATE _M_SetTransportlink : BOOL
+VAR_INPUT	
+	AdjacentFunction	: E_FunctionNumber; //the pickup or deposit function to change
+	NextFunction		: E_FunctionNumber;
+	PreviusFunction		: E_FunctionNumber;
+	RevertPrevious		: BOOL; // restore to default
+	RevertNext			: BOOL; // restore to default
+END_VAR
+
+VAR
+	rFuncSettings	: REFERENCE TO ST_CFG_Function;
+	rConfigSettings	: REFERENCE TO ST_CFG_Function;
+	rFunctInterface : REFERENCE TO ST_FunctionInterface;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+//
+
+rFuncSettings REF= FunctionRegistry[AdjacentFunction].rSettingsFunction; 
+rConfigSettings REF= FunctionRegistry[AdjacentFunction].rFunction.ConfigFunction;
+rFunctInterface REF= FunctionRegistry[AdjacentFunction].rFunctionInterface; 
+
+IF( NOT __ISVALIDREF(rFuncSettings) OR NOT __ISVALIDREF(rFunctInterface) OR NOT __ISVALIDREF(rConfigSettings)) THEN
+	RETURN;
+ELSE
+	_M_SetTransportlink :=TRUE;
+END_IF
+
+
+//Replace the adjacent side of the deposit function to point towards the Shuttle conveyor A
+
+	
+IF(NOT RevertPrevious AND NOT RevertNext) THEN
+			
+	IF(NextFunction <> E_FunctionNumber.F_BEGIN_FUNCTION) THEN
+		//IF(rFuncSettings.eNextFunctionNumber <> E_FunctionNumber.F_BEGIN_FUNCTION) THEN
+		rFuncSettings.eNextFunctionNumber := NextFunction;
+		rFunctInterface.In.eNextFunctionNumber := NextFunction;			
+	END_IF
+	
+	IF(PreviusFunction <> E_FunctionNumber.F_BEGIN_FUNCTION) THEN
+		rFuncSettings.ePrevFunctionNumber := PreviusFunction;			
+		rFunctInterface.In.ePrevFunctionNumber := PreviusFunction;			
+	END_IF
+	
+ELSE
+	//restore to default
+	IF(RevertPrevious) THEN
+		rFuncSettings.ePrevFunctionNumber := rConfigSettings.ePrevFunctionNumber;
+		rFunctInterface.In.ePrevFunctionNumber := E_FunctionNumber.F_BEGIN_FUNCTION;
+	END_IF			
+	IF(RevertNext) THEN
+		rFuncSettings.eNextFunctionNumber := rConfigSettings.eNextFunctionNumber;
+		rFunctInterface.In.eNextFunctionNumber := E_FunctionNumber.F_BEGIN_FUNCTION;
+	END_IF		
+END_IF	
+	
+
+
+
+]]></ST>
+      </Implementation>
+    </Method>
+    <Action Name="A_Init" Id="{fd5985ce-cef2-4186-acbf-341afd0fbb61}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_Init
+ * 	FUNCTION	Initialize function
+ **************************************************************************************)
+ 
+
+// Init ongoing - Wait until init is released (Sequencial startup)
+IF NOT ElementData.Init AND ElementData.InitRunning THEN	
+	_MPDlInitDone:=FALSE;	
+END_IF		
+
+IF(ElementData.Init AND NOT _MPDlInitDone) THEN
+	// Init shuttle mover
+	fbMPDMover.M_Init();
+	_MPDlInitDone := _M_MPD_Init();
+END_IF				
+
+
+]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="A_OutputMapping" Id="{52e1715b-2746-44ba-91f2-4ae345d45afa}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_OutputMapping
+ * 	FUNCTION	Output mapping
+ **************************************************************************************)
+ 
+(**************************************************************************************
+   Hardware outputs
+***************************************************************************************)
+HW_Outputs.MotionOutputLow			:= fbMPDMover.AxisMotionOutputLow;
+HW_Outputs.MotionOutputHigh			:= fbMPDMover.AxisMotionOutputHigh;
+HW_Outputs.DriveOutputs				:= fbMPDMover.DriveOutputs;
+HW_Outputs.EnableDrive				:= fbMPDMover.EnableDrive;
+
+CtrlOut.EntryRequestProcessed		:= _EntryModeActive;
+CtrlOut.MotionRunning 				:= fbMPDMover.Busy AND NOT fbMPDMover.Done; 
+CtrlOut.MotionComplete				:= fbMPDMover.Done;
+
+(**************************************************************************************
+   Order outputs (Commands to corresponding element)
+***************************************************************************************)
+// init FunctionInterface
+MEMSET(ADR(FunctionInterface.Out.FunctionOrders),0,SIZEOF(ST_FunctionOrders)); 
+
+//Manual mode
+IF(ElementData.OperationState.eMode = E_PositionMode.MANUAL_MODE) THEN
+	FunctionInterface.Out.FunctionOrders.Enable			:= HW_Inputs.ManualControl.Conv[GVL_MPD.CV_A].ConvFwd OR HW_Inputs.ManualControl.Conv[GVL_MPD.CV_A].ConvRev;
+	FunctionInterface.Out.FunctionOrders.ReqDriveRun 	:= HW_Inputs.ManualControl.Conv[GVL_MPD.CV_A].ConvFwd OR HW_Inputs.ManualControl.Conv[GVL_MPD.CV_A].ConvRev;
+	FunctionInterface.Out.FunctionOrders.ReqDriveDirection := HW_Inputs.ManualControl.Conv[GVL_MPD.CV_A].ConvFwd AND NOT HW_Inputs.ManualControl.Conv[GVL_MPD.CV_A].ConvRev;	// TRUE = FWD
+	FunctionInterface.Out.FunctionOrders.ReqSpeed 		:= 100; // normal speed E_ProBoxMotorSpeed.NORMAL
+	
+	FunctionInterface.Out.FunctionOrders.Enable_34		:= HW_Inputs.ManualControl.Conv[GVL_MPD.CV_B].ConvFwd OR HW_Inputs.ManualControl.Conv[GVL_MPD.CV_B].ConvRev;
+	FunctionInterface.Out.FunctionOrders.ReqDriveRun_34	:= HW_Inputs.ManualControl.Conv[GVL_MPD.CV_B].ConvFwd OR HW_Inputs.ManualControl.Conv[GVL_MPD.CV_B].ConvRev;
+	FunctionInterface.Out.FunctionOrders.ReqDriveDirection_34 := HW_Inputs.ManualControl.Conv[GVL_MPD.CV_B].ConvFwd AND NOT HW_Inputs.ManualControl.Conv[GVL_MPD.CV_B].ConvRev;	// TRUE = FWD
+	FunctionInterface.Out.FunctionOrders.ReqSpeed_34 	:= 100; // normal speed E_ProBoxMotorSpeed.NORMAL
+END_IF
+
+
+//Auto mode
+IF(ElementData.OperationState.eMode = E_PositionMode.AUTO_MODE AND (ElementData.OperationState.eState = E_PositionState.STARTED OR ElementData.OperationState.eState = E_PositionState.STOPPING)) THEN
+	// Axis 1-2 (shuttle car CV A) drive run
+	FunctionInterface.Out.FunctionOrders.Enable := NOT _M_IsErrorActive() AND 
+													( M_CheckDesiredPosition(M_GetDesiredPosition(_MPD.CV[GVL_MPD.CV_A].PickupFuncNumber, GVL_MPD.CV_A,TRUE,FALSE)) OR M_CheckDesiredPosition(M_GetDesiredPosition(_MPD.CV[GVL_MPD.CV_A].DepositFuncNumber, GVL_MPD.CV_A, FALSE, TRUE))) AND
+													(_MPD.State=E_MPD_States.E_DEPOSITING OR _MPD.State = E_MPD_States.E_PICKINGUP) AND
+													(_MPD.CV[GVL_MPD.CV_A].State = E_MPD_CvStates.E_CV_PICKUP OR _MPD.CV[GVL_MPD.CV_A].State = E_MPD_CvStates.E_CV_DEPOSIT);
+	FunctionInterface.Out.FunctionOrders.ReqDriveRun := FALSE;
+	FunctionInterface.Out.FunctionOrders.ReqDriveDirection := FALSE;
+	FunctionInterface.Out.FunctionOrders.ReqSpeed := 0;
+	
+	// Axis 3-4 (shuttle car CV B) drive run
+	FunctionInterface.Out.FunctionOrders.Enable_34 := NOT _M_IsErrorActive() AND
+													( M_CheckDesiredPosition(M_GetDesiredPosition(_MPD.CV[GVL_MPD.CV_B].PickupFuncNumber, GVL_MPD.CV_B,TRUE,FALSE)) OR M_CheckDesiredPosition(M_GetDesiredPosition(_MPD.CV[GVL_MPD.CV_B].DepositFuncNumber, GVL_MPD.CV_B,FALSE,TRUE))) AND 
+													(_MPD.State=E_MPD_States.E_DEPOSITING OR _MPD.State = E_MPD_States.E_PICKINGUP) AND
+													(_MPD.CV[GVL_MPD.CV_B].State = E_MPD_CvStates.E_CV_PICKUP OR _MPD.CV[GVL_MPD.CV_B].State = E_MPD_CvStates.E_CV_DEPOSIT);
+	FunctionInterface.Out.FunctionOrders.ReqDriveRun_34 := FALSE;
+	FunctionInterface.Out.FunctionOrders.ReqDriveDirection_34 := FALSE;
+	FunctionInterface.Out.FunctionOrders.ReqSpeed_34 := 0;	
+END_IF
+
+
+
+(**************************************************************************************
+   AddOn outputs
+***************************************************************************************)
+// This function provide no AddOn functionality
+;]]></ST>
+      </Implementation>
+    </Action>
+    <Method Name="M_CheckDesiredPosition" Id="{c2f148c5-b66b-4bf7-9c5f-845fd265b54d}">
+      <Declaration><![CDATA[//Check if the actual position is at the desired position including allowed variations (EncoderHysterisis)
+METHOD PUBLIC M_CheckDesiredPosition : BOOL
+VAR_INPUT
+	DesiredPos			: DINT; //the desired shuttle position to check if is within hysterisis boundaries
+END_VAR
+VAR
+	MaxVal,MinVal,AdjVal : DINT;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+MaxVal := DesiredPos + (MPD_Config.EncoderHysterisis);
+MinVal := DesiredPos - (MPD_Config.EncoderHysterisis);
+
+AdjVal := _M_AutoAdjustVCHeight(FALSE,FALSE,FALSE,TRUE);
+IF(AdjVal<0) THEN
+	MinVal:= MinVal + AdjVal;
+ELSE
+	MaxVal:= MaxVal + AdjVal;
+END_IF
+
+
+M_CheckDesiredPosition := 	(DesiredPos > 0 AND DesiredPos <16#7FFFFFFF) (*maximum possible value*) AND
+							(_MPD.ActualPosValue <= MaxVal) AND 
+							(_MPD.ActualPosValue >= MinVal);
+	]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_GetConveyorDirection" Id="{62aa0899-d638-4783-b5d5-d329b0315e1a}">
+      <Declaration><![CDATA[METHOD PUBLIC M_GetConveyorDirection : E_PickupDepositSide
+VAR_INPUT	
+	FunctionNumber			: E_FunctionNumber;
+END_VAR
+VAR
+	i:INT;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[M_GetConveyorDirection:= E_PickupDepositSide.Unknown;
+
+IF(FunctionNumber = E_FunctionNumber.F_BEGIN_FUNCTION) THEN RETURN; END_IF
+
+FOR i:=1 TO GVL_MPD.MAXPDs DO
+	IF(MPD_Config.ConvCFG[i].eFunctionNumber = FunctionNumber ) THEN
+		M_GetConveyorDirection:= MPD_Config.ConvCFG[i].Side;
+		EXIT;
+	END_IF		
+END_FOR]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_GetDesiredPosition" Id="{3d6978ad-53f5-45ee-b041-c80885828e89}">
+      <Declaration><![CDATA[//Get the absolute encoder position value for the shuttle car set in configuration
+METHOD PUBLIC M_GetDesiredPosition : DINT
+VAR_INPUT	
+	FunctionNumber		: E_FunctionNumber;
+	CvIndex				: INT; // 1=A, 2=B
+	PickUp				: BOOL;	//Is VC picking up, if so then also consider the PickupPositionOffset value
+	Depsit				: BOOL; //Is VC Depositing, if so then aslo consideer the DepostPositionOffset value;
+END_VAR
+VAR_OUTPUT
+	Valid				: BOOL; //The retured position/distance is valid 
+END_VAR
+VAR
+	i:INT;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+M_GetDesiredPosition:= 16#7FFFFFFF;
+Valid:=FALSE;
+IF(FunctionNumber = E_FunctionNumber.F_BEGIN_FUNCTION) THEN RETURN; END_IF
+
+FOR i:=1 TO GVL_MPD.MAXPDs DO
+	IF(MPD_Config.ConvCFG[i].eFunctionNumber = FunctionNumber ) THEN
+		Valid:=TRUE;
+		M_GetDesiredPosition:= MPD_Config.ConvCFG[i].PositionConv;
+		IF(CvIndex = GVL_MPD.CV_B AND MPD_Config.MPD_Type = E_MotionPD_Type.E_ShuttleCar) THEN
+			M_GetDesiredPosition := M_GetDesiredPosition - MPD_Config.CvCC;
+		END_IF
+		
+		IF(MPD_Config.MPD_Type = E_MotionPD_Type.E_VerticalCv) THEN
+			IF(PickUp)THEN
+				M_GetDesiredPosition := M_GetDesiredPosition + MPD_Config.ConvCFG[i].PickupPositionOffset;
+			ELSIF(Depsit)THEN
+				M_GetDesiredPosition := M_GetDesiredPosition + MPD_Config.ConvCFG[i].DepsitPositionOffset;
+			END_IF
+		END_IF
+		
+		EXIT;
+		
+	END_IF		
+END_FOR]]></ST>
+      </Implementation>
+    </Method>
+    <Property Name="P_AutoAdjustVcHeight" Id="{f39196f1-bd79-4d61-985a-8769ab994d94}">
+      <Declaration><![CDATA[PROPERTY PUBLIC P_AutoAdjustVcHeight : REFERENCE TO ST_AutoAdjustVcHeight]]></Declaration>
+      <Get Name="Get" Id="{cf3e0fb8-9dd6-4428-b08e-9b2ad8b26d01}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[P_AutoAdjustVcHeight REF= _AutoAdjustVcHeight;]]></ST>
+        </Implementation>
+      </Get>
+      <Set Name="Set" Id="{e53e08ef-61fb-4d00-9f9a-a14f79facd79}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[_AutoAdjustVcHeight := P_AutoAdjustVcHeight;]]></ST>
+        </Implementation>
+      </Set>
+    </Property>
+    <Property Name="P_GetMpdData" Id="{9266ad81-6318-4e37-9c3d-a9475fe9bf8e}">
+      <Declaration><![CDATA[//Get property of _MPD data container
+PROPERTY PUBLIC P_GetMpdData : REFERENCE TO ST_MPD]]></Declaration>
+      <Get Name="Get" Id="{c1e04b16-91fd-46d2-bf37-f3f596c10902}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[P_GetMpdData REF= _MPD;]]></ST>
+        </Implementation>
+      </Get>
+    </Property>
+    <Property Name="P_SetDriveParameterIndex" Id="{006633ef-fe9c-49bc-8446-abe4ef29221e}">
+      <Declaration><![CDATA[//Set/Get the driveParameter index to select the motion profile of ST_CFG_MPD_Drive.DriveParameter[x]
+//Make sure that an prifile is configed properly befor applying a new DriveParameterIndex
+PROPERTY PUBLIC P_SetDriveParameterIndex : UINT]]></Declaration>
+      <Get Name="Get" Id="{2463c1da-25cd-41ff-953d-339681b5c585}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[P_SetDriveParameterIndex := _MPD.DriveParameterIndex;]]></ST>
+        </Implementation>
+      </Get>
+      <Set Name="Set" Id="{fd0c94e1-f8a5-46ca-9bc5-3cc724c23e8e}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[IF(P_SetDriveParameterIndex>0)THEN
+	_MPD.DriveParameterIndex := P_SetDriveParameterIndex;
+END_IF]]></ST>
+        </Implementation>
+      </Set>
+    </Property>
+    <LineIds Name="FB_MPD_Control">
+      <LineId Id="2558" Count="11" />
+      <LineId Id="2715" Count="0" />
+      <LineId Id="2766" Count="0" />
+      <LineId Id="2570" Count="14" />
+      <LineId Id="2881" Count="0" />
+      <LineId Id="2609" Count="0" />
+      <LineId Id="2585" Count="4" />
+      <LineId Id="2664" Count="0" />
+      <LineId Id="2659" Count="0" />
+      <LineId Id="2591" Count="5" />
+      <LineId Id="2599" Count="2" />
+      <LineId Id="2603" Count="0" />
+      <LineId Id="2605" Count="3" />
+      <LineId Id="2821" Count="0" />
+      <LineId Id="2823" Count="1" />
+      <LineId Id="2826" Count="0" />
+      <LineId Id="1707" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_MPD_Control._M_AutoAdjustVCHeight">
+      <LineId Id="46" Count="0" />
+      <LineId Id="6" Count="0" />
+      <LineId Id="63" Count="0" />
+      <LineId Id="84" Count="0" />
+      <LineId Id="80" Count="3" />
+      <LineId Id="78" Count="0" />
+      <LineId Id="66" Count="1" />
+      <LineId Id="102" Count="0" />
+      <LineId Id="77" Count="0" />
+      <LineId Id="68" Count="0" />
+      <LineId Id="110" Count="4" />
+      <LineId Id="109" Count="0" />
+      <LineId Id="51" Count="0" />
+      <LineId Id="50" Count="0" />
+      <LineId Id="52" Count="1" />
+      <LineId Id="108" Count="0" />
+      <LineId Id="70" Count="0" />
+      <LineId Id="69" Count="0" />
+      <LineId Id="62" Count="0" />
+      <LineId Id="24" Count="1" />
+      <LineId Id="71" Count="0" />
+      <LineId Id="85" Count="0" />
+      <LineId Id="32" Count="0" />
+      <LineId Id="103" Count="0" />
+      <LineId Id="72" Count="0" />
+      <LineId Id="31" Count="0" />
+      <LineId Id="26" Count="0" />
+      <LineId Id="21" Count="0" />
+      <LineId Id="20" Count="0" />
+      <LineId Id="18" Count="0" />
+      <LineId Id="87" Count="0" />
+      <LineId Id="75" Count="0" />
+      <LineId Id="104" Count="0" />
+      <LineId Id="76" Count="0" />
+      <LineId Id="73" Count="0" />
+      <LineId Id="23" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_MPD_Control._M_CheckOverhangSensors">
+      <LineId Id="262" Count="11" />
+      <LineId Id="437" Count="0" />
+      <LineId Id="275" Count="61" />
+      <LineId Id="406" Count="0" />
+      <LineId Id="340" Count="51" />
+      <LineId Id="144" Count="0" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_MPD_Control._M_CheckTransportComplete">
+      <LineId Id="3" Count="1" />
+      <LineId Id="7" Count="7" />
+      <LineId Id="87" Count="1" />
+      <LineId Id="15" Count="8" />
+      <LineId Id="69" Count="1" />
+      <LineId Id="24" Count="14" />
+      <LineId Id="71" Count="1" />
+      <LineId Id="39" Count="15" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_MPD_Control._M_DebugPrint">
+      <LineId Id="3" Count="7" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_MPD_Control._M_Emulation">
+      <LineId Id="30" Count="0" />
+      <LineId Id="29" Count="0" />
+      <LineId Id="31" Count="1" />
+      <LineId Id="34" Count="0" />
+      <LineId Id="33" Count="0" />
+      <LineId Id="6" Count="16" />
+      <LineId Id="5" Count="0" />
+      <LineId Id="26" Count="0" />
+      <LineId Id="25" Count="0" />
+      <LineId Id="27" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_MPD_Control._M_GetPickupDepositFunctions">
+      <LineId Id="31" Count="0" />
+      <LineId Id="33" Count="0" />
+      <LineId Id="32" Count="0" />
+      <LineId Id="40" Count="0" />
+      <LineId Id="42" Count="1" />
+      <LineId Id="64" Count="1" />
+      <LineId Id="62" Count="1" />
+      <LineId Id="77" Count="0" />
+      <LineId Id="66" Count="0" />
+      <LineId Id="71" Count="0" />
+      <LineId Id="74" Count="0" />
+      <LineId Id="46" Count="0" />
+      <LineId Id="45" Count="0" />
+      <LineId Id="104" Count="0" />
+      <LineId Id="67" Count="0" />
+      <LineId Id="103" Count="0" />
+      <LineId Id="68" Count="0" />
+      <LineId Id="44" Count="0" />
+      <LineId Id="82" Count="1" />
+      <LineId Id="93" Count="0" />
+      <LineId Id="84" Count="3" />
+      <LineId Id="91" Count="0" />
+      <LineId Id="133" Count="0" />
+      <LineId Id="135" Count="0" />
+      <LineId Id="134" Count="0" />
+      <LineId Id="78" Count="0" />
+      <LineId Id="114" Count="0" />
+      <LineId Id="10" Count="3" />
+      <LineId Id="80" Count="0" />
+      <LineId Id="48" Count="0" />
+      <LineId Id="51" Count="1" />
+      <LineId Id="49" Count="1" />
+      <LineId Id="25" Count="0" />
+      <LineId Id="5" Count="0" />
+      <LineId Id="115" Count="3" />
+      <LineId Id="2" Count="0" />
+      <LineId Id="119" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_MPD_Control._M_IsErrorActive">
+      <LineId Id="17" Count="0" />
+      <LineId Id="10" Count="0" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_MPD_Control._M_IsErrorActiveOnPD">
+      <LineId Id="38" Count="0" />
+      <LineId Id="37" Count="0" />
+      <LineId Id="29" Count="0" />
+      <LineId Id="7" Count="0" />
+      <LineId Id="33" Count="3" />
+      <LineId Id="30" Count="1" />
+      <LineId Id="39" Count="1" />
+      <LineId Id="32" Count="0" />
+      <LineId Id="41" Count="0" />
+      <LineId Id="8" Count="3" />
+      <LineId Id="23" Count="0" />
+      <LineId Id="12" Count="3" />
+      <LineId Id="52" Count="1" />
+      <LineId Id="16" Count="0" />
+      <LineId Id="51" Count="0" />
+      <LineId Id="17" Count="0" />
+      <LineId Id="42" Count="0" />
+      <LineId Id="5" Count="0" />
+      <LineId Id="26" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_MPD_Control._M_MPD_CvStates">
+      <LineId Id="328" Count="44" />
+      <LineId Id="409" Count="0" />
+      <LineId Id="403" Count="1" />
+      <LineId Id="373" Count="7" />
+      <LineId Id="408" Count="0" />
+      <LineId Id="405" Count="1" />
+      <LineId Id="414" Count="0" />
+      <LineId Id="407" Count="0" />
+      <LineId Id="381" Count="16" />
+    </LineIds>
+    <LineIds Name="FB_MPD_Control._M_MPD_Init">
+      <LineId Id="291" Count="4" />
+      <LineId Id="115" Count="5" />
+      <LineId Id="181" Count="0" />
+      <LineId Id="179" Count="0" />
+      <LineId Id="184" Count="3" />
+      <LineId Id="182" Count="1" />
+      <LineId Id="123" Count="0" />
+      <LineId Id="307" Count="0" />
+      <LineId Id="124" Count="0" />
+      <LineId Id="318" Count="0" />
+      <LineId Id="125" Count="3" />
+      <LineId Id="322" Count="0" />
+      <LineId Id="321" Count="0" />
+      <LineId Id="302" Count="0" />
+      <LineId Id="317" Count="0" />
+      <LineId Id="130" Count="0" />
+      <LineId Id="133" Count="1" />
+      <LineId Id="136" Count="10" />
+      <LineId Id="148" Count="11" />
+      <LineId Id="162" Count="13" />
+      <LineId Id="193" Count="6" />
+      <LineId Id="177" Count="0" />
+      <LineId Id="219" Count="4" />
+      <LineId Id="239" Count="0" />
+      <LineId Id="272" Count="0" />
+      <LineId Id="240" Count="0" />
+      <LineId Id="224" Count="0" />
+      <LineId Id="235" Count="3" />
+      <LineId Id="233" Count="0" />
+      <LineId Id="270" Count="0" />
+      <LineId Id="264" Count="5" />
+      <LineId Id="263" Count="0" />
+      <LineId Id="271" Count="0" />
+      <LineId Id="273" Count="2" />
+      <LineId Id="241" Count="0" />
+      <LineId Id="234" Count="0" />
+      <LineId Id="225" Count="4" />
+      <LineId Id="242" Count="0" />
+      <LineId Id="230" Count="0" />
+      <LineId Id="276" Count="0" />
+      <LineId Id="231" Count="0" />
+      <LineId Id="218" Count="0" />
+      <LineId Id="250" Count="6" />
+      <LineId Id="249" Count="0" />
+      <LineId Id="212" Count="0" />
+      <LineId Id="44" Count="0" />
+      <LineId Id="286" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_MPD_Control._M_MPD_Mover">
+      <LineId Id="1684" Count="20" />
+      <LineId Id="1719" Count="2" />
+      <LineId Id="1860" Count="0" />
+      <LineId Id="1885" Count="4" />
+      <LineId Id="1861" Count="1" />
+      <LineId Id="1722" Count="2" />
+      <LineId Id="1863" Count="0" />
+      <LineId Id="1890" Count="0" />
+      <LineId Id="1870" Count="0" />
+      <LineId Id="1725" Count="1" />
+      <LineId Id="1739" Count="19" />
+      <LineId Id="1834" Count="0" />
+      <LineId Id="1915" Count="0" />
+      <LineId Id="1905" Count="9" />
+      <LineId Id="1904" Count="0" />
+      <LineId Id="1760" Count="0" />
+      <LineId Id="1833" Count="0" />
+      <LineId Id="1832" Count="0" />
+      <LineId Id="1761" Count="0" />
+      <LineId Id="1763" Count="41" />
+      <LineId Id="2" Count="0" />
+      <LineId Id="144" Count="7" />
+      <LineId Id="1818" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_MPD_Control._M_MPD_States">
+      <LineId Id="2358" Count="0" />
+      <LineId Id="2360" Count="0" />
+      <LineId Id="2162" Count="11" />
+      <LineId Id="2361" Count="0" />
+      <LineId Id="2336" Count="0" />
+      <LineId Id="2174" Count="5" />
+      <LineId Id="2470" Count="0" />
+      <LineId Id="2473" Count="0" />
+      <LineId Id="2471" Count="0" />
+      <LineId Id="2180" Count="0" />
+      <LineId Id="2525" Count="0" />
+      <LineId Id="2472" Count="0" />
+      <LineId Id="2181" Count="20" />
+      <LineId Id="2203" Count="8" />
+      <LineId Id="2465" Count="0" />
+      <LineId Id="2464" Count="0" />
+      <LineId Id="2454" Count="0" />
+      <LineId Id="2466" Count="0" />
+      <LineId Id="2456" Count="1" />
+      <LineId Id="2490" Count="0" />
+      <LineId Id="2458" Count="0" />
+      <LineId Id="2460" Count="0" />
+      <LineId Id="2523" Count="0" />
+      <LineId Id="2462" Count="0" />
+      <LineId Id="2455" Count="0" />
+      <LineId Id="2451" Count="2" />
+      <LineId Id="2212" Count="13" />
+      <LineId Id="2420" Count="0" />
+      <LineId Id="2226" Count="17" />
+      <LineId Id="2436" Count="0" />
+      <LineId Id="2244" Count="5" />
+      <LineId Id="2397" Count="0" />
+      <LineId Id="2382" Count="0" />
+      <LineId Id="2250" Count="4" />
+      <LineId Id="2343" Count="0" />
+      <LineId Id="2255" Count="0" />
+      <LineId Id="2337" Count="1" />
+      <LineId Id="2256" Count="2" />
+      <LineId Id="2261" Count="0" />
+      <LineId Id="2376" Count="0" />
+      <LineId Id="2381" Count="0" />
+      <LineId Id="2377" Count="2" />
+      <LineId Id="2262" Count="15" />
+      <LineId Id="2421" Count="0" />
+      <LineId Id="2278" Count="13" />
+      <LineId Id="2398" Count="1" />
+      <LineId Id="2292" Count="0" />
+      <LineId Id="2400" Count="0" />
+      <LineId Id="2293" Count="2" />
+      <LineId Id="2339" Count="0" />
+      <LineId Id="2341" Count="1" />
+      <LineId Id="2340" Count="0" />
+      <LineId Id="2296" Count="1" />
+      <LineId Id="2506" Count="2" />
+      <LineId Id="2298" Count="0" />
+      <LineId Id="2505" Count="0" />
+      <LineId Id="2299" Count="12" />
+      <LineId Id="2402" Count="3" />
+      <LineId Id="2401" Count="0" />
+      <LineId Id="2312" Count="8" />
+      <LineId Id="1250" Count="0" />
+      <LineId Id="186" Count="6" />
+      <LineId Id="2" Count="0" />
+      <LineId Id="2526" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_MPD_Control._M_SemiDriveControl">
+      <LineId Id="6" Count="0" />
+      <LineId Id="5" Count="0" />
+      <LineId Id="7" Count="0" />
+      <LineId Id="9" Count="0" />
+      <LineId Id="11" Count="0" />
+      <LineId Id="10" Count="0" />
+      <LineId Id="41" Count="0" />
+      <LineId Id="43" Count="0" />
+      <LineId Id="27" Count="6" />
+      <LineId Id="25" Count="0" />
+      <LineId Id="34" Count="0" />
+      <LineId Id="26" Count="0" />
+      <LineId Id="45" Count="0" />
+      <LineId Id="48" Count="0" />
+      <LineId Id="54" Count="1" />
+      <LineId Id="46" Count="0" />
+      <LineId Id="8" Count="0" />
+      <LineId Id="14" Count="2" />
+    </LineIds>
+    <LineIds Name="FB_MPD_Control._M_SetAdjacentFunction">
+      <LineId Id="28" Count="0" />
+      <LineId Id="27" Count="0" />
+      <LineId Id="9" Count="1" />
+      <LineId Id="53" Count="0" />
+      <LineId Id="11" Count="2" />
+      <LineId Id="49" Count="0" />
+      <LineId Id="14" Count="3" />
+      <LineId Id="32" Count="0" />
+      <LineId Id="18" Count="1" />
+      <LineId Id="36" Count="0" />
+      <LineId Id="20" Count="1" />
+      <LineId Id="23" Count="0" />
+      <LineId Id="58" Count="0" />
+      <LineId Id="50" Count="0" />
+      <LineId Id="56" Count="0" />
+      <LineId Id="52" Count="0" />
+      <LineId Id="26" Count="0" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_MPD_Control._M_SetLinks">
+      <LineId Id="49" Count="2" />
+      <LineId Id="180" Count="4" />
+      <LineId Id="186" Count="1" />
+      <LineId Id="185" Count="0" />
+      <LineId Id="8" Count="2" />
+      <LineId Id="12" Count="0" />
+      <LineId Id="129" Count="0" />
+      <LineId Id="114" Count="0" />
+      <LineId Id="16" Count="1" />
+      <LineId Id="103" Count="0" />
+      <LineId Id="18" Count="2" />
+      <LineId Id="104" Count="0" />
+      <LineId Id="21" Count="2" />
+      <LineId Id="79" Count="0" />
+      <LineId Id="93" Count="1" />
+      <LineId Id="133" Count="0" />
+      <LineId Id="131" Count="0" />
+      <LineId Id="130" Count="0" />
+      <LineId Id="113" Count="0" />
+      <LineId Id="108" Count="0" />
+      <LineId Id="111" Count="0" />
+      <LineId Id="110" Count="0" />
+      <LineId Id="99" Count="1" />
+      <LineId Id="112" Count="0" />
+      <LineId Id="101" Count="1" />
+      <LineId Id="95" Count="1" />
+      <LineId Id="26" Count="3" />
+      <LineId Id="76" Count="0" />
+      <LineId Id="30" Count="1" />
+      <LineId Id="63" Count="0" />
+      <LineId Id="188" Count="0" />
+      <LineId Id="191" Count="0" />
+      <LineId Id="33" Count="0" />
+      <LineId Id="77" Count="0" />
+      <LineId Id="115" Count="0" />
+      <LineId Id="34" Count="1" />
+      <LineId Id="38" Count="2" />
+      <LineId Id="189" Count="0" />
+      <LineId Id="192" Count="0" />
+      <LineId Id="5" Count="0" />
+      <LineId Id="80" Count="0" />
+      <LineId Id="147" Count="0" />
+      <LineId Id="165" Count="0" />
+      <LineId Id="148" Count="0" />
+      <LineId Id="152" Count="0" />
+      <LineId Id="154" Count="0" />
+      <LineId Id="156" Count="0" />
+      <LineId Id="207" Count="1" />
+      <LineId Id="159" Count="1" />
+      <LineId Id="157" Count="1" />
+      <LineId Id="163" Count="1" />
+      <LineId Id="155" Count="0" />
+      <LineId Id="153" Count="0" />
+      <LineId Id="149" Count="0" />
+      <LineId Id="190" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_MPD_Control._M_SetTransportlink">
+      <LineId Id="39" Count="0" />
+      <LineId Id="41" Count="2" />
+      <LineId Id="78" Count="0" />
+      <LineId Id="121" Count="0" />
+      <LineId Id="147" Count="0" />
+      <LineId Id="123" Count="0" />
+      <LineId Id="148" Count="0" />
+      <LineId Id="150" Count="1" />
+      <LineId Id="149" Count="0" />
+      <LineId Id="122" Count="0" />
+      <LineId Id="44" Count="2" />
+      <LineId Id="64" Count="0" />
+      <LineId Id="70" Count="1" />
+      <LineId Id="65" Count="0" />
+      <LineId Id="53" Count="0" />
+      <LineId Id="118" Count="1" />
+      <LineId Id="55" Count="0" />
+      <LineId Id="124" Count="0" />
+      <LineId Id="67" Count="1" />
+      <LineId Id="115" Count="0" />
+      <LineId Id="66" Count="0" />
+      <LineId Id="125" Count="0" />
+      <LineId Id="75" Count="0" />
+      <LineId Id="80" Count="0" />
+      <LineId Id="143" Count="0" />
+      <LineId Id="76" Count="0" />
+      <LineId Id="146" Count="0" />
+      <LineId Id="152" Count="0" />
+      <LineId Id="144" Count="0" />
+      <LineId Id="126" Count="1" />
+      <LineId Id="145" Count="0" />
+      <LineId Id="74" Count="0" />
+      <LineId Id="61" Count="0" />
+      <LineId Id="40" Count="0" />
+      <LineId Id="10" Count="0" />
+      <LineId Id="7" Count="0" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_MPD_Control.A_Init">
+      <LineId Id="2" Count="2" />
+      <LineId Id="242" Count="1" />
+      <LineId Id="10" Count="1" />
+      <LineId Id="245" Count="0" />
+      <LineId Id="273" Count="0" />
+      <LineId Id="80" Count="0" />
+      <LineId Id="274" Count="0" />
+      <LineId Id="262" Count="0" />
+      <LineId Id="277" Count="1" />
+      <LineId Id="293" Count="0" />
+      <LineId Id="275" Count="0" />
+      <LineId Id="289" Count="0" />
+      <LineId Id="291" Count="0" />
+      <LineId Id="290" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_MPD_Control.A_OutputMapping">
+      <LineId Id="660" Count="11" />
+      <LineId Id="673" Count="2" />
+      <LineId Id="724" Count="0" />
+      <LineId Id="676" Count="47" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_MPD_Control.M_CheckDesiredPosition">
+      <LineId Id="32" Count="1" />
+      <LineId Id="31" Count="0" />
+      <LineId Id="34" Count="0" />
+      <LineId Id="30" Count="0" />
+      <LineId Id="46" Count="0" />
+      <LineId Id="35" Count="0" />
+      <LineId Id="45" Count="0" />
+      <LineId Id="38" Count="0" />
+      <LineId Id="36" Count="0" />
+      <LineId Id="23" Count="0" />
+      <LineId Id="8" Count="1" />
+      <LineId Id="13" Count="1" />
+      <LineId Id="10" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_MPD_Control.M_GetConveyorDirection">
+      <LineId Id="9" Count="0" />
+      <LineId Id="32" Count="0" />
+      <LineId Id="10" Count="0" />
+      <LineId Id="33" Count="0" />
+      <LineId Id="11" Count="2" />
+      <LineId Id="24" Count="0" />
+      <LineId Id="14" Count="0" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_MPD_Control.M_GetDesiredPosition">
+      <LineId Id="43" Count="0" />
+      <LineId Id="9" Count="0" />
+      <LineId Id="32" Count="0" />
+      <LineId Id="10" Count="0" />
+      <LineId Id="33" Count="0" />
+      <LineId Id="11" Count="1" />
+      <LineId Id="102" Count="0" />
+      <LineId Id="65" Count="0" />
+      <LineId Id="71" Count="2" />
+      <LineId Id="70" Count="0" />
+      <LineId Id="83" Count="0" />
+      <LineId Id="53" Count="1" />
+      <LineId Id="87" Count="1" />
+      <LineId Id="55" Count="0" />
+      <LineId Id="84" Count="1" />
+      <LineId Id="69" Count="0" />
+      <LineId Id="86" Count="0" />
+      <LineId Id="67" Count="1" />
+    </LineIds>
+    <LineIds Name="FB_MPD_Control.P_AutoAdjustVcHeight.Get">
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_MPD_Control.P_AutoAdjustVcHeight.Set">
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_MPD_Control.P_GetMpdData.Get">
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_MPD_Control.P_SetDriveParameterIndex.Get">
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_MPD_Control.P_SetDriveParameterIndex.Set">
+      <LineId Id="5" Count="0" />
+      <LineId Id="2" Count="0" />
+      <LineId Id="6" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

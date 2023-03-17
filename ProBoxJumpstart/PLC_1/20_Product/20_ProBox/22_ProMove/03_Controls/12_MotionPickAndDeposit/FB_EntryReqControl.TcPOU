@@ -1,0 +1,177 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <POU Name="FB_EntryReqControl" Id="{ad4b567d-7980-4eae-a5bc-b283d22eaeeb}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK FB_EntryReqControl
+VAR_INPUT
+	//NumberOfCabinetsUsed	: INT;		// configure once for the system	
+	ElementData				: REFERENCE TO ST_ElementData; //reference to SC/VC element data
+	MpdRequestDone			: BOOL;	//the request is processed, and entry position is reached
+END_VAR	
+VAR_IN_OUT	
+	EntryReqPositions				: ARRAY [*] OF DINT; // the SC/VC entry position [mm] for each panel index
+END_VAR
+	
+VAR_OUTPUT
+	ActiveCabinetIndex	: INT:=-1;	//init to an invalid index
+	EntryRequest		: BOOL; // Entry requests. False = No requests pending, TRUE = Request pending or request active.
+	EntryRequestCompl	: BOOL; // Entry request is completed and VC/Shuttle is in correct position.	
+	EntryPosition		: DINT;	// The entry position [mm] of the level from where the entry is requested	
+END_VAR
+VAR CONSTANT
+	ENTRY_REQ_MEM_BUFFER_MAX : INT :=100;
+END_VAR
+VAR
+	_EntryState			: INT;//ARRAY[MIN_ENTRY_INDEX..MAX_ENTRY_INDEX] OF INT;
+	_WaitForExternalDev	: BOOL; //wait in pending state for an external device
+	_ActiveIndex		: INT;
+	_RequestedPosition	: DINT;
+	_EntryReqAbortMem	: ARRAY[0..ENTRY_REQ_MEM_BUFFER_MAX] OF BOOL; //Entry request abort memory buffer. 100 panels should be enouth
+
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[
+]]></ST>
+    </Implementation>
+    <Method Name="M_AbortEntryRequest" Id="{0688868b-89a0-4bf6-8ac2-f12006d2fb68}">
+      <Declaration><![CDATA[METHOD M_AbortEntryRequest : BOOL
+VAR_INPUT
+	CabinetIndex			: INT;		// the index of the cabinet
+	Value					: BOOL;		//
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+IF(CabinetIndex>ENTRY_REQ_MEM_BUFFER_MAX) THEN	//outside max index
+	RETURN;
+ELSE
+	_EntryReqAbortMem[CabinetIndex] := Value;
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_RegisterEntryRequest" Id="{fc3b6f3f-bf2a-4e51-a973-71a3529df8a0}">
+      <Declaration><![CDATA[METHOD PUBLIC M_RegisterEntryRequest : BOOL
+VAR_INPUT
+	TriggEntryReq			: BOOL;		// Positive edge trigs an entry request
+	CabinetIndex			: INT;		// the index of the cabinet
+END_VAR
+
+VAR CONSTANT
+
+	STATE_IDLE 				: INT:=0;	// Wait for Enter request
+	STATE_PENDING			: INT:=1;	// wait for SC/VC to move towards the entry position
+	STATE_ACTIVE			: INT:=2;	// Entry position is reached, wait for key to turn back to Auto	
+	STATE_DONE				: INT:=3;
+END_VAR
+VAR
+	AbortEntryReq			: BOOL;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+IF(NOT __ISVALIDREF(ElementData)) THEN
+	RETURN;
+END_IF
+
+IF(EntryReqPositions[CabinetIndex]<=0) THEN //invalid position
+	RETURN;
+END_IF
+
+AbortEntryReq := _EntryReqAbortMem[CabinetIndex];
+
+//
+CASE _EntryState OF
+	STATE_IDLE:
+		_ActiveIndex:=-1; //invalid index.
+		IF(TriggEntryReq AND NOT AbortEntryReq AND
+		   ElementData.OperationState.eMode = E_PositionMode.AUTO_MODE AND ElementData.OperationState.eState = E_PositionState.STARTED AND
+		   LOWER_BOUND(EntryReqPositions,1)<=CabinetIndex AND UPPER_BOUND(EntryReqPositions,1)>=CabinetIndex)  THEN
+					
+			_EntryState := _EntryState+1;
+			_ActiveIndex := CabinetIndex;
+			_WaitForExternalDev :=FALSE;
+			_RequestedPosition := EntryReqPositions[CabinetIndex];						 
+		END_IF
+				
+	STATE_PENDING: //Entry State requested, wait for the SC/VC to move to the entry position	
+		IF(MpdRequestDone AND NOT _WaitForExternalDev) THEN			
+			_EntryState := _EntryState+1;
+		END_IF
+		
+	STATE_ACTIVE:	//Wait user to turn back switch from entry request to auto mode
+		IF((NOT TriggEntryReq AND CabinetIndex = _ActiveIndex) OR AbortEntryReq) THEN
+			_EntryState := _EntryState+1;			
+		END_IF
+	
+	STATE_DONE:
+		_RequestedPosition := 0;		
+		_EntryState:= STATE_IDLE;
+END_CASE
+
+
+//set outputs
+EntryRequest		:= _EntryState=STATE_ACTIVE OR _EntryState=STATE_PENDING;
+EntryRequestCompl	:= _EntryState=STATE_ACTIVE; //Request is completed.
+ActiveCabinetIndex 	:= _ActiveIndex;
+EntryPosition		:= _RequestedPosition;
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_WaitForExternalDevice" Id="{b4b440f3-1a09-461c-8eff-28e40cce9000}">
+      <Declaration><![CDATA[METHOD PUBLIC M_WaitForExternalDevice : BOOL
+VAR_INPUT
+	WaitForExternalDevice	: BOOL;		// wait in Entry pending state for an external device
+	CabinetIndex			: INT;		// the index of the cabinet
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+IF(CabinetIndex=_ActiveIndex) THEN
+	_WaitForExternalDev:= WaitForExternalDevice;
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <LineIds Name="FB_EntryReqControl">
+      <LineId Id="33" Count="0" />
+      <LineId Id="14" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_EntryReqControl.M_AbortEntryRequest">
+      <LineId Id="16" Count="2" />
+      <LineId Id="15" Count="0" />
+      <LineId Id="14" Count="0" />
+      <LineId Id="19" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_EntryReqControl.M_RegisterEntryRequest">
+      <LineId Id="353" Count="3" />
+      <LineId Id="363" Count="0" />
+      <LineId Id="458" Count="0" />
+      <LineId Id="460" Count="1" />
+      <LineId Id="474" Count="1" />
+      <LineId Id="462" Count="0" />
+      <LineId Id="364" Count="2" />
+      <LineId Id="441" Count="0" />
+      <LineId Id="367" Count="2" />
+      <LineId Id="463" Count="0" />
+      <LineId Id="371" Count="1" />
+      <LineId Id="401" Count="0" />
+      <LineId Id="373" Count="0" />
+      <LineId Id="375" Count="10" />
+      <LineId Id="467" Count="0" />
+      <LineId Id="386" Count="0" />
+      <LineId Id="469" Count="1" />
+      <LineId Id="468" Count="0" />
+      <LineId Id="466" Count="0" />
+      <LineId Id="387" Count="0" />
+      <LineId Id="400" Count="0" />
+      <LineId Id="424" Count="0" />
+      <LineId Id="25" Count="0" />
+      <LineId Id="392" Count="2" />
+    </LineIds>
+    <LineIds Name="FB_EntryReqControl.M_WaitForExternalDevice">
+      <LineId Id="9" Count="0" />
+      <LineId Id="8" Count="0" />
+      <LineId Id="5" Count="0" />
+      <LineId Id="10" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

@@ -1,0 +1,55 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <POU Name="FB_SafetySignalsShuttle" Id="{a3a1c847-7f2b-4d5e-98c8-5c34e1b67348}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK FB_SafetySignalsShuttle
+VAR_INPUT
+	SZPCo				: BOOL; //Safety Zone Pallet Conveyor 1	
+	AP_Shuttle_Index	: INT :=1; //Index in SG AP array that is used for the cabinet on the shuttle car 	
+END_VAR
+VAR_OUTPUT
+END_VAR
+VAR_IN_OUT
+	SGref			:  	FB_ProBOXSG; //Inputs from Switching group
+	ShuttleSignals	:	ST_ProBoxSafetyShuttle;
+END_VAR
+VAR	
+	EmgStatus		: ST_EmgStatus;
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[//check if ResetSafetyNeeded
+EmgStatus.eExternal := SZPCo;
+EmgStatus.eInternal := ShuttleSignals.Inputs.EsOk;
+EmgStatus.eInternError := (ShuttleSignals.Inputs.ComErr OR ShuttleSignals.Inputs.FBErr); 
+SGref.M_SetEmgStatus(EmgStatus);
+
+
+//Pass signals from input to output
+IF(AP_Shuttle_Index >0 AND AP_Shuttle_Index<= GVL_PB_SG.NUMBER_OF_CONTACTORS) THEN
+	ShuttleSignals.Outputs.ContactorOnShuttle := SGref.HW_Inputs.AP[AP_Shuttle_Index].OpMcOn;  //get the specific contactor ON button on the shuttle cabinet
+END_IF
+ShuttleSignals.Outputs.ContactorOnEntry := SGref.CtrlOut.OpSummary.OpMcOn;
+ShuttleSignals.Outputs.EmergencyDrive 	:= SGref.CtrlOut.OpSummary.OpEmgDrive;
+ShuttleSignals.Outputs.ErrorAck 		:= SGref.CtrlOut.OpSummary.OpResetSafety;
+
+
+// Copy over all feedback signals from SG group to be transfered to Safety							   
+MEMCPY(ADR(ShuttleSignals.Outputs.FeedBackContactor),ADR(SGref.HW_Inputs.Diag.FeedbackMainContactorOFF),SIZEOF(ShuttleSignals.Outputs.FeedBackContactor));
+]]></ST>
+    </Implementation>
+    <LineIds Name="FB_SafetySignalsShuttle">
+      <LineId Id="205" Count="0" />
+      <LineId Id="196" Count="2" />
+      <LineId Id="126" Count="3" />
+      <LineId Id="203" Count="0" />
+      <LineId Id="130" Count="0" />
+      <LineId Id="204" Count="0" />
+      <LineId Id="131" Count="1" />
+      <LineId Id="160" Count="0" />
+      <LineId Id="135" Count="0" />
+      <LineId Id="177" Count="0" />
+      <LineId Id="200" Count="1" />
+      <LineId Id="176" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

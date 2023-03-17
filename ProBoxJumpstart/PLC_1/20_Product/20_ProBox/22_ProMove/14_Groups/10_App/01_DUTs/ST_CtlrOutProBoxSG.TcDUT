@@ -1,0 +1,12 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <DUT Name="ST_CtlrOutProBoxSG" Id="{6f2d030e-d1a0-4ece-b4f7-7be8661d9449}">
+    <Declaration><![CDATA[TYPE ST_CtlrOutProBoxSG :
+STRUCT
+	
+	OpSummary			: ST_PB_SG_Cabinet; //Summary of input commands from AK and AP's		 
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

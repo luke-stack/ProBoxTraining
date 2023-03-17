@@ -1,0 +1,14 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.4">
+  <DUT Name="ST_ProBoxSafetyInputsSZPCo" Id="{a310d6de-4b51-4fc8-9756-38c5e58599c6}">
+    <Declaration><![CDATA[TYPE ST_ProBoxSafetyInputsSZPCo :
+STRUCT
+	FBErr			: BOOL; //FBErr output from Safety
+	ComErr			: BOOL; //FBCom output from Safety
+	SafetyZoneOk	: BOOL; //ES for Safety zone is ok
+	
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

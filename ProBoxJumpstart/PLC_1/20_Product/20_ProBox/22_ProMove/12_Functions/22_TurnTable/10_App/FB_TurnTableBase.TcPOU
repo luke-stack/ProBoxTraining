@@ -1,0 +1,911 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <POU Name="FB_TurnTableBase" Id="{0e6afb2d-e248-49d8-8d50-d7831e11bc91}" SpecialFunc="None">
+    <Declaration><![CDATA[(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision:  $
+ *	Revision date	:	$Date: $
+ *	Last changed by	:	$Author:  $
+ *	URL				:	$URL: $
+ *
+ *	Purpose			:	Turntable with either 2 drives or 1 drive.
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *
+ **************************************************************************************)
+FUNCTION_BLOCK FB_TurnTableBase EXTENDS FB_PB_FunctionConv
+
+VAR	
+	fbTransportControl 		: FB_ProBoxTransportControl; // Transport control for one zone
+	//Global Privates	
+	_fbTurnControl			: FB_TurnControl; // Turn control	
+	_OutputDriveReq			: ST_TTDriveReq;	
+	_AdjacentSideElementType: ARRAY[1..4] OF E_AdjacentSideType;		// the type of the adjacent element ie chain or roller conveyor
+	_HandoverInvertTurn		: BOOL;
+	_TakeoverInvertTurn		: BOOL;	
+	_TurnDriveBrakeRelease	: BOOL; // Drive brake release command for turn table drive unit		
+END_VAR
+
+VAR_TEMP
+	Idx						: INT; // Iterator
+	ZoneIdx					: INT; // Iterator	
+	EmptyManualCommands		: ST_ITC_ManualMotion; // Empty manual commands
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[]]></ST>
+    </Implementation>
+    <Method Name="_M_GetExpectedAdjacentSideType" Id="{9c2d95ac-b92a-4d43-a974-cb3b2e3f7f3b}">
+      <Declaration><![CDATA[METHOD PROTECTED _M_GetExpectedAdjacentSideType : E_AdjacentSideType
+VAR_INPUT
+	TurnTableIsOccupied	: BOOL;  // true means occupied => Handing over, False => Takeing over
+END_VAR
+VAR_IN_OUT
+	ErrorData 			: ST_ErrorDataSet;
+END_VAR
+VAR
+	FunctionNumber : E_FunctionNumber;
+	i:INT;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+IF( TurnTableIsOccupied) THEN //handover to next function
+	FunctionNumber := FunctionInterface.In.eNextFunctionNumber;
+ELSE // position is free -> Takeover from previous function
+	FunctionNumber := FunctionInterface.In.ePrevFunctionNumber;	
+END_IF
+// search for the adjacent side that matches the previous or next function
+FOR i:=1 TO 4 DO
+	IF(SettingsFunction.eAdjacentFunctionNumberSide[i] = FunctionNumber) THEN
+		_M_GetExpectedAdjacentSideType := _AdjacentSideElementType[i];		
+		EXIT;
+	END_IF	
+END_FOR
+
+
+IF(_M_GetExpectedAdjacentSideType = E_AdjacentSideType.E_NotUsed) THEN
+	F_SetError(	E_ErrorType.ERROR,
+				CONCAT('Adjacent side type not configured: ',F_GetFunctionName(FunctionNumber,0)),
+				E_ErrorConv.CONFIGURATION_ERROR, 
+				ErrorData);
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_GetTurnTableOrder" Id="{e3c0b60c-749a-46a9-9047-3715a718cf2c}">
+      <Declaration><![CDATA[// Calculates and return the TurnTable rotation order position and the drive direction  
+METHOD PRIVATE _M_GetTurnTableOrder : BOOL
+VAR_INPUT
+	IsOccupied			: BOOL;  // true means occupied => Handing over, False => Takeing over
+	//InvertTurn			: BOOL;
+	OrderPos	 		: REFERENCE TO E_Positions_TurnControl;  // optional, get Turn table order position
+	DriveDir			: REFERENCE TO UINT; // optional, get drive direction 1=12, 2=21, 3=34, 4=43
+END_VAR
+
+VAR_IN_OUT
+	ErrorData 			: ST_ErrorDataSet;
+END_VAR
+VAR
+	AdjacentSideType	: E_AdjacentSideType;
+	DD					: UINT;	//Drive Direction 1=12, 2=21, 3=34, 4=43
+	OP					: E_Positions_TurnControl;  // OrderPos
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+// If Not occupied -> Takeover
+IF(NOT IsOccupied AND FunctionInterface.In.ePrevFunctionNumber <> 0 )THEN
+	//Check adjacent element/function type (chain or roller type)	
+		AdjacentSideType := _M_GetExpectedAdjacentSideType(IsOccupied, ErrorData);
+		
+		//Previous is an roller conveyor type
+		IF(AdjacentSideType = E_AdjacentSideType.E_RC) THEN		
+			// If previous function is on side 1 or 2
+			IF FunctionInterface.In.ePrevFunctionNumber = SettingsFunction.eAdjacentFunctionNumberSide[1] THEN
+				OP := E_Positions_TurnControl.MIDDLE;
+				DD := 1; //1-2
+			ELSIF FunctionInterface.In.ePrevFunctionNumber = SettingsFunction.eAdjacentFunctionNumberSide[2] THEN
+				OP := E_Positions_TurnControl.MIDDLE;
+				DD := 2; //2-1
+			// If previous function is on side 3
+			ELSIF FunctionInterface.In.ePrevFunctionNumber = SettingsFunction.eAdjacentFunctionNumberSide[3] THEN
+				OP := E_Positions_TurnControl.CW;
+				DD := 1; //1-2
+			// If previous function is on side 4
+			ELSIF FunctionInterface.In.ePrevFunctionNumber = SettingsFunction.eAdjacentFunctionNumberSide[4] THEN
+				OP := E_Positions_TurnControl.CCW;
+				DD := 1; //1-2
+			END_IF 	
+			
+		//Previous is an chain conveyor type
+		ELSIF(AdjacentSideType = E_AdjacentSideType.E_CC) THEN
+			// If previous function is on side 1
+			IF (FunctionInterface.In.ePrevFunctionNumber = SettingsFunction.eAdjacentFunctionNumberSide[1])THEN
+				OP := E_Positions_TurnControl.CCW;
+				DD := 3; //3-4
+			// If previous function is on side 2
+			ELSIF (FunctionInterface.In.ePrevFunctionNumber = SettingsFunction.eAdjacentFunctionNumberSide[2]) THEN
+				OP := E_Positions_TurnControl.CW;
+				DD := 3; //3-4			
+			// If previous function is on side 3
+			ELSIF( FunctionInterface.In.ePrevFunctionNumber = SettingsFunction.eAdjacentFunctionNumberSide[3])THEN
+				OP := E_Positions_TurnControl.MIDDLE;
+				DD := 3; //3-4
+			// If previous function is on side 4
+			ELSIF( FunctionInterface.In.ePrevFunctionNumber = SettingsFunction.eAdjacentFunctionNumberSide[4]) THEN
+				OP := E_Positions_TurnControl.MIDDLE;
+				DD := 4; //4-3
+			END_IF			
+		END_IF 	
+END_IF
+
+// If occupied -> Handover
+IF(IsOccupied AND FunctionInterface.In.eNextFunctionNumber <> 0 )THEN
+	
+	//Check adjacent element/function type (chain or roller type)	
+	AdjacentSideType := _M_GetExpectedAdjacentSideType(IsOccupied, ErrorData);
+	
+	//Next is an roller conveyor type, ie drive direction 1-2 / 2-1
+	IF(AdjacentSideType = E_AdjacentSideType.E_RC) THEN
+		IF(FunctionInterface.In.eNextFunctionNumber = SettingsFunction.eAdjacentFunctionNumberSide[1]) THEN
+			OP := E_Positions_TurnControl.MIDDLE;
+			DD := 2; //2-1
+		ELSIF(FunctionInterface.In.eNextFunctionNumber = SettingsFunction.eAdjacentFunctionNumberSide[2]) THEN
+			OP := E_Positions_TurnControl.MIDDLE;
+			DD := 1; //1-2
+		ELSIF(FunctionInterface.In.eNextFunctionNumber = SettingsFunction.eAdjacentFunctionNumberSide[3]) THEN
+			OP := E_Positions_TurnControl.CCW;
+			DD := 1; //1-2
+		ELSIF(FunctionInterface.In.eNextFunctionNumber = SettingsFunction.eAdjacentFunctionNumberSide[4]) THEN
+			OP := E_Positions_TurnControl.CW;
+			DD := 1; //1-2
+		END_IF
+	//Next is an chain conveyor type, ie drive 3-4 / 4-3 
+	ELSIF(AdjacentSideType = E_AdjacentSideType.E_CC) THEN
+		IF(FunctionInterface.In.eNextFunctionNumber = SettingsFunction.eAdjacentFunctionNumberSide[1]) THEN
+			OP := E_Positions_TurnControl.CW;
+			DD := 3; //3-4
+		ELSIF(FunctionInterface.In.eNextFunctionNumber = SettingsFunction.eAdjacentFunctionNumberSide[2]) THEN
+			OP := E_Positions_TurnControl.CCW;
+			DD := 3; //3-4
+		ELSIF(FunctionInterface.In.eNextFunctionNumber = SettingsFunction.eAdjacentFunctionNumberSide[3]) THEN
+			OP := E_Positions_TurnControl.MIDDLE;
+			DD := 4; //4-3
+		ELSIF(FunctionInterface.In.eNextFunctionNumber = SettingsFunction.eAdjacentFunctionNumberSide[4]) THEN
+			OP := E_Positions_TurnControl.MIDDLE;
+			DD := 3; //3-4
+		END_IF
+	END_IF		
+END_IF
+
+
+
+//invert turning
+IF(	((NOT IsOccupied AND _TakeoverInvertTurn) OR (IsOccupied AND _HandoverInvertTurn)) AND
+	(OP <> E_Positions_TurnControl.UNDEFINED AND OP <> E_Positions_TurnControl.MIDDLE)) THEN
+	IF(OP = E_Positions_TurnControl.CW) THEN
+		OP := E_Positions_TurnControl.CCW;
+	ELSIF(OP = E_Positions_TurnControl.CCW) THEN
+		OP := E_Positions_TurnControl.CW;
+	END_IF
+	CASE DD OF
+		1: DD := 2;
+		2: DD := 1;
+		3: DD := 4;
+		4: DD := 3;
+	END_CASE	
+END_IF
+
+
+
+//Final check
+IF(OP <> E_Positions_TurnControl.UNDEFINED) THEN
+	_M_GetTurnTableOrder := TRUE; // decistion was made successfully
+END_IF
+
+//set references
+IF(__ISVALIDREF(DriveDir)) THEN DriveDir:= DD; END_IF
+IF(__ISVALIDREF(OrderPos)) THEN OrderPos:= OP; END_IF
+
+	
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_IsTransportActive" Id="{9e91929e-d36f-465d-907f-d3957fae4d2b}">
+      <Declaration><![CDATA[METHOD PROTECTED _M_IsTransportActive : BOOL
+VAR_INPUT
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+
+_M_IsTransportActive := ZoneData[1].TransportControlData.eHandOverState = E_HandOverState.ACTIVE OR
+						ZoneData[1].TransportControlData.eHandOverState = E_HandOverState.STOP OR
+						ZoneData[1].TransportControlData.eHandOverState = E_HandOverState.INTERRUPTED OR
+						ZoneData[1].TransportControlData.eTakeOverState = E_TakeOverState.ACTIVE OR
+						ZoneData[1].TransportControlData.eTakeOverState = E_TakeOverState.STOP OR
+						ZoneData[1].TransportControlData.eTakeOverState = E_TakeOverState.INTERRUPTED;
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_SetInvertTurn" Id="{add8a6ff-6379-4873-b3a7-c195716e4506}">
+      <Declaration><![CDATA[// possible to set invert turning
+METHOD PROTECTED _M_SetInvertTurn : BOOL
+VAR_INPUT
+	TakeoverInvertTurn	: BOOL;
+	HandoverInvertTurn	: BOOL;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+IF(	ZoneData[1].TransportControlData.eTakeOverState = E_TakeOverState.IDLE) THEN
+	_TakeoverInvertTurn := TakeoverInvertTurn;
+END_IF
+
+
+IF(	ZoneData[1].TransportControlData.eHandOverState = E_HandOverState.IDLE) THEN
+	_HandoverInvertTurn := HandoverInvertTurn;
+END_IF 
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_TransportControl" Id="{eeb20430-49ce-4f5d-90b8-7e425f8587cd}">
+      <Declaration><![CDATA[METHOD PROTECTED _M_TransportControl : BOOL
+VAR_INPUT	
+	EnableTransport			: BOOL;		//Enables transport (Turn table or other dependencies)
+	HW_InputsConv			: ST_HW_InputsTTConv;	
+END_VAR
+VAR_IN_OUT
+	TranspErrorData			: ST_ErrorDataSet;	
+END_VAR
+VAR_INST	//VAR_INST: Create the variable on the stack of the function block instance. This means that the VAR_INST variable behaves like other variables of the function block instance and is not reinitialized each time	
+	fbProBoxSpeedControl 	: FB_ProBoxSpeedControl; // Speed control
+END_VAR
+VAR
+	CreepSpeed				: BOOL; // Change to creep speed	
+	SensorOccupied			: BOOL;	// Assigned occupied sensor	
+	ElementEnableTransport	: BOOL; // Feedback enable transport from element
+	ElementDriveRunning		: BOOL; // Feedback drive is running from element
+	
+	TransportEnable			: BOOL;
+	TransportEnableTakeOver : BOOL; // Transport enable takeover 
+	TransportEnableHandOver : BOOL; // Transport enable handover	
+	DriveDirTakeover		: UINT; // Drive direction 1=12, 2=21, 3=34, 4=43
+	DriveDirHandover		: UINT; // Drive direction 1=12, 2=21, 3=34, 4=43
+	TurnOrderPosTakeover   	: E_Positions_TurnControl;
+	TurnOrderPosHandover   	: E_Positions_TurnControl;
+	SuppressCreepSpeed		: BOOL; // avoid enter creep speed if handover drive direction and takeover drive direction are equal
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+(**********************************************************************************************************
+   Get Drive Directions 12 / 21 / 34 / 43
+***********************************************************************************************************)
+
+_M_GetTurnTableOrder(FALSE,TurnOrderPosTakeover,DriveDirTakeover,TranspErrorData);
+_M_GetTurnTableOrder(TRUE, TurnOrderPosHandover,DriveDirHandover,TranspErrorData);
+
+
+
+(**********************************************************************************************************
+   Speed control
+***********************************************************************************************************)
+
+SuppressCreepSpeed := DriveDirHandover=DriveDirTakeover AND TurnOrderPosTakeover = TurnOrderPosHandover AND DriveDirTakeover>0 AND DriveDirHandover >0 AND //Do not enter creep speed if ouput direct is the same axis.
+					 F_CheckAllFree(FunctionInterface.In.eNextFunctionNumber); //next function is not occupied.
+
+CreepSpeed := (_OutputDriveReq.Drive_Run_12 AND HW_InputsConv.Sensor_Creep_12 AND NOT SuppressCreepSpeed) OR
+			  (_OutputDriveReq.Drive_Run_21 AND HW_InputsConv.Sensor_Creep_21 AND NOT SuppressCreepSpeed) OR
+			  (_OutputDriveReq.Drive_Run_34 AND HW_InputsConv.Sensor_Creep_34 AND NOT SuppressCreepSpeed) OR
+			  (_OutputDriveReq.Drive_Run_43 AND HW_InputsConv.Sensor_Creep_43 AND NOT SuppressCreepSpeed) OR
+			   NOT ZoneData[1].TransportControlData.FastSpeedActive;
+
+fbProBoxSpeedControl(
+		CreepSpeed		:= CreepSpeed,
+		TransportCtrl	:= ZoneData[1].TransportControlData);
+		
+_OutputDriveReq.Speed_12 := fbProBoxSpeedControl.Speed;
+_OutputDriveReq.Speed_34 := fbProBoxSpeedControl.Speed;	
+		
+(**********************************************************************************************************
+   Transport control
+***********************************************************************************************************)
+
+
+// Assign sensor occupied
+// Initialize variables
+SensorOccupied	:= FALSE; 
+// If previous function is avaiable
+//IF FunctionInterface.In.ePrevFunctionNumber <> 0 THEN
+IF(ZoneData[1].TransportControlData.Occupied OR ZoneData[1].TransportControlData.eTransportState = E_TransportState.IDLE) THEN
+	SensorOccupied := HW_InputsConv.Sensor_Stop_12 OR HW_InputsConv.Sensor_Stop_21 OR HW_InputsConv.Sensor_Stop_34 OR HW_InputsConv.Sensor_Stop_43 ;
+ELSE		 
+	 CASE DriveDirTakeover OF
+		1:	
+			SensorOccupied := HW_InputsConv.Sensor_Stop_12;
+		2:                                 
+			SensorOccupied := HW_InputsConv.Sensor_Stop_21;
+		3:                                 
+			SensorOccupied := HW_InputsConv.Sensor_Stop_34;
+		4:                                 
+			SensorOccupied := HW_InputsConv.Sensor_Stop_43;			 
+	 END_CASE		 
+				
+END_IF
+
+
+//elemennt feed back
+ElementDriveRunning := FunctionInterface.In.Element.State.DriveRunning OR FunctionInterface.In.Element.State.DriveRunning_34;
+
+
+//Get info that element is ok to run axis.
+ElementEnableTransport := FunctionInterface.In.Element.State.DriveReady AND FunctionInterface.In.Element.State.DriveReady_34;
+
+// Assign transport enable
+TransportEnable := 	ZoneData[1].AddOn.Orders.Enable AND 				// Addon enables transport
+					ZoneData[1].ErrorData.Error.ErrorType <> E_ErrorType.ERROR AND // Zone has no error
+					FunctionData.ErrorData.Error.ErrorType <> E_ErrorType.ERROR AND NOT // Function has no error
+					FunctionInterface.In.Element.State.Error AND 		// Element has no error
+				 	EnableTransport; 									// Turntable is correct position
+				   
+				   
+TransportEnableTakeOver := ZoneData[1].AddOn.Orders.EnableTakeover AND 	// Addon enables takeover
+						   ElementEnableTransport AND					// Element enables transport (Also own function)
+						   	EnableTransport; 							// Lift enables transport
+							
+TransportEnableHandOver := ZoneData[1].AddOn.Orders.EnableHandover AND 	// Addon enables handover
+						   ElementEnableTransport AND				// Element enables transport (Also own function)
+						   EnableTransport; 							// Lift enables transport
+							
+							
+fbTransportControl.CtrlInPbTc.StopSensor := SensorOccupied; // Sensor position occupied
+fbTransportControl.EncoderValue			:= SEL(DriveDirTakeover=3 OR DriveDirTakeover=4 OR DriveDirHandover=3 OR DriveDirHandover=4,(*1-2 direction*) FunctionInterface.In.Element.State.EncoderValue, (*3-4 direction*) FunctionInterface.In.Element.State.EncoderValue_34);						
+fbTransportControl(
+	Param 					:= M_GetTransportControlParam(mZoneNumber := 1),// Parameter of transport control
+	PrevTransportData 		:= M_GetPreviousTransportData(mzoneNumber := 1),// Previous transport data
+	NextTransportData 		:= M_GetNextTransportData(mZoneNumber := 1), 	// Next transport data
+	TransportEnable			:= TransportEnable, 							// Transport enable						   
+	TransportEnableTakeOver := TransportEnableTakeOver,					 	// Transport enable takeover 
+	TransportEnableHandOver := TransportEnableHandOver,					 	// Transport enable handover		
+	DriveRunning			:= ElementDriveRunning, 						// Feedback drive is running
+	CurrentSpeed			:= fbProBoxSpeedControl.Speed,	 				// Feedback speed			
+	ZoneData 				:= ZoneData[1], 								// Zone data
+	ErrorData				:= TranspErrorData); 							// Error data
+	
+	
+
+
+// Enable transport axis 1-2
+_OutputDriveReq.Enable_12 := ZoneData[1].AddOn.Orders.Enable AND 
+				     		ZoneData[1].ErrorData.Error.ErrorType <> E_ErrorType.ERROR AND // Zone has no error
+				     		FunctionData.ErrorData.Error.ErrorType <> E_ErrorType.ERROR; // Function has no error
+	
+// Enable transport axis 3-4
+_OutputDriveReq.Enable_34 := _OutputDriveReq.Enable_12; //Same condidtions for enable 34 as for enable 12
+_OutputDriveReq.Drive_Run_12 := _OutputDriveReq.Drive_Run_21 := 0; //reset and make decition below
+_OutputDriveReq.Drive_Run_34 := _OutputDriveReq.Drive_Run_43 :=0;  //reset and make decition below					 
+	
+//Set correct take over drive request (to A_OutputMapping)
+IF(fbTransportControl.Outputs.DriveTakeoverRun) THEN
+	_OutputDriveReq.Drive_Run_12 := DriveDirTakeover=1;
+	_OutputDriveReq.Drive_Run_21 := DriveDirTakeover=2;
+	_OutputDriveReq.Drive_Run_34 := DriveDirTakeover=3;
+	_OutputDriveReq.Drive_Run_43 := DriveDirTakeover=4;		
+END_IF
+
+//Set correct hand over drive request (to A_OutputMapping)
+IF(fbTransportControl.Outputs.DriveHandoverRun) THEN
+	_OutputDriveReq.Drive_Run_12 := DriveDirHandover=1;
+	_OutputDriveReq.Drive_Run_21 := DriveDirHandover=2;
+	_OutputDriveReq.Drive_Run_34 := DriveDirHandover=3;
+	_OutputDriveReq.Drive_Run_43 := DriveDirHandover=4;		
+END_IF
+
+
+
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_TurnControl" Id="{e78ff8e6-672c-440d-bab8-23e3090d9243}">
+      <Declaration><![CDATA[METHOD PROTECTED _M_TurnControl : BOOL
+VAR_INPUT
+	HW_Sensor_TurnTable	: ST_HW_InputsTT;
+	HW_Sensor_Overhang	: BOOL; // Common Sensor overhang for all axis
+	TurnTimeoutValue 	: TIME;	// Timeout turning
+	TurnHomePosFree		: E_Positions_TurnControl;
+	TurnHomePosOccupied	: E_Positions_TurnControl;
+	DisableTurning		: BOOL;	
+	TurnBrakeDelayTime : TIME; // Turning Brake release time
+END_VAR
+VAR_IN_OUT
+	TurnErrorData		: ST_ErrorDataSet; // Turn control error data	
+END_VAR
+VAR_INST
+	fbTimerBrakeOffDelay	: TOF;	//Break release timer
+END_VAR
+VAR
+	//MotorDirectionTurn		: E_ProBoxMotorDirection; // Assigned motor direction for turn table
+	//MotorSpeedTurn			: E_ProBoxMotorSpeed; // Assigned motor speed for turn table	
+	OrderPos				: E_Positions_TurnControl; // Order position for turn table
+	HomePos					: E_Positions_TurnControl; // Home position for turn table
+	AdjacentSideType		: E_AdjacentSideType;
+	ZoneLogicalOccupied		: BOOL;
+	
+
+	DelayBrakeTime: TIME;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[(**********************************************************************************************************
+   Turn control
+***********************************************************************************************************)	
+
+// Initialize variables
+OrderPos := E_Positions_TurnControl.UNDEFINED; 
+HomePos := E_Positions_TurnControl.UNDEFINED; 
+
+ZoneLogicalOccupied := F_PB_IsLogicalOccupied(ZoneData[1].TransportControlData);
+
+// When zone is free
+IF( NOT ZoneLogicalOccupied) THEN   
+   IF( NOT _M_GetTurnTableOrder(FALSE,OrderPos,0,TurnErrorData)) THEN
+		// Set homeposition
+		HomePos := TurnHomePosFree;	
+	END_IF
+   	
+				
+// When zone is occupied
+ELSE (*if ZoneLogicalOccupied*)	  
+	IF( NOT _M_GetTurnTableOrder(TRUE,OrderPos,0,TurnErrorData)) THEN
+		// Set homeposition
+		HomePos := TurnHomePosOccupied;	
+	END_IF			
+END_IF	
+
+// Run the Turn control
+ _fbTurnControl(
+	FunctionData			:= FunctionData, 								// Function data
+	ZoneData				:= Zonedata[1],
+	Sensor_Pos_CW			:= HW_Sensor_TurnTable.Sensor_Pos_CW, 			// Sensor position clockwise 
+	Sensor_Creep_CW			:= HW_Sensor_TurnTable.Sensor_Creep_CW, 		// Sensor creep speed clockwise 
+	Sensor_Pos_CCW			:= HW_Sensor_TurnTable.Sensor_Pos_CCW, 			// Sensor position counter-clockwise 
+	Sensor_Creep_CCW		:= HW_Sensor_TurnTable.Sensor_Creep_CCW,		// Sensor creep speed counter-clockwise 
+	Sensor_Pos_MIDDLE_CW	:= HW_Sensor_TurnTable.Sensor_Pos_MIDDLE_CW, 	// Sensor position middle towards clockwise 
+	Sensor_Pos_MIDDLE_CCW	:= HW_Sensor_TurnTable.Sensor_Pos_MIDDLE_CCW, 	// Sensor position middle towards counter-clockwise 
+	Sensor_Overhang_12		:= HW_Sensor_Overhang, 							// Sensor overhang axis 1-2 / 3-4 forward 
+	Sensor_Overhang_21		:= HW_Sensor_Overhang, 							// Same as above 
+	TimeoutValueTurn		:= TurnTimeoutValue,							// Timeout value for turning 
+	Disable					:= DisableTurning OR _M_IsTransportActive(),	// inhivit turning during an active transport
+	OrderPos				:= OrderPos, 									// Home position turn table 
+	HomePos					:= HomePos, 									// Home position turn table 
+	ErrorData				:= TurnErrorData); 								// Error data	
+	
+
+
+	//*************************************************************
+	//Turning drive motor break release timer
+	//*************************************************************
+	
+	// Start timer OFF DELAY when motor stops
+	fbTimerBrakeOffDelay(	
+			IN:= _fbTurnControl.Drive_Run_CW OR _fbTurnControl.Drive_Run_CCW,
+			PT := TurnBrakeDelayTime);
+
+	// Brake is released when the motor is running
+	_TurnDriveBrakeRelease := fbTimerBrakeOffDelay.Q;
+		
+	
+	// Set motor unit error
+	IF NOT HW_Sensor_TurnTable.Signal_MotorUnitOK THEN 
+		F_SetError(	
+			ErrorType	:= E_ErrorType.ERROR,
+			ErrorParam	:= 'Drive error. Check Motor starter unit',
+			ErrorMsg	:= E_ErrorConv.DRIVE_ERROR,
+			ErrorData	:= TurnErrorData);
+	END_IF
+	]]></ST>
+      </Implementation>
+    </Method>
+    <Action Name="A_AssignTransportParam" Id="{4e38f463-96e3-4010-9dcb-d59b7b992568}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_AssignTransportParam
+ * 	FUNCTION	Assign the variable transport parameter based to the current side
+ **************************************************************************************)
+ 
+(**********************************************************************************************************
+	 Get current valid transport parameters
+***********************************************************************************************************)
+// Init var 
+ZoneData[1].TransportControlData.TransportParam.ZoneEndLength := 0;
+ZoneData[1].TransportControlData.TransportParam.StopDelayDistance := 0;
+
+// Set zone length
+ZoneData[1].TransportControlData.TransportParam.ZoneLength := SettingsFunction.Zone[1].Length[1];
+ 
+// Process all 4 sides 
+FOR Idx := 1 TO 4 DO
+	// If a previous function number is existing
+	IF FunctionInterface.In.ePrevFunctionNumber > E_FunctionNumber.F_BEGIN_FUNCTION AND FunctionInterface.In.ePrevFunctionNumber < E_FunctionNumber.F_END_FUNCTION OR
+		FunctionInterface.In.ePrevFunctionNumber > E_FunctionNumber.F_BEGIN_EXTERN_FUNCTION AND FunctionInterface.In.ePrevFunctionNumber < E_FunctionNumber.F_END_EXTERN_FUNCTION THEN
+		// Update stop delay distance based on previous function number
+		IF FunctionInterface.In.ePrevFunctionNumber = SettingsFunction.eAdjacentFunctionNumberSide[Idx] THEN
+			ZoneData[1].TransportControlData.TransportParam.StopDelayDistance := SettingsFunction.Zone[1].StopDelayDistanceFromSide[Idx];
+		END_IF
+	END_IF
+
+	// If the zone is occupied	
+	IF ZoneData[1].TransportControlData.Occupied THEN
+		// If a next function number is existing
+		IF FunctionInterface.In.eNextFunctionNumber > E_FunctionNumber.F_BEGIN_FUNCTION AND FunctionInterface.In.eNextFunctionNumber < E_FunctionNumber.F_END_FUNCTION OR
+			FunctionInterface.In.eNextFunctionNumber > E_FunctionNumber.F_BEGIN_EXTERN_FUNCTION AND FunctionInterface.In.eNextFunctionNumber < E_FunctionNumber.F_END_EXTERN_FUNCTION THEN
+			// Update zone end length based on next function number
+			IF FunctionInterface.In.eNextFunctionNumber = SettingsFunction.eAdjacentFunctionNumberSide[Idx] THEN
+				ZoneData[1].TransportControlData.TransportParam.ZoneEndLength := SettingsFunction.Zone[1].ZoneEndLengthToSide[Idx];
+			END_IF
+		END_IF
+	END_IF
+END_FOR
+
+// If the zone is not occupied	
+IF NOT ZoneData[1].TransportControlData.Occupied THEN
+	// If a previous function number is existing
+	IF FunctionInterface.In.ePrevFunctionNumber > E_FunctionNumber.F_BEGIN_FUNCTION AND FunctionInterface.In.ePrevFunctionNumber < E_FunctionNumber.F_END_FUNCTION OR
+		FunctionInterface.In.ePrevFunctionNumber > E_FunctionNumber.F_BEGIN_EXTERN_FUNCTION AND FunctionInterface.In.ePrevFunctionNumber < E_FunctionNumber.F_END_EXTERN_FUNCTION THEN
+		// Update zone end length based on previous function number
+		IF FunctionInterface.In.ePrevFunctionNumber = SettingsFunction.eAdjacentFunctionNumberSide[1] THEN
+			ZoneData[1].TransportControlData.TransportParam.ZoneEndLength := SettingsFunction.Zone[1].ZoneEndLengthToSide[2];
+		ELSIF FunctionInterface.In.ePrevFunctionNumber = SettingsFunction.eAdjacentFunctionNumberSide[2] THEN
+			ZoneData[1].TransportControlData.TransportParam.ZoneEndLength := SettingsFunction.Zone[1].ZoneEndLengthToSide[1];
+		ELSIF FunctionInterface.In.ePrevFunctionNumber = SettingsFunction.eAdjacentFunctionNumberSide[3] THEN
+			ZoneData[1].TransportControlData.TransportParam.ZoneEndLength := SettingsFunction.Zone[1].ZoneEndLengthToSide[4];
+		ELSIF FunctionInterface.In.ePrevFunctionNumber = SettingsFunction.eAdjacentFunctionNumberSide[4] THEN
+			ZoneData[1].TransportControlData.TransportParam.ZoneEndLength := SettingsFunction.Zone[1].ZoneEndLengthToSide[3];
+		END_IF
+	END_IF
+END_IF
+]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="A_ExternalSTI" Id="{7a89b627-ce8f-46a9-a2a8-e8f15addca7f}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_ExternalSTI
+ * 	FUNCTION	External Subsystem transport interface
+ **************************************************************************************)
+
+
+(**************************************************************************************
+   External Subsystem transport interfaces
+***************************************************************************************)
+FOR Idx := 1 TO NUMBER_OF_STI DO
+	// Is an external Subsystem transport interface configured
+	IF SettingsFunction.eExternalSTI_FunctionNumber[Idx] > E_FunctionNumber.F_BEGIN_EXTERN_FUNCTION AND
+	   SettingsFunction.eExternalSTI_FunctionNumber[Idx] < E_FunctionNumber.F_END_EXTERN_FUNCTION THEN
+	   
+		// When interface is valid
+		IF __QUERYINTERFACE(fbSTI_Channels[SettingsFunction.eExternalSTI_FunctionNumber[Idx]].Instance,FunctionBase.STI_Instance) THEN
+			// Call external inbound interface
+			fbSTI_Channels[SettingsFunction.eExternalSTI_FunctionNumber[Idx]].Instance.M_CallInterface(
+				mErrorData				:= FunctionData.ErrorData.ErrorDataSet[1]);
+		END_IF
+	END_IF
+END_FOR
+]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="A_Init" Id="{f16a5fef-44a2-4479-b55b-99bf8f65e5c9}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_Init
+ * 	FUNCTION	Initialize function
+ **************************************************************************************)
+ 
+// Update Registry
+M_UpdateRegistry();
+ 
+
+// Init ongoing - Wait until init is released (Sequencial startup)
+IF NOT FunctionData.Init AND FunctionData.InitRunning THEN
+	// When the subsystem is started, 
+	// When its released to initialize
+	IF FunctionData.OperationState.Info.SystemReady AND
+	   SettingsFunction.eFunctionNumber < FunctionData.OperationState.InitRelease.eLimitFunctionNumber THEN
+	   
+	   IF M_InitFunction(FALSE) THEN
+			// Function initialized - and initialization done
+			FunctionData.Init := TRUE;
+			FunctionData.InitRunning := FALSE;
+			
+			// Set reset cmd
+			FunctionData.ErrorData.Error.ResetError := TRUE;
+			
+			DebugMsg := CONCAT('Initialization done. Function: ', ConfigFunction.FunctionName);
+			fbDebugMsg.M_SendInfoMsg(DebugMsg);
+		END_IF
+	END_IF
+(*
+If the function is not initialized,
+clean all values and wait until init is released
+*)
+ELSIF NOT FunctionData.Init THEN
+	// Reset internal variables
+	FunctionData.OperationState := FunctionBase.PositionStateEmpty;
+
+	// Initiate initialization of all zones
+	FOR ZoneIdx := 1 TO SettingsFunction.NumberOfZones DO
+		ZoneData[ZoneIdx].Init := FALSE;
+	END_FOR;
+			
+	// Reset values and load config
+	M_PreInit();
+		
+	// To start init a valid functionnumber and element link is needed
+	FunctionData.InitRunning := SettingsFunction.eFunctionNumber > 0 AND
+								SettingsFunction.eElementLink > 0;
+END_IF
+
+// Init zones
+IF FunctionData.Init THEN
+	// Set init flag after one cycle
+	FOR ZoneIdx := 1 TO SettingsFunction.NumberOfZones DO
+		// If a zone is not initialized, wait one cycle to finish init
+		IF NOT ZoneData[ZoneIdx].Init THEN
+			IF ZoneData[ZoneIdx].InitRunning THEN
+				ZoneData[ZoneIdx].InitRunning := FALSE;
+				ZoneData[ZoneIdx].Init := TRUE;
+				ZoneData[ZoneIdx].ErrorData.Error.ResetError := TRUE;
+			ELSE	
+				ZoneData[ZoneIdx].InitRunning := TRUE;
+			END_IF
+		END_IF
+	END_FOR;
+END_IF]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="A_InputMapping" Id="{90a6b9fe-ab64-47f7-b098-df1e0099d7be}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_InputMapping
+ * 	FUNCTION	Input mapping
+ **************************************************************************************)
+ 
+(**************************************************************************************
+
+   	This is an Base class, and the input mapping shall take place in the corresponding 
+	object that extends the base class. 
+ 
+***************************************************************************************)
+	
+(**************************************************************************************
+   Element states
+***************************************************************************************)
+// Get status of the corresponding element
+M_GetElementStates(); 
+
+(**************************************************************************************
+   AddOn states
+***************************************************************************************)
+// Get status of all corresponding AddOn functions and store it in FunctionInterface.In.AddOnOrder
+M_GetAddOnOrder();
+
+]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="A_ManualControl" Id="{7b2604c5-597d-4f47-a8b0-e9f5aab24f91}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_ManualControl
+ * 	FUNCTION	Control manual movement
+ **************************************************************************************)
+
+ 
+(**************************************************************************************
+   Reset manual commands
+***************************************************************************************)
+
+// If function is not in manual mode
+IF FunctionData.OperationState.eMode <> E_PositionMode.MANUAL_MODE THEN
+	// Reset manual commands
+	ITC.ManualMotion := EmptyManualCommands;
+END_IF
+
+(**************************************************************************************
+   Enable available axis, buttons, features
+***************************************************************************************)
+// Example:
+//	ITC.ManualMotion.Axis[1].Forward.Enable := TRUE;
+
+
+]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="A_OutputMapping" Id="{5701c26d-6775-4277-b091-16c97e168262}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_OutputMapping
+ * 	FUNCTION	Output mapping
+ **************************************************************************************)
+
+ (**************************************************************************************
+
+   	This is an Base class, that only takes care of the element drive requests. 
+	The ouput mapping shall take place in the corresponding	object that extends the base class. 
+ 
+***************************************************************************************)
+ 
+    (*
+	fb_ProBoxToFunctionOrders(
+		CreepSpeed_12 	:= _OutputDriveReq.Speed_12 = E_ProBoxMotorSpeed.CREEP_SPEED, 
+		LowSpeed_12		:= _OutputDriveReq.Speed_12 = E_ProBoxMotorSpeed.LOW_SPEED, 
+		Forward_12 		:= _OutputDriveReq.Drive_Run_12, 
+		Reverse_12 		:= _OutputDriveReq.Drive_Run_21, 
+		CreepSpeed_34 	:= _OutputDriveReq.Speed_34= E_ProBoxMotorSpeed.CREEP_SPEED,
+		LowSpeed_34 	:= _OutputDriveReq.Speed_34 = E_ProBoxMotorSpeed.LOW_SPEED,
+		Forward_34		:= _OutputDriveReq.Drive_Run_34 ,
+		Reverse_34 		:= _OutputDriveReq.Drive_Run_43); 
+	*)
+    FunctionInterface.Out.FunctionOrders := F_ProBoxToFunctionOrders(
+                                                CreepSpeed_12 	:= _OutputDriveReq.Speed_12 = E_ProBoxMotorSpeed.CREEP_SPEED, 
+                                                LowSpeed_12		:= _OutputDriveReq.Speed_12 = E_ProBoxMotorSpeed.LOW_SPEED, 
+                                                Forward_12 		:= _OutputDriveReq.Drive_Run_12, 
+                                                Reverse_12 		:= _OutputDriveReq.Drive_Run_21, 
+                                                CreepSpeed_34 	:= _OutputDriveReq.Speed_34= E_ProBoxMotorSpeed.CREEP_SPEED,
+                                                LowSpeed_34 	:= _OutputDriveReq.Speed_34 = E_ProBoxMotorSpeed.LOW_SPEED,
+                                                Forward_34		:= _OutputDriveReq.Drive_Run_34 ,
+                                                Reverse_34 		:= _OutputDriveReq.Drive_Run_43,
+                                                Enable_12       := _OutputDriveReq.Enable_12,
+                                                Enable_34       := _OutputDriveReq.Enable_12);
+	(*
+	FunctionInterface.Out.FunctionOrders.Enable 				:= _OutputDriveReq.Enable_12 ;													 
+	FunctionInterface.Out.FunctionOrders.ReqDriveRun 		:= fb_ProBoxToFunctionOrders.FunctionOrders.ReqDriveRun;
+	FunctionInterface.Out.FunctionOrders.ReqDriveDirection 	:= fb_ProBoxToFunctionOrders.FunctionOrders.ReqDriveDirection;
+	FunctionInterface.Out.FunctionOrders.ReqSpeed 			:= fb_ProBoxToFunctionOrders.FunctionOrders.ReqSpeed;
+	
+	
+	
+	FunctionInterface.Out.FunctionOrders.Enable_34 				:= _OutputDriveReq.Enable_34;													 
+	FunctionInterface.Out.FunctionOrders.ReqDriveRun_34 		:= fb_ProBoxToFunctionOrders.FunctionOrders.ReqDriveRun_34;
+	FunctionInterface.Out.FunctionOrders.ReqDriveDirection_34 	:= fb_ProBoxToFunctionOrders.FunctionOrders.ReqDriveDirection_34;
+	FunctionInterface.Out.FunctionOrders.ReqSpeed_34 			:= fb_ProBoxToFunctionOrders.FunctionOrders.ReqSpeed_34;
+    *)
+
+(**************************************************************************************
+   AddOn outputs
+***************************************************************************************)
+// This function provide no AddOn functionality
+;]]></ST>
+      </Implementation>
+    </Action>
+    <Action Name="A_TransportLink" Id="{e151fd07-8ced-43c9-874b-2b31f6a38199}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_TransportLink
+ * 	FUNCTION	Links the element functions for transportation
+ **************************************************************************************)
+
+// If previous function is not static use merging service
+IF SettingsFunction.ePrevFunctionNumber = E_FunctionNumber.F_BEGIN_FUNCTION THEN
+ 
+	// Previous element function assignement
+	IF fbTransportControl.Outputs.DeletePrevTransportData THEN
+		FunctionInterface.In.ePrevFunctionNumber := E_FunctionNumber.F_BEGIN_FUNCTION;
+	END_IF
+	
+	IF fbTransportControl.Outputs.RequestPrevTransportData THEN
+		// Call merging service
+		fbMergingService(
+			eFunctionNumber 	:= SettingsFunction.eFunctionNumber,
+			ePrevFunctionNumber => FunctionInterface.In.ePrevFunctionNumber);
+	END_IF	
+ELSE
+	// Use static link
+	FunctionInterface.In.ePrevFunctionNumber := SettingsFunction.ePrevFunctionNumber;
+END_IF
+
+
+// If next function is not static use routing service
+IF SettingsFunction.eNextFunctionNumber = E_FunctionNumber.F_BEGIN_FUNCTION THEN
+
+	// Next element function assignement
+	IF fbTransportControl.Outputs.DeleteNextTransportData THEN
+		FunctionInterface.In.eNextFunctionNumber := E_FunctionNumber.F_BEGIN_FUNCTION;
+	END_IF
+	
+	IF fbTransportControl.Outputs.RequestNextTransportData THEN
+		// Call routing service
+		fbRoutingService(
+			eFunctionNumber 	:= SettingsFunction.eFunctionNumber,
+			eNextFunctionNumber => FunctionInterface.In.eNextFunctionNumber);
+	END_IF
+ELSE
+	// Use static link
+	FunctionInterface.In.eNextFunctionNumber := SettingsFunction.eNextFunctionNumber;
+END_IF]]></ST>
+      </Implementation>
+    </Action>
+    <ObjectProperties>
+      <XmlArchive>
+        <Data>
+          <o xml:space="preserve" t="UMLStereoTypeContainerObject">
+            <v n="IsType" t="UMLType">BaseArea</v>
+            <v n="Stereotype">""</v>
+            <d n="Stereotypes" t="Hashtable" />
+          </o>
+        </Data>
+        <TypeList>
+          <Type n="Hashtable">System.Collections.Hashtable</Type>
+          <Type n="String">System.String</Type>
+          <Type n="UMLStereoTypeContainerObject">{30250973-b110-4e31-b562-c102e042dca4}</Type>
+          <Type n="UMLType">{0197b136-405a-42ee-bb27-fd08b621d0cf}</Type>
+        </TypeList>
+      </XmlArchive>
+    </ObjectProperties>
+    <LineIds Name="FB_TurnTableBase">
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_TurnTableBase._M_GetExpectedAdjacentSideType">
+      <LineId Id="3" Count="19" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_TurnTableBase._M_GetTurnTableOrder">
+      <LineId Id="3" Count="115" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_TurnTableBase._M_IsTransportActive">
+      <LineId Id="3" Count="7" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_TurnTableBase._M_SetInvertTurn">
+      <LineId Id="3" Count="8" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_TurnTableBase._M_TransportControl">
+      <LineId Id="3" Count="39" />
+      <LineId Id="153" Count="0" />
+      <LineId Id="43" Count="0" />
+      <LineId Id="154" Count="0" />
+      <LineId Id="44" Count="9" />
+      <LineId Id="55" Count="72" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_TurnTableBase._M_TurnControl">
+      <LineId Id="3" Count="66" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_TurnTableBase.A_AssignTransportParam">
+      <LineId Id="2" Count="55" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_TurnTableBase.A_ExternalSTI">
+      <LineId Id="2" Count="21" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_TurnTableBase.A_Init">
+      <LineId Id="2" Count="63" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_TurnTableBase.A_InputMapping">
+      <LineId Id="2" Count="23" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_TurnTableBase.A_ManualControl">
+      <LineId Id="2" Count="22" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_TurnTableBase.A_OutputMapping">
+      <LineId Id="2" Count="51" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_TurnTableBase.A_TransportLink">
+      <LineId Id="2" Count="41" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

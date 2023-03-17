@@ -1,0 +1,11 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.4">
+  <DUT Name="ST_CtrlInPalletCheck" Id="{7e284d97-82f6-4688-82ea-0423a0200832}">
+    <Declaration><![CDATA[TYPE ST_CtrlInPalletCheck :
+STRUCT
+	Trigger : BOOL;
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

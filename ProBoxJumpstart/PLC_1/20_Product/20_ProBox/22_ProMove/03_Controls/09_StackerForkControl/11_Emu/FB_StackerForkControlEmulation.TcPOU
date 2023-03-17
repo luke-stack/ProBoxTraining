@@ -1,0 +1,79 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.4">
+  <POU Name="FB_StackerForkControlEmulation" Id="{3c11740d-e9d9-4287-805e-56a6a5dd3353}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK FB_StackerForkControlEmulation
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: q8hedls $
+ *	Revision date	:	$Date: $
+ *	Last changed by	:	$Author:  $
+ *	URL				:	$URL:  $
+ *
+ *	Purpose			:	Emulation low lift control emulation NOTE NOT FINISHED...
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				26.04.2019		SHE					LowLiftUnitEmulation
+ *
+ **************************************************************************************)
+
+VAR_INPUT	
+	ForkRange					: INT;		// configuration value maximum stroke in cycle ticks		
+	DriveRun_Out				: BOOL;		// Forks is moving out to lift pallet
+	DriveRun_In					: BOOL;		// Forks is moving in from pallet
+END_VAR
+
+VAR_OUTPUT
+	ForkPosIn					: BOOL;
+	ForkPosOutReachedD1			: BOOL;	
+	ForkPosOutReachedD2			: BOOL;
+END_VAR
+
+VAR	
+	ActualPosition				: INT := 0; //default start value	
+END_VAR
+
+VAR PERSISTENT
+	Settings					: ST_CFG_PalletMagazine; // Settings - activated configuration 
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[
+
+
+// When forks is moving
+IF DriveRun_Out THEN
+	IF ActualPosition < ForkRange + 10 THEN
+		ActualPosition := ActualPosition + 2;
+	END_IF;
+		
+ELSIF DriveRun_In THEN
+	IF ActualPosition > -10 THEN
+		ActualPosition := ActualPosition - 2;
+	END_IF					
+END_IF
+
+// Update positions
+ForkPosIn := FALSE;
+ForkPosOutReachedD1 := FALSE;
+
+IF ActualPosition <= 0 THEN
+	 ForkPosIn := TRUE;
+ELSIF ActualPosition > ForkRange THEN
+	 ForkPosOutReachedD1 := TRUE;
+END_IF
+
+]]></ST>
+    </Implementation>
+    <LineIds Name="FB_StackerForkControlEmulation">
+      <LineId Id="327" Count="24" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

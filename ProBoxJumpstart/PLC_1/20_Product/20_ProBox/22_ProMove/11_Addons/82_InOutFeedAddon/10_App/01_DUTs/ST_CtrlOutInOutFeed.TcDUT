@@ -1,0 +1,13 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <DUT Name="ST_CtrlOutInOutFeed" Id="{cab8a654-a658-4cfe-bc8d-42d1f24faa6f}">
+    <Declaration><![CDATA[TYPE ST_CtrlOutInOutFeed :
+STRUCT
+	OKToRemove			: BOOL; //Indication that pallet is ok to remove
+	OKToDeposit			: BOOL; //Indication that pallet is ok to add
+
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

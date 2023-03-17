@@ -1,0 +1,14 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <DUT Name="U_HW_OutputCommands" Id="{753f8385-2b45-4832-be46-aca06882a313}">
+    <Declaration><![CDATA[TYPE U_HW_OutputCommands :
+UNION
+	Commandregister: WORD;
+	ByteOut0: BYTE;
+	ByteOut1: BYTE;
+
+END_UNION
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

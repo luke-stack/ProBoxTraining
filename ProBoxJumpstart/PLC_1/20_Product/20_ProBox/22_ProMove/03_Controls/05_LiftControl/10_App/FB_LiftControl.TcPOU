@@ -1,0 +1,241 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <POU Name="FB_LiftControl" Id="{c89b422e-fe4a-4a8c-a3bd-86b748b80a21}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK FB_LiftControl
+VAR_INPUT
+	LinkedElementNumber		: E_ElementNumber;
+	FunctionData			: ST_FunctionData; // Function data
+	Sensor_Pos_Down			: BOOL; // Sensor position lift down
+	Sensor_Pos_Up			: BOOL; // Sensor position lift up	
+	TimeoutValueLift 		: TIME; // Timeout value for lifting
+	OrderPos				: E_Positions_LiftControl; // Order position lift	
+	HomePos					: E_Positions_LiftControl; // Home position lift
+END_VAR
+
+VAR_OUTPUT
+	Drive_Run_UpDown		: BOOL; // Drive run command lift up/down
+	EnableTransport			: BOOL;	// Enable transport
+END_VAR
+
+VAR_IN_OUT
+	ErrorData 				: ST_ErrorDataSet; // Error data
+END_VAR
+
+VAR
+	eState					: E_States_LiftControl;
+	eLastState				: E_States_LiftControl;	
+	Timer_TimeoutLift		: TON;		
+	ElementErrorData		: ST_ElementErrorStruct;
+END_VAR	
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[F_ResetError(
+	Reset 	  := FALSE,
+	ErrorData := ErrorData);
+	
+// Initialise variables
+Drive_Run_UpDown := FALSE;
+EnableTransport := FALSE;
+Timer_TimeoutLift.IN := FALSE;
+Timer_TimeoutLift.PT := TimeoutValueLift;
+
+ ElementErrorData := F_GetElementErrorData(LinkedElementNumber);
+
+CASE eState OF
+	(*************************************************************************
+	  Initialise
+	*************************************************************************)	
+	E_States_LiftControl.Init:
+		Drive_Run_UpDown := FALSE;
+		EnableTransport := FALSE;
+		
+		eLastState := eState;
+		eState := E_States_LiftControl.Idle;
+		
+	(*************************************************************************
+	  Error
+	*************************************************************************)	
+	E_States_LiftControl.Error:
+		// Acknowledge request error
+		IF ErrorData.ErrorType <> E_ErrorType.ERROR THEN	
+			eLastState := eState;
+			eState := E_States_LiftControl.Init;			
+		END_IF
+		
+	(*************************************************************************
+	  Idle
+	*************************************************************************)	
+	E_States_LiftControl.Idle:
+		// If function is started and no error
+		IF ((FunctionData.OperationState.eState = E_PositionState.STARTED OR FunctionData.OperationState.eState = E_PositionState.STOPPING)
+		    AND FunctionData.ErrorData.Error.ErrorType <> E_ErrorType.ERROR 
+            AND NOT FunctionData.ErrorData.ZoneErrorPending
+		    AND ElementErrorData.ErrorState <> E_ErrorState.ERROR) THEN
+
+			// If both sensors are active
+			IF Sensor_Pos_Down AND Sensor_Pos_Up THEN
+				Drive_Run_UpDown := FALSE;
+				F_SetError(
+					ErrorType := E_ErrorType.ERROR, 
+					ErrorParam := 'Both sensors active', 
+					ErrorMsg := E_ErrorConv.INCORRECT_SENSOR_SIGNAL, 
+					ErrorData := ErrorData);
+					
+				eLastState := eState;
+				eState := E_States_LiftControl.Error;
+			END_IF;
+	
+			IF OrderPos = E_Positions_LiftControl.DOWN THEN			
+				// When lift is down
+				IF Sensor_Pos_Down THEN
+					EnableTransport := TRUE;				
+				ELSIF(FunctionData.OperationState.eState = E_PositionState.STARTED) THEN //change state only if group is in state STARTED
+					EnableTransport := FALSE;												
+					eLastState := eState;
+					eState := E_States_LiftControl.LIFT_DOWN;				
+				END_IF					
+			ELSIF OrderPos = E_Positions_LiftControl.UP THEN
+				// When lift is up
+				IF Sensor_Pos_Up THEN
+					EnableTransport := TRUE;				
+				ELSIF(FunctionData.OperationState.eState = E_PositionState.STARTED) THEN //change state only if group is in state STARTED		
+					EnableTransport := FALSE;													
+					eLastState := eState;
+					eState := E_States_LiftControl.LIFT_UP;				
+				END_IF
+			ELSIF(FunctionData.OperationState.eState = E_PositionState.STARTED) THEN //change state only if group is in state STARTED
+				EnableTransport := FALSE;
+				
+				IF HomePos = E_Positions_LiftControl.DOWN AND NOT Sensor_Pos_Down THEN																
+					eLastState := eState;
+					eState := E_States_LiftControl.LIFT_DOWN;									
+				ELSIF HomePos = E_Positions_LiftControl.UP AND NOT Sensor_Pos_Up THEN															
+					eLastState := eState;
+					eState := E_States_LiftControl.LIFT_UP;															
+				END_IF												
+			END_IF
+		END_IF
+		
+	(*************************************************************************
+	  Lifting down
+	*************************************************************************)		
+	E_States_LiftControl.LIFT_DOWN:
+		// If function is started or stopping and no error
+		IF ((FunctionData.OperationState.eState = E_PositionState.STARTED OR FunctionData.OperationState.eState = E_PositionState.STOPPING)
+			AND FunctionData.ErrorData.Error.ErrorType <> E_ErrorType.ERROR 
+            AND NOT FunctionData.ErrorData.ZoneErrorPending
+			AND ElementErrorData.ErrorState <> E_ErrorState.ERROR) THEN	
+						
+			// If both sensors are active
+			IF Sensor_Pos_Down AND Sensor_Pos_Up THEN
+				Drive_Run_UpDown := FALSE;
+				F_SetError(
+					ErrorType := E_ErrorType.ERROR, 
+					ErrorParam := 'Both sensors active', 
+					ErrorMsg := E_ErrorConv.INCORRECT_SENSOR_SIGNAL, 
+					ErrorData := ErrorData);
+					
+				eLastState := eState;
+				eState := E_States_LiftControl.Error;
+			END_IF;			
+			
+			// When lift is down
+			IF Sensor_Pos_Down THEN
+				Drive_Run_UpDown := FALSE;
+				
+				eLastState := eState;
+				eState := E_States_LiftControl.Idle;
+			ELSE
+				Timer_TimeoutLift.IN := TRUE; // Start timer
+				
+				// If time is up
+				IF Timer_TimeoutLift.Q THEN
+					Drive_Run_UpDown := FALSE;
+					F_SetError(
+						ErrorType := E_ErrorType.ERROR, 
+						ErrorParam := 'Timeout Lifting', 
+						ErrorMsg := E_ErrorConv.TIMEOUT_MOVEMENT, 
+						ErrorData := ErrorData);
+						
+					eLastState := eState;
+					eState := E_States_LiftControl.Error;				
+				ELSE
+					Drive_Run_UpDown := TRUE;				
+				END_IF			
+			END_IF	
+		ELSE 
+			Drive_Run_UpDown := FALSE;
+		END_IF		
+		
+		
+	(*************************************************************************
+	  Lifting up
+	*************************************************************************)			
+	E_States_LiftControl.LIFT_UP:
+		// If function is started or stopping and no error
+		IF ((FunctionData.OperationState.eState = E_PositionState.STARTED OR FunctionData.OperationState.eState = E_PositionState.STOPPING))
+			AND FunctionData.ErrorData.Error.ErrorType <> E_ErrorType.ERROR 
+            AND NOT FunctionData.ErrorData.ZoneErrorPending
+			AND ElementErrorData.ErrorState <> E_ErrorState.ERROR THEN	
+			
+			// If both sensors are active
+			IF Sensor_Pos_Down AND Sensor_Pos_Up THEN
+				Drive_Run_UpDown := FALSE;
+				F_SetError(
+					ErrorType := E_ErrorType.ERROR, 
+					ErrorParam := 'Both sensors active', 
+					ErrorMsg := E_ErrorConv.INCORRECT_SENSOR_SIGNAL, 
+					ErrorData := ErrorData);
+					
+				eLastState := eState;
+				eState := E_States_LiftControl.Error;
+			END_IF;			
+			
+			// When lift is up
+			IF Sensor_Pos_Up THEN
+				Drive_Run_UpDown := FALSE;
+				
+				eLastState := eState;
+				eState := E_States_LiftControl.Idle;
+			ELSE
+				Timer_TimeoutLift.IN := TRUE; // Start timer
+				
+				// If time is up
+				IF Timer_TimeoutLift.Q THEN
+					Drive_Run_UpDown := FALSE;
+					F_SetError(
+						ErrorType := E_ErrorType.ERROR, 
+						ErrorParam := 'Timeout Lifting', 
+						ErrorMsg := E_ErrorConv.TIMEOUT_MOVEMENT, 
+						ErrorData := ErrorData);
+						
+					eLastState := eState;
+					eState := E_States_LiftControl.Error;
+				ELSE
+					Drive_Run_UpDown := TRUE;				
+				END_IF			
+			END_IF
+		ELSE 
+			Drive_Run_UpDown := FALSE;	
+		END_IF	
+END_CASE
+
+// Call timer
+Timer_TimeoutLift();]]></ST>
+    </Implementation>
+    <LineIds Name="FB_LiftControl">
+      <LineId Id="3" Count="38" />
+      <LineId Id="43" Count="0" />
+      <LineId Id="224" Count="0" />
+      <LineId Id="45" Count="19" />
+      <LineId Id="66" Count="8" />
+      <LineId Id="76" Count="23" />
+      <LineId Id="226" Count="0" />
+      <LineId Id="100" Count="50" />
+      <LineId Id="227" Count="0" />
+      <LineId Id="151" Count="43" />
+      <LineId Id="2" Count="0" />
+      <LineId Id="195" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

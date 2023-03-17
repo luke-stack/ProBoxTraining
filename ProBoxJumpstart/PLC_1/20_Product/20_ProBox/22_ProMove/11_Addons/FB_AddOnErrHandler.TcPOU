@@ -1,0 +1,108 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <POU Name="FB_AddOnErrHandler" Id="{e42a6303-f3e2-43b7-b281-4f6591b10e23}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK INTERNAL FB_AddOnErrHandler
+VAR_INPUT
+	AddOnSettingsFunction 	: REFERENCE TO ST_CFG_Function;
+	AddOnFunctionData		: REFERENCE TO ST_FunctionData;
+END_VAR
+VAR_OUTPUT
+END_VAR
+VAR
+	//_ParentZoneErrorData        :ST_ZoneErrorStruct;
+	_ParentZoneErrorActive      : BOOL;								//Last cycle error state of the main function
+	LinkedZoneErrorStruct	: REFERENCE TO ST_ZoneErrorStruct;	//zone error of the main function that owns the AddOn
+	i 							: INT;
+	LinkedFuncNumber 			: E_FunctionNumber;					//Function number of the functino that owns the AddOn	
+	LinkedZoneNumber 			: INT;								//Zone number that the AddOn is linked to
+	
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[(**************************************************************************************
+ * 	NAME		FB_AddOnErrHandler
+ * 	FUNCTION	Should only be called from AddOns after the call to the A_ErrorHandler();
+ 				This function adds the AddOn functionData error to the function that the
+				AddOn is linked to and reset the error if it was acknowledged from 
+				Sync visualization or reset button.
+				Note, if the AddOn can be acknowleded by Sync (ie Scanner) then this 
+				functionblock should not be called.				
+ **************************************************************************************)
+
+// Part 1
+// -Check if parent function that owns the add-on is going from "error"  to "no error pending"
+//  -if so, then it was probably acknowledged by operator via sync or manual button on switching group
+	
+	// Sanity checks	
+	IF(NOT __ISVALIDREF(AddOnSettingsFunction) OR NOT __ISVALIDREF(AddOnFunctionData) ) THEN
+		RETURN;
+	END_IF
+
+	LinkedFuncNumber 	:= AddOnSettingsFunction.FunctionLink.eFunctionNumber;
+	LinkedZoneNumber	:= AddOnSettingsFunction.FunctionLink.ZoneNumber;
+		
+	// Check zoneNumber is within valid range
+	IF(LinkedZoneNumber=0 OR LinkedZoneNumber>NUMBER_OF_ZONES_PER_FUNCTION) THEN
+		F_SetExternalElementError(AddOnSettingsFunction.eElementLink,E_ErrorType.ERROR,'Check Function link on Addons', E_ErrorConv.CONFIGURATION_ERROR);
+		RETURN;
+	END_IF
+	//check reference is valid
+	IF(NOT __ISVALIDREF(FunctionRegistry[LinkedFuncNumber].rFunctionData) ) THEN
+		RETURN;
+	END_IF	
+	//Check reference is valid
+	IF(NOT __ISVALIDREF(FunctionRegistry[LinkedFuncNumber].Zone[LinkedZoneNumber].refZoneData) ) THEN
+		RETURN;
+	END_IF
+	LinkedZoneErrorStruct REF= FunctionRegistry[LinkedFuncNumber].Zone[LinkedZoneNumber].refZoneData.ErrorData; 
+		
+	IF(_ParentZoneErrorActive AND LinkedZoneErrorStruct.Error.ErrorType = E_ErrorType.NO_ERROR_PENDING) THEN
+		FOR i:=1 TO NUMBER_OF_ERROR_SETS DO
+			AddOnFunctionData.ErrorData.ErrorDataSet[i].ResetError:=TRUE;
+		END_FOR
+		//Reset external errors on the function that the AddOn is linked to
+		F_ResetExternalFunctionError(	eFunctionNumber := LinkedFuncNumber, ZoneNumber := LinkedZoneNumber, Reset := FALSE);	
+                
+// Part 2.
+//  -Add the AddOn error to the function zone that owns the Addon
+	ELSIF(AddOnFunctionData.ErrorData.Error.ErrorType = E_ErrorType.ERROR AND LinkedZoneErrorStruct.Error.ErrorType = E_ErrorType.NO_ERROR_PENDING) THEN
+		F_SetExternalFunctionError(
+								   eFunctionNumber := AddOnSettingsFunction.FunctionLink.eFunctionNumber,
+								   ZoneNumber := 	AddOnSettingsFunction.FunctionLink.ZoneNumber,
+								   ErrorType            := AddOnFunctionData.ErrorData.Error.ErrorType,								  
+								   ErrorParam	:= CONCAT(CONCAT(AddOnSettingsFunction.FunctionName,': '),AddOnFunctionData.ErrorData.Error.ErrorParam),
+								   ErrorMsg             := AddOnFunctionData.ErrorData.Error.ErrorCode.Conv); 
+	END_IF
+	
+	//Get errostate of parentZone	
+	_ParentZoneErrorActive := LinkedZoneErrorStruct.Error.ErrorType = E_ErrorType.ERROR; 
+		]]></ST>
+    </Implementation>
+    <LineIds Name="FB_AddOnErrHandler">
+      <LineId Id="137" Count="2" />
+      <LineId Id="142" Count="0" />
+      <LineId Id="146" Count="1" />
+      <LineId Id="145" Count="0" />
+      <LineId Id="148" Count="0" />
+      <LineId Id="140" Count="0" />
+      <LineId Id="86" Count="2" />
+      <LineId Id="128" Count="0" />
+      <LineId Id="176" Count="0" />
+      <LineId Id="180" Count="0" />
+      <LineId Id="177" Count="2" />
+      <LineId Id="92" Count="6" />
+      <LineId Id="175" Count="0" />
+      <LineId Id="99" Count="0" />
+      <LineId Id="135" Count="0" />
+      <LineId Id="133" Count="1" />
+      <LineId Id="131" Count="0" />
+      <LineId Id="100" Count="9" />
+      <LineId Id="126" Count="1" />
+      <LineId Id="110" Count="7" />
+      <LineId Id="130" Count="0" />
+      <LineId Id="119" Count="3" />
+      <LineId Id="66" Count="0" />
+      <LineId Id="123" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

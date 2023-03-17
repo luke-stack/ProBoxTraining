@@ -1,0 +1,392 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <POU Name="FB_MergingFiFo" Id="{4286b1cd-f58d-4a0b-8a3d-de5baac41ba3}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK FB_MergingFiFo
+//FB_MergingFiFo 
+//
+VAR_INPUT
+	FunctionNumber  : E_FunctionNumber;
+	Disable			: BOOL; 	// Make this E_Function disabled, ie PriorityControl will not return this E_FunctionNumber
+	CompareNextFunc	: E_FunctionNumber; // Check if next is set to this function. F_BEGIN_FUNCTION = No check performed		  
+END_VAR
+
+VAR_OUTPUT
+	ePrevFunctionNumber		: E_FunctionNumber;		//the function number that has the highest priority to enter into Loop or intersection.	  
+END_VAR
+VAR CONSTANT 
+    ELEMENTLAST 	: INT:=20;
+	ELEMENTFIRST	: INT:=1;
+	STARTZONE		: INT:=1;
+	EmptyBuffer		: ST_FifoBuffer:= (eFunctionNumber:=0,EntryOK:=0, Occupied:=0) ; 
+END_VAR 
+VAR	
+	_Buffer					: ARRAY[ELEMENTFIRST..ELEMENTLAST] OF ST_FifoBuffer;	
+END_VAR
+VAR_TEMP
+	i						: INT;
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[
+ePrevFunctionNumber :=E_FunctionNumber.F_BEGIN_FUNCTION;
+
+_M_AddItem(FunctionNumber,Disable);
+
+//return the first item in the list (that are not disabled)
+//Check if function is occupied, iterate entire buffer array
+FOR i:=ELEMENTFIRST TO ELEMENTLAST BY 1 DO
+	IF(_Buffer[i].EntryOK AND _Buffer[i].Occupied) THEN
+		ePrevFunctionNumber :=_Buffer[i].eFunctionNumber;						
+		EXIT;
+	END_IF
+END_FOR
+]]></ST>
+    </Implementation>
+    <Method Name="_M_AddItem" Id="{414e55fd-95d5-4b24-88b5-fb77b974e0c2}">
+      <Declaration><![CDATA[METHOD PRIVATE _M_AddItem : BOOL  //FIFO table
+VAR_INPUT
+	FunctionNumber  : E_FunctionNumber;
+	Disable			: BOOL; 	// Make this E_Function disabled, ie PriorityControl will not return this E_FunctionNumber		
+END_VAR
+
+VAR	
+	myBufferIx		: INT:=0;		
+	i:INT;
+	j:INT;
+	
+END_VAR
+
+
+
+
+	]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+//search for function in buffer, get myBufferIx
+FOR myBufferIx := ELEMENTFIRST TO ELEMENTLAST BY 1 DO
+	IF(_Buffer[myBufferIx].eFunctionNumber=FunctionNumber) THEN EXIT; END_IF
+END_FOR
+
+//if entry was not already in buffer -> search for first empty slot
+IF(myBufferIx>ELEMENTLAST) THEN // no item found	
+	FOR myBufferIx := ELEMENTFIRST TO ELEMENTLAST BY 1 DO
+		IF(_Buffer[myBufferIx].eFunctionNumber=0) THEN EXIT;	END_IF
+	END_FOR
+END_IF
+
+//if no emtpy slot was found, then buffer full, so return.
+IF(myBufferIx>ELEMENTLAST) THEN RETURN; END_IF
+
+//------------------------------------------------------------------------
+// By now, the Buffer Ix is determined
+// Add function number to the buffer list
+//------------------------------------------------------------------------
+_Buffer[myBufferIx].eFunctionNumber := FunctionNumber;
+_Buffer[myBufferIx].EntryOK := NOT Disable AND _M_EntryOk(FunctionNumber);
+
+//------------------------------------------------------------------------
+// Check all functions in the list being occupied
+// Check if functions being occupied
+//------------------------------------------------------------------------
+
+IF(_Buffer[myBufferIx].eFunctionNumber>0) THEN
+	_Buffer[myBufferIx].Occupied:=FALSE;		
+	_Buffer[myBufferIx].Occupied:=_M_Enabled(_Buffer[myBufferIx].eFunctionNumber); //check occupied and handover enabled.
+	IF( NOT _Buffer[myBufferIx].Occupied) THEN
+		//Clear buffer
+		_Buffer[myBufferIx]:=EmptyBuffer;			
+	END_IF
+END_IF
+
+//------------------------------------------------------------------------
+// Sort items, 
+//------------------------------------------------------------------------
+
+_M_SortFifo();
+	
+_M_AddItem := TRUE;
+
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_Enabled" Id="{4cda8fe9-1d8c-4afb-8213-acc908c9602e}">
+      <Declaration><![CDATA[METHOD PRIVATE _M_Enabled : BOOL
+VAR_INPUT
+	FunctionNumber : E_FunctionNumber; 
+END_VAR
+VAR
+	rZoneData		:REFERENCE TO ST_ZoneData;
+	rZoneTrspEnable :REFERENCE TO ST_TransportEnable;	
+	i:INT;
+	Tu_index :DINT;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+
+IF( NOT __ISVALIDREF(FunctionRegistry[FunctionNumber].rFunction)) THEN RETURN; END_IF
+IF( NOT __ISVALIDREF(FunctionRegistry[FunctionNumber].rFunctionInterface)) THEN RETURN; END_IF
+
+FOR i:=STARTZONE TO NUMBER_OF_ZONES_PER_FUNCTION BY 1 DO
+	rZoneData REF= FunctionRegistry[FunctionNumber].rFunction.ZoneData[i];
+	rZoneTrspEnable REF=FunctionRegistry[FunctionNumber].rFunction.ZoneInterface[i].In.Enable;	
+
+	_M_Enabled:= _M_Enabled OR	F_PB_GetTransportControlDataRef(FunctionNumber,i).Occupied OR F_PB_GetTransportControlDataRef(FunctionNumber,i).DataPresent;
+	
+	IF NOT (rZoneData.AddOn.Orders.Enable AND rZoneData.AddOn.Orders.EnableHandover AND rZoneTrspEnable.HandOver AND rZoneTrspEnable.Transport) THEN
+		_M_Enabled :=FALSE;
+		EXIT;
+	END_IF
+	
+	Tu_index := F_PB_GetTransportControlDataRef(FunctionNumber,i).TU_DataIndex;
+	IF(Tu_index>0) THEN
+		IF(NOT TU_Table.TU_DataTable[Tu_index].DataSet.JobPresent) THEN
+			_M_Enabled :=FALSE;
+			EXIT;
+		END_IF
+	END_IF
+			
+	//check if handover was completed, then remove from buffer
+	IF(F_PB_GetTransportControlDataRef(FunctionNumber,i).eHandOverState= E_HandOverState.COMPLETE) THEN
+		_M_Enabled :=FALSE;
+		EXIT;
+	END_IF
+		
+	
+END_FOR
+
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_EntryOk" Id="{b79a8ca9-ace9-4627-8411-17c223bb4215}">
+      <Declaration><![CDATA[METHOD PRIVATE _M_EntryOk : BOOL
+VAR_INPUT
+	FunctionNumber : E_FunctionNumber;	
+END_VAR
+VAR
+	rZoneData		:REFERENCE TO ST_ZoneData;
+	rZoneTrspEnable :REFERENCE TO ST_TransportEnable;
+	i:INT;
+	ElementNumber	: E_ElementNumber;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[_M_EntryOk :=FALSE;
+IF( NOT __ISVALIDREF(FunctionRegistry[FunctionNumber].rFunction)) THEN RETURN; END_IF
+IF( NOT __ISVALIDREF(FunctionRegistry[FunctionNumber].rFunctionInterface)) THEN RETURN; END_IF
+IF( NOT __ISVALIDREF(FunctionRegistry[FunctionNumber].rFunctionData)) THEN RETURN; END_IF
+IF( NOT __ISVALIDREF(FunctionRegistry[FunctionNumber].rSettingsFunction)) THEN RETURN; END_IF
+
+//check that there are no active errors in element, functon or zones
+
+ElementNumber := FunctionRegistry[FunctionNumber].rSettingsFunction.eElementLink;
+IF(__ISVALIDREF(ElementRegistry[ElementNumber].rElementData))THEN
+	IF( NOT ElementRegistry[ElementNumber].rElementData.ErrorData.FunctionErrorPending AND 
+		ElementRegistry[ElementNumber].rElementData.ErrorData.ErrorState <> E_ErrorState.ERROR) THEN
+		_M_EntryOk :=TRUE;
+	END_IF	
+END_IF	
+
+
+
+// check if element/function is started
+_M_EntryOk := _M_EntryOk AND FunctionRegistry[FunctionNumber].rFunctionInterface.In.Element.OperationState.eState = E_PositionState.STARTED;								
+//check if any zone/Function/element is disabled
+_M_EntryOk := _M_EntryOk AND F_CheckAllEnabled(FunctionNumber);
+
+//check that input function also has next defined (Should point to DTU but is not checked!!)
+IF(THIS^.CompareNextFunc>E_FunctionNumber.F_BEGIN_FUNCTION AND FunctionRegistry[FunctionNumber].rFunctionInterface.In.eNextFunctionNumber<>CompareNextFunc) THEN
+	_M_EntryOk := FALSE;
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="_M_SortFiFo" Id="{9b8d0123-bc61-4652-abe3-c3fc6717b5b4}">
+      <Declaration><![CDATA[METHOD PRIVATE _M_SortFiFo : BOOL
+VAR_INPUT
+END_VAR
+VAR
+	i,j:INT;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[FOR i:=ELEMENTFIRST TO ELEMENTLAST-1 BY 1 DO	
+	IF(_Buffer[i].eFunctionNumber=0) THEN
+		FOR j:=i+1 TO ELEMENTLAST BY 1 DO
+			IF(_Buffer[j].eFunctionNumber <> 0) THEN
+				_Buffer[i] := _Buffer[j];
+				_Buffer[j] := EmptyBuffer;				
+				EXIT;
+			END_IF
+		END_FOR
+		EXIT;	//No need iterate over entire buffer. this will be covered next cycle.
+	END_IF	
+END_FOR]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_GetFifoIndex" Id="{aa951cb5-170f-4fe1-950b-c2b206e98fce}">
+      <Declaration><![CDATA[METHOD PUBLIC M_GetFifoIndex : E_FunctionNumber
+VAR_INPUT
+	Index:INT; // 1 is the most prioritized Function
+END_VAR
+VAR
+	myIndex,ix,i:INT;	
+END_VAR
+
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+IF(Index<ELEMENTFIRST) THEN
+	myIndex:= ELEMENTFIRST;
+ELSIF(Index>ELEMENTLAST) THEN
+	myIndex:= ELEMENTLAST;
+ELSE
+	myIndex:=Index;
+END_IF
+
+
+//return the first item in the list (that are not disabled)
+//Check if function is occupied, iterate all zones
+FOR i:=ELEMENTFIRST TO ELEMENTLAST BY 1 DO
+	IF(_Buffer[i].EntryOK AND _Buffer[i].Occupied) THEN
+		ix:= ix+1;
+		IF(ix=myIndex) THEN
+			M_GetFifoIndex :=_Buffer[i].eFunctionNumber;
+			EXIT;
+		END_IF			
+	END_IF
+END_FOR]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="M_MoveToLast" Id="{ec69daa9-41de-4241-9c8b-24bc6ad8385e}">
+      <Declaration><![CDATA[//Set function to the lowest priority, ie move to last positoin in FIFO
+METHOD PUBLIC M_MoveToLast : BOOL
+VAR_INPUT
+	FunctionNumber : E_FunctionNumber;
+	//Index:INT;	
+END_VAR
+VAR
+	i:INT;
+	MyIndex:Int;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[IF(FunctionNumber=0) THEN RETURN; END_IF
+
+//return the first item in the list (that are not disabled)
+//Check if function is occupied, iterate all zones
+FOR i:=ELEMENTFIRST TO ELEMENTLAST BY 1 DO
+	IF(_Buffer[i].eFunctionNumber = FunctionNumber) THEN
+		//Clear buffer -> remove from FIFO-> it will be added next cycle
+		_Buffer[i]:=EmptyBuffer;
+		EXIT;				
+	END_IF
+END_FOR
+
+//sort fifo (_M_SortFiFo()) not needed, this will be carried out when re-adding the unit]]></ST>
+      </Implementation>
+    </Method>
+    <LineIds Name="FB_MergingFiFo">
+      <LineId Id="587" Count="0" />
+      <LineId Id="604" Count="0" />
+      <LineId Id="687" Count="0" />
+      <LineId Id="603" Count="0" />
+      <LineId Id="592" Count="4" />
+      <LineId Id="634" Count="0" />
+      <LineId Id="597" Count="2" />
+      <LineId Id="547" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_MergingFiFo._M_AddItem">
+      <LineId Id="166" Count="0" />
+      <LineId Id="169" Count="16" />
+      <LineId Id="248" Count="0" />
+      <LineId Id="186" Count="0" />
+      <LineId Id="191" Count="1" />
+      <LineId Id="195" Count="2" />
+      <LineId Id="272" Count="0" />
+      <LineId Id="198" Count="0" />
+      <LineId Id="273" Count="0" />
+      <LineId Id="275" Count="6" />
+      <LineId Id="274" Count="0" />
+      <LineId Id="213" Count="4" />
+      <LineId Id="228" Count="1" />
+      <LineId Id="237" Count="1" />
+      <LineId Id="25" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_MergingFiFo._M_Enabled">
+      <LineId Id="30" Count="0" />
+      <LineId Id="33" Count="0" />
+      <LineId Id="31" Count="0" />
+      <LineId Id="107" Count="0" />
+      <LineId Id="7" Count="1" />
+      <LineId Id="36" Count="0" />
+      <LineId Id="47" Count="0" />
+      <LineId Id="62" Count="0" />
+      <LineId Id="5" Count="0" />
+      <LineId Id="48" Count="2" />
+      <LineId Id="52" Count="0" />
+      <LineId Id="51" Count="0" />
+      <LineId Id="89" Count="3" />
+      <LineId Id="94" Count="0" />
+      <LineId Id="96" Count="0" />
+      <LineId Id="95" Count="0" />
+      <LineId Id="93" Count="0" />
+      <LineId Id="78" Count="0" />
+      <LineId Id="64" Count="2" />
+      <LineId Id="68" Count="0" />
+      <LineId Id="67" Count="0" />
+      <LineId Id="110" Count="0" />
+      <LineId Id="16" Count="0" />
+      <LineId Id="15" Count="0" />
+      <LineId Id="18" Count="0" />
+      <LineId Id="20" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_MergingFiFo._M_EntryOk">
+      <LineId Id="30" Count="0" />
+      <LineId Id="33" Count="0" />
+      <LineId Id="31" Count="0" />
+      <LineId Id="46" Count="0" />
+      <LineId Id="58" Count="0" />
+      <LineId Id="113" Count="0" />
+      <LineId Id="71" Count="0" />
+      <LineId Id="76" Count="3" />
+      <LineId Id="85" Count="0" />
+      <LineId Id="80" Count="1" />
+      <LineId Id="84" Count="0" />
+      <LineId Id="75" Count="0" />
+      <LineId Id="74" Count="0" />
+      <LineId Id="18" Count="0" />
+      <LineId Id="54" Count="1" />
+      <LineId Id="97" Count="0" />
+      <LineId Id="20" Count="0" />
+      <LineId Id="124" Count="3" />
+      <LineId Id="102" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_MergingFiFo._M_SortFiFo">
+      <LineId Id="6" Count="10" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_MergingFiFo.M_GetFifoIndex">
+      <LineId Id="20" Count="0" />
+      <LineId Id="18" Count="0" />
+      <LineId Id="21" Count="0" />
+      <LineId Id="24" Count="1" />
+      <LineId Id="39" Count="1" />
+      <LineId Id="22" Count="1" />
+      <LineId Id="19" Count="0" />
+      <LineId Id="6" Count="3" />
+      <LineId Id="27" Count="1" />
+      <LineId Id="10" Count="0" />
+      <LineId Id="41" Count="0" />
+      <LineId Id="29" Count="0" />
+      <LineId Id="12" Count="0" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="FB_MergingFiFo.M_MoveToLast">
+      <LineId Id="57" Count="1" />
+      <LineId Id="21" Count="2" />
+      <LineId Id="33" Count="3" />
+      <LineId Id="30" Count="0" />
+      <LineId Id="19" Count="0" />
+      <LineId Id="38" Count="0" />
+      <LineId Id="37" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

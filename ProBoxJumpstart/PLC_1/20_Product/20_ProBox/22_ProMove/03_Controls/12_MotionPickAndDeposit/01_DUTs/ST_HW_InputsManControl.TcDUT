@@ -1,0 +1,15 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1">
+  <DUT Name="ST_HW_InputsManControl" Id="{a1bfdd8d-cfc1-43bc-8677-6b1bf20ecc80}">
+    <Declaration><![CDATA[// Manual control buttons and switches used to control shuttle car or vertical conveyor
+TYPE ST_HW_InputsManControl :
+STRUCT
+	EmergencyDrive 	: BOOL;		// Key switch emergency drive, used when limit switch activated
+	DriveFwd		: BOOL; 	// Manual drive carrige (Shuttle car forward / Vertical Cv up)
+	DriveRev		: BOOL; 	// Manual drive carrige (Shuttle car reverse / Vertical Cv down)	
+	Conv			: ARRAY[GVL_MPD.CV_A..GVL_MPD.CV_B] OF ST_HW_InputsManControlConv; // 1 = Conv A, 2 = Conv B
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

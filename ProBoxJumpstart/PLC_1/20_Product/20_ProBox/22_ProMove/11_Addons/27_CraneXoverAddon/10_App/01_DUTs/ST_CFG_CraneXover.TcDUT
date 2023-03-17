@@ -1,0 +1,29 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <DUT Name="ST_CFG_CraneXover" Id="{308c2f6e-905c-4bbb-b9dc-467fa6a1188f}">
+    <Declaration><![CDATA[TYPE ST_CFG_CraneXover :
+
+(**************************************************************************************
+ * 	Application		:	ProBox Framework
+ *	Revision		:	$Revision:  $
+ *	Revision date	:	$Date: $
+ *	Last changed by	:	$Author: q8hedlus $
+ *	URL				:	$URL: 
+ *
+ *	Purpose			:	config parameters for craneXover addon
+ **************************************************************************************)	
+STRUCT
+	TimeoutValueLift 			: TIME:= T#30S; // Timeout value for lifting
+	HomePosFree					: E_Positions_LiftControl; // Homeposition lift when zone free
+	HomePosOccupied				: E_Positions_LiftControl; // Homeposition lift when zone occupied
+	CraneXoverType				: E_CvCraneXoverType :=E_CvCraneXoverType.eCOMBINATION; //Type selector Crane Deposit, Crane Pickup or combination
+	LiftEnabled					: BOOL:=FALSE;  //config if station has lift
+
+	CfgMotorTransfer			: ST_CFG_MotorTransfer; //Config settings used when transfering TU by conveyor to crane is enabled. 
+	CraneCom					: ST_CraneXOverCommunication;	
+END_STRUCT
+END_TYPE
+
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

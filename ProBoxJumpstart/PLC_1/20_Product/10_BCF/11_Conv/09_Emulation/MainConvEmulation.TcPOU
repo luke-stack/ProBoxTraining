@@ -1,0 +1,121 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <POU Name="MainConvEmulation" Id="{ee87c6b8-7e2b-4960-99ff-266f861193a5}" SpecialFunc="None">
+    <Declaration><![CDATA[PROGRAM MainConvEmulation
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision: 404529 $
+ *	Revision date	:	$Date: 2018-04-23 08:21:38 +0200 (Mo., 23 Apr 2018) $
+ *	Last changed by	:	$Author: b7bolm $
+ *	URL				:	$URL: http://almscdc.swisslog.com/repo/SWPD/Development/BoxControlFramework/20_Release/trunk/01_Software/BCF/BCF/JumpStart/20_Product/11_Emu/MainConvEmulation.TcPOU $
+ *
+ *	Purpose			:	Main emulation program call.
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *	0.1				01.01.2001		swl					Example
+ *
+ **************************************************************************************)
+VAR
+	Init									: BOOL := FALSE; // Emulation is initialized 
+	fbDebugMsg								: FB_DebugMsg; // Debug instance
+	
+	fbCommunicationCompositionEmulation		: FB_CommunicationCompositionEmulation; // Instance for communication composition
+	fbSubsystemCompositionEmulation			: FB_SubsystemCompositionEmulation; // Instance for group composition
+	fbGroupCompositionEmulation				: FB_GroupCompositionEmulation; // Instance for group composition
+	fbElementCompositionEmulation			: FB_ElementCompositionEmulation; // Instance for element composition
+	fbFunctionCompositionEmulation			: FB_FunctionCompositionEmulation; // Instance for function composition
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[(**************************************************************************************************************
+   Initialize program
+***************************************************************************************************************)
+A_Init();
+
+(**************************************************************************************************************
+   Call Emulation
+***************************************************************************************************************)
+// Emulation is active
+EmulationActive := Init;
+
+IF Init THEN
+	// Update references
+	F_UpdateReferencesEmulation();
+
+	// Call communication
+	fbCommunicationCompositionEmulation();
+		
+	// Call Subsystem
+	fbSubsystemCompositionEmulation();
+	
+	// Call groups
+	fbGroupCompositionEmulation();
+			
+	// Call elements
+	fbElementCompositionEmulation();
+
+	// Call functions
+	fbFunctionCompositionEmulation();
+
+END_IF
+]]></ST>
+    </Implementation>
+    <Action Name="A_Init" Id="{218f480c-d4aa-4d9c-a431-9702d09f8106}">
+      <Implementation>
+        <ST><![CDATA[(**************************************************************************************
+ * 	NAME		A_Init
+ * 	FUNCTION	Initialization
+ **************************************************************************************)
+
+// Initialize emulation after main program is initialized
+IF MainConv.Init AND NOT Init THEN
+
+	// Send debug message
+	fbDebugMsg.M_SendInfoMsg('Emulation Main initialized.');
+
+	// Load emulation configuration
+	F_ConfigProductEmulation();
+	F_ConfigCommunicationEmulation();
+	F_ConfigPositionEmulation();
+	F_ConfigGroupEmulation();
+	F_ConfigSubsystemEmulation();
+	
+	// Set emulation initialized
+	Init := TRUE;
+END_IF]]></ST>
+      </Implementation>
+    </Action>
+    <ObjectProperties>
+      <XmlArchive>
+        <Data>
+          <o xml:space="preserve" t="UMLStereoTypeContainerObject">
+            <v n="IsType" t="UMLType">BaseArea</v>
+            <v n="Stereotype">""</v>
+            <d n="Stereotypes" t="Hashtable" />
+          </o>
+        </Data>
+        <TypeList>
+          <Type n="Hashtable">System.Collections.Hashtable</Type>
+          <Type n="String">System.String</Type>
+          <Type n="UMLStereoTypeContainerObject">{30250973-b110-4e31-b562-c102e042dca4}</Type>
+          <Type n="UMLType">{0197b136-405a-42ee-bb27-fd08b621d0cf}</Type>
+        </TypeList>
+      </XmlArchive>
+    </ObjectProperties>
+    <LineIds Name="MainConvEmulation">
+      <LineId Id="3" Count="30" />
+      <LineId Id="2" Count="0" />
+    </LineIds>
+    <LineIds Name="MainConvEmulation.A_Init">
+      <LineId Id="2" Count="19" />
+      <LineId Id="1" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

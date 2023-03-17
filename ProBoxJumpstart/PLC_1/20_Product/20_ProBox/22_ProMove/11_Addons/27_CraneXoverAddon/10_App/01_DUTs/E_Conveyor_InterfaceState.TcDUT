@@ -1,0 +1,25 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <DUT Name="E_Conveyor_InterfaceState" Id="{a709b7fb-6f09-43bd-b90f-da8a7f933bbc}">
+    <Declaration><![CDATA[TYPE E_Conveyor_InterfaceState :
+(
+	UNKNOWN 				:= 0,
+	IDLE 					:= 1,	
+	// Handover
+	READYTOHANDOVER 		:= 2,
+	HANDOVERACTIVE			:= 3,
+	HANDOVERSTOP 			:= 4,
+	HANDOVERINTERRUPTED 	:= 5,
+	HANDOVERCOMPLETE 		:= 6,
+	// Takeover
+	READYFORTAKEOVER 		:= 7,
+	TRANSFERTUDATA 			:= 8, // Is used for conveyor  handover side	
+	TAKEOVERACTIVE 			:= 9,
+	TAKEOVERSTOP 			:= 10,
+	TAKEOVERINTERRUPTED 	:= 11,
+	TAKEOVERCOMPLETE 		:= 12
+);
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

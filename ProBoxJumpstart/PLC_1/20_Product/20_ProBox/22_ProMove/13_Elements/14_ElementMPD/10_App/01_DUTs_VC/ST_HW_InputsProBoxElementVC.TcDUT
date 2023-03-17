@@ -1,0 +1,34 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <DUT Name="ST_HW_InputsProBoxElementVC" Id="{11b0a06a-dede-4b64-a7e4-f98150b8a393}">
+    <Declaration><![CDATA[TYPE ST_HW_InputsProBoxElementVC :
+(**************************************************************************************
+ * 	Application		:	BoxControl Framework
+ *	Revision		:	$Revision:  $
+ *	Revision date	:	$Date: $
+ *	Last changed by	:	$Author:  $
+ *	URL				:	$URL: $
+ *
+ *	Purpose			:	Vertical Conveyor - Hardware inputs
+ *
+ * ------------------------------------------------------------------------------------
+ *	Copyright Swisslog [IP AG], Switzerland. All rights reserved.
+ * 
+ * ------------------------------------------------------------------------------------
+ *	
+ * 	Revision History: 
+ *
+ * 	VERSION			DATE			INITIALS			DESCRIPTION
+ *
+ **************************************************************************************)	
+STRUCT
+	MotorUnitOK					: BOOL; // Motor unit is OK (Frequence inverter/motor protection, mainswitch)
+	Conv						: ARRAY[GVL_MPD.CV_A..GVL_MPD.CV_B] OF ST_HW_InputsMPD_Conv;	// Array of Inputs from overhang sensor.		
+	HomeSwitch					: BOOL; // NC Switch to perform Hoiming Operation (Preset encoder). True = Trig write to encoder.
+	DriveInputs					: ST_PDO_DriveIn;	
+	Errors						: ST_MPD_ExternalErrors; // Error monitoring, End Limit, fallbrake etc.
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

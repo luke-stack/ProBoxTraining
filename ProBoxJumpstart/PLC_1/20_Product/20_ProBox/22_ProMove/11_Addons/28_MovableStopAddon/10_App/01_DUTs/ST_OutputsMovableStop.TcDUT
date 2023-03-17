@@ -1,0 +1,11 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <DUT Name="ST_OutputsMovableStop" Id="{af97c1bf-35d0-4788-a81d-22c83ccfab0c}">
+    <Declaration><![CDATA[TYPE ST_OutputsMovableStop :
+STRUCT
+	HW					: ST_HW_OutputsMovableStop;		
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

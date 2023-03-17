@@ -1,0 +1,15 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <DUT Name="ST_LSPM_CtrlOut" Id="{ad730af6-124a-4868-af7c-3ee3a35e5aeb}">
+    <Declaration><![CDATA[// LS PM - Load Stacker and Pallet Magazine control output
+TYPE ST_LSPM_CtrlOut :
+STRUCT
+	StatusReady			: BOOL; //Pallet magazine in the ready state ok to change mode
+	PalletLifted		: BOOL; //Used if the pallet has been lifted when IdleStacking is activated
+	MagazineFull		: BOOL; //Pallet magazine are full and can't receive any more pallets
+	TransportEnabled	: BOOL; //Pallet or stack is ready to be transported In or out from magazine/loadstacker.
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

@@ -1,0 +1,48 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
+  <DUT Name="E_LSPM_States" Id="{0b2c0432-d40b-4f98-b8fb-52a5bb979e34}">
+    <Declaration><![CDATA[{attribute 'qualified_only'}
+{attribute 'strict'}
+TYPE E_LSPM_States :
+(
+// Generall states
+	INIT,					// 0
+	COM_MODE, 				// 1. Commisioning mode
+	RESET_FORKS, 			// 2. recover forks and lift
+	START_POSITION,			// 3
+	READY, 					// 4
+	ERROR, 					// 5
+	STACK_FULL, 			// 6
+// Stacking states
+	STACKING_START, 		// 7
+	STACKING_ENGAGE_FORKS, 	// 8	
+	STACKING_ORDER_LIFT, 	// 9
+	STACKING_LIFT_ACTIVE, 	// 10
+	//PALLET_REMOVE_STACK	// 
+	STACKING_RECIVE_STACK,	// 11
+	STACKING_RECIVE_PALLET, // 12
+	STACKING_PALLET_IN,		// 13. Wait for pallet move in to stacker
+	STACKING_LOWER_STACK, 	// 14
+	STACKING_MIDDLE_DONE, 	// 15. Lift is lowered to middle possition-> order forks in
+	STACKING_COMPLETE, 		// 16. Stacking complete, either new pallet or new stack
+// Destacking states
+	DESTACKING_START, 		// 17
+	DESTACKING_MOVE_MIDDLE, // 18
+	DESTACKING_ENGAGE_FORKS,// 19
+	DESTACKING_LIFT, 		// 20
+	DESTACKING_SEND_PALLET, // 21
+	DESTACKING_SEND_STACK, 	// 22
+	DESTACKING_PALLET_OUT, 	// 23. Wait for pallet move out from stacker
+	DESTACKING_DONE, 		// 24
+	//DESTACKING_EMPTY, 	//
+	DESTACKING_ADD_PALLET, 	// 25
+	DESTACKING_COMPLETE, 	// 26
+//	Optimizing states
+	IDLE_STACKING, 			// 27. Optimize stacking by lift up pallet to make space for new pallet
+	IDLE_STACKED 			// 28, idle stacking complete
+	//IDLE_DESTACKING,
+);
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

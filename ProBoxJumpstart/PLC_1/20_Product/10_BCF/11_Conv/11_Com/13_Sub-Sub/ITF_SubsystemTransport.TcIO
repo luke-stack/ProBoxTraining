@@ -1,0 +1,45 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.12">
+  <Itf Name="ITF_SubsystemTransport" Id="{a187486f-7e82-4244-b5a8-da5e63f23146}">
+    <Declaration><![CDATA[INTERFACE ITF_SubsystemTransport EXTENDS __System.IQueryInterface
+]]></Declaration>
+    <Method Name="M_CallInterface" Id="{e36329f5-62e4-4c67-8d16-7de249df4d87}">
+      <Declaration><![CDATA[METHOD M_CallInterface : BOOL
+VAR_IN_OUT
+	mErrorData				: ST_ErrorDataSet; // Error data
+END_VAR]]></Declaration>
+    </Method>
+    <Method Name="M_GetTransportData" Id="{924d7631-b4c2-48fa-9a98-c587bed4b0aa}">
+      <Declaration><![CDATA[METHOD M_GetTransportData : REFERENCE TO ST_TransportData
+]]></Declaration>
+    </Method>
+    <Method Name="M_Init" Id="{a1328f45-e491-4711-9268-d39463679b25}">
+      <Declaration><![CDATA[METHOD M_Init : BOOL
+VAR_INPUT
+	mInit			: BOOL; // Force init
+END_VAR
+]]></Declaration>
+    </Method>
+    <Method Name="M_MoveTU_DataIndex" Id="{642eaea3-f1e2-40eb-b917-d5d079e62864}">
+      <Declaration><![CDATA[METHOD M_MoveTU_DataIndex : DINT
+]]></Declaration>
+    </Method>
+    <ObjectProperties>
+      <XmlArchive>
+        <Data>
+          <o xml:space="preserve" t="UMLStereoTypeContainerObject">
+            <v n="IsType" t="UMLType">BaseArea</v>
+            <v n="Stereotype">""</v>
+            <d n="Stereotypes" t="Hashtable" />
+          </o>
+        </Data>
+        <TypeList>
+          <Type n="Hashtable">System.Collections.Hashtable</Type>
+          <Type n="String">System.String</Type>
+          <Type n="UMLStereoTypeContainerObject">{30250973-b110-4e31-b562-c102e042dca4}</Type>
+          <Type n="UMLType">{0197b136-405a-42ee-bb27-fd08b621d0cf}</Type>
+        </TypeList>
+      </XmlArchive>
+    </ObjectProperties>
+  </Itf>
+</TcPlcObject>

@@ -1,0 +1,15 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4022.12">
+  <GVL Name="SequencingParameter" Id="{c4ac66e1-1379-4719-80ed-b3a3842c229e}" ParameterList="True">
+    <Declaration><![CDATA[{attribute 'qualified_only'}
+VAR_GLOBAL CONSTANT
+	MAX_STREAMBUILDER_LIST		: INT := 200; // Max number of stored entries for a stream
+	MAX_ESTIMATE_ALL_NEXT_LIST	: INT := 100; // Max entries for estimate next for all destination
+	SCAN_ENTRIES_PER_CYCLE		: INT := 600; // Scanned TU entries per cycle
+	DEFAULT_WARNING_TIME		: TIME := T#15M; // Default time to raise warning
+	SEQ_VALIDATION_QUEUE		: UINT := 3; // Number of considered TU to be validated
+	MAX_LIMITED_STREAM_LIST		: INT := 30; // Max number of stored entries for a limited stream	
+	MAX_LANE_SIZE				: DINT := 10; // Max number of zones in a sequence conveyor lane			
+END_VAR]]></Declaration>
+  </GVL>
+</TcPlcObject>
