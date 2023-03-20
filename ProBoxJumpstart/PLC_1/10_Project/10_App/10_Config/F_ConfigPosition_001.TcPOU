@@ -387,7 +387,7 @@ fbF_10_001_0207_01_0.ConfigFunction.FunctionLink.eFunctionNumber       := E_Func
 fbF_10_001_0207_01_0.ConfigFunction.FunctionLink.ZoneNumber            := 0;
 fbF_10_001_0207_01_0.ConfigFunction.eAdjacentFunctionNumberSide[1]     := E_FunctionNumber.F_BEGIN_FUNCTION;
 fbF_10_001_0207_01_0.ConfigFunction.eAdjacentFunctionNumberSide[2]     := E_FunctionNumber.F_BEGIN_FUNCTION;
-fbF_10_001_0207_01_0.ConfigFunction.ePrevFunctionNumber                := E_FunctionNumber.F_BEGIN_FUNCTION;
+fbF_10_001_0207_01_0.ConfigFunction.ePrevFunctionNumber                := E_FunctionNumber.F_10_001_0230_01_0;
 fbF_10_001_0207_01_0.ConfigFunction.eNextFunctionNumber                := E_FunctionNumber.F_BEGIN_FUNCTION;
 fbF_10_001_0207_01_0.ConfigFunction.NumberOfZones                      := 1;
 //Config zone 1
@@ -1269,7 +1269,7 @@ fbF_10_001_0230_01_0.ConfigFunction.eAdjacentFunctionNumberSide[2]    := E_Funct
 fbF_10_001_0230_01_0.ConfigFunction.eAdjacentFunctionNumberSide[3]    := E_FunctionNumber.F_BEGIN_FUNCTION;
 fbF_10_001_0230_01_0.ConfigFunction.eAdjacentFunctionNumberSide[4]    := E_FunctionNumber.F_BEGIN_FUNCTION;
 fbF_10_001_0230_01_0.ConfigFunction.ePrevFunctionNumber               := E_FunctionNumber.F_10_001_0222_01_0;
-fbF_10_001_0230_01_0.ConfigFunction.eNextFunctionNumber               := E_FunctionNumber.F_10_001_0232_01_0;
+fbF_10_001_0230_01_0.ConfigFunction.eNextFunctionNumber               := E_FunctionNumber.F_BEGIN_FUNCTION;
 fbF_10_001_0230_01_0.ConfigFunction.FlowDirectionREV                  := FALSE;
 fbF_10_001_0230_01_0.ConfigFunction.NumberOfZones                     := 1;
 

@@ -11,8 +11,11 @@ VAR
 	fbDebugMsg: FB_DebugMsg;
 	///Debug message
 	DebugMsg: T_MAXSTRING;
+	CurrentZone : ST_ZoneData;
 	NextZone : ST_ZoneData;
 	TUDest : E_FunctionNumber;
+	TUIndexDelete : DINT;
+	TU_ID : STRING(Conveyor.TU_ID_STRINGLENGTH);
 END_VAR
 VAR_OUTPUT
 	///Result next function number
@@ -28,7 +31,8 @@ eNextFunctionNumber := F_BEGIN_FUNCTION;
 CASE eFunctionNumber OF
 	
 	E_FunctionNumber.F_10_001_0200_01_0:
-		IF(F_PB_GetTuDestination(eFunctionNumber:= eFunctionNumber, 1,1) = E_FunctionNumber.F_10_001_0203_01_0) THEN
+		TUDest := F_PB_GetTuDestination(eFunctionNumber:= eFunctionNumber, 1,1);
+		IF TUDest = E_FunctionNumber.F_10_001_0203_01_0 THEN
 			eNextFunctionNumber := E_FunctionNumber.F_10_001_0201_01_0;
 		END_IF
 		
@@ -39,21 +43,24 @@ CASE eFunctionNumber OF
 		END_IF
 	
 	E_FunctionNumber.F_10_001_0204_01_0:
-		IF(F_PB_GetTuDestination(eFunctionNumber:= eFunctionNumber, 1,1) = E_FunctionNumber.F_10_001_0233_01_0) THEN
+		TUDest := F_PB_GetTuDestination(eFunctionNumber:= eFunctionNumber, 1,1);
+		IF TUDest = E_FunctionNumber.F_10_001_0233_01_0 THEN
 			eNextFunctionNumber := E_FunctionNumber.F_10_001_0233_01_0;
 		ELSE
 			eNextFunctionNumber := E_FunctionNumber.F_10_002_0206_01_0;
 		END_IF
 		
 	E_FunctionNumber.F_10_001_0209_01_0:
-		IF(F_PB_GetTuDestination(eFunctionNumber:= eFunctionNumber, 1,1) = E_FunctionNumber.F_10_001_0215_02_0) THEN
+		TUDest := F_PB_GetTuDestination(eFunctionNumber:= eFunctionNumber, 1,1);
+		IF TUDest = E_FunctionNumber.F_10_001_0215_01_0 THEN
 			eNextFunctionNumber := E_FunctionNumber.F_10_001_0214_01_0;
 		ELSE
 			eNextFunctionNumber := E_FunctionNumber.F_10_001_0211_01_0;
 		END_IF
 		
 	E_FunctionNumber.F_10_001_0212_01_0:
-		IF(F_PB_GetTuDestination(eFunctionNumber:= eFunctionNumber, 1,1) = E_FunctionNumber.F_10_001_0213_01_0) THEN
+		TUDest := F_PB_GetTuDestination(eFunctionNumber:= eFunctionNumber, 1,1);
+		IF TUDest = E_FunctionNumber.F_10_001_0213_01_0 THEN
 			eNextFunctionNumber := E_FunctionNumber.F_10_001_0213_01_0;
 		ELSE
 			eNextFunctionNumber := E_FunctionNumber.F_10_001_0218_01_0;
@@ -66,6 +73,20 @@ CASE eFunctionNumber OF
 		ELSE
 			eNextFunctionNumber := E_FunctionNumber.F_10_001_0225_01_0;
 		END_IF
+		
+	E_FunctionNumber.F_10_001_0230_01_0:
+		TUDest := F_PB_GetTuDestination(eFunctionNumber:= eFunctionNumber, 1,1);
+		IF TUDest = E_FunctionNumber.F_10_001_0232_01_0 THEN
+			eNextFunctionNumber := E_FunctionNumber.F_10_001_0232_01_0;
+		ELSE
+			eNextFunctionNumber := E_FunctionNumber.F_10_001_0207_01_0;
+		END_IF
+		
+	E_FunctionNumber.F_10_001_0233_01_0:
+//		CurrentZone := F_GetZoneData(E_FunctionNumber.F_10_001_0233_01_0, 1);
+//		TU_ID := CurrentZone.LastTUdata.TU_ID;
+//		TUIndexDelete := F_GetTU_DataIndex(E_FunctionNumber.F_10_001_0233_01_0, 1);
+		F_DeleteTU_Data(F_GetTU_DataIndex(E_FunctionNumber.F_10_001_0233_01_0, 1), FALSE);
 ELSE
 	DebugMsg := CONCAT('Routing function not defined. FunctionNumber: ', INT_TO_STRING(eFunctionNumber));
 	fbDebugMsg.M_SendInfoMsg(DebugMsg);
@@ -74,27 +95,43 @@ END_CASE
 ]]></ST>
     </Implementation>
     <LineIds Name="FB_RoutingService_001">
-      <LineId Id="3" Count="10" />
+      <LineId Id="3" Count="8" />
+      <LineId Id="96" Count="0" />
+      <LineId Id="12" Count="1" />
       <LineId Id="44" Count="0" />
       <LineId Id="46" Count="0" />
       <LineId Id="51" Count="0" />
       <LineId Id="47" Count="1" />
       <LineId Id="45" Count="0" />
       <LineId Id="35" Count="1" />
-      <LineId Id="39" Count="2" />
+      <LineId Id="39" Count="0" />
+      <LineId Id="94" Count="0" />
+      <LineId Id="40" Count="1" />
       <LineId Id="43" Count="0" />
       <LineId Id="38" Count="0" />
       <LineId Id="53" Count="0" />
-      <LineId Id="55" Count="4" />
+      <LineId Id="55" Count="1" />
+      <LineId Id="93" Count="0" />
+      <LineId Id="57" Count="2" />
       <LineId Id="54" Count="0" />
       <LineId Id="60" Count="0" />
-      <LineId Id="62" Count="4" />
+      <LineId Id="62" Count="0" />
+      <LineId Id="92" Count="0" />
+      <LineId Id="63" Count="3" />
       <LineId Id="61" Count="0" />
       <LineId Id="67" Count="0" />
       <LineId Id="69" Count="0" />
       <LineId Id="74" Count="0" />
       <LineId Id="70" Count="3" />
       <LineId Id="68" Count="0" />
+      <LineId Id="97" Count="0" />
+      <LineId Id="99" Count="5" />
+      <LineId Id="98" Count="0" />
+      <LineId Id="105" Count="0" />
+      <LineId Id="107" Count="0" />
+      <LineId Id="106" Count="0" />
+      <LineId Id="114" Count="0" />
+      <LineId Id="117" Count="1" />
       <LineId Id="14" Count="4" />
       <LineId Id="2" Count="0" />
     </LineIds>

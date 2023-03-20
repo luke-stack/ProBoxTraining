@@ -2,15 +2,95 @@
 <TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
   <POU Name="FB_FunctionCompositionCustomized" Id="{dab6032a-07a7-4e89-86c7-4672b3b39b9a}" SpecialFunc="None">
     <Declaration><![CDATA[FUNCTION_BLOCK FB_FunctionCompositionCustomized
-]]></Declaration>
+VAR
+	count	: INT	:= 0;
+	TTAZone : ST_ZoneData;
+	latch	: BOOL := FALSE;
+END_VAR]]></Declaration>
     <Implementation>
-      <ST><![CDATA[fbF_10_001_0200_02_0.CtrlIn.DestinationFunction := F_10_001_0230_01_0;
-fbF_10_001_0200_02_0.CtrlIn.DestinationZone := 1;
-fbF_10_001_0200_02_0.CtrlIn.TU_Type := 1;]]></ST>
+      <ST><![CDATA[//fbF_10_001_0200_02_0.CtrlIn.DestinationFunction := F_10_001_0230_01_0;
+//fbF_10_001_0200_02_0.CtrlIn.DestinationZone := 1;
+//fbF_10_001_0200_02_0.CtrlIn.TU_Type := 1;
+
+//fbF_10_001_0200_02_0.CtrlIn.DestinationFunction := F_10_001_0215_01_0;
+//fbF_10_001_0200_02_0.CtrlIn.DestinationZone := 2;
+//fbF_10_001_0200_02_0.CtrlIn.TU_Type := 1;
+
+TTAZone := F_GetZoneData(E_FunctionNumber.F_10_001_0200_01_0, 1);
+IF NOT TTAZone.TransportControlData.Occupied THEN
+IF count = 0 AND NOT latch THEN 
+	fbF_10_001_0200_02_0.CtrlIn.DestinationFunction := F_10_001_0233_01_0;
+	fbF_10_001_0200_02_0.CtrlIn.DestinationZone := 1;
+	fbF_10_001_0200_02_0.CtrlIn.TU_Type := 1;
+	count := count + 1;
+	latch := TRUE;
+ELSIF count = 1 AND NOT latch THEN
+	fbF_10_001_0200_02_0.CtrlIn.DestinationFunction := F_10_001_0215_01_0;
+	fbF_10_001_0200_02_0.CtrlIn.DestinationZone := 2;
+	fbF_10_001_0200_02_0.CtrlIn.TU_Type := 1;
+	count := count + 1;
+	latch := TRUE;
+ELSIF count = 2 AND NOT latch THEN
+	fbF_10_001_0200_02_0.CtrlIn.DestinationFunction := F_10_001_0213_01_0;
+	fbF_10_001_0200_02_0.CtrlIn.DestinationZone := 1;
+	fbF_10_001_0200_02_0.CtrlIn.TU_Type := 1;
+	count := count + 1;
+	latch := TRUE;
+ELSIF count = 3 AND NOT latch THEN
+	fbF_10_001_0200_02_0.CtrlIn.DestinationFunction := F_10_001_0207_01_0;
+	fbF_10_001_0200_02_0.CtrlIn.DestinationZone := 1;
+	fbF_10_001_0200_02_0.CtrlIn.TU_Type := 1;
+	count := count + 1;
+	latch := TRUE;
+ELSIF count = 4 AND NOT latch THEN
+	fbF_10_001_0200_02_0.CtrlIn.DestinationFunction := F_10_001_0232_01_0;
+	fbF_10_001_0200_02_0.CtrlIn.DestinationZone := 1;
+	fbF_10_001_0200_02_0.CtrlIn.TU_Type := 1;
+	count := 0;
+	latch := TRUE;
+END_IF
+ELSE 
+	latch := FALSE;
+END_IF
+
+
+]]></ST>
     </Implementation>
     <LineIds Name="FB_FunctionCompositionCustomized">
-      <LineId Id="3" Count="0" />
-      <LineId Id="2" Count="0" />
+      <LineId Id="50" Count="1" />
+      <LineId Id="49" Count="0" />
+      <LineId Id="64" Count="2" />
+      <LineId Id="63" Count="0" />
+      <LineId Id="52" Count="0" />
+      <LineId Id="48" Count="0" />
+      <LineId Id="44" Count="0" />
+      <LineId Id="14" Count="0" />
+      <LineId Id="19" Count="1" />
+      <LineId Id="17" Count="0" />
+      <LineId Id="27" Count="0" />
+      <LineId Id="56" Count="0" />
+      <LineId Id="21" Count="0" />
+      <LineId Id="24" Count="1" />
+      <LineId Id="23" Count="0" />
+      <LineId Id="28" Count="0" />
+      <LineId Id="59" Count="0" />
+      <LineId Id="22" Count="0" />
+      <LineId Id="30" Count="1" />
+      <LineId Id="29" Count="0" />
+      <LineId Id="40" Count="0" />
+      <LineId Id="60" Count="0" />
+      <LineId Id="33" Count="2" />
+      <LineId Id="26" Count="0" />
+      <LineId Id="41" Count="0" />
+      <LineId Id="61" Count="0" />
+      <LineId Id="37" Count="2" />
+      <LineId Id="36" Count="0" />
+      <LineId Id="42" Count="0" />
+      <LineId Id="62" Count="0" />
+      <LineId Id="18" Count="0" />
+      <LineId Id="57" Count="1" />
+      <LineId Id="47" Count="0" />
+      <LineId Id="15" Count="1" />
       <LineId Id="5" Count="0" />
     </LineIds>
   </POU>
