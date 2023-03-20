@@ -6,6 +6,8 @@ VAR
 	count	: INT	:= 0;
 	TTAZone : ST_ZoneData;
 	latch	: BOOL := FALSE;
+	
+	TransportData : ARRAY[1..E_FunctionNumber.F_END_FUNCTION] OF ST_TransportControlData;
 END_VAR]]></Declaration>
     <Implementation>
       <ST><![CDATA[//fbF_10_001_0200_02_0.CtrlIn.DestinationFunction := F_10_001_0230_01_0;
@@ -53,6 +55,90 @@ ELSE
 	latch := FALSE;
 END_IF
 
+//Select mode Pallet Magazine 
+
+TransportData[1] := F_GetTransportControlData(F_10_001_0213_01_0,1); 
+TransportData[2] := F_GetTransportControlData(F_10_001_0212_01_0,1); 
+
+//Stacking single pallet 
+
+IF F_PB_GetTuDestination(F_10_001_0212_01_0,1,1) = F_10_001_0213_01_0 AND 
+(fbF_10_001_0213_02_0.CtrlOut.StatusReady OR fbF_10_001_0213_02_0.CtrlOut.PalletLifted) AND 
+TU_Table.TU_DataTable[TransportData[2].TU_DataIndex].DataSet.TU_Type = 0 THEN 
+	fbF_10_001_0213_02_0.CtrlIn.Mode := E_LSPM_Mode.E_STACKING;
+	
+//Destacking single pallet 
+
+ELSIF F_PB_GetTuDestination(F_10_001_0213_01_0,1,1) <> F_10_001_0213_01_0 AND 
+F_PB_GetTuDestination(F_10_001_0213_01_0,1,1) <> F_BEGIN_FUNCTION AND 
+TransportData[1].Occupied AND (fbF_10_001_0213_02_0.CtrlOut.StatusReady OR 
+fbF_10_001_0213_02_0.CtrlOut.PalletLifted) AND 
+TU_Table.TU_DataTable[TransportData[1].TU_DataIndex].DataSet.TU_Type = 0 THEN
+	fbF_10_001_0213_02_0.CtrlIn.Mode := E_LSPM_Mode.E_DESTACKING; 
+	
+//Send in stack 
+
+ELSIF F_PB_GetTuDestination(F_10_001_0212_01_0,1,1) = F_10_001_0213_01_0 AND 
+(fbF_10_001_0213_02_0.CtrlOut.StatusReady OR fbF_10_001_0213_02_0.CtrlOut.PalletLifted) AND 
+TU_Table.TU_DataTable[TransportData[2].TU_DataIndex].DataSet.TU_Type = 1 THEN 
+	fbF_10_001_0213_02_0.CtrlIn.Mode := E_LSPM_Mode.E_RECEIVE_STACK; 
+	
+//Send out stack 
+
+ELSIF F_PB_GetTuDestination(F_10_001_0213_01_0,1,1) <> F_10_001_0213_01_0 AND 
+F_PB_GetTuDestination(F_10_001_0213_01_0,1,1) <> F_BEGIN_FUNCTION AND 
+TransportData[1].Occupied AND 
+(fbF_10_001_0213_02_0.CtrlOut.StatusReady OR fbF_10_001_0213_02_0.CtrlOut.PalletLifted) AND 
+TU_Table.TU_DataTable[TransportData[1].TU_DataIndex].DataSet.TU_Type = 1 THEN 
+	fbF_10_001_0213_02_0.CtrlIn.Mode := E_LSPM_Mode.E_SEND_STACK; 
+//If no order sent go to free 
+ELSE 
+	fbF_10_001_0213_02_0.CtrlIn.Mode := E_LSPM_Mode.E_FREE; 
+END_IF
+
+
+
+//Select mode Pallet Magazine 
+
+TransportData[1] := F_GetTransportControlData(F_10_001_0207_01_0,1); 
+TransportData[2] := F_GetTransportControlData(F_10_001_0230_01_0,1); 
+
+//Stacking single pallet 
+
+IF F_PB_GetTuDestination(F_10_001_0230_01_0,1,1) = F_10_001_0207_01_0 AND 
+(fbF_10_001_0207_02_0.CtrlOut.StatusReady OR fbF_10_001_0207_02_0.CtrlOut.PalletLifted) AND 
+TU_Table.TU_DataTable[TransportData[2].TU_DataIndex].DataSet.TU_Type = 0 THEN 
+	fbF_10_001_0207_02_0.CtrlIn.Mode := E_LSPM_Mode.E_STACKING;
+	
+//Destacking single pallet 
+
+ELSIF F_PB_GetTuDestination(F_10_001_0207_01_0,1,1) <> F_10_001_0207_01_0 AND 
+F_PB_GetTuDestination(F_10_001_0207_01_0,1,1) <> F_BEGIN_FUNCTION AND 
+TransportData[1].Occupied AND (fbF_10_001_0207_02_0.CtrlOut.StatusReady OR 
+fbF_10_001_0207_02_0.CtrlOut.PalletLifted) AND 
+TU_Table.TU_DataTable[TransportData[1].TU_DataIndex].DataSet.TU_Type = 0 THEN
+	fbF_10_001_0207_02_0.CtrlIn.Mode := E_LSPM_Mode.E_DESTACKING; 
+	
+//Send in stack 
+
+ELSIF F_PB_GetTuDestination(F_10_001_0230_01_0,1,1) = F_10_001_0207_01_0 AND 
+(fbF_10_001_0207_02_0.CtrlOut.StatusReady OR fbF_10_001_0207_02_0.CtrlOut.PalletLifted) AND 
+TU_Table.TU_DataTable[TransportData[2].TU_DataIndex].DataSet.TU_Type = 1 THEN 
+	fbF_10_001_0207_02_0.CtrlIn.Mode := E_LSPM_Mode.E_RECEIVE_STACK; 
+	
+//Send out stack 
+
+ELSIF F_PB_GetTuDestination(F_10_001_0207_01_0,1,1) <> F_10_001_0207_01_0 AND 
+F_PB_GetTuDestination(F_10_001_0207_01_0,1,1) <> F_BEGIN_FUNCTION AND 
+TransportData[1].Occupied AND 
+(fbF_10_001_0207_02_0.CtrlOut.StatusReady OR fbF_10_001_0207_02_0.CtrlOut.PalletLifted) AND 
+TU_Table.TU_DataTable[TransportData[1].TU_DataIndex].DataSet.TU_Type = 1 THEN 
+	fbF_10_001_0207_02_0.CtrlIn.Mode := E_LSPM_Mode.E_SEND_STACK; 
+	
+//If no order sent go to free 
+ELSE 
+	fbF_10_001_0207_02_0.CtrlIn.Mode := E_LSPM_Mode.E_FREE; 
+END_IF
 
 ]]></ST>
     </Implementation>
@@ -90,7 +176,58 @@ END_IF
       <LineId Id="18" Count="0" />
       <LineId Id="57" Count="1" />
       <LineId Id="47" Count="0" />
-      <LineId Id="15" Count="1" />
+      <LineId Id="15" Count="0" />
+      <LineId Id="72" Count="0" />
+      <LineId Id="170" Count="0" />
+      <LineId Id="112" Count="0" />
+      <LineId Id="75" Count="0" />
+      <LineId Id="169" Count="0" />
+      <LineId Id="76" Count="0" />
+      <LineId Id="117" Count="0" />
+      <LineId Id="77" Count="0" />
+      <LineId Id="114" Count="1" />
+      <LineId Id="83" Count="0" />
+      <LineId Id="168" Count="0" />
+      <LineId Id="84" Count="0" />
+      <LineId Id="167" Count="0" />
+      <LineId Id="85" Count="2" />
+      <LineId Id="89" Count="1" />
+      <LineId Id="92" Count="0" />
+      <LineId Id="166" Count="0" />
+      <LineId Id="93" Count="0" />
+      <LineId Id="165" Count="0" />
+      <LineId Id="94" Count="1" />
+      <LineId Id="97" Count="0" />
+      <LineId Id="99" Count="0" />
+      <LineId Id="164" Count="0" />
+      <LineId Id="100" Count="0" />
+      <LineId Id="163" Count="0" />
+      <LineId Id="101" Count="3" />
+      <LineId Id="106" Count="3" />
+      <LineId Id="111" Count="0" />
+      <LineId Id="110" Count="0" />
+      <LineId Id="152" Count="1" />
+      <LineId Id="120" Count="1" />
+      <LineId Id="162" Count="0" />
+      <LineId Id="122" Count="1" />
+      <LineId Id="161" Count="0" />
+      <LineId Id="124" Count="5" />
+      <LineId Id="154" Count="0" />
+      <LineId Id="130" Count="0" />
+      <LineId Id="158" Count="0" />
+      <LineId Id="131" Count="5" />
+      <LineId Id="155" Count="0" />
+      <LineId Id="137" Count="0" />
+      <LineId Id="159" Count="0" />
+      <LineId Id="138" Count="3" />
+      <LineId Id="156" Count="0" />
+      <LineId Id="142" Count="0" />
+      <LineId Id="160" Count="0" />
+      <LineId Id="143" Count="5" />
+      <LineId Id="157" Count="0" />
+      <LineId Id="149" Count="2" />
+      <LineId Id="119" Count="0" />
+      <LineId Id="16" Count="0" />
       <LineId Id="5" Count="0" />
     </LineIds>
   </POU>
