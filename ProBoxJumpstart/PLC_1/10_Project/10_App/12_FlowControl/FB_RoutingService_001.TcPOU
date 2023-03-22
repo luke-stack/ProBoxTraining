@@ -14,7 +14,11 @@ VAR
 	CurrentZone : ST_ZoneData;
 	NextZone : ST_ZoneData;
 	TUDest : E_FunctionNumber;
-	TUIndexDelete : DINT;
+	GetTUIndex233 : DINT;
+	GetTUIndex215 : DINT;
+	GetTUIndex207 : DINT;
+	GetTUIndex232 : DINT;
+	GetTUIndex213 : DINT;
 	TU_ID : STRING(Conveyor.TU_ID_STRINGLENGTH);
 END_VAR
 VAR_OUTPUT
@@ -87,17 +91,51 @@ CASE eFunctionNumber OF
 		
 	// IF position occupied then get data index 
 	//When pos not occupied then delete TU data
+	E_FunctionNumber.F_10_001_0233_01_0:
+		NextZone := F_GetZoneData(E_FunctionNumber.F_10_001_0233_01_0, 1);
+		IF NextZone.TransportControlData.Occupied THEN
+			GetTUIndex233 := F_GetTU_DataIndex(E_FunctionNumber.F_10_001_0233_01_0, 1);
+		ELSE
+			F_DeleteTU_Data(GetTUIndex233, FALSE);
+			GetTUIndex233 := 0;
+		END_IF
 	
-	F_DeleteTU_Data(F_GetTU_DataIndex(E_FunctionNumber.F_10_001_0233_01_0, 1), FALSE);
-	
-	F_DeleteTU_Data(F_GetTU_DataIndex(E_FunctionNumber.F_10_001_0215_02_0, 1), FALSE);
-	
-	F_DeleteTU_Data(F_GetTU_DataIndex(E_FunctionNumber.F_10_001_0207_01_0, 1), FALSE);
-	
-	F_DeleteTU_Data(F_GetTU_DataIndex(E_FunctionNumber.F_10_001_0232_01_0, 1), FALSE);
-	
-	F_DeleteTU_Data(F_GetTU_DataIndex(E_FunctionNumber.F_10_001_0213_01_0, 1), FALSE);
-	
+	E_FunctionNumber.F_10_001_0215_02_0:
+		NextZone := F_GetZoneData(E_FunctionNumber.F_10_001_0215_02_0, 1);
+		IF NextZone.TransportControlData.Occupied THEN
+			GetTUIndex215 := F_GetTU_DataIndex(E_FunctionNumber.F_10_001_0215_02_0, 1);
+		ELSE
+			F_DeleteTU_Data(GetTUIndex215, FALSE);
+			GetTUIndex215 := 0;
+		END_IF
+		
+	E_FunctionNumber.F_10_001_0207_01_0:
+		NextZone := F_GetZoneData(E_FunctionNumber.F_10_001_0207_01_0, 1);
+		IF NextZone.TransportControlData.Occupied THEN
+			GetTUIndex207 := F_GetTU_DataIndex(E_FunctionNumber.F_10_001_0207_01_0, 1);
+		ELSE
+			F_DeleteTU_Data(GetTUIndex207, FALSE);
+			GetTUIndex207 := 0;
+		END_IF
+
+	E_FunctionNumber.F_10_001_0232_01_0:
+		NextZone := F_GetZoneData(E_FunctionNumber.F_10_001_0232_01_0, 1);
+		IF NextZone.TransportControlData.Occupied THEN
+			GetTUIndex232 := F_GetTU_DataIndex(E_FunctionNumber.F_10_001_0232_01_0, 1);
+		ELSE
+			F_DeleteTU_Data(GetTUIndex232, FALSE);
+			GetTUIndex232 := 0;
+		END_IF
+		
+	E_FunctionNumber.F_10_001_0213_01_0:
+		NextZone := F_GetZoneData(E_FunctionNumber.F_10_001_0213_01_0, 1);
+		IF NextZone.TransportControlData.Occupied THEN
+			GetTUIndex213 := F_GetTU_DataIndex(E_FunctionNumber.F_10_001_0213_01_0, 1);
+		ELSE
+			F_DeleteTU_Data(GetTUIndex213, FALSE);
+			GetTUIndex213 := 0;
+		END_IF
+		
 	//POR1 an an sis dog schicken von ausgang
 	//In sis dog when por1 gekommen schick rtq und tdq
 ELSE
@@ -146,12 +184,38 @@ END_CASE
       <LineId Id="148" Count="0" />
       <LineId Id="107" Count="0" />
       <LineId Id="156" Count="1" />
-      <LineId Id="118" Count="0" />
+      <LineId Id="181" Count="0" />
+      <LineId Id="183" Count="0" />
+      <LineId Id="243" Count="0" />
+      <LineId Id="235" Count="0" />
+      <LineId Id="245" Count="0" />
+      <LineId Id="269" Count="0" />
+      <LineId Id="184" Count="1" />
+      <LineId Id="187" Count="1" />
+      <LineId Id="239" Count="0" />
+      <LineId Id="247" Count="0" />
+      <LineId Id="241" Count="0" />
+      <LineId Id="248" Count="0" />
+      <LineId Id="268" Count="0" />
+      <LineId Id="186" Count="0" />
+      <LineId Id="207" Count="0" />
+      <LineId Id="192" Count="1" />
+      <LineId Id="249" Count="3" />
+      <LineId Id="267" Count="0" />
+      <LineId Id="191" Count="0" />
+      <LineId Id="212" Count="0" />
+      <LineId Id="211" Count="0" />
+      <LineId Id="198" Count="0" />
+      <LineId Id="253" Count="3" />
+      <LineId Id="266" Count="0" />
+      <LineId Id="196" Count="0" />
+      <LineId Id="210" Count="0" />
+      <LineId Id="202" Count="1" />
+      <LineId Id="257" Count="3" />
+      <LineId Id="265" Count="0" />
+      <LineId Id="201" Count="0" />
       <LineId Id="139" Count="0" />
-      <LineId Id="141" Count="1" />
-      <LineId Id="144" Count="2" />
-      <LineId Id="154" Count="1" />
-      <LineId Id="158" Count="2" />
+      <LineId Id="159" Count="1" />
       <LineId Id="14" Count="4" />
       <LineId Id="2" Count="0" />
     </LineIds>

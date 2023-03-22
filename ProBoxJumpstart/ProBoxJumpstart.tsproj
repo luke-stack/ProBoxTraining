@@ -2399,11 +2399,6 @@
 							<Type GUID="{D47494DE-1257-46CB-F8DB-9C4D035FDDA6}">ST_ASI_HW_Input</Type>
 						</Var>
 						<Var>
-							<Name>HardwareMapping.I_10_001_SG</Name>
-							<Comment><![CDATA[Switching group HW interface]]></Comment>
-							<Type GUID="{9826E8B9-1DBB-3603-0F40-FD2530175F19}">ST_HW_InputsSG_ProBOX</Type>
-						</Var>
-						<Var>
 							<Name>HardwareMapping.I_10_002_SG</Name>
 							<Comment><![CDATA[Switching group HW interface]]></Comment>
 							<Type GUID="{9826E8B9-1DBB-3603-0F40-FD2530175F19}">ST_HW_InputsSG_ProBOX</Type>
@@ -2422,6 +2417,11 @@
 							<Name>Subsystem.fbSubsystem10.HW_Inputs.DeviceState</Name>
 							<Comment><![CDATA[ Diagnostic info of EtherCAT slave devices]]></Comment>
 							<Type GUID="{DB9D788E-A41C-BC6D-B83C-8EF88C58F2AE}">ARRAY [1..400] OF UINT</Type>
+						</Var>
+						<Var>
+							<Name>HardwareMapping.I_10_001_SG</Name>
+							<Comment><![CDATA[Switching group HW interface]]></Comment>
+							<Type GUID="{9826E8B9-1DBB-3603-0F40-FD2530175F19}">ST_HW_InputsSG_ProBOX</Type>
 						</Var>
 					</Vars>
 					<Vars VarGrpType="2" AreaNo="1">

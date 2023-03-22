@@ -397,7 +397,6 @@ fbF_10_001_0207_01_0.ConfigFunction.Zone[1].EnableMFC                  := TRUE;
 fbF_10_001_0207_01_0.ConfigFunction.Zone[1].EnableSimultaneousTransport:= FALSE; //Disable Simultaneous transport for multi zone functions
 fbF_10_001_0207_01_0.ConfigFunction.Zone[1].EnableLatchOccupiedState   := TRUE;
 fbF_10_001_0207_01_0.ConfigFunction.Zone[1].Length[1]                  := INT_TO_UINT(1500 / fbF_10_001_0207_01_0.ConfigFunction.NumberOfZones);	//Zone length (ie element length / number of zones)
-///////////////////
 fbF_10_001_0207_01_0.ConfigFunction.Zone[1].SendPositionOccupied       := TRUE;
 
 // Register function
@@ -618,6 +617,7 @@ fbF_10_001_0213_01_0.ConfigFunction.Zone[1].EnableMFC                  := TRUE;
 fbF_10_001_0213_01_0.ConfigFunction.Zone[1].EnableSimultaneousTransport:= FALSE; //Disable Simultaneous transport for multi zone functions
 fbF_10_001_0213_01_0.ConfigFunction.Zone[1].EnableLatchOccupiedState   := TRUE;
 fbF_10_001_0213_01_0.ConfigFunction.Zone[1].Length[1]                  := INT_TO_UINT(1500 / fbF_10_001_0213_01_0.ConfigFunction.NumberOfZones);	//Zone length (ie element length / number of zones)
+fbF_10_001_0213_01_0.ConfigFunction.Zone[1].SendPositionOccupied       := TRUE;
 
 // Register function
 FunctionRegistry[F_10_001_0213_01_0].Enable                            := TRUE; (* Function will be called *)
@@ -710,6 +710,7 @@ fbF_10_001_0215_01_0.ConfigFunction.Zone[1].EnableMFC                  := TRUE;
 fbF_10_001_0215_01_0.ConfigFunction.Zone[1].EnableSimultaneousTransport:= FALSE; //Disable Simultaneous transport for multi zone functions
 fbF_10_001_0215_01_0.ConfigFunction.Zone[1].EnableLatchOccupiedState   := TRUE;
 fbF_10_001_0215_01_0.ConfigFunction.Zone[1].Length[1]                  := INT_TO_UINT(2600 / fbF_10_001_0215_01_0.ConfigFunction.NumberOfZones);	//Zone length (ie element length / number of zones)
+fbF_10_001_0215_01_0.ConfigFunction.Zone[1].SendPositionOccupied       := TRUE;
 
 // Register function
 FunctionRegistry[F_10_001_0215_01_0].Enable                            := TRUE; (* Function will be called *)
@@ -1323,6 +1324,7 @@ fbF_10_001_0232_01_0.ConfigFunction.Zone[1].EnableMFC                  := TRUE;
 fbF_10_001_0232_01_0.ConfigFunction.Zone[1].EnableSimultaneousTransport:= TRUE; //Enable Simultaneous transport for multi zone functions
 fbF_10_001_0232_01_0.ConfigFunction.Zone[1].EnableLatchOccupiedState   := TRUE;
 fbF_10_001_0232_01_0.ConfigFunction.Zone[1].Length[1]                  := INT_TO_UINT(3000 / fbF_10_001_0232_01_0.ConfigFunction.NumberOfZones);	//Zone length (ie element length / number of zones)
+fbF_10_001_0233_01_0.ConfigFunction.Zone[1].SendPositionOccupied       := TRUE;
 
 //Config remaining zones equal to zone 1.
 fbF_10_001_0232_01_0.ConfigFunction.Zone[2]                            := fbF_10_001_0232_01_0.ConfigFunction.Zone[1];
@@ -1385,6 +1387,7 @@ fbF_10_001_0233_01_0.ConfigFunction.Zone[1].EnableMFC                  := TRUE;
 fbF_10_001_0233_01_0.ConfigFunction.Zone[1].EnableSimultaneousTransport:= FALSE; //Disable Simultaneous transport for multi zone functions
 fbF_10_001_0233_01_0.ConfigFunction.Zone[1].EnableLatchOccupiedState   := TRUE;
 fbF_10_001_0233_01_0.ConfigFunction.Zone[1].Length[1]                  := INT_TO_UINT(1600 / fbF_10_001_0233_01_0.ConfigFunction.NumberOfZones);	//Zone length (ie element length / number of zones)
+fbF_10_001_0233_01_0.ConfigFunction.Zone[1].SendPositionOccupied       := FALSE;
 
 // Register function
 FunctionRegistry[F_10_001_0233_01_0].Enable                            := TRUE; (* Function will be called *)
@@ -1397,11 +1400,17 @@ FunctionRegistry[F_10_001_0233_01_0].eFunctionNumber                   := fbF_10
       <LineId Id="3" Count="328" />
       <LineId Id="333" Count="56" />
       <LineId Id="1389" Count="0" />
-      <LineId Id="390" Count="5" />
-      <LineId Id="1391" Count="0" />
-      <LineId Id="396" Count="0" />
+      <LineId Id="390" Count="6" />
       <LineId Id="1390" Count="0" />
-      <LineId Id="397" Count="990" />
+      <LineId Id="397" Count="217" />
+      <LineId Id="1395" Count="0" />
+      <LineId Id="615" Count="91" />
+      <LineId Id="1394" Count="0" />
+      <LineId Id="707" Count="612" />
+      <LineId Id="1396" Count="0" />
+      <LineId Id="1320" Count="61" />
+      <LineId Id="1393" Count="0" />
+      <LineId Id="1382" Count="5" />
       <LineId Id="2" Count="0" />
     </LineIds>
   </POU>
